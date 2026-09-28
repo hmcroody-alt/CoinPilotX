@@ -55,6 +55,7 @@ ROUTES = "services/commerce_discovery_routes.py"
 
 TAGS = "tests/commerce_discovery/test_a_creator_can_tag_their_own_products.py"
 GATE = "tests/commerce_discovery/test_suitability_gate_is_wired.py"
+PICKER = "tests/commerce_discovery/test_the_composer_is_told_what_will_actually_serve.py"
 
 MUTATIONS = [
     dict(
@@ -202,6 +203,128 @@ MUTATIONS = [
         old="    outcome, row = _content_post(cur, post_id)\n    if outcome == _ROW_UNREADABLE:\n        return None",
         new="    outcome, row = _content_post(cur, post_id)\n    if outcome in (_ROW_UNREADABLE, _ROW_ABSENT):\n        return None",
         suites=[TAGS, GATE],
+    ),
+    dict(
+        name="serve-route-resolves-tags-early",
+        control=(
+            "The serve route does not resolve a tag itself; the engine does, below "
+            "the suitability refusal. Written with an *alias* deliberately, because "
+            "the structural half of this control is a string check that an alias "
+            "defeats — what has to kill this is the behavioural test watching "
+            "`tagging.tagged_listing_ids` for calls on a refused post."
+        ),
+        path=ROUTES,
+        old="            content_post_id = _content_post_id(payload)\n",
+        new=("            content_post_id = _content_post_id(payload)\n"
+             "            from services.commerce_discovery import tagging as _early\n"
+             "            _early.tagged_listing_ids(\n"
+             "                cur, content_type=\"post\", content_id=content_post_id,\n"
+             "            )\n"),
+        suites=[TAGS],
+    ),
+    # --- the composer's picker ------------------------------------------------
+    # `/taggable-products` is the only place in the system where "you may tag this"
+    # and "tagging this will show something" are separate answers. Every mutation
+    # below collapses them back into one, which is the state the feature was in
+    # before the endpoint existed and is invisible from any single response.
+    dict(
+        name="picker-filters-instead-of-explaining",
+        control=(
+            "An ineligible listing is returned with its reason, not filtered out. "
+            "Filtering is the obvious implementation and it recreates the silence: "
+            "the creator's product vanishes from the picker and nothing tells them "
+            "that adding a cover photo is the whole fix."
+        ),
+        path=ROUTES,
+        old="            blocked = eligibility.gate(row, bot.parse_price_label_to_cents)\n",
+        new=("            blocked = eligibility.gate(row, bot.parse_price_label_to_cents)\n"
+             "            if blocked:\n                continue\n"),
+        suites=[PICKER],
+    ),
+    dict(
+        name="picker-shows-every-sellers-catalogue",
+        control=(
+            "The query is filtered to the signed-in seller. `tagging.attach` "
+            "re-checks ownership per row, so a wider picker writes no bad tag — but "
+            "it discloses another seller's catalogue, which the write path's refusal "
+            "does nothing about."
+        ),
+        path=ROUTES,
+        old='        "WHERE COALESCE(l.seller_user_id,0)=? "',
+        # Still one parameter, so the query runs; it has simply stopped being about
+        # ownership. A mutation that broke the parameter count would be killed by
+        # the driver rather than by a test.
+        new='        "WHERE COALESCE(l.status,\'\')<>? "',
+        suites=[PICKER],
+    ),
+    dict(
+        name="picker-reports-an-error-as-an-empty-store",
+        control=(
+            "A read failure is a 500 with a code, not `200 {\"products\": []}`. "
+            "Everywhere else in this package an empty list is a truthful rendering "
+            "of nothing-to-show; here it is a claim about the creator's own "
+            "inventory, and a dropped connection must not be able to make it."
+        ),
+        path=ROUTES,
+        old=('        return _error(\n'
+             '            "We could not load your products. Please try again.",\n'
+             '            500, code="TAGGABLE_PRODUCTS_UNAVAILABLE",\n'
+             '        )'),
+        new='        return _json({"ok": True, "products": []})',
+        suites=[PICKER],
+    ),
+    dict(
+        name="picker-serves-the-pipeline-columns",
+        control=(
+            "`engine.buyer_safe` is applied even though the reader is the seller. "
+            "`seller_risk_score` is an internal assessment *of that seller*, and "
+            "being its subject is not an entitlement to it."
+        ),
+        path=ROUTES,
+        old="bot.pulse_marketplace_listing_payload(engine.buyer_safe(row))",
+        new="bot.pulse_marketplace_listing_payload(dict(row))",
+        suites=[PICKER],
+    ),
+    dict(
+        name="picker-hardcodes-the-cap",
+        control=(
+            "`max_per_content` is read from `tagging.MAX_TAGGED_PER_CONTENT` on "
+            "every request. A literal is a second copy that goes stale in the "
+            "permissive direction: the picker offers six, the sixth is refused "
+            "after the post is already published."
+        ),
+        path=ROUTES,
+        # The mutation that survived every other test in the picker suite, because
+        # both sides of `== tagging.MAX_TAGGED_PER_CONTENT` were the same number
+        # today. `test_the_cap_tracks_the_constant_rather_than_equalling_it_today`
+        # exists because of this entry, not the other way round.
+        old='            "max_per_content": tagging.MAX_TAGGED_PER_CONTENT,',
+        new='            "max_per_content": 5,',
+        suites=[PICKER],
+    ),
+    dict(
+        name="picker-offers-a-card-it-could-not-render",
+        control=(
+            "A row the serializer raised on is dropped, not emitted with an empty "
+            "product. The picker would otherwise draw a tappable card with no title "
+            "and no price, and a creator selecting it would tag a product they "
+            "could not identify."
+        ),
+        path=ROUTES,
+        old="                # selectable blank is worse than an absence.\n                continue",
+        new="                # selectable blank is worse than an absence.\n                card = {}",
+        suites=[PICKER],
+    ),
+    dict(
+        name="picker-lets-the-client-choose-the-page-size",
+        control=(
+            "`limit` is clamped to TAGGABLE_PAGE_MAX. Unclamped, one request can "
+            "ask for a seller's entire catalogue and be serialized row by row."
+        ),
+        path=ROUTES,
+        old="        limit = max(1, min(TAGGABLE_PAGE_MAX, int(request.args.get(\"limit\") or TAGGABLE_PAGE_MAX)))",
+        new="        limit = max(1, int(request.args.get(\"limit\") or TAGGABLE_PAGE_MAX))",
+        suites=[PICKER],
     ),
 ]
 

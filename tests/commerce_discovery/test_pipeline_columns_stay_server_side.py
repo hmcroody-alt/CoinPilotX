@@ -184,17 +184,17 @@ class TestNoPipelineColumnReachesTheBuyer:
 
 class TestTheStripIsACopy:
     def test_the_row_still_has_its_columns_after_serialization(self, market):
-        """`_buyer_safe` must not mutate: the ranker's signals were already
+        """`buyer_safe` must not mutate: the ranker's signals were already
         computed, but `_payload` reads the row again for the price path and
         `metrics` reads it afterwards."""
         row = {
             "id": 7, "title": "T", "seller_risk_score": 88,
             "candidate_source": "affinity", "price_label": "$1.00",
         }
-        safe = engine._buyer_safe(row)
+        safe = engine.buyer_safe(row)
         assert "seller_risk_score" not in safe
         assert row["seller_risk_score"] == 88, "the row was mutated"
         assert row["candidate_source"] == "affinity", "the row was mutated"
 
     def test_a_none_row_does_not_raise(self):
-        assert engine._buyer_safe(None) == {}
+        assert engine.buyer_safe(None) == {}

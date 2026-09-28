@@ -1084,12 +1084,20 @@ PIPELINE_ONLY_FIELDS = frozenset({
 })
 
 
-def _buyer_safe(row: Mapping[str, Any]) -> dict:
+def buyer_safe(row: Mapping[str, Any]) -> dict:
     """``row`` without the columns in :data:`PIPELINE_ONLY_FIELDS`.
 
     A copy, not a mutation: the row is still being read after this — `_payload`
     itself reads ``cover_image_url`` and ``gallery_json`` from it through the
     price path, and `_select` may have more to do with it.
+
+    Public, and was ``_buyer_safe`` until a second caller appeared. The composer's
+    ``taggable-products`` route serialises a pool row that never goes through
+    `_payload`, so it has to strip the same columns, and the choice was between an
+    underscore-prefixed cross-module call and a second copy of the strip. A second
+    copy is how the leak this function exists to close happened in the first place;
+    a name that says "internal" while another module depends on it is only a
+    comment that is wrong.
     """
     return {key: value for key, value in dict(row or {}).items()
             if key not in PIPELINE_ONLY_FIELDS}
@@ -1150,7 +1158,7 @@ def _payload(
     product: dict
     if serialize is not None:
         try:
-            product = dict(serialize(_buyer_safe(row)) or {})
+            product = dict(serialize(buyer_safe(row)) or {})
         except Exception:
             LOGGER.warning("COMMERCE_DISCOVERY_SERIALIZE_FAILED listing=%s", row.get("id"), exc_info=True)
             product = {}

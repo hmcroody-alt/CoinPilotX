@@ -1,14 +1,23 @@
 """HTTP surface for organic commerce discovery.
 
-Six endpoints, all under ``/api/pulse/commerce/discovery``, all signed-in-only.
-The client contract is ``mobile-native/src/api/commerceDiscovery.ts``.
+Seven endpoints, all under ``/api/pulse/commerce/discovery``, all
+signed-in-only. The client contract is
+``mobile-native/src/api/commerceDiscovery.ts``.
 
     POST   /<surface>                 placements for feed | reels | messenger
     GET    /marketplace/modules       the Marketplace shelves
+    GET    /taggable-products         the composer's picker (writes nothing)
     POST   /events/impression         rendered, or became visible
     POST   /events/engagement         click → product_view → … → purchase
     POST   /events/feedback           hide / not_interested / see_fewer / …
     POST   /explain/<placement_id>   "Why am I seeing this?"
+
+Six of the seven are the *viewer's* side of discovery. ``/taggable-products`` is
+the creator's, and it is here rather than beside the composer in ``bot.py``
+because the question it answers is ``eligibility``'s — "will this listing ever be
+pushed at anybody" — and moving that judgement into the monolith would make a
+second copy of it. It still writes nothing: the write path is
+``bot.pulse_attach_products_to_content`` over ``tagging.attach``.
 
 Why the serve endpoint is a POST
 --------------------------------
@@ -724,6 +733,147 @@ def commerce_discovery_marketplace_modules():
     except Exception:
         LOGGER.exception("COMMERCE_DISCOVERY_MODULES_FAILED")
         return _json({"ok": True, "modules": []})
+
+
+# --- composer ---------------------------------------------------------------
+#: How many of the creator's own listings the picker is offered. Not a cap on
+#: anything the server enforces — `tagging.MAX_TAGGED_PER_CONTENT` is that — only
+#: a bound on one response. A seller with 900 listings gets the 60 most recently
+#: touched, which is the set a composer is plausibly reaching for.
+TAGGABLE_PAGE_MAX = 60
+
+
+def _taggable_rows(cur, seller_user_id: int, limit: int):
+    """The creator's own listings, eligible or not, most recently touched first.
+
+    Deliberately **not** filtered by ``eligibility.candidate_sql()``, which is the
+    one thing about this query worth arguing over. Filtering is the obvious
+    implementation and it produces the failure this endpoint exists to prevent: a
+    creator whose listing has no cover image would simply not see it in the picker,
+    would conclude the product was gone or the feature was broken, and would have
+    no way to learn that adding a photo is the entire fix. The judgement is
+    reported per row instead — see :func:`commerce_discovery_taggable_products`.
+
+    Projection and joins are ``eligibility``'s, unmodified, because
+    :func:`eligibility.gate` returns "unknown, therefore pass" for several
+    unprojected columns. A hand-trimmed SELECT here would report a listing as
+    servable that the serve path then drops, which is worse than no answer.
+    """
+    from services.commerce_discovery import eligibility
+
+    cur.execute(
+        f"SELECT {eligibility.candidate_projection()} "
+        "FROM marketplace_listings l "
+        "LEFT JOIN users u ON u.user_id=l.seller_user_id "
+        "LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id "
+        "WHERE COALESCE(l.seller_user_id,0)=? "
+        # `l.id DESC` is the tiebreak, for `pool._page`'s reason: `updated_at`
+        # alone is not a total order on this table and a bulk edit gives a whole
+        # page the same timestamp.
+        "ORDER BY l.updated_at DESC, l.id DESC "
+        "LIMIT ?",
+        (int(seller_user_id), int(limit)),
+    )
+    rows = cur.fetchall() or []
+    return [dict(row) for row in rows]
+
+
+@discovery_blueprint.route(f"{API_PREFIX}/taggable-products", methods=["GET"])
+@auth_required
+def commerce_discovery_taggable_products():
+    """The creator's own listings, each with whether tagging it will do anything.
+
+    The composer's question, and it is two questions that this repository would
+    otherwise collapse into one:
+
+    **May I tag this?** Ownership, and on this endpoint the answer is always yes —
+    every row is selected by ``seller_user_id = me``, which is exactly
+    ``tagging.attach``'s check. There is no ``can_attach`` field because a field
+    that is unconditionally ``true`` teaches a client to stop reading it.
+
+    **Will tagging it show anything?** A different question with a different
+    answer, asked by ``eligibility.gate`` at *serve* time, on every serve, against
+    the live listing. ``tagging.attach`` does not ask it and should not: whether
+    this person may point at this product is a permission, and whether the product
+    is fit to push at a stranger is a moderation state that changes after the tag
+    is written. So the tag succeeds, and the product may still never appear.
+
+    That gap is silent everywhere else. ``pulse_attach_products_to_content`` logs a
+    refusal at ``info`` and drops it; an *accepted* tag on an ineligible listing
+    logs nothing at all, because nothing refused it. The creator gets a post that
+    published cleanly and a product that is never shown, with no symptom and no
+    message. This endpoint is the only place that difference is expressible, which
+    is why ``blocked_reason`` carries ``eligibility``'s own code rather than a
+    boolean: "add a cover photo" and "a moderator flagged this" are the same
+    boolean and different instructions.
+
+    ``max_per_content`` is served rather than mirrored. A client constant would be
+    a second copy of ``tagging.MAX_TAGGED_PER_CONTENT`` that goes stale in the
+    permissive direction — the picker would let a creator select six, and the sixth
+    would be refused after the post was already published.
+
+    Failure posture departs from the serve endpoints on purpose. Serve answers
+    ``200 {"placements": []}`` for everything because a broken recommendation must
+    not break the feed, and an empty carousel is a truthful rendering of "nothing
+    to show". Here an empty list is a *claim about the creator's own store* — "you
+    have no products" — and a database error must not be allowed to make it. So
+    this one returns 500 with a code, and the client shows a retry rather than an
+    empty state. (Memory of this codebase: error and empty must never co-render.)
+    """
+    user, err = _require_user()
+    if err:
+        return err
+
+    try:
+        limit = max(1, min(TAGGABLE_PAGE_MAX, int(request.args.get("limit") or TAGGABLE_PAGE_MAX)))
+    except (TypeError, ValueError):
+        limit = TAGGABLE_PAGE_MAX
+
+    def handler(cur, conn):
+        bot = _bot()
+        from services.commerce_discovery import eligibility, tagging
+
+        products = []
+        for row in _taggable_rows(cur, user["user_id"], limit):
+            blocked = eligibility.gate(row, bot.parse_price_label_to_cents)
+            try:
+                # `buyer_safe` even here, where the reader *is* the seller. The
+                # seller's own dashboard is entitled to more than this, but it is
+                # not this endpoint's job to be a second seller dashboard, and
+                # `seller_risk_score` is an internal assessment that has no
+                # audience — see `engine.PIPELINE_ONLY_FIELDS`.
+                card = dict(bot.pulse_marketplace_listing_payload(engine.buyer_safe(row)) or {})
+            except Exception:
+                LOGGER.warning(
+                    "COMMERCE_DISCOVERY_TAGGABLE_SERIALIZE_FAILED listing=%s",
+                    row.get("id"), exc_info=True,
+                )
+                # Skipped, not emitted with an empty card. A row the serializer
+                # cannot render is one the picker cannot draw either, and a
+                # selectable blank is worse than an absence.
+                continue
+            products.append({
+                "listing_id": int(row.get("id") or 0),
+                "product": card,
+                "serves": not blocked,
+                "blocked_reason": blocked,
+            })
+
+        return _json({
+            "ok": True,
+            "products": products,
+            "max_per_content": tagging.MAX_TAGGED_PER_CONTENT,
+            "request_limit": bot.PULSE_PRODUCT_TAG_REQUEST_LIMIT,
+        })
+
+    try:
+        return _with_db(handler)
+    except Exception:
+        LOGGER.exception("COMMERCE_DISCOVERY_TAGGABLE_FAILED user_id=%s", user.get("user_id"))
+        return _error(
+            "We could not load your products. Please try again.",
+            500, code="TAGGABLE_PRODUCTS_UNAVAILABLE",
+        )
 
 
 # --- events -----------------------------------------------------------------

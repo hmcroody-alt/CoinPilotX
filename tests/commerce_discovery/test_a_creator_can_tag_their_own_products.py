@@ -683,8 +683,19 @@ class TestTheSuitabilityGateIsUpstreamOfAllOfThis:
         `tagging`."""
         source = (REPO / "services/commerce_discovery_routes.py").read_text()
         tree = ast.parse(source)
-        handler = next(
+        # Scoped to the *serve* route's nested handler, not to the first function
+        # in the module named `handler`. There are several — `marketplace/modules`
+        # and `taggable-products` have one each — and `next()` over `ast.walk`
+        # silently takes whichever the walk reached first. That happened to be
+        # this one; the day a route moves above it, the test would go on reporting
+        # confidently about a different handler.
+        serve_route = next(
             node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "commerce_discovery_serve"
+        )
+        handler = next(
+            node for node in ast.walk(serve_route)
             if isinstance(node, ast.FunctionDef) and node.name == "handler"
         )
         lines = {"refusal": 0, "serve": 0}
@@ -710,9 +721,27 @@ class TestTheSuitabilityGateIsUpstreamOfAllOfThis:
             f"above the suitability refusal: {lines}. A creator tag must not be "
             "able to put commerce on a bereavement post."
         )
-        assert "tagging" not in source, (
-            "the route now resolves tags itself, which puts the lookup on the "
-            "other side of the gate from where this file certifies it is"
+        # Scoped to the serve route, and it used to be `"tagging" not in source`
+        # over the whole module. That was a cheap proxy for the right claim and it
+        # went stale the moment a *write-side* endpoint in the same file needed
+        # `tagging.MAX_TAGGED_PER_CONTENT` — the composer's picker, which is not on
+        # the serve path and has no gate to be upstream or downstream of. It failed
+        # loudly rather than quietly, which is the only reason it is being narrowed
+        # instead of mourned.
+        #
+        # The property being kept: *this handler* must not resolve a tag itself. The
+        # engine does the lookup, below the refusal, and a route that reached for
+        # `tagging` here would be doing it above.
+        # An alias (`from ... import tagging as _t`) defeats this string check, and
+        # that is fine rather than a hole: `test_a_tag_cannot_be_resolved_on_a_
+        # refused_post` above watches the function itself, so an aliased call is
+        # still the same module attribute and is still recorded. Structure here,
+        # behaviour there; the matrix entry `serve-route-resolves-tags-early` uses
+        # the aliased form on purpose, so the pair is tested as a pair.
+        served = ast.get_source_segment(source, serve_route) or ""
+        assert "tagging." not in served, (
+            "the serve route now resolves tags itself, which puts the lookup on "
+            "the other side of the gate from where this file certifies it is"
         )
 
     @pytest.mark.parametrize("surface", sorted(NON_CONTENT_SURFACES))
