@@ -157,12 +157,19 @@ for path in %(paths)r:
         "title": ("Listing %(public)d" in body),
         "body": ("Body of listing %(public)d" in body),
         "seller": ("Seller9001 Store" in body),
-        # The rendered buttons, not the attribute names. The page ships a click
-        # handler that selects on `[data-contact-seller]`, so searching for the
-        # bare attribute matches the script and passes even with no buttons at
-        # all -- which is exactly how this check was vacuous when first written.
-        "actions": all("<button %%s=" %% m in body for m in
-                       ("data-contact-seller", "data-save-listing", "data-report-listing")),
+        # The rendered controls, not the attribute names. A click handler
+        # selects on `[data-mkt-save]`, so searching for the bare attribute
+        # matches the script and passes even with no controls at all -- which is
+        # exactly how this check was vacuous when first written. The pattern
+        # therefore demands the attribute sit inside an element's opening tag.
+        #
+        # Two of the three are buttons and the first is an anchor, deliberately.
+        # `/pulse/messages/new?q=` is a real page, so Message seller still works
+        # with JavaScript off; Save and Report are fetch-only and ship `hidden`
+        # until the script binds them. Do not "fix" contact back to a button.
+        "actions": all(
+            re.search(r"<(?:a|button)\b[^>]*\bdata-mkt-%%s=" %% m, body)
+            for m in ("contact", "save", "report")),
     }
 report["pages"] = pages
 

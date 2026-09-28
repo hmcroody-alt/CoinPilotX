@@ -58,12 +58,19 @@ import bot  # noqa: E402
 from services import app_links  # noqa: E402
 
 CART_API = "/api/pulse/marketplace/cart"
+STOREFRONT_SCRIPT = "/static/js/pulse_marketplace.js"
 
-# The page's own delegation handler contains the bare selector
-# ``closest('[data-add-to-cart]')`` and is served to sellers too, so a bare
-# substring search reports the button present on every rendering. Only the
-# button carries the attribute with a value.
-ADD_BUTTON = "data-add-to-cart='{listing_id}'"
+# The member page is rendered by ``services/marketplace_storefront.py`` now,
+# through the same ``render_product`` the grid links into, so the control is the
+# storefront's ``data-mkt-add`` rather than the inline page's old
+# ``data-add-to-cart``. The rename is not the point; the button is.
+#
+# Matched as an opening tag and not as a bare attribute, for the reason the old
+# literal carried its value: ``static/js/pulse_marketplace.js`` selects on
+# ``[data-mkt-add]``, so a name-only search would match the handler on a page
+# carrying no button at all.
+def has_add_button(body, listing_id):
+    return re.search(r'<button\b[^>]*\bdata-mkt-add="%d"' % listing_id, body) is not None
 
 
 class WebCartTestCase(unittest.TestCase):
@@ -140,8 +147,17 @@ class WebCartTestCase(unittest.TestCase):
                          "the old promise is back, and nothing on the web completes a purchase")
 
         member_body = self.client.get(f"/pulse/marketplace/{self.listing_id}").get_data(as_text=True)
-        self.assertIn(ADD_BUTTON.format(listing_id=self.listing_id), member_body)
-        self.assertIn(CART_API, member_body)
+        self.assertTrue(has_add_button(member_body, self.listing_id),
+                        "the public page promises a cart the member page does not offer")
+        # The endpoint moved out of the page and into the storefront's script,
+        # so the wiring is asserted as the chain it now is: the page loads that
+        # script, and that script posts to this endpoint. Dropping the
+        # `assertIn(CART_API, member_body)` that used to stand here would have
+        # left the button proven present and connected to nothing.
+        self.assertIn(STOREFRONT_SCRIPT, member_body)
+        with open(os.path.join(REPO, "static", "js", "pulse_marketplace.js"),
+                  encoding="utf-8") as handle:
+            self.assertIn(CART_API, handle.read())
 
     def test_a_seller_is_not_offered_a_button_the_server_would_refuse(self):
         """``cart_add`` answers OWN_LISTING for a seller's own item.
@@ -152,7 +168,7 @@ class WebCartTestCase(unittest.TestCase):
         """
         seller = self.seller_client()
         body = seller.get(f"/pulse/marketplace/{self.listing_id}").get_data(as_text=True)
-        self.assertNotIn(ADD_BUTTON.format(listing_id=self.listing_id), body)
+        self.assertFalse(has_add_button(body, self.listing_id))
 
         refused = self.add(client=seller)
         self.assertEqual(refused.status_code, 400)
