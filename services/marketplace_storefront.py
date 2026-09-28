@@ -743,6 +743,50 @@ def state_block(
     )
 
 
+def cart_link_html(cart_count: Optional[int]) -> str:
+    """The cart entry point, shared by the grid and the product page.
+
+    An ordinary link, server-rendered and not hidden: it works with JavaScript
+    off, because `/pulse/cart` is a real page a GET reaches. Only the *count*
+    inside it is script-updatable, and it ships with the server's own number so
+    the first paint is already correct rather than blank until a fetch lands.
+
+    The count is inside the link's accessible name rather than beside it as a
+    bare number, so a screen reader announces "Your cart, 3 items" instead of
+    "Cart" followed by a stray "3". `aria-hidden` on the visible pill stops it
+    being read twice.
+
+    `None` is the caller's opt-out — a route that could not read the cart — and
+    yields nothing rather than a zero, because a confident "0" from a failed
+    read is a lie about an order in progress.
+
+    One function rather than one per page because `setCartCount` in
+    `pulse_marketplace.js` rewrites every `[data-mkt-cart-link]` in the
+    document from one response. Two hand-written copies of this markup would
+    drift, and the drift would surface as a screen reader announcing a stale
+    basket on whichever page was not updated.
+    """
+    if cart_count is None:
+        return ""
+    count = max(0, int(cart_count))
+    pill = (
+        f'<span class="mkt-cart-count" aria-hidden="true" data-mkt-cart-count>{count}</span>'
+        if count
+        else '<span class="mkt-cart-count" aria-hidden="true" data-mkt-cart-count hidden></span>'
+    )
+    if count == 1:
+        label = "Your cart, 1 item"
+    elif count:
+        label = f"Your cart, {count} items"
+    else:
+        label = "Your cart, empty"
+    return (
+        f'<a class="mkt-cart-link" href="{esc(cart_path())}"'
+        f' data-mkt-cart-link aria-label="{esc(label)}">'
+        f'<span aria-hidden="true">Cart</span>{pill}</a>'
+    )
+
+
 # ---------------------------------------------------------------------------
 # Discovery page
 # ---------------------------------------------------------------------------
@@ -895,34 +939,7 @@ def render_discovery(
             crumbs.append((label, filters.category))
         crumbs_html = _crumbs_html(crumbs, filters)
 
-    # An ordinary link, server-rendered and not hidden: it works with JavaScript
-    # off, because `/pulse/cart` is a real page a GET reaches. Only the *count*
-    # inside it is script-updatable, and it ships with the server's own number so
-    # the first paint is already correct rather than blank until a fetch lands.
-    #
-    # The count is inside the link's accessible name rather than beside it as a
-    # bare number, so a screen reader announces "Cart, 3 items" instead of
-    # "Cart" followed by a stray "3". `aria-hidden` on the visible pill stops it
-    # being read twice.
-    cart_html = ""
-    if cart_count is not None:
-        count = max(0, int(cart_count))
-        pill = (
-            f'<span class="mkt-cart-count" aria-hidden="true" data-mkt-cart-count>{count}</span>'
-            if count
-            else '<span class="mkt-cart-count" aria-hidden="true" data-mkt-cart-count hidden></span>'
-        )
-        if count == 1:
-            label = "Your cart, 1 item"
-        elif count:
-            label = f"Your cart, {count} items"
-        else:
-            label = "Your cart, empty"
-        cart_html = (
-            f'<a class="mkt-cart-link" href="{esc(cart_path())}"'
-            f' data-mkt-cart-link aria-label="{esc(label)}">'
-            f'<span aria-hidden="true">Cart</span>{pill}</a>'
-        )
+    cart_html = cart_link_html(cart_count)
 
     head = (
         f'<header class="mkt-head">{crumbs_html}'
@@ -1058,7 +1075,13 @@ def gallery_html(media: Sequence[mw.MediaItem], *, title: str) -> str:
         active = " is-active" if index == 0 else ""
         thumb_item = mw.MediaItem(url=item.poster or item.url, kind="image")
         thumbs.append(
-            f'<li><a class="mkt-gallery-thumb{active}" role="tab" id="mkt-thumb-{index}"'
+            # `role="presentation"` on the wrapper because a `tablist` has to
+            # own its `tab` children directly. The `<li>` is here so the rail
+            # is a real list in markup, but left unmarked it lands between the
+            # two as a generic element and breaks that relationship -- the
+            # thumbs are then announced without their position in the set.
+            f'<li role="presentation">'
+            f'<a class="mkt-gallery-thumb{active}" role="tab" id="mkt-thumb-{index}"'
             f' href="#mkt-slide-{index}" aria-controls="mkt-slide-{index}"'
             f' aria-selected="{selected}" tabindex="{tabindex}">'
             f"{media_box(thumb_item, alt=f'Show image {index + 1}')}</a></li>"
@@ -1149,6 +1172,7 @@ def options_html(
             entries.append(
                 f'<span class="mkt-option{color_class}">'
                 f'<input type="radio" id="{esc(input_id)}" name="{esc(field_name)}"'
+                f' data-mkt-option="{esc(group.key)}"'
                 f' value="{esc(option.value)}"{checked}{disabled}>'
                 f'<label for="{esc(input_id)}">{swatch}{esc(option.label)}</label>'
                 f"</span>"
@@ -1282,13 +1306,36 @@ def seller_card(
     )
 
 
+#: Kinds that cannot be delivered over a wire, and the ones that can. Only used
+#: to decide whether `delivery_type` contradicts the product it belongs to — not
+#: to infer a delivery method the seller never stated.
+_PHYSICAL_KINDS = frozenset({"physical", "shipped", "shipping", "pickup"})
+_DIGITAL_KINDS = frozenset({"digital", "download", "course", "file"})
+
+
 def fulfilment_html(row: Mapping[str, Any]) -> str:
     """Delivery, returns and payment — only where a column answers.
 
     `estimated_delivery` is empty on every production row, so no delivery window
-    is ever printed. `delivery_type`, `product_type` and `refund_policy` are
-    printed verbatim when set and omitted entirely when not. The payment line is
-    the platform's own policy string, not copy written here.
+    is ever printed. `product_type` and `refund_policy` are printed verbatim when
+    set and omitted entirely when not. The payment line is the platform's own
+    policy string, not copy written here.
+
+    `delivery_type` is the exception, because it cannot be read at face value.
+    `bot.py` declares it `TEXT DEFAULT 'digital'`, so a row where the seller
+    never answered the question is indistinguishable from one where they
+    answered "digital" — and the overwhelmingly common case is the former. Taken
+    verbatim it told a buyer that a physical product was delivered digitally,
+    directly under a "Product type: physical" line this same table had just
+    printed.
+
+    So it is printed only when it does not contradict the type. The precedence
+    is the one the rest of the codebase already applies to this column: a
+    listing's kind is `listing_type or product_type`, and `delivery_type` is the
+    last resort rather than the authority. Where the two disagree, the column
+    default is the likelier explanation than a seller who shipped an aerosol by
+    download, and an omitted row is the honest rendering of an unanswered
+    question. Where they agree, or where no type was set at all, it prints.
     """
     facts: list[tuple[str, str]] = []
     product_type = mw._clean(row.get("product_type"))
@@ -1297,7 +1344,9 @@ def fulfilment_html(row: Mapping[str, Any]) -> str:
     estimated = mw._clean(row.get("estimated_delivery"))
     if product_type:
         facts.append(("Product type", product_type))
-    if delivery:
+    kind = (mw._clean(row.get("listing_type")) or product_type).lower()
+    contradicted = kind in _PHYSICAL_KINDS and delivery.lower() in _DIGITAL_KINDS
+    if delivery and not contradicted:
         facts.append(("Delivery", delivery))
     if estimated:
         facts.append(("Estimated delivery", estimated))
@@ -1378,9 +1427,29 @@ def render_product(
     promote_html: str = "",
     store_href: str = "",
     seller_listing_count: int = 0,
+    cart_count: Optional[int] = None,
     origin: str = mw.PUBLIC_ORIGIN,
 ) -> RenderedPage:
-    """The product detail experience."""
+    """The product detail experience.
+
+    `cart_count` follows `render_discovery`: `None` is the caller's opt-out and
+    suppresses the add-to-cart control entirely, which is what a route that
+    could not read the cart must pass. Otherwise `mw.cart_affordance` decides,
+    and this page obeys it without adding a judgement of its own.
+
+    The grid sends a listing with options here labelled "Choose options", and the
+    picker below is the point of that trip. What this page adds is the *answer*:
+    `mw.cart_affordance` is given the resolved `chosen_variant`, so the quick-add
+    the grid could not offer becomes available here the moment the buyer has
+    actually picked a combination — and the cart line records that combination,
+    because `marketplace_cart_items` now carries a `variant_id` and the route
+    snapshots the variant's own `price_cents`.
+
+    While the picker is incomplete the control is rendered *disabled* rather than
+    omitted, so the script has something to enable as the selection resolves. See
+    the comment at the call site for why omitting it would leave a scripted page
+    permanently without a button.
+    """
     listing_id = int(listing.get("id") or 0)
     title = mw._clean(listing.get("title")) or "Marketplace listing"
     canonical = product_path(listing_id)
@@ -1480,9 +1549,81 @@ def render_product(
     # variant-aware checkout resolves, so no amount ever travels in the form.
     variant_payload = json.dumps([view.as_client_dict() for view in views], sort_keys=True)
 
+    # Add to cart gets its own row above the rest, not a cell in `.mkt-actions`.
+    # That row is a two-column grid built for one primary plus one ghost, and
+    # this is a second primary; sharing the row would either squeeze Message
+    # seller to half width or push Save onto a line of its own. The panel is
+    # itself a gapped grid, so a sibling div needs no margin of its own.
+    #
+    # `.mkt-cta` and not the grid card's `.mkt-add`: the class carries a 12px
+    # font and a translucent fill sized for a tile, and `.mkt-add[data-mkt-added]`
+    # would paint the label mint on the mint gradient. The script binds on the
+    # `data-mkt-add` attribute, so the class is free to differ.
+    #
+    # `hidden` until that script runs, for the same reason the grid's button is:
+    # the add is a `fetch` with no form behind it, so an unhidden one would be a
+    # control a scriptless visitor could press and get nothing from. Unlike the
+    # grid, there is no card-wide link underneath it to swallow the click.
+    buy_action_html = ""
+    if cart_count is not None:
+        affordance, hidden_reason = mw.cart_affordance(
+            listing,
+            price=price,
+            signed_in=viewer.signed_in,
+            viewer_user_id=viewer.user_id,
+            variants=variants,
+            # The selection this page resolved, which is the whole difference
+            # between this call and the grid's. A card cannot answer the options
+            # question and is refused; this page *is* the picker, so once the
+            # buyer has picked it hands the answer over and the button appears.
+            # `None` when the picker is incomplete, which keeps the refusal.
+            chosen_variant=chosen_variant,
+        )
+        # Rendered disabled, not omitted, when the *only* thing missing is a
+        # choice. `needs_choice` is returned last, after every other refusal has
+        # passed, so reaching it means this listing is addable and this buyer may
+        # add it — the single open question is one the page's own picker answers.
+        #
+        # Omitting the button instead would make the scripted page unable to ever
+        # show one: the server renders from the options in the URL, the buyer
+        # changes radios without a round trip, and there would be no element for
+        # the script to enable. A disabled control that becomes live as you choose
+        # is also the honest rendering of the state — it says "there is a way to
+        # buy this, and you are not finished" rather than leaving the buyer to
+        # wonder whether the product is purchasable at all.
+        needs_choice = hidden_reason == mw.CART_HIDDEN_NEEDS_CHOICE
+        if affordance is not None or needs_choice:
+            variant_attr = int(affordance.variant_id) if affordance is not None else 0
+            label = affordance.label if affordance is not None else "Add to cart"
+            disabled = "" if affordance is not None else " disabled"
+            buy_action_html = (
+                '<div class="mkt-actions-buy">'
+                f'<button class="mkt-cta" type="button"'
+                f' data-mkt-add="{int(listing_id)}"'
+                # Always present, `0` for a listing with nothing to choose. The
+                # script reads it verbatim and rewrites it as the picker resolves,
+                # so the field posted is the field shown.
+                f' data-mkt-variant="{variant_attr}"'
+                f"{disabled} hidden>{esc(label)}</button>"
+                "</div>"
+            )
+
     actions: list[str] = []
     seller_id = int(listing.get("seller_user_id") or 0)
     seller_username = mw._clean(listing.get("seller_username"))
+
+    # One filled action per panel. Message seller is the primary when it is the
+    # only way to transact, and steps down to a ghost when Add to cart is
+    # present — two mint gradients stacked would leave the buyer to guess which
+    # one buys the thing, and the answer is never "message".
+    #
+    # "Present" includes the disabled add above, which is deliberate: buying is a
+    # way to transact with this listing, the buyer is simply one radio away from
+    # it, and promoting Message seller would tell them the opposite. The disabled
+    # `.mkt-cta` is painted grey by the stylesheet, so the page carries no mint
+    # gradient at all until the picker resolves — which is the honest state, and
+    # the one that makes the button lighting up mean something.
+    contact_class = "mkt-ghost" if buy_action_html else "mkt-cta"
     if viewer.signed_in and seller_id and not viewer.owns(seller_id):
         # An anchor, not a button, and for a reason. `/pulse/messages/new?q=` is
         # a real page that finds this seller by username, so the primary action
@@ -1494,12 +1635,12 @@ def render_product(
         if seller_username:
             href = f"/pulse/messages/new?q={mw.url_quote(seller_username)}"
             actions.append(
-                f'<a class="mkt-cta" href="{esc(href)}" data-mkt-contact="{seller_id}">'
+                f'<a class="{contact_class}" href="{esc(href)}" data-mkt-contact="{seller_id}">'
                 f"Message seller</a>"
             )
         else:
             actions.append(
-                f'<button class="mkt-cta" type="button" data-mkt-contact="{seller_id}"'
+                f'<button class="{contact_class}" type="button" data-mkt-contact="{seller_id}"'
                 f" hidden>Message seller</button>"
             )
     elif not viewer.signed_in:
@@ -1570,7 +1711,7 @@ def render_product(
     )
     buy_panel = (
         '<section class="mkt-panel" aria-label="Purchase options">'
-        f"{variant_form}{actions_html}{secondary_html}{promote_html}"
+        f"{variant_form}{buy_action_html}{actions_html}{secondary_html}{promote_html}"
         "</section>"
     )
 
@@ -1585,9 +1726,14 @@ def render_product(
             + "</div>"
         )
 
+    # The same cart link the grid carries. Without it an add on this page is a
+    # dead end: the buyer gets "In cart" and no way to reach what they added,
+    # because the shell around this body has no commerce chrome of its own.
     info = (
         '<div class="mkt-detail-info">'
-        f'<header class="mkt-head"><h1 class="mkt-title">{esc(title)}</h1>{badge_row}</header>'
+        f'<header class="mkt-head">'
+        f'<div class="mkt-head-row"><h1 class="mkt-title">{esc(title)}</h1>'
+        f"{cart_link_html(cart_count)}</div>{badge_row}</header>"
         f"{buy_panel}"
         f"{app_cta_html}"
         f"{seller_card(listing, viewer=viewer, store_href=store_href, listing_count=seller_listing_count)}"

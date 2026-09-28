@@ -929,16 +929,22 @@ CART_HIDDEN_OWN_LISTING = "own_listing"  # OWN_LISTING
 CART_HIDDEN_UNAVAILABLE = "unavailable"  # SELLER_UNAVAILABLE / OUT_OF_STOCK, 409
 CART_HIDDEN_NO_PRICE = "no_price"        # ITEM_UNAVAILABLE, 400, price_minor <= 0
 
-#: The one reason in this list that does *not* mirror a server refusal, because
-#: there is no server refusal to mirror: `POST /api/pulse/marketplace/cart` takes
-#: a `listing_id` and a `qty` and has no concept of a variant at all — grep
-#: `marketplace_cart_routes.py` for "variant" and it returns nothing. So a
-#: one-tap add on a listing that sells four sizes does not fail; it succeeds, and
-#: books a line that names no size. The cart then prices it from the listing
-#: rather than from the variant the buyer never chose.
+#: The listing asks a question the caller has not answered. This one *does* mirror
+#: a server refusal now — ``POST /api/pulse/marketplace/cart`` answers 400
+#: ``VARIANT_REQUIRED`` for an add that names no variant on a listing that
+#: requires one, from its own ``_listing_needs_variant``, which calls
+#: ``requires_variant_choice`` below rather than restating it.
 #:
-#: Withholding the quick-add here is therefore not a UI preference. It is the
-#: only place in this lane where the guess can be declined.
+#: It used to mirror nothing, because there was nothing to mirror: the route took
+#: a ``listing_id`` and a ``qty`` and had no concept of a variant, so a one-tap add
+#: on a listing selling four sizes did not fail — it succeeded, and booked a line
+#: naming no size, priced from the listing's ``price_label``. Withholding the
+#: control was the only place in the lane where that guess could be declined.
+#:
+#: Now it is declined at the till, which is what lets a *selected* variant through:
+#: the question is no longer "does this listing have options" but "has this caller
+#: answered them". A grid card can never answer, so it still gets this reason and
+#: still links to the page; the product page can, and does.
 CART_HIDDEN_NEEDS_CHOICE = "needs_choice"
 
 
@@ -946,14 +952,20 @@ CART_HIDDEN_NEEDS_CHOICE = "needs_choice"
 class CartAffordance:
     """The add-to-cart control a card may show, as facts rather than markup.
 
-    ``listing_id`` is what the control posts. ``label`` is what it reads. Nothing
-    here is a permission: ``POST /api/pulse/marketplace/cart`` re-derives every
-    one of the four refusals below on the way through, so this only decides
+    ``listing_id`` is what the control posts. ``variant_id`` is posted with it —
+    ``0`` when the listing has nothing to choose, matching
+    ``marketplace_cart_schema.NO_VARIANT``, so the control carries one shape and
+    the caller never has to decide whether to include the field. ``label`` is what
+    it reads.
+
+    Nothing here is a permission: ``POST /api/pulse/marketplace/cart`` re-derives
+    every one of the refusals below on the way through, so this only decides
     whether a buyer is offered a button they can expect to work.
     """
 
     listing_id: int
     label: str = "Add to cart"
+    variant_id: int = 0
 
 
 def requires_variant_choice(
@@ -1000,6 +1012,7 @@ def cart_affordance(
     signed_in: bool,
     viewer_user_id: Any = 0,
     variants: Sequence[Mapping[str, Any]] = (),
+    chosen_variant: Optional["VariantView"] = None,
 ) -> tuple[Optional[CartAffordance], str]:
     """``(affordance, hidden_reason)`` — one of the two is always empty.
 
@@ -1023,12 +1036,20 @@ def cart_affordance(
       variants and label the card prints, so the button is offered only where the
       page is already willing to name a number.
 
-    Then one check that mirrors nothing, because nothing downstream performs it:
-    a listing that has options to pick is refused the quick-add entirely. See
-    ``CART_HIDDEN_NEEDS_CHOICE`` — the cart API would accept that add and record
-    a line naming no variant. This is the only reason in the list that the caller
-    is expected to *render* rather than simply obey, so it is returned last and
-    kept distinct from ``CART_HIDDEN_UNAVAILABLE`` instead of being folded in.
+    Then one check about the caller rather than the listing: a listing with
+    options to pick is refused the quick-add *unless the caller has picked*.
+    ``chosen_variant`` is how a caller answers — a fully resolved
+    ``VariantView``, which only the product page can produce, because only the
+    product page has a picker. A grid card passes nothing and is refused, which is
+    right: it has no selection state and its job is to link to the page.
+
+    Passing a variant is not a way around the check. It must be *available* and it
+    must be one of the rows in ``variants``, so a caller cannot manufacture a
+    selection, and the route re-validates the id against the listing before
+    pricing anything. See ``CART_HIDDEN_NEEDS_CHOICE``. This is the only reason in
+    the list that the caller is expected to *render* rather than simply obey, so it
+    is returned last and kept distinct from ``CART_HIDDEN_UNAVAILABLE`` instead of
+    being folded in.
 
     Where this module and the route could disagree, the button is withheld:
     a missing button costs a buyer one tap through the app, and an offered button
@@ -1073,8 +1094,38 @@ def cart_affordance(
     # and the caller distinguishes the two — the reasons above render nothing,
     # this one renders a way through to the picker.
     if requires_variant_choice(variants, price=price):
-        return None, CART_HIDDEN_NEEDS_CHOICE
+        chosen = _accepted_choice(chosen_variant, variants)
+        if chosen is None:
+            return None, CART_HIDDEN_NEEDS_CHOICE
+        return CartAffordance(listing_id=listing_id, variant_id=chosen), ""
     return CartAffordance(listing_id=listing_id), ""
+
+
+def _accepted_choice(
+    chosen: Optional["VariantView"], variants: Sequence[Mapping[str, Any]]
+) -> Optional[int]:
+    """The variant id a selection may be added under, or ``None`` to keep refusing.
+
+    Three ways a passed-in choice is not one, and each is deliberate:
+
+    * No variant, or one with no id. An unresolved picker — the buyer has chosen
+      Colour but not Size — is exactly the state the refusal exists for.
+    * Not available. Offering "Add to cart" on the one combination that is sold
+      out is worse than offering nothing, because it reads as though the page
+      checked. The route answers 409 ``OUT_OF_STOCK`` for it too.
+    * Not one of ``variants``. The caller supplies both arguments, so this is not
+      a trust boundary — the route's own ``_load_variant`` is. It is a consistency
+      check: a resolved variant that is not in the set this decision was made
+      against means the two were derived from different reads, and the honest
+      answer to a disagreement about what is for sale is to withhold the button.
+    """
+    if chosen is None:
+        return None
+    variant_id = int(getattr(chosen, "variant_id", 0) or 0)
+    if variant_id <= 0 or not getattr(chosen, "available", False):
+        return None
+    known = {int((v or {}).get("id") or 0) for v in variants}
+    return variant_id if variant_id in known else None
 
 
 # ---------------------------------------------------------------------------

@@ -2696,6 +2696,44 @@ body.pulse-home-os .create-sheet-grid a {
   }
 }
 
+/* The dock is a phone control, and above it declares itself universal.
+ *
+ * `body.pulse-home-os .mobile-bottom-nav.pulse-universal-dock` opens with
+ * `display: grid !important` and no media query. The class is added at runtime
+ * by `pulse_universal_dock_runtime_script`, on every page, so that
+ * unconditional `!important` outranks the shell's own conditional
+ * `display: grid` inside `@media (max-width: 900px)` at every width -- the
+ * shell's breakpoint never reached this element and the dock rode along from
+ * 390px to 1920px.
+ *
+ * `pulse_desktop_shell.css` already reverses that, with the same selector and
+ * the same floor. But only Home loads that sheet. Marketplace loads this one
+ * and not that one, so the fix never reached it: a product page at 1440px drew
+ * the desktop top bar, the left navigation rail *and* the floating phone dock
+ * -- three navigations carrying overlapping destinations.
+ *
+ * So the cure goes where the cause is. Every page that loads the unconditional
+ * rule above now also loads its suppression, instead of depending on a second
+ * sheet it may never request.
+ *
+ * 1024px and not 901px deliberately, even though the shell reveals the dock
+ * only up to 900px and the band between therefore still shows two. From 901 to
+ * 1023 the shell's `.nav` strip is the only other navigation, and
+ * `pulse_desktop_feed.css` hides `.pulse-desktop-topbar` below 1024 with
+ * `!important` -- so a 901px floor here would sit one edit away from a band
+ * with no way out. 1024 is the number `pulse_desktop_shell.css` already chose
+ * and that `test_the_top_bar_appears_exactly_where_the_stylesheet_stops_hiding_it`
+ * already pins; two sheets agreeing beats a third opinion.
+ *
+ * `display` alone. Not `visibility`, not a transform off-screen: the dock has
+ * to leave the layout, not linger as an invisible 72px tap target across the
+ * foot of a page that believes it has the width to itself. */
+@media (min-width: 1024px) {
+  html body.pulse-home-os .mobile-bottom-nav.pulse-universal-dock {
+    display: none !important;
+  }
+}
+
 @media (max-width: 520px) {
   body.pulse-home-os .mobile-bottom-nav.pulse-universal-dock {
     width: calc(100vw - 18px) !important;
