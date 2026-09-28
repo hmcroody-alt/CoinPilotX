@@ -69,7 +69,9 @@ REASON_CONTEXT = "related_to_this_post"
 #: Two codes rather than one generic "related to this" because the reason string
 #: is the user-visible claim, and "related to this post" under a product is a
 #: false statement about what the engine matched on. Which one applies is the
-#: caller's to declare — see ``context_reason`` on :func:`choose_reason`.
+#: caller's to declare — see ``context_reason`` on :func:`choose_reason`, which
+#: also takes ``None`` for a surface where *neither* wording is true because
+#: there is nothing on screen for the card to be related to.
 REASON_SIMILAR_PRODUCT = "similar_to_this_product"
 REASON_SELLER_FOLLOWED = "from_sellers_you_follow"
 REASON_TRENDING = "trending"
@@ -91,6 +93,16 @@ REASON_PRIORITY = (
     REASON_EXPLORE,
     REASON_POPULAR,
 )
+
+#: How well a card must match the content before a relatedness claim is allowed.
+#:
+#: Extracted from a literal inside :func:`choose_reason` because a second reader
+#: arrived: ``relationship.classify`` decides whether a placement's recorded
+#: provenance is ``contextual`` using the same test. Two copies of ``0.6`` would
+#: be one edit away from a card that says "Related to this post" while its own
+#: audit row says the context never matched — which is the conflation the
+#: relationship axis was added to remove, reintroduced one layer down.
+CONTEXT_CLAIM_MIN_RELEVANCE = 0.6
 
 
 #: The only score terms that may be named to a user.
@@ -315,11 +327,25 @@ def conversion_probability(stats: Optional[Mapping[str, Any]]) -> float:
     strength (``PRIOR_N``) is what makes early data cheap to overrule and late
     data expensive to, which is the correct direction when the whole table has
     three figures of history.
+
+    Measured over the recent window when that window carries enough impressions
+    to mean anything, and over lifetime otherwise. The switch is one-directional
+    and volume-gated on purpose: a listing whose performance has collapsed should
+    be judged on the collapse, but a listing with four impressions this week must
+    not be judged on four impressions — that is noise wearing the authority of a
+    rate. Below the gate the lifetime figure is strictly more information, so it
+    wins; above it, recency is.
     """
     if not stats:
         return NEUTRAL
     impressions = float(stats.get("impressions") or 0)
     clicks = float(stats.get("clicks") or 0)
+
+    recent_impressions = float(stats.get("recent_impressions") or 0)
+    if recent_impressions >= config.conversion_window_min_impressions():
+        impressions = recent_impressions
+        clicks = float(stats.get("recent_clicks") or 0)
+
     if impressions <= 0:
         return NEUTRAL
     PRIOR_N = 50.0
@@ -377,9 +403,22 @@ def exploration_bonus(stats: Optional[Mapping[str, Any]]) -> float:
 def repetition_penalty(recent_impressions: int) -> float:
     """How much this viewer has already seen *this listing*.
 
-    Saturates at the configured cap, at which point the frequency filter in
-    ``engine.py`` has removed the listing anyway — so the penalty's job is only
-    to de-rank on the way there, not to be the enforcement.
+    Saturates at the configured cap, which is the right shape *because* the cap
+    is enforced elsewhere: :func:`pool._reject` drops an at-cap listing outright,
+    so the penalty's job is only to de-rank on the way there.
+
+    The saturation is therefore load-bearing in one direction only. It must not
+    be read as "four sightings and forty are equally bad" — the pool guarantees
+    there is no fortieth. Until that guarantee existed this docstring was false,
+    and the saturation it describes was the whole of the frequency control: on
+    the shopping surfaces, where the relevance floor is lowest and ``pool.build``
+    relaxes the cooldown to a quarter, products were measured reaching five
+    sightings against a cap of three.
+
+    ``config.product_cap()`` is the global default here, not the per-surface
+    value the pool enforces. The difference only scales the slope of a penalty
+    that saturates anyway, and passing a surface down into a pure scoring
+    function to sharpen a gradient would be a poor trade for the coupling.
     """
     cap = max(1, config.product_cap())
     return _clamp(float(recent_impressions) / float(cap))
@@ -537,6 +576,125 @@ def seller_risk(listing: Mapping[str, Any]) -> float:
         return 0.0
 
 
+# --- diversity --------------------------------------------------------------
+#: What one already-chosen placement costs a candidate that matches it. Tuned so
+#: that a single overlap de-ranks without excluding (0.30 of the diversity term,
+#: weighted 0.07, moves a score by ~0.02 — enough to reorder two close
+#: candidates, not enough to beat a genuinely better answer), while the
+#: combination a user actually complains about — same seller *and* same shelf —
+#: costs 0.70 and reliably loses to any unrelated candidate within reach.
+#:
+#: Same-seller is the heavier of the two because a repeated seller is legible as
+#: a repeated seller ("why is this shop following me"), whereas a repeated shelf
+#: from two different shops reads as the category being popular.
+DIVERSITY_PENALTIES = {
+    "category": 0.30,
+    "segment": 0.15,
+    "seller": 0.40,
+}
+
+
+def diversity_factor(
+    *,
+    seller_id: int,
+    category_key: str,
+    segment_root: str,
+    chosen: Sequence[Mapping[str, Any]],
+) -> float:
+    """How different this candidate is from the response so far, in ``[0, 1]``.
+
+    ``1.0`` means nothing already chosen resembles it; ``0.0`` means the response
+    is already saturated with things like it. ``chosen`` holds one mapping per
+    placement already taken, with the same three keys this function is given.
+
+    Category and segment are deliberately *exclusive*: two listings on the same
+    leaf shelf are also in the same aisle, and charging both would make the leaf
+    penalty 0.45 while the aisle penalty stayed 0.15, so the ratio between "same
+    shelf" and "same aisle" would be an accident of addition rather than a
+    decision. Same shelf costs 0.30 and that is the whole of it.
+
+    Seller is additive on top, because "same seller" and "same category" are
+    independent facts about a response — two rings from two shops and two
+    unrelated items from one shop are different complaints, and a response that
+    is both is worse than either.
+
+    A candidate with no category has no category overlap by construction; see
+    ``taxonomy.category_key`` for why that is the right answer rather than a
+    shared "unknown" bucket.
+    """
+    penalty = 0.0
+    for other in chosen:
+        if category_key and other.get("category_key") == category_key:
+            penalty += DIVERSITY_PENALTIES["category"]
+        elif segment_root and other.get("segment_root") == segment_root:
+            penalty += DIVERSITY_PENALTIES["segment"]
+        if seller_id and int(other.get("seller_id") or 0) == seller_id:
+            penalty += DIVERSITY_PENALTIES["seller"]
+    return _clamp(1.0 - penalty)
+
+
+def rescore_diversity(
+    verdict: dict,
+    diversity: float,
+    *,
+    weights: Optional[Mapping[str, float]] = None,
+) -> dict:
+    """A new verdict with ``diversity_bonus`` replaced and ``score`` recomputed.
+
+    Exists because diversity is the one signal that cannot be known when
+    :func:`score_listing` runs: it is a property of the candidate *and the
+    partial response*, and the partial response does not exist until selection
+    is underway. Every other signal is a property of the listing, the viewer, or
+    their shared history, all of which are facts before ranking starts.
+
+    Returns a new dict and does not mutate ``verdict``. The previous
+    implementation of this idea mutated ``signals["diversity_bonus"]`` in place
+    after ``score`` and ``contributions`` had already been computed from the old
+    value, which left a persisted ``score_breakdown_json`` whose two halves
+    disagreed: ``signals`` said the term had fired and ``contributions`` — which
+    is what ``explain()`` reads — said it had not.
+
+    The score moves by the *delta* on this one term rather than being recomputed
+    from the whole signal vector, and that is deliberate on two counts. It is
+    exact — no rounding drift, so passing back the diversity a verdict already
+    carries returns the identical score, which is what makes this safe to call on
+    every candidate on every pass of the selection loop. And it does not require
+    ``signals`` to be complete: a caller holding a verdict with a partial signal
+    vector gets its score adjusted rather than replaced by the sum of the handful
+    of signals it happened to include.
+
+    The previous diversity is read from ``signals`` and defaults to the ``1.0``
+    that :func:`score_listing` uses, so the first adjustment of a fresh verdict is
+    measured from neutral.
+
+    A verdict whose raw weighted sum exceeded 1.0 was clamped on the way out, so
+    a penalty applied here is subtracted from the clamp rather than from the sum
+    and is to that extent understated. With the shipped weights the sum does not
+    approach 1.0; the alternative is storing an unclamped score purely to survive
+    a case that does not occur.
+    """
+    resolved = dict(config.DEFAULT_WEIGHTS)
+    resolved.update(weights if weights is not None else config.weights())
+    weight = resolved.get("diversity_bonus", 0.0)
+    positive_mass = sum(w for w in resolved.values() if w > 0) or 1.0
+
+    signals = dict(verdict.get("signals") or {})
+    previous = _clamp(float(signals.get("diversity_bonus", 1.0)))
+    current = _clamp(diversity)
+
+    contributions = dict(verdict.get("contributions") or {})
+    signals["diversity_bonus"] = round(current, 4)
+    contributions["diversity_bonus"] = round(weight * current, 4)
+
+    updated = dict(verdict)
+    updated["signals"] = signals
+    updated["contributions"] = contributions
+    updated["score"] = _clamp(
+        float(verdict.get("score") or 0.0) + (weight * (current - previous)) / positive_mass
+    )
+    return updated
+
+
 # --- composition ------------------------------------------------------------
 def score_listing(
     listing: Mapping[str, Any],
@@ -566,7 +724,7 @@ def score_listing(
     parse_iso=None,
     now=None,
     weights: Optional[Mapping[str, float]] = None,
-    context_reason: str = REASON_CONTEXT,
+    context_reason: Optional[str] = REASON_CONTEXT,
 ) -> dict:
     """``{score, reason, signals, contributions}`` for one listing.
 
@@ -637,7 +795,7 @@ def choose_reason(
     stats: Optional[Mapping[str, Any]] = None,
     has_context: bool = False,
     viewed_categories: Sequence[str] = (),
-    context_reason: str = REASON_CONTEXT,
+    context_reason: Optional[str] = REASON_CONTEXT,
 ) -> str:
     """The most specific *true* explanation, never the most flattering one.
 
@@ -646,13 +804,26 @@ def choose_reason(
     a card labelled "Because you viewed Shoes" for someone who never viewed
     shoes is worse than no label, because it is a claim about the user's own
     history that they can check.
+
+    ``context_reason`` is the caller's declaration of what the context *was*, and
+    ``None`` is a legitimate answer: a Messenger strip and a Marketplace shelf
+    have no post and no product on screen, so a relatedness claim there names
+    nothing the viewer can look at. A card with no context claim is not
+    unexplained — it still earns one of the reasons below, or "popular".
     """
     claims: set[str] = set()
 
     if viewed_categories and _tokens(listing.get("category")) & _tokens(*viewed_categories):
         claims.add(REASON_BECAUSE_YOU_VIEWED)
-    if has_context and signals.get("relevance", 0.0) >= 0.6:
-        claims.add(context_reason if context_reason in REASON_PRIORITY else REASON_CONTEXT)
+    # An unregistered code drops the claim rather than substituting
+    # `REASON_CONTEXT`. The substitution was the wrong direction for a fallback:
+    # it answered an unrecognised declaration with the single most specific claim
+    # in the vocabulary, so a typo or a newly added surface got "related to this
+    # post" by default — the one failure this module's docstring names. Silence is
+    # the safe answer to "I don't know what to call this".
+    if (has_context and context_reason in REASON_PRIORITY
+            and signals.get("relevance", 0.0) >= CONTEXT_CLAIM_MIN_RELEVANCE):
+        claims.add(context_reason)
     try:
         if int(listing.get("seller_user_id") or 0) in followed_sellers:
             claims.add(REASON_SELLER_FOLLOWED)
@@ -662,7 +833,11 @@ def choose_reason(
         claims.add(REASON_MATCHES_INTERESTS)
     if signals.get("freshness", 0.0) >= 0.8:
         claims.add(REASON_NEW_ARRIVAL)
-    if stats and float(stats.get("clicks") or 0) >= 10:
+    # Clicks inside the trend window, not clicks ever. A lifetime counter only
+    # rises, so the old form made "trending" a permanent property a listing
+    # earned once and could never lose — an explanation the user has no way to
+    # falsify, which is the definition of a caption rather than a claim.
+    if stats and float(stats.get("recent_clicks") or 0) >= config.trend_min_clicks():
         claims.add(REASON_TRENDING)
     if signals.get("exploration_bonus", 0.0) >= 0.9:
         claims.add(REASON_EXPLORE)

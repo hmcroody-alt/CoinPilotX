@@ -126,12 +126,18 @@ class TestTheRowNeverContainsItsOwnProduct:
         """
         anchor = sorted(ids_of(market.serve("product_detail")))[0]
 
+        # The stub drops `excluded_ids` and forwards everything else untouched.
+        # `*args, **kwargs` rather than a fixed parameter list, because a stub
+        # that restates the signature makes every future argument to the real
+        # function a TypeError here — and `engine.serve` catches broadly, so that
+        # TypeError presents as an empty surface rather than as a failure anyone
+        # can read. It did exactly that when `product_cap` was added.
         real = pool._hard_exclusions
         monkeypatch.setattr(
             pool,
             "_hard_exclusions",
-            lambda policy, state, cooldown, excluded_ids=frozenset(): real(
-                policy, state, cooldown, frozenset()
+            lambda policy, state, cooldown, _excluded=frozenset(), *args, **kwargs: real(
+                policy, state, cooldown, frozenset(), *args, **kwargs
             ),
         )
         placements = market.serve("product_detail", exclude_listing_ids=(anchor,))
@@ -178,8 +184,12 @@ class TestTheRelatednessClaimIsTrue:
             assert placement["reason"] != ranking.REASON_SIMILAR_PRODUCT
 
     def test_both_context_reasons_are_known_to_the_priority_order(self):
-        # `choose_reason` falls back to the post wording for a code it does not
-        # recognise, so an unregistered code would silently reintroduce exactly
-        # the mislabelling this file is about.
+        # `choose_reason` drops a code it does not recognise, so an unregistered
+        # code would take the relatedness claim off this surface entirely — the
+        # product page would serve the same row under "popular". It used to
+        # substitute the *post* wording instead, which reintroduced exactly the
+        # mislabelling this file is about; see
+        # `TestARelatednessClaimNamesSomethingOnScreen` in
+        # `test_signals_tell_the_truth.py` for why silence is the safer fallback.
         assert ranking.REASON_SIMILAR_PRODUCT in ranking.REASON_PRIORITY
         assert ranking.REASON_CONTEXT in ranking.REASON_PRIORITY

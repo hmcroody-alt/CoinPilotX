@@ -140,6 +140,19 @@ export function usePostDetailCommerce({
       sessionId,
       limit: LOCAL_CADENCE.maxPerPage,
       cadence: LOCAL_CADENCE,
+      // Unconditional, and not part of the context. `postId > 0` is already a
+      // precondition of `enabled`, so there is no "sent empty" case to guard.
+      //
+      // Sent so the server can judge the post rather than this module's summary
+      // of it. `postCommerceContext` caps every field at 80 characters — rightly,
+      // it is a ranking signal on a wire — and a bereavement post routinely opens
+      // with a paragraph of thanks, so the words the suitability rule exists to
+      // catch fall past the cut. Measured: the full body reads SENSITIVE_CONTEXT
+      // and the 80 characters that reach the server read PERMITTED. The id costs
+      // one indexed row read and closes that, along with `post_type`,
+      // `moderation_status` and `risk_score`, none of which a client sends or
+      // should be trusted to.
+      postId,
       // Omitted rather than sent empty when the post says nothing: an absent
       // context and a context that matches nothing score differently, and only
       // one of them is an honest description of a post with no readable subject.

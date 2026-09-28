@@ -185,15 +185,23 @@ describe("product_view", () => {
 });
 
 describe("add_to_cart", () => {
-  it("reports the line total, not the unit price", async () => {
-    // A discovery-driven basket of three must not be reported as a basket of
-    // one: §18's value is what the funnel is measured in.
+  it("reports the count, and leaves the pricing to the server", async () => {
+    // A discovery-driven basket of two must not be reported as a basket of one:
+    // §18's value is what the funnel is measured in. This screen used to compute
+    // that value — `unitMinor * qty`, on the device — and send it. It no longer
+    // does: a client that can state an amount is a client that can inflate the
+    // revenue credited to a placement, so the server prices the event from the
+    // listing row it already has.
+    //
+    // The count stays, because the server cannot always derive it: "Buy now"
+    // bypasses the cart, so there is no cart row to read. `toEqual` on the whole
+    // options object is what keeps the price from creeping back in.
     arriveFromACommerceCard();
     const { getByLabelText } = renderProduct();
     fireEvent.press(getByLabelText("Increase quantity"));
     fireEvent.press(getByLabelText("Add 2 to cart"));
     await waitFor(() => expect(emitsOf("add_to_cart")).toHaveLength(1));
-    expect(emitsOf("add_to_cart")[0][2]).toEqual({ valueMinor: 5400, currency: "USD" });
+    expect(emitsOf("add_to_cart")[0][2]).toEqual({ quantity: 2 });
   });
 
   it("reports nothing for an organic add to cart", async () => {
@@ -229,13 +237,16 @@ describe("add_to_cart", () => {
 });
 
 describe("checkout_started", () => {
-  it("reports the checkout the buyer is entering, with the line total", async () => {
+  it("reports the checkout the buyer is entering, and how many of it", async () => {
+    // Buy now writes no cart row, so this count is the only quantity the server
+    // will ever see for the event. It is a claim, and the server clamps it to the
+    // listing's stock — but dropping it would report every Buy Now of two as one.
     arriveFromACommerceCard();
     const { getByLabelText } = renderProduct();
     fireEvent.press(getByLabelText("Increase quantity"));
     fireEvent.press(getByLabelText("Buy now"));
     await waitFor(() => expect(emitsOf("checkout_started")).toHaveLength(1));
-    expect(emitsOf("checkout_started")[0][2]).toEqual({ valueMinor: 5400, currency: "USD" });
+    expect(emitsOf("checkout_started")[0][2]).toEqual({ quantity: 2 });
   });
 
   it("still navigates to checkout", async () => {

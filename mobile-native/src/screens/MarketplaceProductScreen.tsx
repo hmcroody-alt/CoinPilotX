@@ -193,22 +193,25 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
   /**
    * One funnel emit, or nothing at all.
    *
-   * Every §18 event past the view goes through here so the three rules that
-   * make them safe are stated once: an unattributed arrival sends nothing, the
-   * beacon never throws into a buyer action, and the quantity on screen is what
-   * multiplies the price. A fire-and-forget call inside a purchase flow is
-   * exactly the kind of thing that must not be able to fail loudly.
+   * Every §18 event past the view goes through here so the two rules that make
+   * them safe are stated once: an unattributed arrival sends nothing, and the
+   * beacon never throws into a buyer action. A fire-and-forget call inside a
+   * purchase flow is exactly the kind of thing that must not be able to fail
+   * loudly.
+   *
+   * It no longer multiplies the price out. It used to send `unitMinor * qty` as
+   * the event's value, which made this screen the authority on what a placement
+   * earned — a number computed on the device, stored verbatim, and eventually
+   * summed by somebody. The server now prices the event from the listing and
+   * needs only the quantity, which it clamps to the listing's stock.
    */
   const emitCommerceFunnel = useCallback(
-    (action: CommerceEngagementAction, unitMinor: number | null | undefined) => {
+    (action: CommerceEngagementAction) => {
       const attribution = commerceAttributionFor(listingId);
       if (!attribution) return;
-      recordCommerceEngagement(attribution, action, {
-        valueMinor: unitMinor == null ? 0 : unitMinor * qty,
-        currency: listing?.currency || "USD"
-      }).catch(() => undefined);
+      recordCommerceEngagement(attribution, action, { quantity: qty }).catch(() => undefined);
     },
-    [listing?.currency, listingId, qty]
+    [listingId, qty]
   );
 
   /**
@@ -388,10 +391,10 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
       // them to checkout here is the bug this screen exists to remove.
       await addToCart(listingId, qty);
       setNotice(`Added to cart · ${qty} × ${listing.title || "item"}`);
-      // §18, after the await: an add-to-cart that failed is not one. The value
-      // is the line total rather than the unit price, so a discovery-driven
-      // basket of three is not reported as a basket of one.
-      emitCommerceFunnel("add_to_cart", marketplaceListingPriceMinor(listing));
+      // §18, after the await: an add-to-cart that failed is not one. Emitting
+      // after the cart write also means the server can read its own cart row for
+      // the quantity and ignore the claim entirely.
+      emitCommerceFunnel("add_to_cart");
     } catch (error) {
       setNotice(buyerErrorCopy(error, "This item could not be added to your cart."));
     } finally {
@@ -407,15 +410,20 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
     }
     // Buy now bypasses the cart entirely — the backend's `buy_now` intent, not a
     // cart group of one, so nothing already in the cart is dragged into it.
-    // The unit price is multiplied out here: passing the bare label would have
-    // let the checkout CTA read "$5.00" on an order for two.
+    // The unit price is multiplied out for the checkout CTA below: passing the
+    // bare label would have let it read "$5.00" on an order for two. It is
+    // deliberately *not* passed to the funnel event — that price is the
+    // server's to resolve, from the same listing row, through the same parser
+    // the eligibility gate uses.
     const unitMinor = marketplaceListingPriceMinor(listing);
     // §18. Emitted here, on the way *into* checkout, rather than from
     // `MarketplaceCheckoutScreen` — checkout is a locked path this work must not
     // touch, and "the buyer started checkout" is a fact this screen already
     // knows. `purchase` has no equivalent safe hook point and is deliberately
-    // not wired; see the mission report.
-    emitCommerceFunnel("checkout_started", unitMinor);
+    // not wired; see the mission report. Buy now writes no cart row, so the
+    // server has no quantity of its own here and falls back to the clamped
+    // claim `emitCommerceFunnel` sends.
+    emitCommerceFunnel("checkout_started");
     const kind = resolveFulfillmentKind(listing);
     const thumbnail = marketplaceListingThumbnail(listing);
     navigation.navigate("MarketplaceCheckout", {

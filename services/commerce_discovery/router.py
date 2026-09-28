@@ -50,14 +50,30 @@ class SurfacePolicy:
     surface: str
     #: Placements from one seller inside a single response.
     max_per_seller: int
-    #: Placements in one category inside a single response.
+    #: Placements on one leaf category path inside a single response.
     max_per_category: int
+    #: Placements in one top-level category segment inside a single response.
+    #: Coarser than ``max_per_category`` and never larger: it is the cap that
+    #: notices "four different women's-clothing shelves" when the leaf cap sees
+    #: four unrelated buckets. See ``taxonomy`` for why both keys exist.
+    max_per_segment: int
     #: Seconds a product stays out of *this* surface after being shown here.
     product_cooldown_seconds: int
     #: Seconds a product stays out after being shown on a *different* surface.
     cross_surface_cooldown_seconds: int
     #: Seconds any product from one seller keeps that seller quiet.
     seller_cooldown_seconds: int
+    #: Times one product may be shown to this viewer *in total* inside
+    #: ``config.product_window_seconds()``, counted across every surface rather
+    #: than just this one.
+    #:
+    #: Distinct from ``product_cooldown_seconds`` in kind, not degree. A cooldown
+    #: is spacing, and spacing is a preference that yields to scarcity — which is
+    #: why ``pool.build``'s ladder relaxes it on a thin catalogue. This is volume,
+    #: and it does not yield: a catalogue too small to space products out is not a
+    #: reason to show the same product a sixth time. Enforced in ``pool._reject``
+    #: as a drop, never as a penalty.
+    product_cap: int
     #: Candidates the pool tries to hold for this surface.
     pool_target: int
 
@@ -116,6 +132,68 @@ _CATEGORY_CAPS = {
     "product_detail": 6,
 }
 
+#: Placements permitted from one *top-level* category segment. Roughly half the
+#: response budget on every surface that has room for a choice, which is the
+#: weakest statement worth making: it forbids a response that is mostly one
+#: aisle without pretending to know which two aisles a shopper wants.
+#:
+#: These exist because the leaf caps above were unable to fire at all on the
+#: production catalogue. Measured 2026-09-27 on the 15 eligible listings: the
+#: largest leaf bucket held 3 against Marketplace's cap of 4, while
+#: ``womens clothing`` held 6 of the 15. Feed was worse — a budget of 2 against a
+#: leaf cap of 3 cannot reach the cap by arithmetic, so the surface had no
+#: operative category control whatsoever.
+#:
+#: Written as constants rather than env vars for the same reason the caps above
+#: are: four absolute knobs are four chances to set one and forget three, and
+#: ``fit_to_pool`` already adapts them to whatever diversity the catalogue holds.
+_SEGMENT_CAPS = {
+    # Budget 2. One apiece, so the pair is two aisles whenever the catalogue can
+    # supply two. `fit_to_pool` restores 2 on a single-aisle catalogue.
+    "feed": 1,
+    # Budget 1 both. The cap is unreachable and named only so that a future
+    # budget increase inherits a policy instead of inheriting a gap — which is
+    # exactly how the leaf caps came to be dead.
+    "reels": 1,
+    "messenger": 1,
+    # Budget 8. Half the shop's response may be one aisle; the rest must not be.
+    "marketplace": 4,
+    "post_detail": 1,
+    # Budget 6, and deliberately the whole row, for the same reason
+    # `_CATEGORY_CAPS` is: on a product page, aisle similarity *is* the feature.
+    # Seller diversity is what this surface protects, via `_SELLER_CAPS`.
+    "product_detail": 6,
+}
+
+
+#: Multipliers on ``config.product_cap()`` — how many total sightings of one
+#: product this surface tolerates. Factors rather than absolute values for the
+#: same reason ``_COOLDOWN_FACTORS`` are: an operator who tightens the global cap
+#: should get a proportionally quieter Reels without editing six numbers.
+#:
+#: The split is between surfaces the user came to *shop* and surfaces they came
+#: to do something else. Seeing the same jacket a fourth time while browsing a
+#: shop is how shops work; seeing it a fourth time between two friends' posts is
+#: the failure this pipeline exists to prevent. Because the underlying count is
+#: cross-surface, a shopper who uses up the shop's allowance also goes quiet in
+#: the feed — which is the intended direction: the feed should back off for
+#: somebody already seeing the product elsewhere.
+_PRODUCT_CAP_FACTORS = {
+    "feed": 1.0,
+    # The most interruptive surface in the app, and the one with the highest
+    # relevance floor. Two sightings is already generous for a full-screen
+    # interstitial between videos the user chose to watch.
+    "reels": 0.67,
+    "messenger": 0.67,
+    # The shop. Re-encountering a product while browsing a catalogue is not
+    # repetition, it is navigation.
+    "marketplace": 2.0,
+    "product_detail": 2.0,
+    # One card under a post the user opened deliberately. Between the feed's
+    # tolerance and Reels'.
+    "post_detail": 1.0,
+}
+
 
 def policy_for(surface: str) -> SurfacePolicy:
     """The branch policy for one surface. Unknown surfaces get the feed's.
@@ -132,9 +210,18 @@ def policy_for(surface: str) -> SurfacePolicy:
         surface=key or "feed",
         max_per_seller=_SELLER_CAPS.get(key, 2),
         max_per_category=_CATEGORY_CAPS.get(key, 3),
+        max_per_segment=_SEGMENT_CAPS.get(key, 1),
         product_cooldown_seconds=_scaled(config.product_cooldown_seconds(), product_factor),
         cross_surface_cooldown_seconds=_scaled(config.cross_surface_cooldown_seconds(), cross_factor),
         seller_cooldown_seconds=_scaled(config.seller_cooldown_seconds(), seller_factor),
+        # `minimum=1` because a factor that rounded to zero would cap the surface
+        # at zero sightings — an accidental kill switch for the whole surface,
+        # reachable by setting the global cap to 1.
+        product_cap=_scaled(
+            config.product_cap(),
+            _PRODUCT_CAP_FACTORS.get(key, _PRODUCT_CAP_FACTORS["feed"]),
+            minimum=1,
+        ),
         pool_target=_pool_target(key),
     )
 
@@ -176,6 +263,7 @@ def fit_to_pool(
     budget: int,
     seller_ids: Iterable,
     categories: Iterable,
+    segments: Optional[Iterable] = None,
 ) -> SurfacePolicy:
     """The same policy, loosened to the diversity the catalogue can actually supply.
 
@@ -214,6 +302,20 @@ def fit_to_pool(
     states diversity and so under-relaxes. That is the safe direction: it can
     only ever cost a placement, never spend one on a seller who should not have
     had it.
+
+    ``segments`` is the coarse key and is optional only so that a caller written
+    against the two-key signature keeps working; omitting it leaves
+    ``max_per_segment`` alone, which on a thin single-aisle catalogue is the
+    difference between a relaxed cap and an empty surface. ``engine`` passes it.
+
+    The three caps are relaxed independently and are *not* reconciled with each
+    other afterwards. A segment cap below the leaf cap is the intended shape on
+    the feed — 1 against 3 — and subsumes the leaf cap there, because two
+    listings sharing a leaf path necessarily share its root. Clamping the segment
+    cap up to the leaf cap to "protect" the finer knob would raise the feed's
+    from 1 to 3 and put it back above the budget of 2, which is precisely the
+    arithmetic that left the surface uncontrolled in the first place. A tighter
+    coarse cap is never a loss of diversity.
     """
     sellers = {int(value or 0) for value in seller_ids}
     sellers.discard(0)
@@ -222,9 +324,25 @@ def fit_to_pool(
 
     max_per_seller = max(policy.max_per_seller, _share(budget, len(sellers)))
     max_per_category = max(policy.max_per_category, _share(budget, len(cats)))
-    if max_per_seller == policy.max_per_seller and max_per_category == policy.max_per_category:
+
+    max_per_segment = policy.max_per_segment
+    if segments is not None:
+        roots = {str(value or "").strip().lower() for value in segments}
+        roots.discard("")
+        max_per_segment = max(max_per_segment, _share(budget, len(roots)))
+
+    if (
+        max_per_seller == policy.max_per_seller
+        and max_per_category == policy.max_per_category
+        and max_per_segment == policy.max_per_segment
+    ):
         return policy
-    return replace(policy, max_per_seller=max_per_seller, max_per_category=max_per_category)
+    return replace(
+        policy,
+        max_per_seller=max_per_seller,
+        max_per_category=max_per_category,
+        max_per_segment=max_per_segment,
+    )
 
 
 def admissible(
@@ -234,6 +352,8 @@ def admissible(
     category: str,
     seller_counts: dict,
     category_counts: dict,
+    segment: str = "",
+    segment_counts: Optional[dict] = None,
 ) -> bool:
     """Whether one more placement from this seller/category fits the response.
 
@@ -241,10 +361,21 @@ def admissible(
     the selection loop stays the single owner of what it has chosen — a policy
     object that accumulated state would be a policy that could not be reused
     across the two selection passes ``engine`` runs.
+
+    The segment pair defaults to inert so that a caller which knows nothing about
+    coarse buckets keeps its previous behaviour rather than silently having every
+    candidate admitted under a cap of 1 against an empty counter.
+
+    A falsy ``seller_id``, ``category`` or ``segment`` is "no opinion" and is
+    never counted against its cap — see ``taxonomy.category_key`` for why an
+    uncategorised listing must not share a bucket with the other uncategorised
+    listings.
     """
     if seller_id and seller_counts.get(seller_id, 0) >= policy.max_per_seller:
         return False
     if category and category_counts.get(category, 0) >= policy.max_per_category:
+        return False
+    if segment and segment_counts is not None and segment_counts.get(segment, 0) >= policy.max_per_segment:
         return False
     return True
 

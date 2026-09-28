@@ -1197,6 +1197,31 @@
         "from_sellers_you_follow": "来自你关注的卖家",
         "new_to_marketplace": "市场新品",
         "popular": "热门"
+      },
+      "tagging": {
+        "open": "标记商品",
+        "title": "你的商品",
+        "subtitle": "选择这条帖子涉及的商品",
+        "cap": "每条帖子最多 {{max}} 个",
+        "selected": "已选择 {{selected}}/{{max}} 个",
+        "loading": "正在加载你的商品…",
+        "empty": "你还没有商品",
+        "emptyHint": "你在市场上架的商品会显示在这里。",
+        "error": "无法加载你的商品",
+        "errorHint": "这并不表示你没有商品。请重试。",
+        "retry": "重试",
+        "wontShow": "不会展示",
+        "wontShowHint": "你可以标记它，但在问题解决前买家看不到。",
+        "done": "完成",
+        "blocked": {
+          "not_purchasable": "无法购买",
+          "no_cover_image": "需要封面图片",
+          "no_resolvable_price": "需要价格",
+          "moderation_flagged": "审核中",
+          "listing_risk": "不符合展示条件",
+          "seller_risk": "你的店铺不符合展示条件",
+          "unknown_reason": "目前无法展示"
+        }
       }
     },
     "marketplace": {

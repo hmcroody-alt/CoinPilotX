@@ -199,6 +199,21 @@ export type CreatePostPayload = {
   audio_start_time?: number;
   audio_volume?: number;
   audio_baked_in?: boolean;
+  /**
+   * Marketplace listing ids the creator says this post is about.
+   *
+   * Ownership-checked server-side per id (`bot.pulse_attach_products_to_content`),
+   * so sending an id you do not own is refused rather than an error — and a
+   * refusal does not cost you the post. Capped at
+   * `PULSE_PRODUCT_TAG_REQUEST_LIMIT` (20) per request and at 5 stored per piece
+   * of content; the picker reads both limits from the server rather than
+   * hardcoding them.
+   *
+   * Owning a listing is not the same as the listing being servable. A tag can be
+   * accepted and the product still never shown — see
+   * `fetchTaggableProducts`, whose whole purpose is to say which.
+   */
+  product_listing_ids?: number[];
 };
 
 export type CreatePostResponse = {
@@ -305,7 +320,15 @@ export async function createPost(payload: CreatePostPayload) {
         payload.original_audio_muted ?? Boolean(payload.music_track_id),
       audio_start_time: payload.audio_start_time ?? 0,
       audio_volume: payload.audio_volume ?? 1,
-      audio_baked_in: Boolean(payload.audio_baked_in)
+      audio_baked_in: Boolean(payload.audio_baked_in),
+      // This body is a whitelist, not a spread of `payload`. A field absent from
+      // this literal is dropped with no error on either side, which is why
+      // adding a create-payload field means editing two places and why the
+      // omission presents as "the server ignores my tags" rather than as a
+      // client bug. Sent unconditionally: an empty array is a valid statement
+      // ("no products"), and the server treats a missing key and an empty list
+      // identically.
+      product_listing_ids: payload.product_listing_ids || []
     })
   });
   const post = data.post ? normalizePost(data.post) : undefined;
