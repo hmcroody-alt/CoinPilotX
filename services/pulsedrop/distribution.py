@@ -17,6 +17,23 @@ strong enough to lead the feed, with a seller's own video and enough stills to
 carry a Signal too — and the cross-format cooldown must permit it, which by
 default it does not.
 
+## The operator may buy reach with that restraint
+
+``PULSEDROP_PAIR_EVERY_POST`` turns the paragraph above off: every product good
+enough to publish is published to both surfaces, composing the Reel from stills
+when the seller filmed nothing. It defaults off and it is a real trade, not a
+tuning knob — the same product appears twice in the timeline, which is exactly
+the outcome the first paragraph calls meaningless, and Path B renders a video
+for every tick instead of for the ones that repay it.
+
+It is worth having anyway, because "meaningless" assumes a timeline with enough
+in it that a duplicate crowds something out. An account publishing once an hour
+from a fifteen-product catalog is not that timeline, and there the second format
+is reach the account would otherwise never get. That judgement depends on facts
+about the catalog that this module cannot see, which is why it is a switch and
+not a constant — and why it is scoped to the editorial test only. Fairness still
+runs: see ``_earns_both``.
+
 ## Two outcomes that look like failure and are not
 
 ``DEFER`` means the product is good and this is the wrong moment: a cooldown, a
@@ -159,10 +176,23 @@ def decide(ranked_item, history: diversity.History) -> Decision:
     reel_ok = reel_possible and not reel_blocker
 
     if signal_ok and reel_ok and _earns_both(ranked_item, reel_source):
-        return Decision(SIGNAL_AND_REEL, reel_source, "earned_both_formats")
+        return Decision(
+            SIGNAL_AND_REEL,
+            reel_source,
+            "paired_every_post" if config.pair_every_post() else "earned_both_formats",
+        )
     if reel_ok and _prefers_reel(ranked_item, reel_source):
         return Decision(REEL_ONLY, reel_source, "seller_video_leads")
     if signal_ok:
+        if config.pair_every_post() and reel_possible and reel_blocker:
+            # Pairing is on and this post is going out alone anyway. Without
+            # this the run row would read `signal_is_the_right_format`, which
+            # was true before the operator asked for both and is now actively
+            # misleading -- it describes an editorial judgement that no longer
+            # happened. Name the blocker instead, so "why did this one not get
+            # a Reel" is answerable from the run log rather than by replaying
+            # the tick against a cooldown table that has since moved on.
+            return Decision(SIGNAL_ONLY, "", f"unpaired_{reel_blocker}"[:64])
         return Decision(SIGNAL_ONLY, "", "signal_is_the_right_format")
     if reel_ok:
         return Decision(REEL_ONLY, reel_source, "signal_unavailable")
@@ -183,7 +213,25 @@ def _earns_both(ranked_item, reel_source: str) -> bool:
     purpose, that same-tick dual publication is wanted. Left at its default it
     is 48 hours, ``history.blocker`` returns ``cross_format_cooldown`` for the
     Reel, and this branch is unreachable — which is the intended resting state.
+
+    ``pair_every_post`` replaces that test rather than joining it. The two
+    conditions it drops are the two that make a Reel *earned*, and dropping
+    them is the whole content of the switch:
+
+    * the seller-video requirement, because a catalog of dropshipped stills
+      would otherwise pair nothing at all and the switch would read as broken;
+    * the score floor, because "top fifth of what a product can be" is a
+      ranking against other candidates and the operator has said they want the
+      Reel regardless of where this one placed.
+
+    What it does not drop is the caller's ``signal_ok and reel_ok``. Cooldowns,
+    caps and pacing are fairness, not editorial judgement, and a switch about
+    how good a product has to be has no business overruling how often one
+    seller may appear. So this can only ever upgrade a tick that was already
+    going to publish.
     """
+    if config.pair_every_post():
+        return True
     return (
         reel_source == SOURCE_SELLER_VIDEO
         and ranked_item.score.total >= DUAL_FORMAT_MIN_SCORE
