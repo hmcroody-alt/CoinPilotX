@@ -53,6 +53,15 @@ CACHE_PINNED_ASSETS = {
         "reaction-catalogue-20260927h",
         "401375580f970d043ded8b961b8bb9c583a300a5e63498f2300f46dd2a7c5c00",
     ),
+    # Joined the pin when the Apps-menu width fix went in. It had sat on
+    # `shell-nav-20260909a` for eighteen days, and the fix is invisible to every
+    # other check in this repo -- the markup was always correct, only the
+    # rendered width was wrong -- so a missed token bump here would be silent
+    # twice over.
+    "static/css/pulse_desktop_feed.css": (
+        "apps-menu-width-20260927a",
+        "94bcf4e6cc11fd9a490bf8c0f41be6fc8be7ea0540e58c40bcdb9eb35ba828db",
+    ),
 }
 
 
