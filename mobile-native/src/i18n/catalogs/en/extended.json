@@ -1369,7 +1369,9 @@
         "paused": "Paused",
         "draft": "Draft",
         "rejected": "Rejected"
-      }
+      },
+      "dropshipping": "Imported products",
+      "dropshippingCopy": "Products you imported from a supplier, including anything still waiting on review."
     },
     "orders": {
       "title": "Orders",

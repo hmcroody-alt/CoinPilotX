@@ -1354,7 +1354,9 @@
         "paused": "An poz",
         "draft": "Bouyon",
         "rejected": "Rejte"
-      }
+      },
+      "dropshipping": "Pwodwi enpòte",
+      "dropshippingCopy": "Pwodwi ou enpòte nan men yon founisè, ansanm ak sa yo k ap tann revizyon toujou."
     },
     "orders": {
       "title": "Kòmann",
