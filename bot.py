@@ -40830,6 +40830,30 @@ def account_security_notification_redirect():
     return redirect("/dashboard/account/security", code=302)
 
 
+# `linking.ts` declares the root Saved screen as bare `saved`, alongside the tab
+# screen's `pulse/saved`, and its `prefixes` include https://pulsesoc.com -- so
+# the app both opens and *mints* https://pulsesoc.com/saved. On the web that URL
+# landed on `/<slug>`, which is the SEO topic-page rule and answers anything it
+# does not recognise with nine bytes of plain-text "Not found". Not a shell, not
+# a login wall: a bare 404 for a URL the product hands out.
+#
+# It reads as covered from the outside, which is why it lasted. The parity matrix
+# scores `/saved` PARITY because `/<slug>` *matches* it -- a rule existing is not
+# the same as a page being served, and that distinction is invisible to any check
+# that stops at the url_map.
+#
+# Werkzeug orders by specificity rather than registration, so this literal wins
+# over `/<slug>` wherever it is declared; it sits here to be read next to the
+# other alias above.
+@webhook_app.route("/saved", methods=["GET"])
+@auth_required
+def saved_deep_link_alias():
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    return redirect("/pulse/saved", code=302)
+
+
 # Declared ahead of the `<path:status_id>` rule below purely so the two are read
 # together; Werkzeug orders by specificity, not by registration, so the literal
 # wins either way. Without it the rule below swallowed this path and treated
@@ -88680,6 +88704,31 @@ def pulse_seller_store_router():
         return redirect("/pulse/merchant/" + quote(seller_id, safe=""), code=302)
     return redirect(PULSE_SELLER_STORE_MODES.get(mode, "/pulse/merchant/dashboard"),
                     code=302)
+
+
+# `linking.ts` gained `Dropshipping: "pulse/dropshipping"` so merchants could
+# finally reach a hub that had been registered in `AppNavigator` and linked from
+# nowhere. Because `prefixes` includes https://pulsesoc.com, adding it there also
+# minted a public URL -- and the web had no rule for it at all, so it answered
+# Werkzeug's stock 404.
+#
+# This is the same answer `product` gets above, for the same reason and with the
+# same limits. The web has no supplier browser, no import cart and no import
+# action; those live under `/api/business-os/dropshipping/*` and have no page.
+# What it does have is the half the hub was added to provide: imported products
+# become ordinary marketplace listings once released, so the merchant dashboard
+# is where they appear. A merchant following this link finds what they imported.
+#
+# Named on its own rather than folded into the mode map above, because this is
+# not a `seller-store` mode -- it is a destination the app publishes in its own
+# right. If a web supplier/import surface is ever built, this is the line.
+@webhook_app.route("/pulse/dropshipping", methods=["GET"])
+@auth_required
+def pulse_dropshipping_hub_alias():
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    return redirect("/pulse/merchant/dashboard", code=302)
 
 
 # --- Start a chat -----------------------------------------------------------
