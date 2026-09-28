@@ -478,6 +478,7 @@
     "tests/test_messenger_document_attachment_identity.py",
     "tests/test_messenger_edit_window_is_server_side.py",
     "tests/test_messenger_idempotency_index_health.py",
+    "tests/test_messenger_idempotency_repair.py",
     "tests/test_messenger_media_auth_isolation.py",
     "tests/test_messenger_media_document_attachments.py",
     "tests/test_messenger_media_gallery.py",
