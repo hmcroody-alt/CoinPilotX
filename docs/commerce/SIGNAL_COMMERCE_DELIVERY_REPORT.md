@@ -17,14 +17,14 @@ which is a rollout input and not a footnote — see item 59. That gap grows on i
 
 ```
 cd <worktree>
-.venv/bin/python -m pytest tests/commerce_discovery -q          # 827 pass
+.venv/bin/python -m pytest tests/commerce_discovery -q          # 858 pass
 .venv/bin/python -m pytest tests/protection -q                  # 663 pass
 python3 scripts/protection/measure_commerce_discovery_reachability.py
 python3 scripts/protection/audit_commerce_discovery_failsoft.py
 python3 scripts/protection/prove_commerce_discovery_sources.py
 python3 scripts/protection/prove_commerce_discovery_fatigue.py
 python3 scripts/protection/prove_commerce_discovery_value_tiers.py
-python3 scripts/protection/creator_tagging_mutation_matrix.py    # 12/12 killed
+python3 scripts/protection/creator_tagging_mutation_matrix.py    # 20/20 killed
 python3 scripts/measure_commerce_suitability_cost.py
 ```
 
@@ -54,8 +54,9 @@ actually use tagging.
 ## 1. Repository architecture discovered
 
 Flask monolith `bot.py` (~120k lines, ~1,538 routes) over `services/` (239 modules).
-Commerce discovery is a package, `services/commerce_discovery/` — 19 modules, 8,551 lines —
-plus `services/commerce_discovery_routes.py` (856 lines), which sits *outside* the package
+Commerce discovery is a package, `services/commerce_discovery/` — 19 modules, 8,559 lines —
+plus `services/commerce_discovery_routes.py` (1,006 lines, seven endpoints), which sits
+*outside* the package
 because it imports `bot` and the package deliberately does not. That boundary is real and
 load-bearing; it is also what made the fail-soft audit miss the whole request layer for two
 increments (§22).
@@ -147,7 +148,7 @@ in the branch. That was true when it was written and stopped being true when ite
                         └──────────────┬──────────────────────┘
                                        ▼
                         ┌─────────────────────────────────────┐
-                        │ _buyer_safe  ← strips PIPELINE_ONLY  │ §18.6: the leak
+                        │ buyer_safe   ← strips PIPELINE_ONLY  │ §18.6: the leak
                         └──────────────┬──────────────────────┘
                                        ▼
         commerce_discovery_routes ──────┴──► client  (200, placements[])
@@ -258,8 +259,11 @@ existing memory note, shop surfaces (`marketplace`, `product_detail`) are exempt
 *social* opt-out — asking not to be profiled in the feed is not asking the shop to stop
 being a shop.
 
-Route-level: `_require_user` (`commerce_discovery_routes.py:151`). Every endpoint is
-authenticated; none is public.
+Route-level: `_require_user` (`commerce_discovery_routes.py:157`). All seven endpoints are
+authenticated; none is public. The seventh, `/taggable-products`, is the only *creator*-side
+one, and it is signed-in-only for the same reason as the rest plus one of its own: it reads
+out a named seller's own catalogue including listings that are refused, with the refusal
+reason attached (§25 of the evidence report).
 
 ## 9. Context extraction strategy
 
@@ -352,7 +356,7 @@ contributes rows the others do not.
 
 Two fields, both server-side only: `candidate_source` (*which question found this*) and
 `relationship` (*what kind of connection this is*). Both are in
-`engine.PIPELINE_ONLY_FIELDS` and stripped by `_buyer_safe` before the response.
+`engine.PIPELINE_ONLY_FIELDS` and stripped by `buyer_safe` before the response.
 
 They were **not** stripped before this mission. `serialize(row)` was a denylist, so both
 reached every buyer's device on every card — an internal risk assessment of a named store
@@ -496,10 +500,23 @@ reel is the correct outcome. A reel that is shared to the feed gets its products
 the mirror post as well, because the mirror row is what makes a reel's products actually
 appear — the same thing `pulse_attach_music_to_content` does for a track.
 
-**What is missing is the UI.** No composer screen sends any of the three keys yet, and the
-multipart/form post path does not carry them at all — only the JSON path does. So the feature
-is reachable by an API client and by nothing a user can tap. That is the honest status and it
-is deliberately not hidden behind "built".
+**What is missing is the UI**, and it is now missing more narrowly than when this line was
+first written. No composer screen sends any of the three keys yet, and the multipart/form post
+path does not carry them at all — only the JSON path does. So the feature is still reachable
+by an API client and by nothing a user can tap. That is the honest status and it is
+deliberately not hidden behind "built".
+
+What changed is that the *server* side of the picker now exists too.
+`GET /api/pulse/commerce/discovery/taggable-products` answers the question a composer has to
+ask before it can render anything — which of my listings are there, and which of them will
+actually be shown if I tag them — and it answers the second half explicitly rather than by
+filtering, so the creator is told *why* a product is refused instead of watching it silently
+not appear. §25 of the evidence report is the whole argument, including why a tag can succeed
+and still never serve. The remaining client work is three named things:
+`product_listing_ids` added to `createPost`'s field whitelist in
+`mobile-native/src/api/feed.ts:290` (which drops unlisted keys silently), a
+`taggableProducts.ts` client, and the picker itself in `HomePulseComposer.tsx` — where the
+three publish paths already thread `music_track_id` as the precedent to copy.
 
 Refusals a client must render: `not_listing_owner` (the common one, and it is the system
 working — logged at info, not warning), `listing_not_found`, `too_many_products`,
@@ -635,7 +652,14 @@ package.
 Viewer signals (interests, followed sellers) are read per request and never persisted into
 the placement row. The one real privacy defect found was the **outbound** direction:
 `seller_risk_score` — an internal risk assessment of a *named third party* — was being
-handed to every buyer's device. §18.6. It is still live until the strip ships.
+handed to every buyer's device. §18.6.
+
+Precisely where that stands, because "fixed" and "live" are different claims: the strip is
+**built and tested on this branch** (`engine.buyer_safe`, applied in `_payload`). It is
+**not in production.** `git show origin/main:services/commerce_discovery/engine.py` contains
+no reference to `buyer_safe`, and production runs `main`. So every card served right now
+still carries `seller_risk_score` and `candidate_source` to the device. The fix is one merge
+away and it is not mine to merge.
 
 Personalisation is switchable per viewer (item 8); shop surfaces are exempt from the social
 opt-out by design.
@@ -648,8 +672,22 @@ opt-out by design.
   `no such column: marketplace_sellers.internal_risk_note` in the exception and asserts the
   response does not contain it. Mutating the handler to interpolate `str(exc)` turns that
   test red — which is how the handler was proved reachable at all (§22).
-- `PIPELINE_ONLY_FIELDS` + `_buyer_safe` as an **allowlist**, replacing a denylist. The
-  denylist is *how* the leak happened: a field added to the pipeline was exposed by default.
+- `PIPELINE_ONLY_FIELDS` + `buyer_safe`, applied in `_payload` before the marketplace
+  serializer runs. An earlier draft of this line called it "an allowlist, replacing a
+  denylist." That is wrong twice over, and wrong in the flattering direction, so it is worth
+  correcting rather than quietly editing: it is a **denylist**, and it does not replace
+  anything — it runs *in front of* the serializer's own denylist. The engine's docstring
+  argues the choice: the serializer's list is shared by every marketplace endpoint, and
+  widening it from inside this package would change payloads this mission never examined.
+  The three columns named are ones this pipeline invented, so the strip belongs with the
+  pipeline.
+
+  What that means honestly is that the structural weakness survives. A denylist still
+  exposes a new pipeline column by default, which is exactly how the original leak happened.
+  `test_pipeline_columns_stay_server_side.py` is the compensating control — it re-reads the
+  comprehension and fails if it inverts to an allowlist, and it parametrizes over
+  `PIPELINE_ONLY_FIELDS` so each entry is separately proved absent from a real payload. A
+  test is not a type system; a fourth pipeline column added without a matching entry ships.
 - No raw SQL built from request input.
 
 ## 48. Abuse prevention
@@ -703,17 +741,16 @@ That is correct availability behaviour and it stays. It is also **exactly** why 
 exists: at layer 2, three unrelated conditions — unknown surface, rate-limited client, total
 crash — are one response, and that response says `ok: true`.
 
-`audit_commerce_discovery_failsoft.py` inventories all of it: **74 fail-soft handlers across
-19 files**, each classified `exercised` / `never` / `silent`. It exits 0 whatever it finds,
+`audit_commerce_discovery_failsoft.py` inventories all of it: **81 fail-soft handlers across
+20 files**, each classified `exercised` / `never` / `silent`. It exits 0 whatever it finds,
 deliberately — a `never` handler is a question ("can this happen?"), and §11a argues some
 answers are legitimately no. Making it a gate would buy tests for unreachable branches.
 
 ## 53. Automated tests
 
-**763 tests in `tests/commerce_discovery/`** (27 test files plus `conftest.py`, 10,074
-lines) + 663 in
-`tests/protection/`. All files registered in `config/ci_test_manifest.json`, which is
-default-deny and runs one process per file.
+**858 tests in `tests/commerce_discovery/`** (29 test files plus `conftest.py`, 11,554
+lines) + 663 in `tests/protection/` — 1,521 in one run. All files registered in
+`config/ci_test_manifest.json`, which is default-deny and runs one process per file.
 
 The count is not the point. This is:
 
@@ -808,7 +845,7 @@ The recommendation, from §16 and unchanged: **do not ship this as one change.**
 each independently reversible:
 
 1. **The payload strip (§18.6) first, alone.** It is the only one-way-safe change here:
-   `_buyer_safe` exclusively *removes* keys, so no client can begin receiving something it
+   `buyer_safe` exclusively *removes* keys, so no client can begin receiving something it
    did not receive before, and nothing in `mobile-native/` or `templates/` reads either
    field. Waiting is not neutral — until it ships, every card hands the buyer an internal
    risk assessment of a named store.
@@ -853,31 +890,37 @@ that a previous version cannot read.
 
 ## 61. Files/components/services changed
 
-62 files, +18,782 / −222 against the merge base — this document included, which is why the
+63 files, +19,979 / −224 against the merge base — this document included, which is why the
 figure moves when it is written. `git diff --stat $(git merge-base HEAD origin/main)..HEAD`
 regenerates it. Breakdown:
 
 - **`services/commerce_discovery/`** — 19 modules, 5 of them new (`content`, `relationship`,
-  `suitability`, `taxonomy`, `tagging`); +3,945 / −160.
-- **`services/commerce_discovery_routes.py`** — +336 / −3.
-- **`bot.py`** — +212: item 5's annotate call and its guard, plus item 30's composer write
-  path on the post and reel create routes.
-- **`tests/commerce_discovery/`** — 29 files, 18 new; +8,330 / −17.
-- **`scripts/protection/`** — 8 new harnesses, +2,080; **`scripts/`** — 1
+  `suitability`, `taxonomy`, `tagging`); +3,953 / −160.
+- **`services/commerce_discovery_routes.py`** — +488 / −5. Seven endpoints; the seventh
+  (`/taggable-products`) is the creator's side and the only one that writes nothing while
+  answering a question about writes.
+- **`bot.py`** — +212 / −0: item 5's annotate call and its guard, item 30's composer write
+  path on the post and reel create routes, and the `pulse_content_products` DDL.
+- **`tests/commerce_discovery/`** — 29 files, 19 new; +8,890 / −17.
+- **`scripts/protection/`** — 8 new harnesses, +2,216; **`scripts/`** — 1
   (`measure_commerce_suitability_cost.py`, +382).
-- **`mobile-native/src/`** — +911 / −42 (items 26, 27, 29).
-- **`config/ci_test_manifest.json`** — +18 (every new test file; the gate is default-deny).
+- **`mobile-native/src/`** — +911 / −42 (items 26, 27, 29). **No composer work** — item 30.
+- **`config/ci_test_manifest.json`** — +19 (every new test file; the gate is default-deny).
 - **`.env.example`** — +76 (item 58; the env-contract gate requires every new `os.getenv`).
-- **`docs/commerce/`** — +2,492 across both documents.
+- **`docs/commerce/`** — +2,832 across both documents.
 
 ## 62. Known limitations
 
 1. **No web commerce discovery at all** (28).
-2. **Creator tagging has no UI** (7, 30). The server accepts tags, ownership-checks them and
-   serves them ahead of the scorer; no composer screen sends them, and the multipart/form
-   post path does not carry them at all. So the feature is reachable by an API client and by
-   nothing a user can tap. `COMPLEMENTARY` is still genuinely blocked on a product↔product
-   relation; `PULSEDROP_CURATED` never was (32).
+2. **Creator tagging has no UI** (7, 30). The server accepts tags, ownership-checks them,
+   serves them ahead of the scorer, and now also tells a composer which of the creator's
+   products will actually be shown (§25) — but no composer screen sends or reads any of it,
+   and the multipart/form post path does not carry the ids at all. So the feature is
+   reachable by an API client and by nothing a user can tap. `COMPLEMENTARY` is still
+   genuinely blocked on a product↔product relation; `PULSEDROP_CURATED` never was (32).
+   Related, and not fixed by the picker: a creator who tags an ineligible listing through
+   the raw API still gets a clean `ok:true` and a product that never appears. The picker
+   makes that knowable *before* posting; it does not make the write path warn about it.
 3. **No multimodal understanding.** "Shop this look" is text matching (10).
 4. **No inventory check at serve time.** A sold-out product can be served (42).
 5. **No attribution**; events are recorded and never joined to an order (44).
@@ -913,8 +956,10 @@ regenerates it. Breakdown:
 
 In this order, and the order is the recommendation:
 
-1. **Ship stage 1.** The payload leak is live. Everything else on this list can wait; that
-   cannot, and it is the cheapest change in the report.
+1. **Ship stage 1.** The payload leak is live *in production* — the strip is written and
+   tested here and absent from `origin/main`, so nothing about it has reached a device yet
+   (§46). Everything else on this list can wait; that cannot, and it is the cheapest change
+   in the report, because the code is already written and the remaining work is a merge.
 2. ~~**Build the post↔product relation table.**~~ **Done — `pulse_content_products`, §24.**
    It unblocked creator tagging as predicted. Two corrections to what this item claimed,
    both worth keeping visible rather than editing away:
@@ -933,6 +978,16 @@ In this order, and the order is the recommendation:
    What replaces this item at position 2: **build the composer UI**, and while doing it
    decide whether the multipart/form post path should carry `product_listing_ids` too, or
    whether the client should always use the JSON path when tagging.
+
+   The server half of that is now done and the item is smaller than it was.
+   `GET /taggable-products` (§25) gives the picker its data, including a `serves` boolean and
+   a `blocked_reason` per listing, so the screen does not have to re-derive eligibility and
+   must not try. Three concrete things remain, all client-side: `product_listing_ids` in the
+   `createPost` whitelist (`mobile-native/src/api/feed.ts:290` — an unlisted key is dropped
+   with no error, which would present as "tagging silently does nothing"), a
+   `taggableProducts.ts` client, and the picker in `HomePulseComposer.tsx`. The multipart
+   question is still open and is a real decision, not a detail: a creator attaching an image
+   *and* tagging a product is the ordinary case, not the exotic one.
 3. ~~**Add a per-surface kill switch** before stage 3, not after.~~ **Done — §23**, and it
    moved to the top of this list from below it once it was clear that the item making the
    rollout expensive was cheaper than the rollout. It is left struck through rather than
@@ -973,5 +1028,32 @@ survived the entire 826-test package as it then stood, because the guard over it
 *correct* assignment still existed. An addition defeats that; a behavioural assertion on the
 value the engine actually received does not.
 
-`scripts/protection/` has eight harnesses in it now. They are slower than reading and they
-are the only part of this delivery I would defend without qualification.
+And once more after *that*. Writing the matrix down as a runnable script surfaced a control
+that had no entry because it had no test: a post the server can no longer see must be
+**refused**, not read as "no evidence about this post." There is no deletion cascade for
+`pulse_content_products` — nor, it turned out on checking, for `pulse_content_music`, which
+this report had previously cited as the precedent. The twelfth entry existed because writing
+the other eleven down forced the question "what else is a control here?" in a form that prose
+never had.
+
+And once more after that, with the pattern now fully explicit. The `/taggable-products`
+increment (§25 of the evidence report) landed **31 tests green on the first run**, which by
+this point in the mission is a symptom rather than a result. Nothing was red, so there was
+nothing to follow; I went looking for the survivor by reasoning instead, and found it —
+`assert body["max_per_content"] == tagging.MAX_TAGGED_PER_CONTENT` puts the same number on
+both sides of `==`, so hardcoding `5` in the route passed all 31. That is the
+fixture-supplies-both-the-value-and-the-threshold shape, and it is the third time this
+mission has produced it. **The matrix is twenty entries now**, eight of them from that one
+increment, and `picker-hardcodes-the-cap` is the entry that came *before* its test rather
+than after.
+
+The same increment proved two existing controls stale, both loudly, which is the direction
+you want: a gate assertion of `"tagging" not in source` over a whole module broke the moment
+a second, legitimate reader of `MAX_TAGGED_PER_CONTENT` appeared in that file, and the same
+test had been locating its `handler` node by taking the first one in the module — correct
+only by accident until a third route added one. Neither was a wrong claim. Both were right
+claims held in place by a proxy that could not survive the file growing.
+
+This branch adds **eight harnesses** to `scripts/protection/` (which holds twelve in total).
+They are slower than reading and they are the only part of this delivery I would defend
+without qualification.

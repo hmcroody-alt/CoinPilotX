@@ -684,7 +684,7 @@ increments to the same branch and the same statement covers them.
 together.
 
 **Ship the payload strip (§18.6) first, and on its own.** It is the only change in this
-report that is one-way safe: `_buyer_safe` exclusively *removes* keys from a product
+report that is one-way safe: `buyer_safe` exclusively *removes* keys from a product
 payload, so no client can begin receiving something it did not receive before. Nothing in
 `mobile-native/` or `templates/` reads `seller_risk_score` or `candidate_source` — they
 were never part of a documented response shape, they arrived by accident of a denylist
@@ -1057,7 +1057,7 @@ and never the one production runs. Reverting the fix leaves **666 tests green** 
 only the two new ones. A green suite asserting the inverse of production, again, and this
 time in the direction of a privacy leak rather than a tuning miss.
 
-Fixed with `engine.PIPELINE_ONLY_FIELDS` and `_buyer_safe(row)` applied *before* the
+Fixed with `engine.PIPELINE_ONLY_FIELDS` and `buyer_safe(row)` applied *before* the
 serializer. Deliberately **not** by widening `MARKETPLACE_REVIEWER_ONLY_FIELDS`: that list
 is shared by every marketplace endpoint, and widening it from inside this package would
 change payloads this mission has not looked at. The columns are ours; the strip belongs here.
@@ -1458,6 +1458,11 @@ per module (never / total)
       ...
 ```
 
+That block is the audit's output *at the time of this section*, not a standing figure. The
+feature has grown since — re-running the script today reports **81 handlers across 20 files**,
+because `tagging.py` and the `/taggable-products` route added their own (§24, §25). The script
+is the authority; a count quoted inside a dated section records what it said then.
+
 The request layer was **13 of 18 unreached** — proportionally worse than any module inside
 the package, and it is the layer that actually forms the response a buyer's device receives.
 An audit of "what happens when commerce breaks" that stops before that layer is answering a
@@ -1845,6 +1850,9 @@ path does not carry them at all — only the JSON path does. The feature is reac
 client and by nothing a user can tap. Delivery report item 30 states this; it is repeated here
 because a section this long about a feature reads as "shipped" unless told otherwise.
 
+*Partly superseded by §25.* The server side of the picker the composer would need now exists.
+The client side of this paragraph is unchanged.
+
 ### Verified
 
 827 package tests and 663 protection tests green (1,490 in one run). All 12 mutations killed,
@@ -1853,3 +1861,192 @@ handler audit is unchanged: `tagging.py` adds one `except` — the reader's — 
 logged kind, not the silent kind, because this is the one source whose absence downgrades an
 explicit creator statement to a guess and the symptom (a tagged post showing unrelated
 products) looks exactly like a ranking complaint.
+
+---
+
+## 25. A tag can succeed and the product can still never be shown
+
+§24 built the write path and proved it. This section is about a gap §24 left, which I found by
+reading `tagging.py` and `eligibility.py` next to each other rather than one at a time.
+
+**Two different questions, asked at two different times, by two different modules.**
+
+`tagging.attach` asks: *do you own this listing, is this content type real, and is this post
+already at five products?* That is the whole of it. It is an **authorisation** check, and it is
+the right one — `AUTHORITY_OWNER` is recorded on the row precisely so a later reader can tell a
+creator's statement from the engine's guess.
+
+`eligibility.gate(listing, parse_price)` asks a completely different question, at **serve**
+time, on the viewer's request: is this listing purchasable, does it have a cover image, does it
+have a resolvable price, is it moderation-flagged, is its risk score over 30, is its seller's
+over 60. It returns `""` or the first failing code.
+
+Nothing joins these two moments. So:
+
+> A creator tags a listing they genuinely own. `attach` returns `ok:true`. The post publishes
+> cleanly. The tag row is written with `authority='owner'`. And the product is never shown to
+> anybody, on any surface, because the listing has no cover image.
+
+**And nothing logs it.** This is the part that made it worth building for.
+`pulse_attach_products_to_content` logs *refused* tags at `info` — deliberately, because "you
+can only tag your own products" is the system working. An **accepted** tag on a
+never-servable listing takes the `outcome.get("ok")` branch, appends to `attached`, and emits
+no line at all. There is no error, no warning, no metric, and no user-visible difference
+between "tagged successfully" and "tagged successfully and invisible forever." The creator's
+only signal is the absence of something they were never promised.
+
+This is the package's characteristic hazard in a new costume, and it is worth naming as such
+because it is now the fourth instance: **in this subsystem a success and a silent failure
+routinely produce the same observable.** Elsewhere it was `[]` from a working engine versus
+`[]` from an exception. Here it is `ok:true` from a tag that will serve versus `ok:true` from a
+tag that cannot.
+
+### What was built
+
+`GET /api/pulse/commerce/discovery/taggable-products` — the seventh endpoint in
+`commerce_discovery_routes.py`, signed-in-only, and the only one of the seven that is the
+*creator's* side of discovery rather than the viewer's. It writes nothing.
+
+It returns, for each of the creator's own listings, the same buyer-facing product card the
+rest of the system serves, plus two fields:
+
+```
+{"listing_id": 43, "product": {...}, "serves": false, "blocked_reason": "no_cover_image"}
+```
+
+Five decisions in it are worth defending, because each had a cheaper alternative that is
+worse:
+
+**1. It explains rather than filters.** The obvious implementation returns only the listings
+that will serve. That is a worse product and a much worse failure mode: a creator whose
+product is missing from their own picker learns nothing, cannot fix it, and will reasonably
+conclude the feature is broken. `blocked_reason` carries `eligibility`'s **own code**,
+unmodified and untranslated, so `no_cover_image` reaches the creator as `no_cover_image` — a
+thing they can act on. A parametrized test walks all six reachable codes and asserts each one
+arrives verbatim; a containment test checks every emitted code against `INELIGIBLE_CODES`, and
+it asserts `emitted` is non-empty first, because a containment check over an empty set passes
+while proving nothing. Two of the eight declared codes (`suppressed`, `over_exposed`) are
+per-viewer and structurally unreachable from a composer route, which is why the parametrize is
+over six and not eight.
+
+**2. There is no `can_attach` field.** Every listing this endpoint returns is owned by the
+caller, so `attach` will accept all of them; a `can_attach` field would be unconditionally
+`true`. A field that is always true teaches a client to stop reading it, and then it is worse
+than absent on the day it can be false. The two questions are kept distinct by answering only
+the one that has a real answer here.
+
+**3. It lives in the routes module, not beside the composer in `bot.py`.** The question it
+answers is `eligibility`'s, and `eligibility` is inside the package that deliberately does not
+import `bot`. Putting the endpoint next to the composer would have meant a second
+implementation of the serve-time gate — and a second copy of a judgement is exactly how the
+payload leak in §18.6 happened. The route imports `bot` (which is what the routes module is
+*for*); the gate stays where it is.
+
+**4. `max_per_content` is served, not mirrored.** The response carries
+`tagging.MAX_TAGGED_PER_CONTENT` and `bot.PULSE_PRODUCT_TAG_REQUEST_LIMIT` so the picker can
+disable its own "add" control at five without hardcoding five. A client-side copy of a
+server-side limit is a divergence waiting for the limit to change.
+
+**5. Its failure posture is the opposite of `serve`'s, on purpose.** Every viewer-facing
+endpoint in this package returns `200 ok:true []` on any exception (§21) — the post must still
+render if commerce fails (§82). This endpoint returns **500** with
+`code="TAGGABLE_PRODUCTS_UNAVAILABLE"`. The reason is what the empty list would *mean*: on a
+viewer surface `[]` means "no products here," which is a fine thing to say when something
+broke. On this surface `[]` is a claim about the creator's own store — "you have nothing to
+tag" — and telling a seller with forty listings that they have none is a lie the client will
+render confidently. A test asserts the 500, asserts the `code`, and asserts the DB message
+does not leak into the body; a second test asserts the converse, that a genuinely empty store
+is still `200 []` and not an error.
+
+### `_buyer_safe` became `buyer_safe`
+
+The new route needs the same pipeline-column strip the viewer path uses, because it serves the
+same card shape. That left a choice between an underscore-prefixed cross-module call and a
+second copy of the strip. A second copy is how the leak this function exists to close happened
+in the first place; and a name that says "internal" while another module depends on it is just
+a comment that is wrong. So it is public now, and the rename is argued in the docstring rather
+than left for the next reader to wonder about. A test asserts `engine.buyer_safe(` is still
+called from the route by source inspection, and a parametrized test proves each member of
+`PIPELINE_ONLY_FIELDS` is absent from a real payload.
+
+### 31 tests passed on the first run, which is a symptom
+
+By this point in the mission an all-green first run is evidence that the tests are weak, not
+that the code is right — §11 and §19 are two earlier instances. Nothing was red, so there was
+nothing to follow. I went looking for the survivor by reasoning about what each assertion
+could not distinguish, and found it in the cap test:
+
+```python
+assert body["max_per_content"] == tagging.MAX_TAGGED_PER_CONTENT
+```
+
+Both sides are the same number. Hardcoding `5` in the route passes this, and passed all 31.
+It is the **fixture supplies both the value and the threshold** shape, and this is the third
+time this mission has produced it, which suggests it is a habit rather than an accident. The
+fix is `test_the_cap_tracks_the_constant_rather_than_equalling_it_today`, which monkeypatches
+the constant to 3 and asserts the route follows. Its docstring records why it exists, because
+a test whose motivation is invisible is the kind that gets deleted as redundant.
+
+The matrix entry `picker-hardcodes-the-cap` came **before** that test, not after it. That is
+the ordering §14 is asking for: the control is written down as a mutation first, and the test
+is whatever is needed to kill it.
+
+### The matrix is twenty entries
+
+`scripts/protection/creator_tagging_mutation_matrix.py`, eight new entries for this increment,
+all killed, every source file verified restored byte-identical afterwards:
+
+| Mutation | What it proves is guarded |
+| --- | --- |
+| `picker-filters-instead-of-explaining` | the refusal reason reaches the creator instead of the row vanishing |
+| `picker-shows-every-sellers-catalogue` | the `WHERE seller_user_id=?` bound is real |
+| `picker-reports-an-error-as-an-empty-store` | a failure is a 500, not "you have no products" |
+| `picker-serves-the-pipeline-columns` | `buyer_safe` is actually applied on this path too |
+| `picker-hardcodes-the-cap` | the cap tracks the constant |
+| `picker-offers-a-card-it-could-not-render` | a listing the serializer throws on is skipped, not 500 |
+| `picker-lets-the-client-choose-the-page-size` | `limit` is clamped, so one request cannot pull an entire catalogue |
+| `serve-route-resolves-tags-early` | the tag lookup stays *below* the suitability gate |
+
+Two of these needed care to be honest mutations rather than crashes.
+`picker-shows-every-sellers-catalogue` rewrites the predicate to
+`WHERE COALESCE(l.status,'')<>?` rather than deleting it, so the **parameter count still
+matches** and the mutation is killed by a *test* instead of by the driver raising — a mutation
+the database refuses to execute proves nothing about the test suite.
+`serve-route-resolves-tags-early` deliberately imports `tagging as _early`, defeating the
+source-string check so that only the behavioural assertion can kill it.
+
+### Two existing controls were proved stale, both loudly
+
+This is the good direction, and worth recording because the failures looked at first like my
+own new mistakes:
+
+* `test_the_lookup_is_below_the_gate_in_the_route` asserted `"tagging" not in source` over the
+  **whole route module**. A write-side endpoint in that same file legitimately reading
+  `tagging.MAX_TAGGED_PER_CONTENT` turned it red, and it aborted the matrix baseline before a
+  single mutation ran. The claim was never wrong; the *proxy* for it was module-wide when the
+  claim was about one route. Narrowed to
+  `ast.get_source_segment(source, serve_route)` and `"tagging." not in served`.
+* The same test located its `handler` node with `next()` over `ast.walk(tree)` for any
+  `FunctionDef` named `handler`. Five routes in that module now have one. It had been correct **by
+  accident** — the walk happened to reach the right one first. Fixed by finding
+  `commerce_discovery_serve` and walking inside it.
+
+Neither was a wrong assertion. Both were right assertions held in place by something that
+could not survive the file growing, which is a category of test debt that only ever surfaces
+when someone adds a second thing.
+
+### Verified
+
+858 package tests and 663 protection tests green (1,521 in one run). 20 of 20 mutations
+killed, zero survivors. The new test file is registered in `config/ci_test_manifest.json` —
+the gate is default-deny, so an unlisted test file does not run in CI and would have made
+every figure in this section unverifiable by anyone but me.
+
+### Still not built
+
+The client. `mobile-native/src/api/feed.ts:290` `createPost` **whitelists** the fields it
+forwards, so `product_listing_ids` is silently dropped today — which would present to a
+developer as "the server ignores my tags." That, a `taggableProducts.ts` client, and the picker
+in `HomePulseComposer.tsx` are the remaining work, and the open question is whether the
+multipart/form post path should carry the ids or whether a tagging client always uses the JSON
+path. Delivery report item 30 and §64 rec 2.
