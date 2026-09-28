@@ -267,17 +267,58 @@ class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
         listing_id = self.make_listing()
         anonymous = self.get(listing_id).get_data(as_text=True)
         self.assertIn("Sign in to add to cart", anonymous)
-        self.assertNotIn("data-add-to-cart", anonymous)
+        self.assertNotIn("data-mkt-add", anonymous)
 
         self.login()
         member = self.get(listing_id).get_data(as_text=True)
-        # The attribute *with its value* -- the member page's own click handler
-        # contains the bare selector `closest('[data-add-to-cart]')`, so
-        # searching for the name alone matches a page carrying no button.
-        self.assertIn(f"data-add-to-cart='{listing_id}'", member,
-                      "the public page promises a cart the member page does not offer")
-        self.assertIn("/api/pulse/marketplace/cart", member,
+        # The member rendering is `marketplace_storefront.render_product` now,
+        # so the control is `data-mkt-add`. Matched as an opening tag for the
+        # reason the old literal carried its value:
+        # `static/js/pulse_marketplace.js` selects on `[data-mkt-add]`, so a
+        # name-only search matches the handler on a page with no button.
+        self.assertRegex(member, r'<button\b[^>]*\bdata-mkt-add="%d"' % listing_id,
+                         "the public page promises a cart the member page does not offer")
+        self.assertIn("/static/js/pulse_marketplace.js", member,
                       "the add-to-cart control is not wired to the cart endpoint")
+
+    def test_the_first_buyer_on_a_deployment_is_offered_the_button_too(self):
+        """A cart nobody has used yet must not be a cart nobody can start.
+
+        `marketplace_cart_items` is created by `marketplace_cart_routes`'
+        `_ensure_schema` and by nothing else -- not by `init_db()` -- so on a
+        fresh deployment the table is absent until the first `POST` to the cart
+        API. The product page reads a cart count to render its header badge,
+        and a failed read answers `None`, which `render_product` documents as
+        the caller withholding the entire cart UI, Add to cart included.
+
+        Those two facts met in a deadlock: no button, therefore no POST,
+        therefore no table, therefore no button. Every other test in this class
+        hides it, because the fixture's own cart traffic creates the table
+        before they look -- so the absence is arranged explicitly here.
+
+        The button is the only thing asserted. Whether the *badge* appears with
+        no table is a judgement about an empty cart, not about this deadlock.
+        """
+        listing_id = self.make_listing()
+        self.login()
+
+        conn = bot.db()
+        cur = conn.cursor()
+        cur.execute("DROP TABLE IF EXISTS marketplace_cart_items")
+        conn.commit()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name='marketplace_cart_items'")
+        # The drop is the premise. A fixture that silently kept the table would
+        # make this test a duplicate of the one above.
+        self.assertIsNone(cur.fetchone(), "the cart table survived the drop")
+        conn.close()
+
+        member = self.get(listing_id).get_data(as_text=True)
+        self.assertRegex(
+            member, r'<button\b[^>]*\bdata-mkt-add="%d"' % listing_id,
+            "a deployment whose cart table does not exist yet offers no way to "
+            "create it: the page withholds Add to cart, and only the POST that "
+            "button makes would have created the table")
 
     def test_the_cover_image_is_on_the_page(self):
         body = self.get(self.make_listing()).get_data(as_text=True)

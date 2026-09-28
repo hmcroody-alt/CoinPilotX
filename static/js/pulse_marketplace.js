@@ -209,16 +209,60 @@
     var submitBtn = panel.querySelector("[data-mkt-variant-submit]");
     if (submitBtn) submitBtn.hidden = true;
 
-    /* Nothing here touches the purchase CTA. The CTA is not variant-gated:
-     * it opens a conversation with the seller, which is valid whichever
-     * variant is highlighted, and its own authorization was decided
-     * server-side. A client that could disable or relabel it would be
-     * asserting a purchasability rule the server never made. */
+    /* Nothing here touches the *contact* CTA. Messaging the seller is valid
+     * whichever variant is highlighted, and its authorization was decided
+     * server-side; a client that could disable or relabel it would be
+     * asserting a purchasability rule the server never made.
+     *
+     * Add to cart is different, and the difference is that it posts the
+     * selection. The server renders it disabled while the picker is
+     * incomplete — `needs_choice`, the last refusal `cart_affordance`
+     * returns, which means every other check already passed. So the only
+     * question left is one this resolver answers, and answering it is not
+     * inventing a rule: it is the same `resolved()` the price display uses,
+     * and the route re-validates the id against the listing before it
+     * prices anything. */
+    var addBtn = panel.parentNode
+      ? panel.parentNode.querySelector("[data-mkt-add]")
+      : null;
+
+    function syncAdd(variant) {
+      if (!addBtn) return;
+      /* Never re-enable a button the buyer has already spent. `bindAddToCart`
+       * marks a completed add and swaps the label; putting "Add to cart" back
+       * under it on the next radio change would claim the cart forgot. */
+      if (addBtn.getAttribute("data-mkt-added")) return;
+      var ok = !!(variant && variant.available && variant.id);
+      addBtn.disabled = !ok;
+      /* `0` and not an empty attribute: it is the same sentinel the server
+       * renders and the same one the route reads for "nothing chosen". */
+      addBtn.setAttribute("data-mkt-variant", ok ? String(variant.id) : "0");
+    }
+
+    /* The option group an input belongs to, in the payload's own vocabulary.
+     *
+     * `input.name` is not it. The server slugifies the group name into a
+     * query-string parameter -- "Color" becomes `opt_color` -- while the
+     * variant payload keys `options` by the raw group name the seller typed.
+     * Comparing one against the other made `options["opt_color"]` undefined for
+     * every row, so no combination was ever reachable and every option on the
+     * page rendered disabled and struck through: a product whose entire
+     * catalogue looked sold out, on the one control the page exists to offer.
+     *
+     * Fixed by carrying the raw key on the element as `data-mkt-option` rather
+     * than re-implementing the slug here. A second slugifier in JavaScript
+     * would have to keep agreeing with `marketplace_web.slugify` forever, and
+     * the first time it disagreed the symptom would be this same silent
+     * everything-disabled page. The fallback keeps older cached markup working
+     * for the single-group case, where name and key collide harmlessly. */
+    function optionKey(input) {
+      return input.getAttribute("data-mkt-option") || input.name;
+    }
 
     function selection() {
       var chosen = {};
       inputs.forEach(function (input) {
-        if (input.checked) chosen[input.name] = input.value;
+        if (input.checked) chosen[optionKey(input)] = input.value;
       });
       return chosen;
     }
@@ -239,13 +283,14 @@
      * ones. */
     function refreshAvailability(chosen) {
       inputs.forEach(function (input) {
+        var key = optionKey(input);
         var probe = {};
         for (var name in chosen) {
-          if (Object.prototype.hasOwnProperty.call(chosen, name) && name !== input.name) {
+          if (Object.prototype.hasOwnProperty.call(chosen, name) && name !== key) {
             probe[name] = chosen[name];
           }
         }
-        probe[input.name] = input.value;
+        probe[key] = input.value;
         var reachable = variants.some(function (variant) {
           return matches(variant, probe);
         });
@@ -296,6 +341,7 @@
          * been answered and is removed. */
         noteEl.hidden = !!variant;
       }
+      syncAdd(variant);
     }
 
     inputs.forEach(function (input) {
@@ -531,6 +577,13 @@
         button.textContent = "Adding…";
         post("/api/pulse/marketplace/cart", {
           listing_id: button.getAttribute("data-mkt-add"),
+          /* Read off the button at click time, not captured when it was bound:
+           * on the product page the variant resolver rewrites this attribute as
+           * the buyer changes options, and a value read once at bind time would
+           * post whichever combination the page happened to load with. `0` is
+           * the sentinel for a listing with nothing to choose, which is what
+           * every grid card posts. */
+          variant_id: button.getAttribute("data-mkt-variant") || 0,
           qty: 1,
         })
           .then(function (data) {
