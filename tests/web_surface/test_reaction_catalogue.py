@@ -57,6 +57,15 @@ CACHE_PINNED_ASSETS = {
         "video-action-fit-20260927i",
         "6ff68ca37cb663b328b315dbdfcd7e63614e2dee96f996946ab2800eb18db50b",
     ),
+    # Joined the pin when the Apps-menu width fix went in. It had sat on
+    # `shell-nav-20260909a` for eighteen days, and the fix is invisible to every
+    # other check in this repo -- the markup was always correct, only the
+    # rendered width was wrong -- so a missed token bump here would be silent
+    # twice over.
+    "static/css/pulse_desktop_feed.css": (
+        "apps-menu-width-20260927a",
+        "94bcf4e6cc11fd9a490bf8c0f41be6fc8be7ea0540e58c40bcdb9eb35ba828db",
+    ),
 }
 
 
