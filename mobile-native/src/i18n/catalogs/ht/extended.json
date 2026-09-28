@@ -1220,7 +1220,8 @@
           "listing_risk": "Pa kalifye pou parèt",
           "seller_risk": "Magazen ou pa kalifye pou parèt",
           "unknown_reason": "Nou pa ka montre l kounye a"
-        }
+        },
+        "cleared": "Etikèt pwodwi retire: se sèlman pòs nan fil la ki pote yo."
       }
     },
     "marketplace": {

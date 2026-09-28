@@ -1234,7 +1234,8 @@
           "listing_risk": "Nicht zur Anzeige berechtigt",
           "seller_risk": "Dein Shop ist nicht zur Anzeige berechtigt",
           "unknown_reason": "Kann derzeit nicht angezeigt werden"
-        }
+        },
+        "cleared": "Produktmarkierungen entfernt: nur Feed-Beiträge enthalten sie."
       }
     },
     "marketplace": {

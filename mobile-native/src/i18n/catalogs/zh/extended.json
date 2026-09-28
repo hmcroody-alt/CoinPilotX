@@ -1220,7 +1220,8 @@
           "listing_risk": "不符合展示条件",
           "seller_risk": "你的店铺不符合展示条件",
           "unknown_reason": "目前无法展示"
-        }
+        },
+        "cleared": "已移除商品标签：只有动态帖子才能携带标签。"
       }
     },
     "marketplace": {

@@ -1234,7 +1234,8 @@
           "listing_risk": "Not eligible to be shown",
           "seller_risk": "Your store is not eligible to be shown",
           "unknown_reason": "Cannot be shown right now"
-        }
+        },
+        "cleared": "Product tags removed: only feed posts carry them."
       }
     },
     "marketplace": {

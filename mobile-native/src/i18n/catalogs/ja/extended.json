@@ -1220,7 +1220,8 @@
           "listing_risk": "表示の対象外です",
           "seller_risk": "あなたのストアは表示の対象外です",
           "unknown_reason": "現在表示できません"
-        }
+        },
+        "cleared": "商品タグを削除しました。フィード投稿にのみ付けられます。"
       }
     },
     "marketplace": {

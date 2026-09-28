@@ -1234,7 +1234,8 @@
           "listing_risk": "Não elegível para exibição",
           "seller_risk": "Sua loja não está elegível para exibição",
           "unknown_reason": "Não pode ser exibido agora"
-        }
+        },
+        "cleared": "Marcações de produtos removidas: apenas as publicações do feed as incluem."
       }
     },
     "marketplace": {

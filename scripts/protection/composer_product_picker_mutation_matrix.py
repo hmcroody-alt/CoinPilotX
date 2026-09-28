@@ -240,7 +240,7 @@ MUTATIONS = [
             "and never tell them — the same silent success as above."
         ),
         path=COMPOSER,
-        old="      setNote(PRODUCT_TAGS_CLEARED_NOTICE);\n      setProductTagsCleared(true);\n",
+        old="      setNote(t(PRODUCT_TAGS_CLEARED_KEY));\n      setProductTagsCleared(true);\n",
         new="",
         suites=[COMPOSER_SUITE],
     ),
@@ -256,11 +256,28 @@ MUTATIONS = [
         old=(
             "      {productTagsCleared ? (\n"
             '        <View testID="home-composer-product-tags-cleared" accessibilityLiveRegion="polite" style={styles.productNotice}>\n'
-            "          <Text style={styles.productNoticeText}>{PRODUCT_TAGS_CLEARED_NOTICE}</Text>\n"
+            "          <Text style={styles.productNoticeText}>{t(PRODUCT_TAGS_CLEARED_KEY)}</Text>\n"
             "        </View>\n"
             "      ) : null}\n"
         ),
         new="",
+        suites=[COMPOSER_SUITE],
+    ),
+    dict(
+        name="notice-key-points-at-nothing",
+        control=(
+            "The removal notice resolves through the catalogue. A key that does not "
+            "resolve is not an error here -- the engine humanises the last segment, "
+            "so a mistyped namespace renders the plausible-looking 'Cleared' while "
+            "validate-i18n still reports 11 locales at 100%, because it compares "
+            "catalogues against en and never asks what the app looks up. Only the "
+            "text assertion in the suite can tell those two apart, which is why "
+            "this mutation exists: it changes nothing a human reviewer would notice "
+            "and nothing either i18n gate inspects."
+        ),
+        path=COMPOSER,
+        old='const PRODUCT_TAGS_CLEARED_KEY = "commerce:discovery.tagging.cleared";\n',
+        new='const PRODUCT_TAGS_CLEARED_KEY = "commerce:discovery.tag.cleared";\n',
         suites=[COMPOSER_SUITE],
     ),
     dict(

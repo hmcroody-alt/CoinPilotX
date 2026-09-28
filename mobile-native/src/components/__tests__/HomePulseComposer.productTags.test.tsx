@@ -217,6 +217,14 @@ describe("a mode that cannot carry tags says so", () => {
     // queued media, so a `setNote` alone would be a message nobody renders —
     // which is what the first version of this did.
     expect(view.getByTestId("home-composer-product-tags-cleared")).toBeTruthy();
+    // The text assertion is load-bearing now that this string is a catalogue key
+    // rather than a literal, and it is the only check that can fail on a wrong
+    // one. A key that does not resolve is not an error: the engine humanises the
+    // last segment, so `commerce:discovery.tagging.cleared` under a mistyped
+    // namespace renders the plausible-looking "Cleared" while `validate-i18n`
+    // still reports 11 locales at 100% — it compares catalogues to `en` and never
+    // asks what the app looks up. Pinning the English is what distinguishes
+    // "translated" from "silently humanised".
     expect(view.getByText("Product tags removed: only feed posts carry them.")).toBeTruthy();
 
     // And the button is gone with them, rather than offering a choice that the

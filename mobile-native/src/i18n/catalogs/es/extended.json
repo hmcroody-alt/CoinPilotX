@@ -1234,7 +1234,8 @@
           "listing_risk": "No apto para mostrarse",
           "seller_risk": "Tu tienda no es apta para mostrarse",
           "unknown_reason": "No se puede mostrar ahora mismo"
-        }
+        },
+        "cleared": "Etiquetas de productos eliminadas: solo las publicaciones del feed las incluyen."
       }
     },
     "marketplace": {

@@ -68,8 +68,16 @@ const VISIBILITY: Visibility[] = ["public", "followers", "private"];
  * is written to a string nobody renders. That is how this message was invisible
  * when it was first added, which is the same silent-loss shape the product tags
  * themselves exist to eliminate.
+ *
+ * The shared constant is the *key*, not the English. It was the literal until
+ * both render sites were translated; shipping it as a literal would have been a
+ * third instance of this file's own failure mode, because neither gate can see
+ * it — `validate-i18n` only compares each catalogue against `en` and says
+ * nothing about strings that never became keys, and a module-scope `const` is
+ * not a JSX literal, so it reads as ordinary code. It passed both gates while
+ * being the one untranslated sentence in the feature.
  */
-const PRODUCT_TAGS_CLEARED_NOTICE = "Product tags removed: only feed posts carry them.";
+const PRODUCT_TAGS_CLEARED_KEY = "commerce:discovery.tagging.cleared";
 
 /**
  * Which composer modes may carry marketplace product tags.
@@ -161,7 +169,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
    * Whether to keep telling the creator their tags were dropped by a mode
    * switch. Its own flag rather than a `note` string because the status panel
    * that renders notes is conditional on unrelated state — see
-   * `PRODUCT_TAGS_CLEARED_NOTICE`.
+   * `PRODUCT_TAGS_CLEARED_KEY`.
    */
   const [productTagsCleared, setProductTagsCleared] = useState(false);
   const [note, setNote] = useState("Ready to publish.");
@@ -665,7 +673,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
     if (!modeCarriesProductTags(nextMode) && productListingIds.length) {
       setProductListingIds([]);
       setShowProducts(false);
-      setNote(PRODUCT_TAGS_CLEARED_NOTICE);
+      setNote(t(PRODUCT_TAGS_CLEARED_KEY));
       setProductTagsCleared(true);
     } else if (modeCarriesProductTags(nextMode)) {
       // Switching back to a mode that can carry tags retires the notice; leaving
@@ -847,7 +855,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
           creator tags a product and then switches to Reel. */}
       {productTagsCleared ? (
         <View testID="home-composer-product-tags-cleared" accessibilityLiveRegion="polite" style={styles.productNotice}>
-          <Text style={styles.productNoticeText}>{PRODUCT_TAGS_CLEARED_NOTICE}</Text>
+          <Text style={styles.productNoticeText}>{t(PRODUCT_TAGS_CLEARED_KEY)}</Text>
         </View>
       ) : null}
       {/* Mounted only while open so the fetch fires on open rather than on every

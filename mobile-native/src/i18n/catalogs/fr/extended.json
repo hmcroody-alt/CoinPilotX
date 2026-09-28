@@ -1234,7 +1234,8 @@
           "listing_risk": "Non éligible à l'affichage",
           "seller_risk": "Votre boutique n'est pas éligible à l'affichage",
           "unknown_reason": "Impossible à afficher pour le moment"
-        }
+        },
+        "cleared": "Tags produits supprimés : seules les publications du fil les conservent."
       }
     },
     "marketplace": {

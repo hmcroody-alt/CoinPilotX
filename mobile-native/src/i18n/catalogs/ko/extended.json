@@ -1220,7 +1220,8 @@
           "listing_risk": "표시 대상이 아닙니다",
           "seller_risk": "내 스토어는 표시 대상이 아닙니다",
           "unknown_reason": "지금은 표시할 수 없습니다"
-        }
+        },
+        "cleared": "상품 태그가 삭제되었습니다. 피드 게시물에만 포함됩니다."
       }
     },
     "marketplace": {
