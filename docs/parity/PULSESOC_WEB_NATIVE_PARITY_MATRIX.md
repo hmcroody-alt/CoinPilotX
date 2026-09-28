@@ -18,7 +18,7 @@ comes from the handler AST. Classification:
 | Verdict | Count |
 | --- | --- |
 | PARITY | 95 |
-| REDIRECT_ONLY | 16 |
+| REDIRECT_ONLY | 17 |
 | BLUEPRINT_UNVERIFIED | 2 |
 
 ## Every destination
@@ -27,11 +27,11 @@ comes from the handler AST. Classification:
 | --- | --- | --- | --- | --- |
 | deep_link | AccountWebSecurity | `/account/security` | REDIRECT_ONLY | `/account/security` |
 | deep_link | AccountWebSettings | `/account/settings` | PARITY | `/account/settings` |
-| deep_link | AccountHealthWeb | `/dashboard/account/health` | PARITY | `/dashboard/account/<subsystem_key>` |
-| master_navigation | Security Center | `/dashboard/account/security` | PARITY | `/dashboard/account/<subsystem_key>` |
-| deep_link | AccountSecurity | `/dashboard/account/security` | PARITY | `/dashboard/account/<subsystem_key>` |
-| master_navigation | Account Center | `/dashboard/account/settings` | PARITY | `/dashboard/account/<subsystem_key>` |
-| deep_link | AccountSettings | `/dashboard/account/settings` | PARITY | `/dashboard/account/<subsystem_key>` |
+| deep_link | AccountHealthWeb | `/dashboard/account/health` | PARITY | `/dashboard/account/health` |
+| master_navigation | Security Center | `/dashboard/account/security` | PARITY | `/dashboard/account/security` |
+| deep_link | AccountSecurity | `/dashboard/account/security` | PARITY | `/dashboard/account/security` |
+| master_navigation | Account Center | `/dashboard/account/settings` | PARITY | `/dashboard/account/settings` |
+| deep_link | AccountSettings | `/dashboard/account/settings` | PARITY | `/dashboard/account/settings` |
 | deep_link | ActivityInboxWebActivity | `/dashboard/activity` | PARITY | `/dashboard/activity` |
 | master_navigation | Content Planner | `/dashboard/creator/content-planner` | PARITY | `/dashboard/creator/<subsystem_key>` |
 | master_navigation | Draft Studio | `/dashboard/creator/draft-studio` | PARITY | `/dashboard/creator/<subsystem_key>` |
@@ -43,9 +43,9 @@ comes from the handler AST. Classification:
 | master_navigation | Notification Preferences | `/dashboard/network/notifications` | PARITY | `/dashboard/network/notifications` |
 | master_navigation | System Status | `/dashboard/system/feed` | REDIRECT_ONLY | `/dashboard/system/<module_key>` |
 | deep_link | LearningLessonDetail | `/education/lesson/:lessonSlug` | PARITY | `/education/lesson/<lesson_slug>` |
-| deep_link | NotificationCenter | `/notifications` | PARITY | `/<slug>` |
+| deep_link | NotificationCenter | `/notifications` | PARITY | `/notifications` |
 | master_navigation | Privacy Policy | `/privacy` | PARITY | `/privacy` |
-| master_navigation | Home | `/pulse` | PARITY | `/<slug>` |
+| master_navigation | Home | `/pulse` | PARITY | `/pulse` |
 | master_navigation | Account Health | `/pulse/account-health` | PARITY | `/pulse/account-health` |
 | deep_link | AccountHealth | `/pulse/account-health` | PARITY | `/pulse/account-health` |
 | master_navigation | Activity Inbox | `/pulse/activity` | PARITY | `/pulse/activity` |
@@ -67,6 +67,7 @@ comes from the handler AST. Classification:
 | deep_link | DraftStudio | `/pulse/dashboard/draft-studio-web` | PARITY | `/pulse/dashboard/draft-studio-web` |
 | deep_link | PostSchedulerPulseAlias | `/pulse/dashboard/post-scheduler` | PARITY | `/pulse/dashboard/post-scheduler` |
 | deep_link | PostScheduler | `/pulse/dashboard/post-scheduler-web` | PARITY | `/pulse/dashboard/post-scheduler-web` |
+| deep_link | Dropshipping | `/pulse/dropshipping` | REDIRECT_ONLY | `/pulse/dropshipping` |
 | master_navigation | Events | `/pulse/events` | PARITY | `/pulse/events` |
 | master_navigation | Groups | `/pulse/groups` | PARITY | `/pulse/groups` |
 | deep_link | Groups | `/pulse/groups` | PARITY | `/pulse/groups` |
@@ -79,12 +80,12 @@ comes from the handler AST. Classification:
 | master_navigation | Live Viewer | `/pulse/live` | PARITY | `/pulse/live` |
 | deep_link | Live | `/pulse/live` | PARITY | `/pulse/live` |
 | deep_link | LiveEventCreateGateway | `/pulse/live/events/create` | PARITY | `/pulse/live/events/create` |
-| deep_link | LiveScheduleGateway | `/pulse/live/schedule` | REDIRECT_ONLY | `/pulse/live/<int:live_id>` |
+| deep_link | LiveScheduleGateway | `/pulse/live/schedule` | PARITY | `/pulse/live/schedule` |
 | master_navigation | Live Studio | `/pulse/live/studio` | PARITY | `/pulse/live/studio` |
 | master_navigation | Marketplace | `/pulse/marketplace` | PARITY | `/pulse/marketplace` |
 | deep_link | Marketplace | `/pulse/marketplace` | PARITY | `/pulse/marketplace` |
-| master_navigation | Create Listing | `/pulse/marketplace/create` | PARITY | `/pulse/marketplace/<int:listing_id>` |
-| deep_link | MarketplaceCreateGateway | `/pulse/marketplace/create` | PARITY | `/pulse/marketplace/<int:listing_id>` |
+| master_navigation | Create Listing | `/pulse/marketplace/create` | PARITY | `/pulse/marketplace/create` |
+| deep_link | MarketplaceCreateGateway | `/pulse/marketplace/create` | PARITY | `/pulse/marketplace/create` |
 | deep_link | MerchantApply | `/pulse/merchant/apply` | PARITY | `/pulse/merchant/apply` |
 | deep_link | MerchantDashboard | `/pulse/merchant/dashboard` | PARITY | `/pulse/merchant/dashboard` |
 | master_navigation | Messages | `/pulse/messages` | PARITY | `/pulse/messages` |
@@ -134,7 +135,7 @@ comes from the handler AST. Classification:
 | master_navigation | UNDX Action Center | `/pulse/undx/actions` | PARITY | `/pulse/undx/actions` |
 | master_navigation | Verification | `/pulse/verification` | PARITY | `/pulse/verification` |
 | deep_link | Watchlists | `/pulse/watchlists` | PARITY | `/pulse/watchlists` |
-| deep_link | Saved | `/saved` | PARITY | `/<slug>` |
+| deep_link | Saved | `/saved` | REDIRECT_ONLY | `/saved` |
 | deep_link | ScamShield | `/scam-shield/:mode?` | PARITY | `/scam-shield/scan` |
 | master_navigation | Scam Shield | `/scam-shield/scan` | PARITY | `/scam-shield/scan` |
 | master_navigation | Terms | `/terms` | PARITY | `/terms` |
