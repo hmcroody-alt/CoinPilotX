@@ -58437,6 +58437,35 @@ def marketplace_storefront_variants(cur, listing_ids):
     return by_listing
 
 
+def marketplace_cart_table_exists(cur):
+    """Whether `marketplace_cart_items` has been created yet.
+
+    Asked of the engine's catalogue rather than of the table itself. The
+    obvious probe -- `SELECT 1 FROM marketplace_cart_items LIMIT 1` -- aborts
+    the surrounding transaction on Postgres when the table is missing, and this
+    runs part-way through a page render that still has queries to make; the
+    product page would go from a missing cart badge to a 500.
+
+    A probe that cannot answer reports `True`, which sends the caller down the
+    read it would have attempted anyway. An unreadable cart is the one case
+    `None` is for.
+    """
+    from services import db as db_service
+
+    catalogue = (
+        "SELECT 1 FROM pg_class WHERE relname='marketplace_cart_items' LIMIT 1"
+        if db_service.IS_POSTGRES else
+        "SELECT 1 FROM sqlite_master WHERE type='table'"
+        " AND name='marketplace_cart_items' LIMIT 1"
+    )
+    try:
+        cur.execute(catalogue)
+        return cur.fetchone() is not None
+    except Exception:
+        app.logger.warning("marketplace cart table probe failed", exc_info=True)
+        return True
+
+
 def marketplace_storefront_cart_count(cur, user_id):
     """How many items this buyer's cart holds, as the cart API counts them.
 
@@ -58450,15 +58479,28 @@ def marketplace_storefront_cart_count(cur, user_id):
 
     Deliberately does *not* call the module's `_ensure_schema`: this is a GET
     page render, and running DDL from one is how a read path acquires a lock it
-    has no business holding. A deployment whose cart table does not exist yet
-    takes the `except` below and renders the header it rendered before there was
-    a cart -- the same degradation `marketplace_storefront_variants` makes for
-    the same reason.
+    has no business holding. The table's absence is answered below instead.
     """
 
     buyer_id = safe_int(user_id, 0)
     if not buyer_id:
         return None
+    if not marketplace_cart_table_exists(cur):
+        # Zero, not `None`, and the distinction is load-bearing. `None` means
+        # "the cart could not be read", and `render_product` treats that as the
+        # caller withholding the whole cart UI -- including Add to cart.
+        #
+        # `marketplace_cart_items` is created by the cart API's own
+        # `_ensure_schema` and by nothing else, so before anyone has ever added
+        # an item the table is absent on every deployment. Answering `None`
+        # there hid Add to cart from precisely the state in which no other
+        # request could create the table, so the page that tells a visitor
+        # "Sign in to add to cart" offered them no way to -- and the POST the
+        # button makes would have worked, because it creates the table itself.
+        #
+        # A table that does not exist holds nothing for anybody. Zero is the
+        # fact here, not the guess the `except` below refuses to make.
+        return 0
     try:
         from services import marketplace_cart_routes as _cart
 
@@ -58493,6 +58535,78 @@ def marketplace_storefront_payloads(cur, rows):
     ]
 
 
+#: How many products the related rail asks for. Four, because that is one full
+#: row of `.mkt-grid` at the width the product page gives it; a fifth would wrap
+#: to a row of one under a heading that promised a set.
+MARKETPLACE_STOREFRONT_RELATED_LIMIT = 4
+
+
+def marketplace_storefront_product_context(cur, row):
+    """`(related, related_variants, seller_listing_count)` for one product page.
+
+    Three reads that are all about *this* listing's neighbourhood, kept
+    together because they share a connection and a failure mode: none of them is
+    the product, so the caller treats the whole tuple as optional.
+
+    The related rail is the same department, not a recommendation. Ranking
+    belongs to `services/commerce_discovery`, which owns the exposure ledger and
+    the frequency rules; a `SELECT ... ORDER BY id DESC` here that called itself
+    "Recommended for you" would be a second, unaccountable curator saying so.
+    "More from this department" is a claim `l.category = ?` actually supports.
+
+    `seller_listing_count` is counted under the same visibility predicates the
+    grid applies, so the number a buyer reads is the number of products they can
+    actually reach. Counting the seller's rows outright would advertise drafts,
+    paused listings and anything a review removed.
+    """
+
+    from services.discovery_visibility import discovery_visible_sql
+
+    listing_id = int(row.get("id") or 0)
+    seller_id = int(row.get("seller_user_id") or 0)
+    category = (row.get("category") or "").strip()
+
+    related = []
+    related_variants = {}
+    if category:
+        cur.execute(
+            f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}
+                  FROM marketplace_listings l
+                  LEFT JOIN users u ON u.user_id=l.seller_user_id
+                  LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+                 WHERE l.category=? AND l.id<>?
+                   AND {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+                   AND {discovery_visible_sql('u')}
+                 ORDER BY l.featured DESC, l.id DESC
+                 LIMIT {int(MARKETPLACE_STOREFRONT_RELATED_LIMIT)}""",
+            (category, listing_id),
+        )
+        related = marketplace_storefront_payloads(cur, cur.fetchall())
+        # The rail prices from variants exactly as the grid does. Without this
+        # the same product would carry one price on the grid and another in the
+        # rail beneath its neighbour, which is the disagreement
+        # `marketplace_storefront_variants` exists to prevent.
+        related_variants = marketplace_storefront_variants(
+            cur, [int(item.get("id") or 0) for item in related]
+        )
+
+    seller_listing_count = 0
+    if seller_id:
+        cur.execute(
+            f"""SELECT COUNT(*) FROM marketplace_listings l
+                  LEFT JOIN users u ON u.user_id=l.seller_user_id
+                  LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+                 WHERE l.seller_user_id=?
+                   AND {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+                   AND {discovery_visible_sql('u')}""",
+            (seller_id,),
+        )
+        counted = cur.fetchone()
+        seller_listing_count = safe_int(db_service.row_values(counted)[0] if counted else 0, 0)
+
+    return related, related_variants, seller_listing_count
+
+
 def marketplace_storefront_app_cta(destination, resource_id=None):
     """The "Open in PulseSoc" affordance, as an addition and never a redirect.
 
@@ -58515,8 +58629,14 @@ def marketplace_storefront_app_cta(destination, resource_id=None):
 
 
 
-def _marketplace_member_storefront_reply(page, status=200):
+def _marketplace_member_storefront_reply(page, status=200, extra_html=""):
     """One `RenderedPage`, wrapped in the member shell.
+
+    `extra_html` is appended after the body, for markup that belongs to the
+    page but not inside it -- the promotion modal and its bundle on the product
+    page. The renderer has no parameter for it and should not: a dialog that
+    positions itself against the viewport is not part of a purchase panel, and
+    threading it through `promote_html` would nest it inside one.
 
     Member-only by design. The anonymous reader never reaches this function --
     `_marketplace_public_index_response` and `_marketplace_public_product_response`
@@ -58536,7 +58656,7 @@ def _marketplace_member_storefront_reply(page, status=200):
     response = pulse_social_shell(
         page.title,
         page.meta_description,
-        f"{page.assets_html}{page.body_html}",
+        f"{page.assets_html}{page.body_html}{extra_html}",
         "",
         "",
         show_intro=False,
@@ -58946,9 +59066,7 @@ def pulse_marketplace_listing_page(listing_id):
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     cur.execute(
-        f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},
-                   COALESCE(ms.status,'missing') AS seller_status,
-                   COALESCE(u.username,'') AS seller_username
+        f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}
             FROM marketplace_listings l
             LEFT JOIN users u ON u.user_id=l.seller_user_id
             LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
@@ -58967,77 +59085,93 @@ def pulse_marketplace_listing_page(listing_id):
         abort(404)
     row = dict(row)
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [listing_id])
+    seller_id = int(row.get("seller_user_id") or 0)
+
+    # Everything the member page needs beyond the row itself, read on this
+    # connection before the `close()` below. Gated on `user` because the
+    # anonymous reader never uses any of it -- that branch renders from
+    # `listing` alone -- and four extra queries per crawl of a public page is a
+    # cost with nothing on the other side of it.
+    variants = []
+    related = []
+    related_variants = {}
+    cart_count = None
+    seller_listing_count = 0
+    if user:
+        try:
+            variants = marketplace_storefront_variants(cur, [listing_id]).get(listing_id, [])
+            cart_count = marketplace_storefront_cart_count(cur, user.get("user_id"))
+            related, related_variants, seller_listing_count = (
+                marketplace_storefront_product_context(cur, row)
+            )
+        except Exception:
+            # None of these is the product. A related rail that could not be
+            # read is an absent rail; a cart that could not be read is a page
+            # with no cart link, which `render_product` already treats as the
+            # caller's opt-out. The listing itself is in hand, so there is
+            # nothing here worth turning into an error page.
+            app.logger.warning("marketplace product context unavailable", exc_info=True)
     conn.close()
     listing = pulse_marketplace_listing_payload(row, media_by_listing.get(listing_id, []))
 
-    seller_id = int(row.get("seller_user_id") or 0)
     if not user:
         return _marketplace_public_product_response(listing_id, listing)
     owned = seller_id == int(user.get("user_id") or 0)
-    gallery = "".join(
-        f"<img src='{html_escape(clean_html(entry.get('media_url')))}' alt='' loading='lazy'>"
-        if (entry.get("media_type") or "image") == "image"
-        else f"<video src='{html_escape(clean_html(entry.get('media_url')))}' controls preload='none'"
-             f" poster='{html_escape(clean_html(entry.get('poster_url') or ''))}'></video>"
-        for entry in (listing.get("media") or []))
-    gallery_block = f"<div class='grid'>{gallery}</div>" if gallery else ""
-    # Add to cart is the verb this page was missing, and its absence was a
-    # contradiction rather than a gap: the *public* rendering of this same URL
-    # says "Sign in to buy" (marketplace_product_public.html:66), so signing in
-    # used to move a buyer from a promise to Contact Seller / Save / Report.
-    #
-    # `POST /api/pulse/marketplace/cart` is the endpoint the app already calls.
-    # No new route: its `_require_user()` resolves through `api_account_user()`,
-    # which accepts this page's session cookie. The server refuses a seller's
-    # own listing with OWN_LISTING, so `owned` here only decides whether to
-    # render a control the server would reject -- it is not the enforcement.
-    cart_button = "" if owned else (
-        f"<button class='primary' data-add-to-cart='{listing_id}'>Add to cart</button>")
-    promote = ""
+
+    # Promote stays exactly where it was -- owner-only, same three data
+    # attributes, same modal, same bundle -- because `pulsesoc_promotions.js`
+    # binds on `[data-promote-content]` and knows nothing about which page it is
+    # on. Only the container moved: the button rides in the purchase panel via
+    # `promote_html`, and the dialog and its assets go after the body, which is
+    # where a viewport-positioned dialog belongs.
+    promote_html = ""
+    extra_html = ""
     if owned:
-        promote = (f"<button data-promote-content='marketplace_listing' "
-                   f"data-content-id='{listing_id}' "
-                   f"data-content-label='{html_escape(clean_html(row.get('title') or 'Marketplace listing'))}'>"
-                   f"Promote Listing</button>")
-    # Same rule as the grid card: no price, no pill. This page and that one show
-    # the same listing, so a phrase here would reappear as a disagreement
-    # between browsing and following a shared link.
-    price_label = clean_html(row.get("price_label"))
-    price_pill = f"<span class='pill'>{price_label}</span> " if price_label else ""
-    main = (
-        f"<section class='card'>"
-        f"<p><a href='{app_first_href('marketplace')}'>&larr; Marketplace</a></p>"
-        f"<h1>{html_escape(clean_html(row.get('title')))}</h1>"
-        f"<p><span class='pill'>{html_escape(clean_html(row.get('category') or 'Education'))}</span> "
-        # No "Safety N" pill here either -- see `marketplace_card` on the grid
-        # for the measurement. The two surfaces printed the same inverted number
-        # for the same row, so fixing one would have moved the lie rather than
-        # removed it.
-        f"{price_pill}</p>"
-        f"<p>Seller: {html_escape(clean_html(marketplace_seller_identity.display_store_name(row)))}</p>"
-        f"{gallery_block}"
-        f"<p>{html_escape(clean_html(row.get('description') or row.get('short_description') or ''))}</p>"
-        f"<p>Safety notice: educational products only. Payments and payout release "
-        f"are staged for compliance.</p>"
-        f"<div class='actions'>{cart_button}"
-        f"<button data-contact-seller='{seller_id}'>Contact Seller</button>"
-        f"<button data-save-listing='{listing_id}'>Save</button>"
-        f"<button data-report-listing='{listing_id}'>Report</button>{promote}"
-        f"</div></section>"
-        f"{pulse_promotion_modal_html()}"
-        f"<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'>"
-        f"<script src='/static/js/pulsesoc_promotions.js' defer></script>")
-    # The same three buyer actions the grid card offers, bound the same way, so a
-    # member who arrives by link is not on a page with fewer verbs than the one
-    # they would have reached by browsing.
-    script = """
-    document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');const a=e.target.closest('[data-add-to-cart]');try{if(a){a.disabled=true;try{await pulseApi('/api/pulse/marketplace/cart',{method:'POST',body:JSON.stringify({listing_id:a.dataset.addToCart,qty:1})});a.textContent='In your cart';toast('Added to your cart.')}catch(err){a.disabled=false;throw err}} if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
-    """
-    return pulse_social_shell(
-        clean_html(row.get("title") or "Marketplace listing"),
-        clean_html(row.get("short_description") or row.get("category") or
-                   "PulseSoc Marketplace listing"),
-        main, "", script)
+        promote_html = (
+            f"<div class='mkt-owner-tools'>"
+            f"<button class='mkt-ghost' data-promote-content='marketplace_listing' "
+            f"data-content-id='{listing_id}' "
+            f"data-content-label='{html_escape(clean_html(row.get('title') or 'Marketplace listing'))}'>"
+            f"Promote listing</button></div>"
+        )
+        extra_html = (
+            f"{pulse_promotion_modal_html()}"
+            f"<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'>"
+            f"<script src='/static/js/pulsesoc_promotions.js' defer></script>"
+        )
+
+    # The storefront renderer, the same one the grid runs through. It was built
+    # with this page in it and shipped without a caller, which is why following a
+    # link out of the grid used to leave the design system behind: matched cards
+    # and a real gallery on one side of the click, an unstyled `.card` with every
+    # image stacked full-height on the other.
+    #
+    # What it adds that the block it replaced could not: the variant picker. The
+    # grid deliberately withholds quick-add from a listing with options and sends
+    # the buyer here instead -- see `mw.CART_HIDDEN_NEEDS_CHOICE` -- and until now
+    # "here" was a page with no options on it and an unconditional Add to cart,
+    # so the escape hatch led straight back into the unnamed-variant guess it
+    # exists to prevent. `render_product` renders the options and withholds the
+    # add for exactly the listings the grid withheld it for.
+    page = marketplace_storefront.render_product(
+        listing=listing,
+        variants=variants,
+        related=related,
+        related_variants=related_variants,
+        # Read from the query string and nowhere else, which is what makes a
+        # chosen variant a shareable URL. The renderer honours only values that
+        # exist in a real variant row, so a crafted query cannot inject one.
+        selected_options=request.args,
+        viewer=marketplace_storefront_viewer(user),
+        app_cta_html=marketplace_storefront_app_cta("product", listing_id),
+        promote_html=promote_html,
+        seller_listing_count=seller_listing_count,
+        # Turns on the cart link and Add to cart. `None` -- what the failed read
+        # above leaves it as -- keeps both off rather than printing a confident
+        # "0" over an order in progress.
+        cart_count=cart_count,
+    )
+    return _marketplace_member_storefront_reply(page, extra_html=extra_html)
 
 
 def pulse_marketplace_gallery_urls(value):

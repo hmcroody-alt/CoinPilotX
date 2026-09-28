@@ -445,6 +445,7 @@
     "tests/test_marketplace_buy_now_checkout_contract.py",
     "tests/test_marketplace_buy_now_quantity.py",
     "tests/test_marketplace_cart_lifecycle.py",
+    "tests/test_marketplace_cart_variants.py",
     "tests/test_marketplace_catalog.py",
     "tests/test_marketplace_cash_payment_pause.py",
     "tests/test_marketplace_delivery_lane.py",
@@ -704,6 +705,7 @@
     "tests/web_surface/test_seller_store_presence_newchat.py",
     "tests/web_surface/test_shell_nav_parity.py",
     "tests/web_surface/test_undx_action_center_page.py",
+    "tests/web_surface/test_universal_dock_is_a_phone_control.py",
     "tests/web_surface/test_withdrawn_nav_destinations.py"
   ],
   "quarantined": {

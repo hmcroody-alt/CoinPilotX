@@ -1280,8 +1280,19 @@ body:has(.mkt) .layout > aside {
   display: none;
 }
 
-.mkt-gallery-thumb {
+/* Each thumb is an `<a>` wrapped in an `<li>`, so the rail's flex items are
+ * the list items and any `flex` declared on the anchor is inert. The anchor
+ * also stayed inline, where `width` does not apply at all -- the thumbs took
+ * their size from the image inside and their border painted on the line box,
+ * leaving a stray vertical rule taller than the picture beside each one. */
+.mkt-gallery-rail > li {
   flex: 0 0 auto;
+  display: flex;
+  min-width: 0;
+}
+
+.mkt-gallery-thumb {
+  display: block;
   width: 64px;
   padding: 0;
   border: 1px solid var(--mkt-line);
@@ -1311,10 +1322,30 @@ body:has(.mkt) .layout > aside {
   gap: var(--spacing-xs, 8px);
 }
 
+/* These two are icon buttons and must stay square. `pulse_mobile_system.css`
+ * gives every `button` on the site `width: 100%` below 768px, which is right
+ * for a stacked action but wrong for a control sitting in a row: the two
+ * arrows grew to 172px each, took the whole 370px between them, and left the
+ * counter 11px to render "1 / 3" in -- so it wrapped to three lines.
+ *
+ * Fixed here rather than by narrowing the global rule, which legacy pages
+ * still depend on. Two class names outrank a bare `button`, so no
+ * `!important` is needed to win. */
+.mkt-gallery-nav .mkt-ghost {
+  flex: 0 0 auto;
+  width: var(--touch-target-min, 48px);
+  padding: 0;
+}
+
 .mkt-gallery-counter {
   font-size: var(--font-size-xs, 12px);
   color: var(--mkt-muted);
   font-variant-numeric: tabular-nums;
+  /* Never the item that gives way. The arrows are fixed above, so there is
+   * nothing left to squeeze it, but the counter losing its line is the visible
+   * failure and it should not depend on a sibling's rule to stay on one. */
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 /* ---------------------------------------------------------------- *
@@ -1522,6 +1553,32 @@ body:has(.mkt) .layout > aside {
   color: var(--mkt-muted);
   box-shadow: none;
   cursor: not-allowed;
+}
+
+/* Add to cart on the product page. Its own row rather than a cell in
+ * `.mkt-actions`, which is a two-column grid built for one primary plus one
+ * ghost; a second primary in there would either halve Message seller or push
+ * Save onto a line by itself. The panel is a gapped grid, so this needs no
+ * margin. */
+.mkt-actions-buy {
+  display: grid;
+  min-width: 0;
+}
+
+/* Settled state, after the script has posted and the server has confirmed.
+ * The fill is dropped rather than kept, because the label now reports a fact
+ * ("In cart") instead of offering an action, and leaving it as the loudest
+ * thing on the page sends the buyer to press it again. The mint survives as
+ * the border and the text, so the row keeps its height and the state is still
+ * legible without colour alone carrying it -- the word changes too.
+ *
+ * The outline is an inset shadow and not a `border`, because `.mkt-cta` is
+ * `border: 0` and adding one here would grow the button by 2px at the moment
+ * it settles, nudging everything below it. */
+.mkt-cta[data-mkt-added] {
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px var(--mkt-accent);
+  color: var(--mkt-accent);
 }
 
 .mkt-ghost {
