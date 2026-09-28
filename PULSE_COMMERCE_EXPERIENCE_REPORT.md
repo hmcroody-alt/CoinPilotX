@@ -301,6 +301,57 @@ train a reader to ignore the output.
 
 Suites green after the change: 41 + 110 + 11 + 102 + 58 + 14 + 6 + 53 + 14 + 9.
 
+### 4.4 The migration was verified on real PostgreSQL, because tests cannot reach it
+
+Everything above runs on SQLite. The schema module retires the old two-column
+unique key by *two different code paths* — Postgres drops the constraint by name,
+SQLite rebuilds the table — and **the path with no coverage was the one production
+takes.** The failure mode was specific: if the drop finds no name, the
+`ADD COLUMN` half still succeeds, so the table gains `variant_id` while keeping
+`UNIQUE(user_id, listing_id)`, and then the buyer's *second* size on one listing
+raises a unique violation on a live cart.
+
+So `scripts/verify_cart_variant_schema_on_postgres.py` (new, DSN-guarded to
+loopback before `services.db` is imported) ran `ensure_cart_schema` against a
+throwaway PostgreSQL 18.6. **35/35 checks pass.** Three scenarios, because
+`_retire_legacy_unique_postgres` looks for two fixture shapes in order and testing
+one leaves the other branch dark:
+
+| Scenario | Legacy key as | Dropped by name |
+| --- | --- | --- |
+| 1 | table `CONSTRAINT`, what `CREATE TABLE ... UNIQUE` leaves | `marketplace_cart_items_user_id_listing_id_key` |
+| 2 | bare unique `INDEX`, what a hand-rolled one leaves | `marketplace_cart_items_user_listing_legacy` |
+| 3 | absent — a database that never had the table | n/a, created correct |
+
+Two *different* real constraint names came back, which is the evidence the drop
+actually ran and matched two shapes rather than a hardcoded string passing twice.
+Also asserted per scenario: the two-column key is gone and the three-column one
+present; rows kept their line ids (`[41, 77]`, so no client's line id is
+invalidated); values backfilled to `0`; a duplicate of the same variant refused
+and a *different* variant accepted; the route's own
+`ON CONFLICT (user_id, listing_id, variant_id)` target resolves at plan time; and
+a second `ensure` drops nothing and leaves the key standing.
+
+The script earned trust by going red three times first — twice on the
+values-vs-names row trap (`for _name, cols in cur.fetchall()` unpacks a
+`CompatRow` *Mapping* on Postgres, so every column set arrived as
+`('a','r','r','a','y',...)`), and once on a wrong assumption of mine.
+
+**One finding, and it is a correction to me, not to the schema.** I had asserted
+`variant_id is NOT NULL`. It is not — the column is nullable by DDL on *both*
+engines; `CART_TABLE_DDL` says `variant_id INTEGER DEFAULT 0`, and the module's
+docstring claims the invariant about *rows* ("`0` and never `NULL`"), never a
+constraint. The non-NULL guarantee is held by three things instead: the default,
+the normalising `UPDATE`, and the single writer — `marketplace_cart_routes` has
+the only `INSERT` and binds `int(payload.get("variant_id") or NO_VARIANT)`, while
+its two `UPDATE`s never name the column. So the check was wrong and now asserts
+the invariant that load-bears: a writer omitting the column lands `0`, and a
+second such row is refused. I left `NOT NULL` unadded deliberately — it defends
+against a writer that does not exist, and would cost a second stateful rebuild
+trigger on SQLite, where an already-migrated database cannot gain a `NOT NULL`
+without another full table rewrite. New migration machinery on a live money-path
+table is the larger of the two risks.
+
 ## 5. Deliberate non-changes
 
 - **The 901–1023px band** renders both the dock and the shell's `.nav` strip.
@@ -457,12 +508,10 @@ Committed on `pulse-commerce-experience`, rebased onto `origin/main`.
 §4 is closed, so the chain has no dead end left in it. Two things I would want
 before calling this shippable, and neither is something I can do from here:
 
-1. **Device QA on the variant path.** The schema change runs against SQLite in
-   tests and against PostgreSQL in production, and the two retire the old unique
-   key by *different* code paths — Postgres drops the constraint, SQLite rebuilds
-   the table. The Postgres path is the one production will take and the one no
-   test in this repo exercises. Worth a throwaway Postgres before it meets a real
-   cart. Then: pick a size on a real device, add it, check out.
+1. **Device QA on the variant path.** Pick a size on a real device, add it, check
+   out. The schema half is no longer on this list — see §4.4 — but a green
+   migration is not a bought product, and nothing here has been tapped by a
+   thumb.
 2. **The remaining §5 items** — the anonymous PDP and the pricing convergence
    behind it, both SEO-visible and both wanting their own pass rather than being
    tacked onto this one.
