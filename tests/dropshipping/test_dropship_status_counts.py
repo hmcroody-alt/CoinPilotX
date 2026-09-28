@@ -17,6 +17,13 @@ properties asserted here are the ones that make it worth trusting:
 * **``published`` requires both authorities to agree.** ``status`` and
   ``approval_status`` are separate columns and a buyer needs both. Counting
   ``status='published'`` alone reports a listing stuck in moderation as live.
+* **``live`` is a smaller number than ``published``, and the hub says "live".**
+  Those two columns are necessary and not sufficient: publication also needs
+  stock, an approved seller and a store name. The hub tile rendered ``published``
+  under the word *live* and told a merchant 101 of 101 products were selling
+  while buyers could reach 39. ``live`` is asserted here against
+  ``lifecycle.public_sql`` itself rather than against a hand-picked number, so a
+  copy of the rules cannot drift away from the predicate buyers actually run.
 * **Attention is not sync.** A listing selling below cost synced perfectly.
   Folding one into the other makes "the supplier is unreachable" and "the
   supplier raised their price" the same fact — the exact defect
@@ -53,6 +60,7 @@ os.environ["BUSINESS_OS_SUPPLIERS_CJ"] = "1"
 os.environ["CJ_ENVIRONMENT_MODE"] = "SANDBOX"
 
 from services import db  # noqa: E402
+from services import marketplace_listing_lifecycle as lifecycle  # noqa: E402
 from services import marketplace_supplier_schema as supplier_schema  # noqa: E402
 from services.business_os.suppliers import (  # noqa: E402
     drafts, gateway, import_cart, importer, revisions, store_policy)
@@ -82,6 +90,12 @@ def database():
         cur = conn.cursor()
         seed_production_listings(cur)
         cur.execute("DELETE FROM marketplace_listings")
+        # Emptied, like the listings above. The shared fixture seeds an approved
+        # seller for *its* owner; this suite owns nothing it did not put there,
+        # and each `live` test calls `seller()` to choose the record it is about.
+        # Leaving someone else's approved row here would decide the predicate
+        # before the test did.
+        cur.execute("DELETE FROM marketplace_sellers")
         supplier_schema.ensure_supplier_schema(cur, force=True)
         _seed_tenancy(conn)
         connection_schema.ensure_schema(conn)
@@ -136,6 +150,43 @@ def set_listing(listing_id, **columns):
         conn.commit()
     finally:
         conn.close()
+
+
+def seller(display_name="Test Store", status="approved"):
+    """Give the merchant the ``marketplace_sellers`` row ``public_sql`` gates on.
+
+    The tenancy fixture seeds a business and a storefront and no seller record,
+    which is correct for everything above -- none of those counts reads one. It
+    is a trap for ``live``: with no row, ``ms.status`` is NULL, the predicate is
+    false for every listing, and every assertion that something is *not* live
+    would pass without the rule under test ever being reached. So the healthy
+    seller is constructed explicitly, and the first test below proves a listing
+    can reach ``live`` at all before any test asserts one cannot.
+    """
+    conn = db.connect()
+    try:
+        conn.execute("INSERT INTO marketplace_sellers (user_id, display_name, status) "
+                     "VALUES (?,?,?)", (int(OWNER_ID), display_name, status))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def live_by_predicate():
+    """The live count as buyer discovery would compute it, from the module.
+
+    Deliberately not a copy of the SQL in ``status_counts``: this builds its own
+    query around ``lifecycle.public_sql`` so the two can be compared. If both
+    were written out here the comparison would only prove this file consistent
+    with itself.
+    """
+    return rows(
+        "SELECT COUNT(*) AS n FROM marketplace_product_sources s "
+        "JOIN marketplace_listings l ON l.id = s.listing_id "
+        "LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id "
+        "WHERE s.seller_user_id=? AND s.supplier_connection_id=? "
+        f"AND {lifecycle.public_sql('l', 'ms')}",
+        (int(OWNER_ID), CONNECTION))[0]["n"]
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +362,145 @@ def test_a_status_this_module_has_never_heard_of_is_not_published_or_draft(provi
     assert result["draft"] == 0
     assert result["blocked"] == 0
     assert result["by_status"] == {"quarantined_pending_appeal": 1}
+
+
+# ---------------------------------------------------------------------------
+# live is not published
+# ---------------------------------------------------------------------------
+
+def test_a_healthy_published_listing_is_counted_as_live(provider):
+    """Guards every test below, and is the only one that can prove the rest.
+
+    ``live`` failing closed is indistinguishable from ``live`` being correct
+    when every case you assert is a negative one. This is the positive: a
+    listing that really is reachable, counted. If the seller seeding or the
+    publish path stops producing a reachable row, this goes red and the
+    not-live assertions below stop being evidence of anything.
+    """
+    seller()
+    listing_id = import_one(provider)
+    publish(listing_id)
+    set_listing(listing_id, status="published", approval_status="approved", quantity=5)
+
+    result = counts()
+    assert result["published"] == 1
+    assert result["live"] == 1
+
+
+def test_a_published_and_approved_listing_with_no_stock_is_published_but_not_live(provider):
+    """The production defect, at the size it was found.
+
+    Observed 2026-09-27: 101 imported products, all published and approved, 62
+    of them at quantity 0. ``status_counts`` reported 101 published, the hub
+    tile printed that number under the word "live", and buyer discovery returned
+    39. The merchant's own screen agreed with itself and disagreed with every
+    buyer.
+
+    Both numbers are asserted, because the fix is not "make the number smaller":
+    ``published`` is still correct and still 1. What was missing was a second
+    number for the question the tile was actually asking.
+    """
+    seller()
+    listing_id = import_one(provider)
+    publish(listing_id)
+    set_listing(listing_id, status="published", approval_status="approved", quantity=0)
+
+    result = counts()
+    assert result["published"] == 1
+    assert result["live"] == 0
+    # And the module can already say why, which is what makes the gap
+    # actionable rather than merely honest.
+    row = rows("SELECT status, approval_status, quantity, product_type "
+               "FROM marketplace_listings WHERE id=?", (listing_id,))[0]
+    assert lifecycle.live_blocker(dict(row)) == "in_stock"
+
+
+def test_a_suspended_seller_empties_the_live_count_without_moving_published(provider):
+    """Publication has an authority outside the listing's own two columns.
+
+    Nothing about the listing changed here. A merchant whose store was suspended
+    sees every product still published -- which is true -- and would have seen
+    them all still "live", which is the version of this bug that no amount of
+    editing the product can explain.
+    """
+    seller(status="suspended")
+    listing_id = import_one(provider)
+    publish(listing_id)
+    set_listing(listing_id, status="published", approval_status="approved", quantity=5)
+
+    result = counts()
+    assert result["published"] == 1
+    assert result["live"] == 0
+
+
+def test_a_seller_with_no_store_name_is_not_live(provider):
+    """The store-name invariant, which only binds in SQL.
+
+    ``is_public`` lets an *unprojected* name column pass -- see the
+    ``seller_named`` rule -- so this condition is real only where the predicate
+    runs against the database. Counting in SQL is what makes it apply here, and
+    asserting it is what stops a later rewrite from counting in Python and
+    quietly dropping the rule.
+    """
+    seller(display_name="   ")
+    listing_id = import_one(provider)
+    publish(listing_id)
+    set_listing(listing_id, status="published", approval_status="approved", quantity=5)
+
+    result = counts()
+    assert result["published"] == 1
+    assert result["live"] == 0
+
+
+def test_a_stockless_product_is_live_with_no_stock_at_all(provider):
+    """Proves the count calls the module rather than testing ``quantity>0``.
+
+    A course has no units and is reachable anyway. An implementation that
+    reached the right answer for the physical cases by counting stock directly
+    would pass every test above and fail this one.
+    """
+    seller()
+    listing_id = import_one(provider)
+    publish(listing_id)
+    set_listing(listing_id, status="published", approval_status="approved",
+                quantity=0, product_type="course", listing_type="course")
+
+    assert counts()["live"] == 1
+
+
+def test_live_agrees_with_the_predicate_buyer_discovery_runs(provider):
+    """The assertion that survives a rule being added to the lifecycle module.
+
+    Every test above pins a number this file chose. This one pins ``live`` to
+    ``lifecycle.public_sql`` over a mixed population, so a sixth publication
+    rule -- the pending price requirement, for one -- moves both sides together
+    and stays caught if it moves only one. A count that agrees with a literal is
+    correct on the day it is written; a count that agrees with its authority
+    stays correct.
+    """
+    seller()
+    reachable = import_one(provider, pid=str(int(PID) + 1))
+    publish(reachable)
+    set_listing(reachable, status="published", approval_status="approved", quantity=7)
+
+    no_stock = import_one(provider, pid=str(int(PID) + 2))
+    publish(no_stock)
+    set_listing(no_stock, status="published", approval_status="approved", quantity=0)
+
+    in_review = import_one(provider, pid=str(int(PID) + 3))
+    set_listing(in_review, status="published", approval_status="pending_review", quantity=9)
+
+    still_draft = import_one(provider, pid=str(int(PID) + 4))
+    set_listing(still_draft, status="draft", approval_status="pending_review", quantity=9)
+
+    result = counts()
+    assert result["imported"] == 4
+    # Not a tautology: the two queries are built separately, and the expected
+    # value is asserted as a number as well so a predicate that broke into
+    # counting nothing would fail here rather than agree with itself at zero.
+    assert live_by_predicate() == 1
+    assert result["live"] == live_by_predicate()
+    assert result["published"] == 2
 
 
 # ---------------------------------------------------------------------------

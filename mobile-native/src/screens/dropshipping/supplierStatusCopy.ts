@@ -231,10 +231,14 @@ export function healthRows(
     {
       key: "products",
       label: "Imported products",
+      // `live`, not `published` — the same distinction the hub tile draws, and
+      // this row said "live" over the published count for the same reason.
       value:
         supplier.products.imported === 0
           ? "None yet"
-          : `${supplier.products.imported} · ${supplier.products.published} live`,
+          : supplier.products.live === null
+            ? `${supplier.products.imported}`
+            : `${supplier.products.imported} · ${supplier.products.live} live`,
       tone: "muted"
     }
   ];

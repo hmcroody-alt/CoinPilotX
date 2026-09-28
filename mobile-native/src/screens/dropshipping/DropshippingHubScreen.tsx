@@ -308,12 +308,20 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
           // Imported and live, not imported alone. A merchant who imported
           // twelve products and published none has a store with nothing in it,
           // and "12 imported" is the sentence that hid that.
+          //
+          // `products.live`, never `products.published`: this said "live" over
+          // the published count, so a catalogue with 62 products at quantity 0
+          // read "101 imported · 101 live" while buyers could reach 39. The
+          // clause is dropped entirely when the server did not send the number,
+          // because "0 live" is a worse answer than no answer.
           subtitle:
             active.products.imported === 0
               ? "Nothing imported yet"
-              : `${formatters.count(active.products.imported)} imported · ${formatters.count(
-                  active.products.published
-                )} live`,
+              : active.products.live === null
+                ? `${formatters.count(active.products.imported)} imported`
+                : `${formatters.count(active.products.imported)} imported · ${formatters.count(
+                    active.products.live
+                  )} live`,
           onPress: withConnection("DropshippingProducts", "Dropshipping products"),
           attention: active.nextAction === "REVIEW_DRAFTS",
           reducedMotion

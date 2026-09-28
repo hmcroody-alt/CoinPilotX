@@ -184,6 +184,7 @@ function supplierStatus(over: Partial<SupplierStatus> = {}): SupplierStatus {
     products: {
       imported: 0,
       published: 0,
+      live: 0,
       awaitingReview: 0,
       draft: 0,
       blocked: 0,
@@ -883,10 +884,58 @@ describe("DropshippingHubScreen — tiles", () => {
 
   it("counts products as imported and live, not imported alone", async () => {
     const { view } = await hubWith([
-      supplierStatus({ products: { ...supplierStatus().products, imported: 12, published: 3 } })
+      supplierStatus({ products: { ...supplierStatus().products, imported: 12, published: 3, live: 3 } })
     ]);
 
     await waitFor(() => expect(view.getByText("12 imported · 3 live")).toBeTruthy());
+  });
+
+  /**
+   * The word is "live", so the number must be the live one.
+   *
+   * Observed against production on 2026-09-27: this tile read "101 imported ·
+   * 101 live" for a catalogue buyer discovery answered with 39. It rendered
+   * `products.published`, which is only the two-column decision — the merchant
+   * published and a moderator approved. Publication also needs stock, and 62 of
+   * those products sat at quantity 0, so `marketplace_listing_lifecycle`
+   * answered `in_stock` for every one of them and no buyer could reach any.
+   *
+   * A merchant reading "101 live" over an unreachable catalogue has no symptom
+   * left to chase: the store looks full and nothing sells. `published` is still
+   * on the wire and deliberately unused here — the assertion below fails if the
+   * tile ever reaches for it again, which is the only thing keeping the two
+   * numbers from quietly becoming one.
+   */
+  it("shows the live count, not the published count, when they disagree", async () => {
+    const { view } = await hubWith([
+      supplierStatus({
+        products: { ...supplierStatus().products, imported: 101, published: 101, live: 39 }
+      })
+    ]);
+
+    await waitFor(() => expect(view.getByText("101 imported · 39 live")).toBeTruthy());
+    expect(view.queryByText("101 imported · 101 live")).toBeNull();
+  });
+
+  /**
+   * `live: null` is "this server did not say", and zero is not that.
+   *
+   * Every other count here defaults a missing number to zero, which is right
+   * when zero is the reassuring answer and wrong when it is the alarming one. An
+   * older deployment that has not learned to send `live` would otherwise report
+   * a perfectly healthy catalogue as nothing live at all — a false alarm that
+   * sends a merchant looking for a fault that does not exist. Dropping the
+   * clause says less and claims nothing.
+   */
+  it("omits the live clause rather than saying zero when the server did not send it", async () => {
+    const { view } = await hubWith([
+      supplierStatus({
+        products: { ...supplierStatus().products, imported: 101, published: 101, live: null }
+      })
+    ]);
+
+    await waitFor(() => expect(view.getByText("101 imported")).toBeTruthy());
+    expect(view.queryByText("101 imported · 0 live")).toBeNull();
   });
 
   /**
@@ -906,7 +955,7 @@ describe("DropshippingHubScreen — tiles", () => {
    */
   it("re-reads the tiles when the merchant comes back, rather than answering from before", async () => {
     const { view, nav } = await hubWith(
-      [supplierStatus({ products: { ...supplierStatus().products, imported: 66, published: 15 } })],
+      [supplierStatus({ products: { ...supplierStatus().products, imported: 66, published: 15, live: 15 } })],
       { count: 33 }
     );
 
@@ -916,7 +965,7 @@ describe("DropshippingHubScreen — tiles", () => {
     // The import the merchant just ran on the other screen.
     mockGetSupplierStatus.mockResolvedValue(
       storeStatus([
-        supplierStatus({ products: { ...supplierStatus().products, imported: 98, published: 47 } })
+        supplierStatus({ products: { ...supplierStatus().products, imported: 98, published: 47, live: 47 } })
       ])
     );
     mockGetCart.mockResolvedValue({ count: 1 });
@@ -936,7 +985,7 @@ describe("DropshippingHubScreen — tiles", () => {
    */
   it("keeps the tiles up while it re-reads, instead of blanking them", async () => {
     const { view, nav } = await hubWith(
-      [supplierStatus({ products: { ...supplierStatus().products, imported: 66, published: 15 } })],
+      [supplierStatus({ products: { ...supplierStatus().products, imported: 66, published: 15, live: 15 } })],
       { count: 33 }
     );
     await waitFor(() => expect(view.getByText("66 imported · 15 live")).toBeTruthy());
@@ -957,7 +1006,7 @@ describe("DropshippingHubScreen — tiles", () => {
     await act(async () => {
       release(
         storeStatus([
-          supplierStatus({ products: { ...supplierStatus().products, imported: 98, published: 47 } })
+          supplierStatus({ products: { ...supplierStatus().products, imported: 98, published: 47, live: 47 } })
         ])
       );
       await Promise.resolve();
@@ -1005,7 +1054,7 @@ describe("DropshippingHubScreen — tiles", () => {
     const { view } = await hubWith([
       supplierStatus({
         syncState: "SYNCED",
-        products: { ...supplierStatus().products, imported: 4, published: 4, draft: 2 },
+        products: { ...supplierStatus().products, imported: 4, published: 4, live: 4, draft: 2 },
         nextAction: "REVIEW_DRAFTS"
       })
     ]);
@@ -1046,7 +1095,7 @@ describe("DropshippingHubScreen — tiles", () => {
    */
   it("keeps the rest of the hub when only the cart fails to load", async () => {
     const { view } = await hubWith(
-      [supplierStatus({ products: { ...supplierStatus().products, imported: 7, published: 7 } })],
+      [supplierStatus({ products: { ...supplierStatus().products, imported: 7, published: 7, live: 7 } })],
       new PulseApiError("nope", 500, "server_error")
     );
 
