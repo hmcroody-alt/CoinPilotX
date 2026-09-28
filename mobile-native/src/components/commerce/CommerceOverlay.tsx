@@ -205,9 +205,19 @@ function CommerceOverlayComponent({
           onOpenProduct(commerce);
         }}
       >
-        {product.image_url ? (
+        {/*
+          `cover_image_url` first: that is the key `hydration._product` emits.
+          This read `image_url` alone until 2026-09-28, which is why the card has
+          rendered its empty placeholder for every PulseDrop product ever
+          published -- the fixtures invented the field name along with the value,
+          so the suite was green against a shape the server does not send. The
+          alias stays as a fallback rather than being swapped, because the bug
+          was the spelling and a payload carrying either should show the photo.
+        */}
+        {product.cover_image_url || product.image_url ? (
           <Image
-            source={{ uri: product.image_url }}
+            testID="commerce-overlay-thumb"
+            source={{ uri: product.cover_image_url || product.image_url }}
             style={[styles.thumb, isReel ? null : styles.thumbSignal]}
             // `cover` and a fixed square: the product photo is cropped to the
             // centre rather than squashed. A stretched product is the one thing
@@ -215,7 +225,10 @@ function CommerceOverlayComponent({
             resizeMode="cover"
           />
         ) : (
-          <View style={[styles.thumb, isReel ? null : styles.thumbSignal, styles.thumbEmpty]} />
+          <View
+            testID="commerce-overlay-thumb-empty"
+            style={[styles.thumb, isReel ? null : styles.thumbSignal, styles.thumbEmpty]}
+          />
         )}
 
         <View style={styles.copy}>

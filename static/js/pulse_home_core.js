@@ -1615,6 +1615,14 @@
     }
     if (media && !isLiveGateway) card.appendChild(media);
     renderPostMusic(card, post);
+    // Between the media and the social-context row -- the same slot the native
+    // app gives it in `CommerceOverlay.tsx`, so a member who sees a post in both
+    // places sees the product in the same position relative to the picture.
+    //
+    // A no-op for a post with no `commerce` key, which is almost all of them,
+    // and guarded on the global because `pulse_commerce_card.js` is a separate
+    // asset: a cached shell that predates it must still render its feed.
+    window.PulseCommerceCard?.render?.(card, post.commerce, { surface: "signal" });
     renderEngagement(card, post);
     if (!isLiveGateway) {
       renderActions(card, post);
