@@ -9,7 +9,7 @@ the question, names the file, and points at the section that proves the answer. 
 item is not built, it says so in the first sentence.
 
 **Status: nothing here is deployed.** Branch `commerce-discovery-audit` in a worktree, not
-pushed, not merged. It is **26 commits ahead of and 42 behind `origin/main`** as of writing,
+pushed, not merged. It is **27 commits ahead of and 43 behind `origin/main`** as of writing,
 which is a rollout input and not a footnote — see item 59. That gap grows on its own:
 `origin/main` takes roughly 60 commits a day from parallel sessions.
 
@@ -874,8 +874,9 @@ or percentage rollout (item 45).
 ## 59. Rollout status
 
 **Not rolled out. Not pushed. Not merged.** Committed on a local worktree branch, and
-**22 commits behind `origin/main`** — main takes roughly 60 commits/day from parallel
-sessions, so that gap grows while this sits.
+**43 commits behind `origin/main`** — main takes roughly 60 commits/day from parallel
+sessions, so that gap grows while this sits. It **merges clean and green** against main at
+`2c3c7c98c`; the proof, and how to regenerate it, is at the end of this section.
 
 The recommendation, from §16 and unchanged: **do not ship this as one change.** Four stages,
 each independently reversible:
@@ -910,6 +911,88 @@ to be sized against what we are willing to un-ship by deploying.
 **The rollout decision is still the product owner's, not mine.** It changes what feed, reels,
 post-detail, Messenger, marketplace and product-page users see. The switch makes it
 reversible; it does not make it mine.
+
+### Releasability against current main — measured, not assumed
+
+Shipping is the owner's call. Establishing that the merge is *safe* is not, so it was done
+in a throwaway worktree at **`origin/main` = `2c3c7c98c`**, never in this checkout and never
+pushed. Every figure below came from that tree. The SHA is quoted because it is the whole
+claim: at ~60 commits/day, "it merges clean" without a SHA has a shelf life of about twenty
+minutes, and this proof was in fact invalidated once while being taken (below).
+
+| Check | Result |
+| --- | --- |
+| `git merge commerce-discovery-audit` | **clean, zero conflicts** — including `bot.py`, which main took 43 commits into |
+| `pytest tests/commerce_discovery` | **861 passed**, 3 subtests — identical to the branch |
+| `scripts/protection/run_protection_suite.py` | **750 checks across 54 suites, all passed** |
+| `scripts/realtime_audio_change_gate.py` | clean, 82 files inspected, no protected path touched |
+| `mobile-native` `npm run verify` | **544 suites / 9,519 tests**, `tsc --noEmit` clean, i18n 11 locales at 100% |
+
+The mobile row was measured at `30cd2f1b5` and is carried forward deliberately: `2c3c7c98c`
+changes only `scripts/` and `tests/protection/`, touching nothing under `mobile-native/`. That
+is a stated reason, not an assumption — re-run it if main moves again.
+| CI manifest | all **22** new/changed test files registered — the gate is default-deny |
+
+Four things this run found that a green summary would have hidden:
+
+**Main landed a gate aimed squarely at this branch's new files, mid-verification.** The first
+pass was taken against `30cd2f1b5` and was already stale when it finished: `2c3c7c98c`
+("Catch the audits that reach production without ever importing bot", #104) widened
+`test_fixture_audits_cannot_reach_production.py` to follow the **`services` import graph**
+rather than only `import bot`, because `from services import db` latches `ENGINE_URL` at
+import and redirecting `DATABASE_URL` afterwards does nothing on PostgreSQL. This branch adds
+**ten** new files under `scripts/`, so a gate that had never seen them became strictly
+stricter in the same window. Re-merged and re-ran: still clean, and the protection count rose
+747 → **750** because #104 brought three checks with it. Nine of the ten scripts import no
+DSN-latching module at all; the tenth, `scripts/measure_commerce_suitability_cost.py`, *does*
+reach `DATABASE_URL` and passes because it only reads — verified independently of the
+detector (no `INSERT`/`UPDATE`/`DELETE`/`commit()`/DDL anywhere in it), since "the gate says
+it does not mutate" and "it does not mutate" are different claims and only the second one is
+worth anything.
+
+**The one real merge hazard was the i18n catalogs, and it was invisible.** Main and this
+branch both added keys to the same 11 `extended.json` files. Git auto-merged them with no
+conflict, which is the case that can yield valid JSON that quietly lost one side's keys —
+and the i18n gate would still report **100%** afterwards, because coverage is measured per
+locale against `en`, so symmetric loss across all twelve files is a clean bill of health.
+The count is what actually proves it: base **4,286** leaves, main **+9**, branch **+21**,
+merged **4,316**. 4286 + 9 + 21 = 4316 exactly, so both sides landed and nothing was
+duplicated. A percentage could not have told me that.
+
+**`pytest tests/protection` reports 4 failures, and they are not real.**
+`test_native_bearer_write.py` fails four times with
+`sqlite3.OperationalError: no such table: users` — and fails **identically on unmerged
+main** (4 failed / 666 passed on both trees), so the merge regresses nothing. The cause is
+the documented per-file-DB-state-at-import hazard: the file points `DATABASE_URL` at a fresh
+empty temp database at import and relies on `import bot` running `init_db()` to populate it,
+but in a shared process `bot` is already in `sys.modules`, so the import is a no-op and the
+connection follows the new `DATABASE_URL` to a database nobody initialised. Its own comment
+states the assumption that breaks: that `bot` "resolves DATABASE_URL at import and never
+re-reads it."
+
+**That whole diagnosis was my own methodology error, which is the more useful lesson.**
+Neither CI nor `run_protection_suite.py` ever runs the directory in one process — the runner
+loops `subprocess.run` per file (`run_protection_suite.py:63`). So I spent a cycle
+diagnosing a failure mode that only my non-canonical invocation produces. **Run the runner,
+not the directory.** A red result from a command no gate uses is not evidence about the
+tree, and I very nearly filed it as one.
+
+Regenerate the whole thing — note the per-worktree setup, because a fresh checkout has cold
+`bot.py` bytecode (~200× slower, and it looks like a hang) and no `node_modules`:
+
+```bash
+git worktree add -b trial /private/tmp/trial origin/main
+cd /private/tmp/trial && git merge --no-edit commerce-discovery-audit
+python -m py_compile bot.py                      # warm the bytecode first
+python -m pytest tests/commerce_discovery -q
+python scripts/protection/run_protection_suite.py
+python scripts/realtime_audio_change_gate.py --base origin/main --head HEAD
+cp -Rc ../../Desktop/cpx-pci/mobile-native/node_modules mobile-native/node_modules
+cd mobile-native && npm run verify               # APFS clone, ~8s; npm ci breaks the patch set
+```
+
+Capture exit codes with `> log 2>&1; echo "EXIT=$?"` — piping to `tail` returns *tail's*
+status and has already once reported a failing `npm run verify` as exit 0.
 
 ## 60. Rollback procedure
 
