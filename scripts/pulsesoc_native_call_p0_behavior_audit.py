@@ -18,10 +18,17 @@ sys.path.insert(0, str(ROOT))
 
 
 def main() -> int:
-    from services import pulsesoc_communications_engine as engine
-
     with tempfile.TemporaryDirectory(prefix="pulsesoc-call-p0-") as folder:
         db_path = Path(folder) / "calls.db"
+        # Set before the engine import: it reaches services/db.py, which resolves
+        # DATABASE_URL once at import and, on PostgreSQL, builds its engine from
+        # that value and never re-reads the environment. The audit patches
+        # `_open_db` onto this same file, so this only removes the possibility of
+        # an unpatched path reaching whatever DSN the shell happened to carry.
+        os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
+
+        from services import pulsesoc_communications_engine as engine
+
         connection = sqlite3.connect(db_path)
         connection.row_factory = sqlite3.Row
         cursor = connection.cursor()
