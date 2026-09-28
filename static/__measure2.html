@@ -1,0 +1,41 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>narrow home probe</title>
+<body style="background:#0b0f14;color:#dfe;font:13px/1.5 ui-monospace,monospace">
+<pre id="out">measuring…</pre>
+<script>
+// The dock probe proved the mobile dock leaves at 1024. The other half of the
+// user's report -- "when the screen is minimized it shows the old version" --
+// is a claim about which Home is served below 1024, so measure that directly:
+// the new Home's body class and its own cards, not the commit message.
+const WIDTHS = [900, 1023, 1280];
+async function probe(w) {
+  const f = document.createElement('iframe');
+  f.style.cssText = `width:${w}px;height:900px;border:0;position:absolute;left:-10000px`;
+  f.src = 'http://127.0.0.1:8772/pulse';
+  document.body.appendChild(f);
+  await new Promise(r => { f.onload = r; setTimeout(r, 12000); });
+  await new Promise(r => setTimeout(r, 1500));
+  const d = f.contentDocument, W = f.contentWindow;
+  const css = s => { const e = d.querySelector(s); return e ? W.getComputedStyle(e).display : null; };
+  const r = {
+    width: w,
+    bodyClass: d.body.className.trim().split(/\s+/).filter(c=>c.startsWith('pulse')).join(' '),
+    newHomeRoot: !!d.querySelector('.pulse-home-os-shell, [class*="pulse-home-os"]'),
+    globeCard: css('.pulse-network-globe-card'),
+    composer: css('.pulse-home-composer, [data-composer]'),
+    desktopRail: css('.pulse-desktop-rail, .pulse-home-right-rail'),
+    dock: css('.mobile-bottom-nav.pulse-universal-dock'),
+    stylesheets: [...d.styleSheets].map(s=>(s.href||'').split('/').pop().split('?')[0]).filter(n=>n.includes('desktop')||n.includes('home_os')).join(','),
+  };
+  f.remove();
+  return r;
+}
+(async () => {
+  const rows = [];
+  for (const w of WIDTHS) rows.push(await probe(w));
+  document.getElementById('out').textContent = JSON.stringify(rows, null, 1);
+  window.__PROBE2__ = rows;
+})();
+</script>
+</body>

@@ -3286,6 +3286,86 @@ select:focus-visible {
   gap: 8px;
 }
 
+/* The second floating dock.
+
+   `pulse_desktop_shell.css` suppresses `.mobile-bottom-nav.pulse-universal-dock`
+   above 1024px, and a guard test pins that. Neither reached here: this is a
+   different dock, in a different sheet, under a different class name, and it
+   was declared `position:fixed; display:grid` with no width condition at all --
+   so the phone's navigation floated over the messenger at every desktop width.
+   Measured at 1728px before this change: a 520x62 pill, centred, z-index 60.
+
+   It survived because every other rule that touches it is inside
+   `max-width: 840px`, which reads like a mobile-only component at a glance. The
+   unconditional base rule is the one that was doing the damage.
+
+   1024 rather than this sheet's own 840, because the breakpoint is a statement
+   about which navigation the product is showing, and that answer has to match
+   Home's. Below it, the phone dock; above it, `.messenger-app-nav` in the
+   conversation column. Never both, never neither. */
+@media (min-width: 1024px) {
+  .pulse-messenger-dock {
+    display: none;
+  }
+}
+
+/* Deliberately the inverse condition, so the two cannot both vanish: the nav is
+   hidden by default and only turns on where the dock turns off. */
+.messenger-app-nav {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .messenger-app-nav {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    margin: 0 12px 4px;
+    padding: 4px;
+    border: 1px solid rgba(105, 218, 240, .14);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .03);
+  }
+
+  .messenger-app-nav a {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    padding: 6px 2px;
+    border-radius: 9px;
+    color: var(--text-secondary, #9fb5c0);
+    font-weight: 800;
+    text-align: center;
+    text-decoration: none;
+    place-items: center;
+  }
+
+  .messenger-app-nav a > span {
+    font-size: 15px;
+    line-height: 1;
+  }
+
+  .messenger-app-nav small {
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .messenger-app-nav a:hover {
+    background: rgba(105, 218, 240, .10);
+    color: var(--text-primary, #f2fbff);
+  }
+
+  /* The current page is a destination too -- it just isn't a trip. Marked so
+     the row reads as "where you are" and not as five equal offers. */
+  .messenger-app-nav a.is-active {
+    background: rgba(105, 218, 240, .16);
+    color: var(--text-primary, #f2fbff);
+  }
+}
+
 .pulse-messenger-dock {
   position: fixed;
   left: 50%;

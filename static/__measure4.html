@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8"><title>messages bottom nav</title>
+<body style="background:#0b0f14;color:#dfe;font:12px/1.5 ui-monospace,monospace">
+<pre id="out">measuring…</pre>
+<script>
+// `.mobile-bottom-nav.pulse-universal-dock` is absent on /pulse/messages, yet a
+// Home/Reels/Create/Messages/Profile row is plainly visible at 1920. So messages
+// ships its own bottom nav under a different name, and a probe written around
+// the dock's class name cannot see it. Find it by what it IS -- a wide, short
+// row of nav links sitting on the bottom edge -- and not by what it is called.
+async function run(path, W) {
+  const f = document.createElement('iframe');
+  f.style.cssText = `width:${W}px;height:900px;border:0;position:absolute;left:-10000px`;
+  f.src = 'http://127.0.0.1:8772' + path;
+  document.body.appendChild(f);
+  await new Promise(r => { f.onload = r; setTimeout(r, 12000); });
+  await new Promise(r => setTimeout(r, 1500));
+  const d = f.contentDocument, win = f.contentWindow;
+  const hits = [];
+  for (const el of d.querySelectorAll('body *')) {
+    const cs = win.getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden' || !cs.opacity || cs.opacity === '0') continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < W * 0.45 || r.height < 40 || r.height > 130) continue;
+    if (r.bottom < 700 || r.bottom > 960) continue;
+    const links = el.querySelectorAll('a,button').length;
+    if (links < 3 || links > 9) continue;
+    hits.push({ cls: (el.className||el.tagName).toString().slice(0,80), pos: cs.position,
+                bottom: Math.round(r.bottom), h: Math.round(r.height), links,
+                text: (el.textContent||'').replace(/\s+/g,' ').trim().slice(0,70) });
+  }
+  f.remove();
+  return { path, W, hits: hits.slice(0,5) };
+}
+(async () => {
+  const rows = [];
+  for (const w of [1440, 1920]) rows.push(await run('/pulse/messages', w));
+  document.getElementById('out').textContent = JSON.stringify(rows, null, 1);
+  window.__P4__ = rows;
+})();
+</script>
+</body>

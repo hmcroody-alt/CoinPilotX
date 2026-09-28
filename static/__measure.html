@@ -1,0 +1,46 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>dock breakpoint probe</title>
+<body style="background:#0b0f14;color:#dfe;font:13px/1.5 ui-monospace,monospace">
+<pre id="out">measuring…</pre>
+<script>
+// An iframe of width W gives its document a viewport of exactly W, so media
+// queries resolve as they would on a W-wide screen. That is the point: the
+// claim under test is a media query, and resizing the outer window cannot
+// produce exact widths on a retina display.
+const WIDTHS = [390, 600, 768, 900, 1023, 1024, 1280, 1440, 1920];
+const SEL = '.mobile-bottom-nav.pulse-universal-dock';
+
+async function probe(w) {
+  const f = document.createElement('iframe');
+  f.style.cssText = `width:${w}px;height:900px;border:0;position:absolute;left:-10000px`;
+  f.src = 'http://127.0.0.1:8772/pulse';
+  document.body.appendChild(f);
+  await new Promise(r => { f.onload = r; setTimeout(r, 12000); });
+  await new Promise(r => setTimeout(r, 1200));
+  let result;
+  try {
+    const d = f.contentDocument;
+    const el = d.querySelector(SEL);
+    result = {
+      width: w,
+      innerWidth: f.contentWindow.innerWidth,
+      dockInDom: !!el,
+      display: el ? f.contentWindow.getComputedStyle(el).display : null,
+      visible: el ? el.getBoundingClientRect().height > 0 : false,
+    };
+  } catch (e) {
+    result = { width: w, error: String(e) };
+  }
+  f.remove();
+  return result;
+}
+
+(async () => {
+  const rows = [];
+  for (const w of WIDTHS) rows.push(await probe(w));
+  document.getElementById('out').textContent = JSON.stringify(rows, null, 1);
+  window.__PROBE__ = rows;
+})();
+</script>
+</body>

@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>dock-per-surface probe</title>
+<body style="background:#0b0f14;color:#dfe;font:12px/1.5 ui-monospace,monospace">
+<pre id="out">measuring…</pre>
+<script>
+// The first probe tested /pulse only. The dock is rendered by each page's own
+// template, and the 1920 screenshot of /pulse/messages shows a bottom bar, so
+// "no dock at desktop" has to be asserted per surface, not once on Home.
+// Anything fixed-position sitting on the bottom edge counts, whatever it is
+// called -- the constraint is about what the user sees, not about a class name.
+const PAGES = ['/pulse','/pulse/reels','/pulse/messages','/pulse/marketplace','/pulse/videos','/pulse/saved'];
+const W = 1440;
+async function probe(path) {
+  const f = document.createElement('iframe');
+  f.style.cssText = `width:${W}px;height:900px;border:0;position:absolute;left:-10000px`;
+  f.src = 'http://127.0.0.1:8772' + path;
+  document.body.appendChild(f);
+  await new Promise(r => { f.onload = r; setTimeout(r, 12000); });
+  await new Promise(r => setTimeout(r, 1500));
+  let out;
+  try {
+    const d = f.contentDocument, win = f.contentWindow;
+    const named = d.querySelector('.mobile-bottom-nav.pulse-universal-dock');
+    const bars = [];
+    for (const el of d.querySelectorAll('body *')) {
+      const cs = win.getComputedStyle(el);
+      if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') continue;
+      const r = el.getBoundingClientRect();
+      if (r.height < 36 || r.height > 140 || r.width < W * 0.5) continue;
+      if (r.bottom < 900 - 120 || r.top < 600) continue;
+      bars.push((el.className || el.tagName).toString().slice(0, 70) + ' h=' + Math.round(r.height));
+    }
+    out = { path,
+      namedDock: named ? win.getComputedStyle(named).display : 'absent',
+      bottomBars: bars.slice(0, 4) };
+  } catch (e) { out = { path, error: String(e) }; }
+  f.remove();
+  return out;
+}
+(async () => {
+  const rows = [];
+  for (const p of PAGES) rows.push(await probe(p));
+  document.getElementById('out').textContent = JSON.stringify(rows, null, 1);
+  window.__P3__ = rows;
+})();
+</script>
+</body>

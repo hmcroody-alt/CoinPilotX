@@ -7,15 +7,22 @@
   <meta name="theme-color" content="#030914">
   <title>PulseSoc Messenger V3 | PulseSoc</title>
   <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a">
-  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=messenger-desktop-nav-20260927a">
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=emoji-primitive-20260927a">
   <link rel="stylesheet" href="/static/css/pulse_messenger_media_viewer.css?v=media-viewer-20260704a">
-</head>
-<body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
+
+<link rel="icon" type="image/png" sizes="32x32" href="/static/brand/pulsesoc-favicon-32-20260913.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/brand/pulsesoc-favicon-16-20260913.png">
+<link rel="shortcut icon" type="image/png" href="/static/brand/pulsesoc-favicon-32-20260913.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/brand/pulsesoc-apple-touch-icon-20260913.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#020817">
+<link rel="stylesheet" href="/static/css/pulsesoc_global_call_overlay.css?v=fullscreen-incoming-20260704"></head>
+<body data-comm-v2-enabled="true">
   <main
     class="comm-shell"
-    data-current-user-id="{{ current_user.user_id }}"
-    data-ai-enabled="{{ 'true' if ai_enabled else 'false' }}"
-    data-initial-conversation-id="{{ initial_conversation_id|default(0) }}"
+    data-current-user-id="1"
+    data-ai-enabled="false"
+    data-initial-conversation-id="0"
   >
     <aside class="comm-list" aria-label="Conversations">
       <header class="comm-toolbar">
@@ -33,30 +40,6 @@
         </span>
         <button class="icon-btn icon-btn-primary" type="button" data-open-new-chat title="New chat" aria-label="Start a new chat">+</button>
       </header>
-
-      {#
-        The floating dock at the bottom of this file is the phone's primary
-        navigation, and it carries four destinations -- Home, Reels, Create,
-        Profile -- that appear nowhere else on this page. Measured on the
-        rendered page: outside that dock the whole messenger offers exactly one
-        app-level link, `/pulse`. So the dock could not simply be hidden at
-        desktop the way Home's was; hiding it alone would have deleted four
-        destinations, which is the dead-navigation failure this mission is
-        against.
-
-        This is the same five destinations in the shape a desktop already uses:
-        a row in the column the messenger owns, under the brand that is
-        conceptually the same link. It replaces the dock rather than duplicating
-        it -- the two never render together, which the stylesheet enforces at
-        one shared breakpoint and the guard test pins in both directions.
-      #}
-      <nav class="messenger-app-nav" aria-label="PulseSoc primary navigation">
-        <a href="/pulse"><span aria-hidden="true">&#8962;</span><small>Home</small></a>
-        <a href="/pulse/reels"><span aria-hidden="true">&#9654;</span><small>Reels</small></a>
-        <a href="/pulse#create"><span aria-hidden="true">+</span><small>Create</small></a>
-        <a class="is-active" href="/pulse/messages" aria-current="page"><span aria-hidden="true">&#9993;</span><small>Messages</small></a>
-        <a href="/pulse/profile"><span aria-hidden="true">&#9679;</span><small>Profile</small></a>
-      </nav>
 
       <div class="comm-search-row">
         <div class="comm-search">
@@ -379,11 +362,9 @@
     <a class="is-active" href="/pulse/messages" aria-current="page"><span aria-hidden="true">&#9993;</span><small>Messages</small></a>
     <a href="/pulse/profile" class="dock-profile">
       <span class="dock-avatar" aria-hidden="true">
-        {% if current_user.avatar_url %}
-        <img src="{{ current_user.avatar_url }}" alt="">
-        {% else %}
-        {{ (current_user.display_name or current_user.username or 'P')[:1]|upper }}
-        {% endif %}
+        
+        A
+        
       </span>
       <small>Profile</small>
     </a>
@@ -399,5 +380,5 @@
        someone actually reaches for an emoji. -->
   <script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927a" defer></script>
   <script src="/static/js/pulse_messages_v2.js?v=emoji-primitive-20260927a" defer></script>
-</body>
+<script src="/static/js/pulse_pwa_install.js?v=app-store-20260919" data-pulse-app-store-url="https://apps.apple.com/us/app/pulsesoc/id6777591572" defer></script></body>
 </html>

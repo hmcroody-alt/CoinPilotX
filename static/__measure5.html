@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8"><title>messenger nav handoff</title>
+<body style="background:#0b0f14;color:#dfe;font:12px/1.5 ui-monospace,monospace">
+<pre id="out">measuring…</pre>
+<script>
+// The claim is a handoff, so test it as one: at every width exactly one of the
+// two navigations is on. "Neither" strands the user with a single /pulse link;
+// "both" is the floating phone dock on a desktop, which the brief forbids.
+const WIDTHS = [390, 840, 900, 1023, 1024, 1280, 1440, 1920];
+async function probe(w) {
+  const f = document.createElement('iframe');
+  f.style.cssText = `width:${w}px;height:900px;border:0;position:absolute;left:-10000px`;
+  f.src = 'http://127.0.0.1:8772/pulse/messages';
+  document.body.appendChild(f);
+  await new Promise(r => { f.onload = r; setTimeout(r, 12000); });
+  await new Promise(r => setTimeout(r, 1200));
+  const d = f.contentDocument, win = f.contentWindow;
+  const vis = s => { const e = d.querySelector(s); if (!e) return 'absent';
+    const cs = win.getComputedStyle(e); return cs.display === 'none' ? 'none'
+      : (e.getBoundingClientRect().height > 0 ? 'VISIBLE' : 'zero'); };
+  const dock = vis('.pulse-messenger-dock'), nav = vis('.messenger-app-nav');
+  const reach = new Set([...d.querySelectorAll('a[href]')]
+    .filter(a => { const cs = win.getComputedStyle(a);
+      return cs.display !== 'none' && cs.visibility !== 'hidden' && a.getBoundingClientRect().height > 0; })
+    .map(a => a.getAttribute('href')));
+  f.remove();
+  const on = [dock === 'VISIBLE' && 'dock', nav === 'VISIBLE' && 'nav'].filter(Boolean);
+  return { w, dock, nav, exactlyOne: on.length === 1 ? on[0] : 'VIOLATION:' + (on.join('+') || 'neither'),
+           reachable: ['/pulse','/pulse/reels','/pulse#create','/pulse/messages','/pulse/profile']
+             .filter(h => reach.has(h)).length + '/5' };
+}
+(async () => {
+  const rows = [];
+  for (const w of WIDTHS) rows.push(await probe(w));
+  document.getElementById('out').textContent = JSON.stringify(rows, null, 1);
+  window.__P5__ = rows;
+})();
+</script>
+</body>
