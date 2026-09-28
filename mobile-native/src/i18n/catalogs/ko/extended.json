@@ -1207,7 +1207,10 @@
       "storeMediaViewerTitle": "스토어 미디어",
       "statusApprovedLive": "승인/판매 중",
       "statusPendingReview": "검토 대기",
-      "statusRemoved": "삭제됨"
+      "statusRemoved": "삭제됨",
+      "status": {
+        "price_needed": "가격 필요"
+      }
     },
     "orders": {
       "title": "주문",

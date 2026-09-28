@@ -1207,7 +1207,10 @@
       "storeMediaViewerTitle": "ストアのメディア",
       "statusApprovedLive": "承認済み / 公開中",
       "statusPendingReview": "審査中",
-      "statusRemoved": "削除済み"
+      "statusRemoved": "削除済み",
+      "status": {
+        "price_needed": "価格が必要"
+      }
     },
     "orders": {
       "title": "注文",

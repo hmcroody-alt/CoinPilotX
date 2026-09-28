@@ -750,12 +750,17 @@ export function SellerStoreScreen({ route, navigation }: Props) {
  *
  * The server answers "why can nobody buy this" once, from the same rule table
  * that filters buyer discovery. Mapping it here rather than re-deriving is the
- * point: three of publication's five conditions live on the seller record and
- * on stock, none of which this screen has.
+ * point: four of publication's five conditions live on the seller record, on
+ * stock and on a price the merchant may never have entered, and this screen has
+ * no way to judge any of them.
  */
 const BLOCKER_STATUS_KEYS: Record<string, string> = {
   seller_approved: "store_offline",
   seller_named: "store_name_needed",
+  // Every unpriced listing in production got here by supplier import, so the
+  // merchant has never seen this listing's form and would read a bare "pending"
+  // as the queue being slow rather than as one field waiting on them.
+  priced: "price_needed",
   in_stock: "out_of_stock",
 };
 
@@ -786,7 +791,7 @@ function statusKey(listing: MarketplaceListing) {
 function statusLabelKey(key: string): string | null {
   const supported = [
     "live", "pending", "out_of_stock", "removed", "rejected", "paused", "sold", "draft",
-    "store_offline", "store_name_needed",
+    "store_offline", "store_name_needed", "price_needed",
   ];
   return supported.includes(key) ? `commerce:marketplace.status.${key}` : null;
 }

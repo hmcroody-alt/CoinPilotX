@@ -1222,7 +1222,10 @@
       "storeMediaViewerTitle": "Médias de la boutique",
       "statusApprovedLive": "Approuvée/en ligne",
       "statusPendingReview": "En attente d'examen",
-      "statusRemoved": "Retirée"
+      "statusRemoved": "Retirée",
+      "status": {
+        "price_needed": "Prix requis"
+      }
     },
     "orders": {
       "title": "Commandes",

@@ -37,6 +37,17 @@ migrated row can hold, and is the case a bare ``or`` fallback never catches --
 whitespace is truthy, so the old code would have passed it through and rendered
 an empty pill. A missing key covers the client-side twin being handed a row from
 an older serializer. All three must render identically: no pill.
+
+## What changed under this file
+
+A blank ``price_label`` is now a publication blocker -- ``priced`` in
+``marketplace_listing_lifecycle.PUBLICATION_RULES`` -- so an unpriced listing is
+no longer something a buyer can reach at all. The product-page assertion below
+was repointed to that stronger claim. The grid assertions were deliberately left
+stating the old one: they are failing for an unrelated reason (the priced control
+renders no card either, so the whole grid probe is stale), and rewriting them to
+"no card appears" while the control is broken would make them pass without
+testing anything. A loud stale failure is the better artefact.
 """
 
 from __future__ import annotations
@@ -326,19 +337,29 @@ def test_a_priced_product_page_still_shows_its_price(price_probe):
 
 
 @pytest.mark.parametrize("listing_id", UNPRICED)
-def test_an_unpriced_product_page_has_no_price_pill(price_probe, listing_id):
-    """The page a shared link opens must agree with the card that links to it."""
+def test_an_unpriced_product_page_is_not_served_at_all(price_probe, listing_id):
+    """There is no page left to price: a blank label now holds the listing back.
+
+    This asserted that the page rendered no price pill, which was the right
+    claim while an unpriced listing was still something a buyer could open. It
+    is not the claim any more. ``priced`` in
+    ``marketplace_listing_lifecycle.PUBLICATION_RULES`` took that state out of
+    buyer discovery, and the product route gates on the same predicate, so the
+    honest assertion is the stronger one -- the route declines to serve it, and
+    the question of what it would have rendered no longer arises.
+
+    404 rather than a page explaining itself, matching every other non-public
+    listing: the route does not confirm the row exists. The priced control above
+    is what keeps this from passing because the route 404s on everything.
+    """
     page = price_probe["pages"][str(listing_id)]
-    assert page["status"] == 200 and page["title"], (
-        "listing %d's product page did not serve (%s), so nothing below is "
-        "about an unpriced page" % (listing_id, page["status"]))
-    pills = _pills(page["paragraph"])
-    priced = _pills(price_probe["pages"][str(PRICED)]["paragraph"])
-    assert pills == [p for p in priced if p != PRICED_LABEL], (
-        "the product page for unpriced listing %d rendered %r; the priced "
-        "page renders %r" % (listing_id, pills, priced))
-    assert "" not in (pills or []), (
-        "listing %d's product page rendered an empty price pill" % listing_id)
+    assert page["status"] == 404, (
+        "listing %d's product page served %s; an unpriced listing is not "
+        "purchasable, so no buyer surface may render it"
+        % (listing_id, page["status"]))
+    assert not page["title"], (
+        "listing %d's title reached the response body anyway, so the row is "
+        "being rendered under a %s status" % (listing_id, page["status"]))
     assert not page["invented"], (
         "listing %d's product page still serves the words %r"
         % (listing_id, INVENTED))
