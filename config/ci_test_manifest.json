@@ -361,6 +361,7 @@
     "tests/pulsedrop/test_audio.py",
     "tests/pulsedrop/test_caption_single_copy.py",
     "tests/pulsedrop/test_curator.py",
+    "tests/pulsedrop/test_distribution.py",
     "tests/pulsedrop/test_editorial.py",
     "tests/pulsedrop/test_hydration.py",
     "tests/pulsedrop/test_ops.py",
