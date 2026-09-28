@@ -88,7 +88,23 @@ export function nativeObjectDestination(routePath: string): NativeObjectDestinat
   const notificationMatch = path.match(/^\/pulse\/notifications\/([1-9]\d*)\/?$/);
   const briefingMatch = path.match(/^\/pulse\/briefings\/([1-9]\d*)\/?$/);
   const eventMatch = path.match(/^\/pulse\/events\/([1-9]\d*)\/?$/);
-  const storeMatch = path.match(/^\/pulse\/(?:stores?|business(?:es)?)\/([^/]+)\/?$/);
+  // `merchant` belongs here because it is the *canonical* spelling, not an alias:
+  // `services/app_links.py` emits `/pulse/merchant/{id}` for every store link the
+  // server produces — share sheets, emails, notifications and the PulseDrop
+  // commerce overlay's seller route all use it. `linking.ts` already maps
+  // `pulse/merchant/:sellerId` to MerchantProfile, so a cold-start universal link
+  // opened the store while an in-app tap on the identical path resolved to null
+  // and did nothing. Two resolvers for one path disagreeing is exactly what the
+  // crypto matcher below is commented against.
+  //
+  // The lookahead is why this is not a one-word change. `/pulse/merchant/apply`
+  // and `/pulse/merchant/dashboard` are real screens with their own entries in
+  // `linking.ts`; without excluding them, `([^/]+)` captures "apply" as a seller
+  // id and the seller application deep link — which `sellerEntryPoints.test.ts`
+  // guards — opens an empty storefront instead. Reserved words, then the id.
+  const storeMatch = path.match(
+    /^\/pulse\/(?:stores?|business(?:es)?|merchants?(?!\/?$))\/(?!apply\/?$|dashboard\/?$)([^/]+)\/?$/
+  );
   const adMatch = path.match(/^\/pulse\/(?:ads?|advertisements?)\/([1-9]\d*)\/?$/);
   const undxTaskMatch = path.match(/^\/pulse\/(?:undx|ai)\/tasks\/([^/]+)\/?$/);
   const callMatch = path.match(/^\/pulse\/calls\/([^/]+)\/?$/);

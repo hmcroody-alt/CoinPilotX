@@ -49,6 +49,7 @@ import {
   getStoreImportPolicy,
   importNeedsReview,
   importSelected,
+  isBatchTooLarge,
   removeImportCartItem,
   stateForError,
   type DropshippingState,
@@ -114,7 +115,11 @@ const OUTCOME_COPY: Record<ImportOutcome, { label: string; tone: "success" | "ne
   RESTRICTED: { label: "This product can't be sold here", tone: "warning" },
   // The platform's own pending moderation, which is not the merchant's to fix —
   // hence no action offered on this row, unlike NEEDS_ATTENTION.
-  NEEDS_REVIEW: { label: "Imported, but needs your review before publishing", tone: "warning" }
+  NEEDS_REVIEW: { label: "Imported, but needs your review before publishing", tone: "warning" },
+  // Neutral, not warning. Nothing went wrong with these and nothing is being
+  // asked of the merchant beyond tapping Import again, so a warning tone would
+  // invent a problem and send them looking for what they did wrong.
+  DEFERRED: { label: "Still in your cart — import again to continue", tone: "neutral" }
 };
 
 /**
@@ -135,6 +140,11 @@ export function ImportCartScreen({ route, navigation }: Props) {
 
   const [items, setItems] = useState<ImportCartItem[]>([]);
   const [staleCount, setStaleCount] = useState(0);
+  // How many of a selection one run will actually attempt. Read from the server
+  // rather than held as a constant here, because a client-side copy of the cap
+  // that drifted below the server's would hide rows the server would have
+  // imported, and one above it would promise a run the server defers.
+  const [maxPerImport, setMaxPerImport] = useState<number | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   // Null means "price this the way my store prices things". Only a deliberate
   // change on the picker makes it non-null, and only a non-null value is sent —
@@ -162,6 +172,7 @@ export function ImportCartScreen({ route, navigation }: Props) {
         const cart = await getImportCart(scope, connectionId);
         setItems(cart.items);
         setStaleCount(cart.staleCount);
+        setMaxPerImport(cart.maxPerImport);
         // Everything in the cart is selected by default — a merchant who opened
         // the cart intends to import it. Deselection is the deliberate act.
         setSelected(cart.items.map((item) => item.itemId));
@@ -240,18 +251,37 @@ export function ImportCartScreen({ route, navigation }: Props) {
       setRun(result);
       await load("refresh").catch(() => undefined);
     } catch (error) {
+      // Checked ahead of `stateForError`, which has no mapping for this code and
+      // would fall through to a bare "ERROR" — the generic sentence below. That
+      // fallthrough is what a merchant with an over-cap cart used to be told:
+      // nothing about what was wrong, and nothing they could act on.
+      const overCap = isBatchTooLarge(error);
       const failure = stateForError(error);
       setRunError(
-        failure === "PROVIDER_UNAVAILABLE"
-          ? "Your supplier didn't respond. Nothing was imported — your cart is unchanged."
-          : failure === "SUPPLIER_DISCONNECTED"
-            ? "Your supplier connection needs attention. Nothing was imported."
-            : "That import didn't run. Nothing was imported and your cart is unchanged."
+        overCap
+          ? `That's more products than one import can take${
+              maxPerImport ? `. Untick some so you're importing ${formatters.count(maxPerImport)} or fewer` : ""
+            } — nothing was imported and your cart is unchanged.`
+          : failure === "PROVIDER_UNAVAILABLE"
+            ? "Your supplier didn't respond. Nothing was imported — your cart is unchanged."
+            : failure === "SUPPLIER_DISCONNECTED"
+              ? "Your supplier connection needs attention. Nothing was imported."
+              : "That import didn't run. Nothing was imported and your cart is unchanged."
       );
     } finally {
       setImporting(false);
     }
-  }, [connectionId, load, override, scope, selected]);
+  }, [connectionId, formatters, load, maxPerImport, override, scope, selected]);
+
+  // How many of the ticked rows this run will really attempt. The rest are
+  // deferred by the server and stay in the cart, so the button must not count
+  // them: "Import & publish 58" over a 25-item run is the promise that produced
+  // this screen's production failure report.
+  const attempting = useMemo(
+    () => (maxPerImport && selected.length > maxPerImport ? maxPerImport : selected.length),
+    [maxPerImport, selected.length]
+  );
+  const deferring = selected.length - attempting;
 
   const stateBlock = stateOwnsScreen(state) ? (
     <DropshippingStateView
@@ -407,20 +437,31 @@ export function ImportCartScreen({ route, navigation }: Props) {
                   unpriced.length > 0
                     ? `Resolve pricing issues on ${unpriced.length} products before importing`
                     : autoPublish
-                      ? `Import and publish ${selected.length} products to your store`
-                      : `Import ${selected.length} products as drafts`
+                      ? `Import and publish ${attempting} products to your store`
+                      : `Import ${attempting} products as drafts`
                 }
               >
                 <Text style={styles.primaryText}>
                   {importing
-                    ? `Importing ${formatters.count(selected.length)}…`
+                    ? `Importing ${formatters.count(attempting)}…`
                     : unpriced.length > 0
                       ? "Resolve pricing issues"
                       : autoPublish
-                        ? `Import & publish ${formatters.count(selected.length)}`
-                        : `Import ${formatters.count(selected.length)} as drafts`}
+                        ? `Import & publish ${formatters.count(attempting)}`
+                        : `Import ${formatters.count(attempting)} as drafts`}
                 </Text>
               </Pressable>
+              {/* Before the tap, not after. The button stays enabled because the
+                  server serves the first batch and defers the rest, so there is
+                  nothing here for the merchant to fix — only something to know,
+                  which is why this is a note and not the pricing block's block. */}
+              {deferring > 0 ? (
+                <Text style={styles.note}>
+                  {`One import takes ${formatters.count(attempting)} products at a time. The other ${formatters.count(
+                    deferring
+                  )} stay in your cart — import again when this run finishes.`}
+                </Text>
+              ) : null}
               {/* Named, not counted. "1 product has no cost" leaves the merchant
                   hunting a list; the title is what they tap to deselect. Re-adding
                   from the catalogue is what re-asks the supplier, because the cart
@@ -569,8 +610,15 @@ function runSummary(result: ImportRunResult): string {
     (item) => item.outcome === "IMPORTED" || item.outcome === "ALREADY_EXISTS"
   ).length;
   if (drafted > 0) parts.push(`${drafted} saved as drafts`);
-  const failed = result.requested - result.publishedCount - result.needsAttention - drafted;
+  // Subtracted before the failure count, never folded into it. These were not
+  // reached, so counting them as refusals is the exact lie this screen used to
+  // tell in its loudest form: 58 selected, 25 imported, and a line reading
+  // "33 couldn't be imported" about 33 products with nothing wrong with them.
+  const deferred = result.deferred;
+  const failed =
+    result.requested - result.publishedCount - result.needsAttention - drafted - deferred;
   if (failed > 0) parts.push(`${failed} couldn't be imported`);
+  if (deferred > 0) parts.push(`${deferred} still in your cart`);
   if (parts.length === 0) return `Nothing was imported.`;
   if (parts.length === 1 && result.publishedCount === result.requested) {
     return result.requested === 1
@@ -617,7 +665,11 @@ function ImportResultSheet({
         />
       ))}
 
-      {needsReview ? (
+      {/* Deferred rows join this note rather than getting one of their own: the
+          sentence a merchant needs is identical, and "import again" is the whole
+          instruction in both cases. Saying it twice in one sheet would read as
+          two different problems. */}
+      {needsReview || result.deferred > 0 ? (
         <Text style={styles.sheetNote}>
           You can run this again — anything already imported won't be duplicated.
         </Text>

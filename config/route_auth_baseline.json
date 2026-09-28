@@ -16215,6 +16215,18 @@
         "/offline"
       ]
     },
+    "open_destination_interstitial": {
+      "auth": "public",
+      "declared": true,
+      "evidence": "declared:public (A handoff page. It names a destination and renders two links -- the App Store listing and, on iOS, a pulsesoc:// button -- and reads no member data of any kind, so there is nothing here for a gate to protect. Gating it would be actively harmful: the people who reach this URL are the ones who do not yet have the app, and bouncing them to /login first is how the destination gets lost.)",
+      "methods": [
+        "GET"
+      ],
+      "rules": [
+        "/open/<destination>",
+        "/open/<destination>/<resource_id>"
+      ]
+    },
     "optimism_education_page": {
       "auth": "user",
       "declared": false,
@@ -16791,6 +16803,39 @@
         "/api/private-office/relationships"
       ]
     },
+    "private_office_relationships.api_private_office_relationships_edit": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "PATCH"
+      ],
+      "rules": [
+        "/api/private-office/relationships/<int:node_id>"
+      ]
+    },
+    "private_office_relationships.api_private_office_relationships_favorite": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "POST"
+      ],
+      "rules": [
+        "/api/private-office/relationships/<int:node_id>/favorite"
+      ]
+    },
+    "private_office_relationships.api_private_office_relationships_lookup": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "GET"
+      ],
+      "rules": [
+        "/api/private-office/relationships/lookup"
+      ]
+    },
     "private_office_relationships.api_private_office_relationships_profile": {
       "auth": "user",
       "declared": false,
@@ -16811,6 +16856,17 @@
       ],
       "rules": [
         "/api/private-office/relationships/<int:node_id>/facts"
+      ]
+    },
+    "private_office_relationships.api_private_office_relationships_remove": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "DELETE"
+      ],
+      "rules": [
+        "/api/private-office/relationships/<int:node_id>"
       ]
     },
     "pro_page": {
@@ -17716,6 +17772,28 @@
         "/api/calls/<path:call_id>/invite"
       ]
     },
+    "pulse_communications_v2.api_register_voip_token": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "POST"
+      ],
+      "rules": [
+        "/api/calls/voip-token"
+      ]
+    },
+    "pulse_communications_v2.api_revoke_voip_token": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "POST"
+      ],
+      "rules": [
+        "/api/calls/voip-token/revoke"
+      ]
+    },
     "pulse_communications_v2.api_ring_seen": {
       "auth": "user",
       "declared": false,
@@ -18490,6 +18568,17 @@
         "/api/pulse/communications/v2/realtime/stream"
       ]
     },
+    "pulse_communications_v2.reconcile_message_notifications": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "POST"
+      ],
+      "rules": [
+        "/api/pulse/communications/v2/notifications/reconcile"
+      ]
+    },
     "pulse_communications_v2.report_message": {
       "auth": "user",
       "declared": false,
@@ -19192,9 +19281,9 @@
       ]
     },
     "pulse_marketplace_listing_page": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:require_account",
+      "auth": "public",
+      "declared": true,
+      "evidence": "declared:public (The canonical public URL for one product, and the page every Marketplace share link, sitemap entry and Product structured-data block points at. Anonymous access is the feature: a signed-out visitor and Googlebot are the same visitor, so gating this route is the same as having no indexable catalogue. One listing is read under both visibility predicates -- lifecycle and seller discoverability -- and anything they exclude 404s without distinguishing withdrawn from nonexistent. No buyer identity, order, payment or seller contact detail is rendered; Save, Report and Promote require a session and are re-authorized by their own API routes.)",
       "methods": [
         "GET"
       ],
@@ -19280,9 +19369,9 @@
       ]
     },
     "pulse_marketplace_page": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:require_account",
+      "auth": "public",
+      "declared": true,
+      "evidence": "declared:public (A shop window. The storefront is the Marketplace's indexable public surface, and a crawler is always anonymous -- while this route redirected signed-out visitors to /login, no PulseSoc product could appear in a search result. It reads only listings that both `marketplace_listing_lifecycle.public_sql` and `discovery_visible_sql` already class as publicly discoverable, which is the same pair the buyer search API applies, so nothing here widens what is public. Signed-in state still changes the page: `require_account()` is called and drives the member shell, the merchant panel, and whether Save, Report and Promote render at all.)",
       "methods": [
         "GET"
       ],
@@ -19978,6 +20067,17 @@
         "/pulse/presence"
       ]
     },
+    "pulse_private_office_meetings_page": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "GET"
+      ],
+      "rules": [
+        "/pulse/private-office/meetings"
+      ]
+    },
     "pulse_private_office_page": {
       "auth": "user",
       "declared": false,
@@ -19987,6 +20087,28 @@
       ],
       "rules": [
         "/pulse/private-office"
+      ]
+    },
+    "pulse_private_office_retired_entity_page": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "GET"
+      ],
+      "rules": [
+        "/pulse/private-office/capital-graph/<node_id>"
+      ]
+    },
+    "pulse_private_office_retired_page": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "GET"
+      ],
+      "rules": [
+        "/pulse/private-office/<any(\"facts\",\"documents\",\"briefings\",\"shield\",\"concierge\",\"obligations\",\"events\",\"decisions\",\"requests\",\"risks\",\"opportunities\",\"capital-graph\"):section>"
       ]
     },
     "pulse_private_office_section_page": {
@@ -20732,6 +20854,17 @@
         "/sitemap-live.xml"
       ]
     },
+    "sitemap_marketplace_xml": {
+      "auth": "public",
+      "declared": true,
+      "evidence": "declared:public (A sitemap. It lists only URLs that are already public -- every entry is produced by the same two visibility predicates the storefront routes apply, so it cannot name a product a visitor could not open. Reachable anonymously because a crawler is anonymous, which is the entire point.)",
+      "methods": [
+        "GET"
+      ],
+      "rules": [
+        "/sitemap-marketplace.xml"
+      ]
+    },
     "sitemap_pages_xml": {
       "auth": "unknown",
       "declared": false,
@@ -21114,18 +21247,18 @@
   "totals": {
     "by_auth": {
       "admin": 498,
-      "public": 2,
+      "public": 7,
       "unknown": 171,
-      "user": 1437
+      "user": 1445
     },
     "by_evidence": {
-      "declared": 14,
+      "declared": 29,
       "gates": 811,
-      "identity+refusal": 860,
+      "identity+refusal": 858,
       "identity-without-refusal": 11,
       "no-known-gate": 160,
       "via": 252
     },
-    "rules": 2108
+    "rules": 2121
   }
 }

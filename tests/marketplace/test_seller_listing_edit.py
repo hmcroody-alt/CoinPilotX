@@ -654,12 +654,16 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
     seller deliberately set to nothing. The category and safety pills still
     render, so the card never collapses.
 
-    These render the real routes rather than inspecting source text. That is
-    deliberate: the JS card builds its own HTML inside a ``%``-formatted script
-    block, so anything threaded into it travels by string interpolation, and a
-    mistake there is a 500 on the whole marketplace page rather than a wrong
-    word. Only rendering catches that -- and removing the fallback changed that
-    block's argument count, which is exactly such a mistake.
+    These render the real routes rather than inspecting source text. That was
+    originally deliberate because the card was built twice -- once in Python on
+    load and once again in an inline JS function after a search -- so a page
+    could pass a source grep and still hand a searching buyer the old phrase.
+    The storefront rebuild removed the JS half: search is now a server-rendered
+    ``?q=`` response drawn by the same card function as the default grid. The
+    two renderings below are kept anyway, because "one renderer" is a fact about
+    today's code and not a guarantee about tomorrow's, and because the price is
+    suppressed by a branch that a query-filtered row could still take
+    differently from an unfiltered one.
     """
 
     # Asserted as literals rather than through a constant. The constant these
@@ -773,6 +777,24 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
     def unpriced_listing(self):
         return self._make_listing(self.owner, title="Unpriced web lamp", price_label="")
 
+    def _card_for(self, html, listing_id):
+        """Slice one grid card out of a rendered page.
+
+        Asserting against the whole page would let a neighbouring card satisfy a
+        check about this one -- every card in this fixture carries the same
+        seller, so "the seller name is on the page" stays true even if this card
+        dropped it.
+
+        Keyed on the product href rather than the title: a search page echoes the
+        query back in its result count, its filter chips and its input value, all
+        of which precede the grid, so the title's *first* occurrence is not the
+        card. The href is the one string only the card has.
+        """
+        href = f'href="/pulse/marketplace/{listing_id}"'
+        at = html.find(href)
+        self.assertNotEqual(at, -1, f"listing {listing_id} never rendered a card")
+        return html[html.rindex("<li>", 0, at):html.index("</li>", at)]
+
     def test_the_marketplace_grid_renders_and_never_says_request_access(self):
         listing_id = self.unpriced_listing()
         with self.acting_as(self.owner):
@@ -783,26 +805,42 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertIn("Unpriced web lamp", html, "the unpriced listing never rendered")
         self.assertInventsNoPrice(html, "the marketplace grid")
-        # The card must still be a card. Dropping the price pill must not take
-        # the row's other pills with it, or "no invented price" would be
-        # satisfied by rendering nothing at all.
-        self.assertIn("Safety", html)
-        del listing_id
+        # The card must still be a card. Dropping the price must not take the
+        # rest of the card with it, or "no invented price" would be satisfied by
+        # rendering nothing at all.
+        #
+        # This used to assert the word "Safety", which the old card printed in a
+        # standing "educational products only" notice. The storefront rebuild
+        # dropped that line -- it asserted a product policy the marketplace does
+        # not have -- so the anti-collapse check now reads the card the buyer
+        # actually gets: the unpriced listing keeps its link and its seller.
+        card = self._card_for(html, listing_id)
+        self.assertIn("Unpriced web lamp", card)
+        self.assertIn("Web store", card, "the unpriced card lost its seller identity")
 
-    def test_the_inline_card_script_invents_no_price_either(self):
-        """Same page, second renderer. Search results are drawn in JS.
+    def test_search_results_invent_no_price_either(self):
+        """Same page, second arrangement: the buyer typed something.
 
-        The grid is server-rendered on load and re-rendered client-side after a
-        search, so the identical card exists twice in two languages. Fixing only
-        the Python half would leave a buyer who typed in the search box looking
-        at the old phrase.
+        Search used to be a client-side re-render, so the identical card existed
+        twice in two languages and fixing only the Python half left a searching
+        buyer looking at the old phrase. Search is server-rendered now, which
+        collapses the two copies into one -- but a filtered response is still a
+        different code path from an unfiltered one, and it is the path a buyer
+        hunting for one specific item actually lands on.
         """
+        listing_id = self.unpriced_listing()
         with self.acting_as(self.owner):
-            html = self.client.get("/pulse/marketplace").get_data(as_text=True)
-        self.assertIn("function marketplaceListingHtml", html)
-        script = html[html.index("function marketplaceListingHtml"):]
-        script = script[:script.index("</script>")] if "</script>" in script else script
-        self.assertInventsNoPrice(script, "the inline JS card")
+            response = self.client.get("/pulse/marketplace?q=Unpriced+web+lamp")
+        self.assertEqual(response.status_code, 200,
+                         response.get_data(as_text=True)[:400])
+        html = response.get_data(as_text=True)
+        self.assertIn("Unpriced web lamp", html,
+                      "the unpriced listing never came back from search")
+        self.assertInventsNoPrice(html, "the search results")
+        card = self._card_for(html, listing_id)
+        self.assertIn("Unpriced web lamp", card)
+        self.assertIn("Web store", card,
+                      "the unpriced search result lost its seller identity")
 
     def test_the_product_page_renders_and_never_says_request_access(self):
         listing_id = self.unpriced_listing()

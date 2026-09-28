@@ -60,6 +60,11 @@ import {
   uploadMessengerMedia
 } from "../api/messenger";
 import { mergeConversationMessages } from "../api/messengerOrdering";
+import {
+  ASSISTANT_CONNECTION_KEYS,
+  assistantConnectionDegraded,
+  assistantConnectionState
+} from "../messaging/assistantConnection";
 import { useConversationWallpaper } from "../messaging/conversationWallpaper";
 import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
@@ -530,9 +535,26 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   // snapshot. When the server has told us nothing about the peer we show
   // connection status instead of guessing.
   const presenceSubtitle = peerPresenceSubtitle(peerPresence);
+  // Derived in `assistantConnection` so the claim can be tested without
+  // mounting a conversation. See that module for why the order of the checks
+  // is the whole point.
+  const assistantState = assistantConnectionState({
+    error: Boolean(error),
+    loading,
+    initialFetchComplete,
+    usingCachedMessages
+  });
   const headerSubtitle = assistantConversation
-    ? typing || (error ? t("messaging:chat.assistantReconnecting") : usingCachedMessages ? t("messaging:chat.headerCachedHistory") : t("messaging:chat.assistantAlwaysAvailable"))
+    ? typing || t(ASSISTANT_CONNECTION_KEYS[assistantState])
     : typing || presenceSubtitle || headerStatus;
+  /**
+   * The dot has to agree with the words beside it. It used to warn on `error`
+   * only, which left it reading live-green next to "Cached history" — two
+   * opposite claims about the same connection, one of them wrong.
+   */
+  const connectionDegraded = assistantConversation
+    ? assistantConnectionDegraded(assistantState)
+    : Boolean(error) || usingCachedMessages;
   const peerIsOnline = Boolean(peerPresence?.online);
 
   const mergeMessages = useCallback(
@@ -1259,7 +1281,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           <PulseCommandAvatar label={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Chat"} imageUrl={assistantConversation ? undefined : route.params.avatarUrl} active={assistantConversation || peerIsOnline} size={48} tone={assistantConversation ? "intelligence" : "default"} />
           <View style={styles.threadIdentity}>
             <Text style={styles.threadTitle} numberOfLines={1}>{threadTitle}</Text>
-            <View style={styles.threadStatusRow}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.threadSubtitle} numberOfLines={1}>{headerSubtitle}</Text></View>
+            <View style={styles.threadStatusRow}><LiveStatusDot warning={connectionDegraded} /><Text style={styles.threadSubtitle} numberOfLines={1}>{headerSubtitle}</Text></View>
           </View>
           <View style={styles.callActions}>
             {!assistantConversation ? <SignalIconButton accessibilityLabel={t("messaging:chat.a11yStartAudioCall")} icon="call-outline" onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: threadTitle })} /> : null}

@@ -460,12 +460,17 @@ class ApnsContractTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-def _scripted_httpx(script):
+def _scripted_httpx(script, raise_after=None):
     """An httpx stand-in that answers from `script` and records the hosts it saw.
 
     `script` is a list of (status_code, body) answered in order. Returns the fake
     module and the list of URLs posted to, so a test can assert both *what* APNs
     replied and *how many* requests it took.
+
+    `raise_after` makes request number `raise_after` (0-indexed) and every one
+    after it raise instead of answering, so a test can reach the
+    `transport: failed` branch — a network error carries no http_status at all,
+    which is a different thing from a host that answered and said no.
     """
     seen = []
 
@@ -487,6 +492,8 @@ def _scripted_httpx(script):
 
         def post(self, url, headers=None, json=None):
             seen.append(url)
+            if raise_after is not None and len(seen) - 1 >= raise_after:
+                raise RuntimeError("connection reset")
             status, body = script[min(len(seen) - 1, len(script) - 1)]
             return _Response(status, body)
 
@@ -595,6 +602,87 @@ class ApnsEnvironmentCorrectionTest(VoipBase):
         self.assertFalse(result.get("ok"))
         self.assertEqual(result.get("status"), "invalid_device")
         self.assertEqual(len(seen), 2)
+
+    def test_a_key_the_other_host_refuses_does_not_condemn_the_token(self):
+        """MUTATION: keep classifying any non-2xx replay as the second of two refusals.
+
+        Measured in production on 2026-09-17 against the only physical handset.
+        The build is signed `aps-environment: development`, so iOS mints a *sandbox*
+        token; the deployment records `production`, so the first request goes to
+        api.push.apple.com and draws BadDeviceToken. The replay then goes to
+        api.sandbox.push.apple.com — which answers `403 BadEnvironmentKeyInToken`,
+        because the signing key is restricted to a single APNs environment and the
+        host refuses the *request* before it ever looks at the token.
+
+        That 403 says nothing whatsoever about the device. Counting it as a refusal
+        revoked a live token (suffix cee6d835) on every call since 2026-09-15; iOS
+        handed the app back the identical token each time, which is proof it was
+        never dead. Because alert-push suppression is conditioned on an *active*
+        token, the handset then dropped to a plain banner and CallKit never rang.
+
+        A misconfigured provider credential must degrade to a retryable failure,
+        never to a revocation.
+        """
+        result, seen = self._send(
+            [(400, BAD_TOKEN), (403, '{"reason":"BadEnvironmentKeyInToken"}')],
+            environment="production",
+        )
+
+        self.assertFalse(result.get("ok"))
+        self.assertEqual(
+            result.get("status"),
+            "failed",
+            "a 403 about our signing key is not evidence the device token is dead",
+        )
+        self.assertEqual(len(seen), 2, "the replay must still be attempted")
+
+    def test_an_unreachable_replay_host_does_not_condemn_the_token(self):
+        """MUTATION: treat a transport failure on the replay as a refusal.
+
+        `_post_voip` returns `transport: failed` with no http_status for a network
+        error, which reads as 0 — not 2xx — and is otherwise indistinguishable from
+        the other host saying "I do not know this token". A flaky minute of DNS must
+        not cost every handset its ability to ring.
+        """
+        fake, seen = _scripted_httpx([(400, BAD_TOKEN)], raise_after=1)
+        with mock.patch.object(voip, "_apns_jwt", return_value="fake-jwt"), \
+                mock.patch.dict(sys.modules, {"httpx": fake}):
+            result = voip.send_voip_push("devicetoken123", {"event": "incoming_call"}, "production")
+
+        self.assertEqual(result.get("status"), "failed")
+        self.assertEqual(len(seen), 2)
+
+    def test_a_provider_fault_on_the_first_request_is_never_a_revocation(self):
+        """MUTATION: widen `invalid` to any non-2xx.
+
+        An expired or wrong `.p8` fails every device at once. Revoking on it would
+        empty the token table in a single ring fan-out, leaving a deployment that
+        cannot recover by fixing the key.
+        """
+        result, seen = self._send([(403, '{"reason":"ExpiredProviderToken"}')], environment="production")
+
+        self.assertEqual(result.get("status"), "failed")
+        self.assertEqual(len(seen), 1, "a provider fault is not an environment mismatch")
+
+    def test_the_rejection_event_names_why_the_replay_failed(self):
+        """MUTATION: drop `replay_reason` from the event.
+
+        `replay=rejected` alone cannot distinguish "the other host does not know
+        this token" from "the other host refused our key" — opposite faults with
+        opposite fixes. Diagnosing the 2026-09-17 outage needed a hand-written probe
+        against both hosts precisely because this field did not exist.
+        """
+        events = []
+        with mock.patch.object(voip, "_event", side_effect=lambda name, **kw: events.append((name, kw))):
+            self._send(
+                [(400, BAD_TOKEN), (403, '{"reason":"BadEnvironmentKeyInToken"}')],
+                environment="production",
+            )
+
+        rejected = [kw for name, kw in events if name == "voip_push_rejected"]
+        self.assertEqual(len(rejected), 1, events)
+        self.assertEqual(rejected[0].get("replay"), "provider_fault")
+        self.assertEqual(rejected[0].get("replay_reason"), "BadEnvironmentKeyInToken")
 
     def test_an_alert_token_on_the_voip_topic_is_not_replayed(self):
         """MUTATION: fold DeviceTokenNotForTopic into the mismatch check.

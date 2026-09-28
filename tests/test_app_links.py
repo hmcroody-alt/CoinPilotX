@@ -345,18 +345,21 @@ def test_web_intent_paths_are_ignored_even_if_someone_appends_the_marker():
 
 def test_non_ios_continues_to_the_web_only_where_a_web_page_genuinely_exists():
     assert fallback_decision("/pulse/post/5", is_ios=False, is_app_intent=True)[0] == FALLBACK_WEB
-    # No production-ready web surface for a listing or for orders. A desktop
-    # visitor gets the app-only page, not a redirect to an iPhone listing they
-    # cannot install from.
-    assert fallback_decision("/pulse/marketplace/9", is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_ONLY
+    # The storefront rebuild made `/pulse/marketplace/<id>` a real public page,
+    # so a desktop visitor now continues to it. This line asserted APP_ONLY for
+    # the same path while the web listing was a shell page with no template; the
+    # condition changed, not the rule.
+    assert fallback_decision("/pulse/marketplace/9", is_ios=False, is_app_intent=True)[0] == FALLBACK_WEB
+    assert fallback_decision("/pulse/marketplace", is_ios=False, is_app_intent=True)[0] == FALLBACK_WEB
+    # Orders still have no production-ready web surface. A desktop visitor gets
+    # the app-only page, not a redirect to an iPhone listing they cannot install
+    # from — so the rule this test exists for is still exercised.
     assert fallback_decision("/pulse/orders", is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_ONLY
 
 
 @pytest.mark.parametrize(
     "path",
     [
-        "/pulse/marketplace",
-        "/pulse/marketplace/9",
         "/pulse/merchant/acme",
         "/pulse/seller-store",
         "/pulse/merchant/dashboard",
@@ -366,16 +369,37 @@ def test_non_ios_continues_to_the_web_only_where_a_web_page_genuinely_exists():
         "/pulse/purchases",
     ],
 )
-def test_the_whole_marketplace_family_is_app_first_on_every_platform(path):
-    """Mission decision: no visitor is shown the unfinished web Marketplace.
+def test_the_seller_and_order_surfaces_are_app_first_on_every_platform(path):
+    """No visitor is shown an unfinished web surface.
 
     iOS without the app gets the listing; everything else gets the app-only
     page. The one outcome that must never occur is FALLBACK_WEB, because the
     web surface behind these paths renders through `pulse_social_shell()` with
     no template and was never designed for a browser.
+
+    `/pulse/marketplace` and `/pulse/marketplace/<id>` used to be in this list
+    and are deliberately no longer: the storefront rebuild gave both a real
+    public document, so FALLBACK_WEB is the correct outcome for them and is
+    asserted by `test_non_ios_continues_to_the_web_only_...` above. Every other
+    member of the family is unchanged, which is the point of keeping this test
+    rather than deleting it.
     """
     assert fallback_decision(path, is_ios=True, is_app_intent=True)[0] == FALLBACK_APP_STORE
     assert fallback_decision(path, is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_ONLY
+
+
+@pytest.mark.parametrize("path", ["/pulse/marketplace", "/pulse/marketplace/9"])
+def test_the_storefront_is_reached_on_the_web_but_still_opens_the_app_on_ios(path):
+    """The two halves of "web-first, app-still-offered", asserted together.
+
+    An iOS visitor on a marked link reached the server, which means the app is
+    not installed, so the App Store is still the honest destination. Everyone
+    else lands on the storefront. Losing either half is a regression: the first
+    would strand iPhone users, the second would put an install wall in front of
+    a working, indexable page.
+    """
+    assert fallback_decision(path, is_ios=True, is_app_intent=True)[0] == FALLBACK_APP_STORE
+    assert fallback_decision(path, is_ios=False, is_app_intent=True)[0] == FALLBACK_WEB
 
 
 def test_unknown_destination_fails_safe_to_our_own_web_surface():

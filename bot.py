@@ -326,6 +326,14 @@ from services import (
     marketplace_listing_types as marketplace_listing_types_service,
     marketplace_listing_lifecycle as marketplace_listing_lifecycle,
     marketplace_seller_identity as marketplace_seller_identity,
+    # The web storefront. Two modules, deliberately: `marketplace_web` derives
+    # facts from rows (price ranges, taxonomy, option groups, description
+    # parsing) and `marketplace_storefront` turns those facts into markup.
+    # Neither imports Flask or `bot`, which is what makes the storefront
+    # testable without booting the app and is why the routes below contain SQL
+    # and HTTP concerns only.
+    marketplace_web as marketplace_web,
+    marketplace_storefront as marketplace_storefront,
     media_service,
     media_storage,
     media_upload_sessions,
@@ -2730,7 +2738,31 @@ def add_pwa_headers(response):
     if request.path in ("/static/service-worker.js", "/sw.js"):
         response.headers["Service-Worker-Allowed"] = "/"
         response.headers["Cache-Control"] = "no-store, max-age=0"
-    elif request.path == "/pulse" or request.path.startswith("/pulse/") or request.path.startswith("/api/pulse/"):
+    elif (
+        request.path == "/pulse"
+        or request.path.startswith("/pulse/")
+        or request.path.startswith("/api/pulse/")
+    ) and not getattr(response, "pulse_cache_owned_by_view", False):
+        # `/pulse/*` is a signed-in social surface, so blanket `no-store` is the
+        # right default: a shared cache must never hold one member's feed and
+        # hand it to another.
+        #
+        # The opt-out exists because this branch also covered the two public
+        # Marketplace pages, and there it was actively harmful rather than merely
+        # cautious. `/pulse/marketplace` and `/pulse/marketplace/<id>` serve an
+        # anonymous, identical-for-everyone document to visitors and crawlers,
+        # and they set `public, max-age=0, s-maxage=120` on it deliberately --
+        # which this line silently discarded, so every crawl and every burst
+        # through one shared link reached Flask and re-ran the catalogue query.
+        # The header was written, overwritten, and nobody could tell from reading
+        # the view.
+        #
+        # A view claims ownership by setting `pulse_cache_owned_by_view` on its
+        # response. An attribute rather than a `setdefault` here on purpose: a
+        # `setdefault` would hand the exemption to all ~320 `/pulse` routes at
+        # once, including any that set a cacheable header on a personalised page
+        # while relying on this line to correct it. Ownership has to be claimed,
+        # not inherited.
         response.headers["Cache-Control"] = "no-store, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -2743,7 +2775,7 @@ def add_pwa_headers(response):
         response.headers["Expires"] = "0"
     elif request.path.startswith(("/static/", "/icons/")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-live.xml", "/sitemap-replays.xml", "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
+    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-live.xml", "/sitemap-replays.xml", "/sitemap-marketplace.xml", "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
         response.headers["Cache-Control"] = "public, max-age=300"
     if (
         response.status_code == 200
@@ -3616,19 +3648,51 @@ def enforce_admin_form_csrf():
 def app_first_href(destination, resource_id=None):
     """The href for a website button whose destination lives in the app.
 
-    Every Marketplace button on pulsesoc.com goes through here, so that the
-    decision about what opens the app is made in one place instead of being
-    re-derived at each of the two dozen sites that render one.
+    Every button on pulsesoc.com whose destination lives in the app goes through
+    here, so that the decision about what opens the app is made in one place
+    instead of being re-derived at each of the two dozen sites that render one.
 
-    Marketplace is app-first while the web one is unbuilt, so these buttons
-    must not reach `/pulse/marketplace...`. They cannot use the canonical
-    `?pulse_app=1` link either: that link is tapped from the same domain it
-    points at, and iOS does not consult associated domains for a same-domain
-    tap, so an installed member would land in Safari and get 302'd to the
-    App Store. `open_interstitial_url` explains that in full.
+    Which destinations those are is recorded in `app_links`, not here: a
+    destination with `web_equivalent=True` and no entry in
+    `APP_FIRST_DESPITE_WEB_ROUTE` is reached on the web instead. The Marketplace
+    storefront and a product page are both in that group now, and their links come
+    from `marketplace_href` / `marketplace_storefront.product_path`. This helper
+    still serves them in exactly one place -- the "Open in PulseSoc" aside that
+    `marketplace_storefront_app_cta` renders *on* those pages, which is an
+    invitation next to working content rather than a wall in front of it.
+
+    What remains true of every link this builds: it cannot use the canonical
+    `?pulse_app=1` link. That link is tapped from the same domain it points at,
+    and iOS does not consult associated domains for a same-domain tap, so an
+    installed member would land in Safari and get 302'd to the App Store.
+    `open_interstitial_url` explains that in full.
     """
 
     return app_links.open_interstitial_url(destination, resource_id, source="web")
+
+
+def marketplace_href(category=""):
+    """Where a "Marketplace" link on pulsesoc.com points.
+
+    Every navigation entry on the site used to call `marketplace_href()`
+    and land the visitor on `/open/marketplace` — an interstitial asking them to
+    install an iPhone app — because the web Marketplace was a shell page with
+    nothing in it. That was the honest answer then and is the wrong one now: the
+    storefront is a real, public, indexable page, and a nav link that refuses to
+    open the section it names is a dead end in the middle of the site.
+
+    So navigation goes straight to the storefront. The app is still offered, on
+    the destination page itself, by `marketplace_storefront_app_cta` — one
+    invitation on a working page instead of a wall in front of it.
+
+    Routed through a function rather than a literal so the path is derived from
+    `marketplace_storefront.BASE_PATH` and the ~15 call sites cannot drift from
+    the route, which is the same reason `app_first_href` exists.
+    """
+
+    base = marketplace_storefront.BASE_PATH
+    slug = marketplace_web.slugify(str(category or ""))
+    return f"{base}?category={slug}" if slug else base
 
 
 def app_first_link_map_script():
@@ -3647,15 +3711,23 @@ def app_first_link_map_script():
 
     Keyed by the result `type` the search API sets, so a card type with no entry
     keeps its canonical url and nothing has to be excluded by hand.
+
+    The map is currently empty, and that is the intended state rather than a
+    regression. Its only entry was `marketplace`, which rewrote every product
+    search result to `/open/product/<id>` because there was no product page worth
+    landing on. There is now: `/pulse/marketplace/<id>` is the canonical public
+    URL, it is what the search API already returns, and diverting a click away
+    from it would cost the visitor the page and cost the site the internal link.
+    So marketplace cards fall through the "no entry keeps its canonical url"
+    branch, which is exactly the behaviour wanted.
+
+    The function is kept rather than deleted: it is the one place a card type can
+    be made app-first again, and the two static renderers already read
+    `window.PULSE_APP_FIRST_LINKS`. Removing it would push that decision back
+    into JavaScript literals, which is what it exists to prevent.
     """
 
-    payload = {
-        "marketplace": {
-            "template": app_links.open_interstitial_url_template("product", source="web"),
-            "fallback": app_first_href("marketplace"),
-            "token": app_links.CLIENT_ID_TOKEN,
-        }
-    }
+    payload: dict = {}
     return (
         "<script>window.PULSE_APP_FIRST_LINKS="
         + json.dumps(payload)
@@ -16119,6 +16191,9 @@ def admin_page_html(title, body, admin=None):
             ("☎", "Calls", "/admin/calls", False),
         ]),
         ("Commerce", [
+            # The curator publishes on its own schedule, so the kill switch has
+            # to be somewhere an operator can find without knowing it exists.
+            ("◇", "PulseDrop", "/admin/pulsedrop", False),
             ("$", "Transactions", "/admin/transactions", False),
             ("◈", "Payments Command Center", "/admin/payments-command-center", False),
             ("⚠", "Unmatched Payments", "/admin/unmatched-payments", False),
@@ -40535,7 +40610,7 @@ def pulse_desktop_top_nav_html(user=None):
         ("Events", "/pulse/events"),
         ("Communities", "/pulse/communities"),
         ("Roast Battle", "/pulse/roast-battle"),
-        ("Marketplace", app_first_href("marketplace")),
+        ("Marketplace", marketplace_href()),
         ("Creator Studio", "/pulse/creator-studio"),
         ("Seller Tools", app_first_href("seller")),
         ("Promote", "/pulse/promote"),
@@ -40585,7 +40660,7 @@ def pulse_desktop_top_nav_html(user=None):
         "<a class='pulse-topnav-control pulse-topnav-search' href='/pulse/search' aria-label='Open PulseSoc search'><span aria-hidden='true'>⌕</span></a>"
         "<a class='pulse-topnav-control pulse-topnav-alert' data-header-notifications href='/pulse/notifications' aria-label='Notifications'><span class='pulse-alert-radar' aria-hidden='true'></span><span class='pulse-notification-badge' data-alert-unread data-notification-unread hidden>0</span></a>"
         "<a class='pulse-topnav-control pulse-topnav-live' href='/pulse/live' aria-label='Open Live Network'><span aria-hidden='true'>LIVE</span></a>"
-        f"<details class='pulse-topnav-profile-menu'><summary class='pulse-topnav-avatar' aria-label='Open account menu'>{avatar_html}<span class='pulse-topnav-presence' aria-hidden='true'></span></summary><div class='pulse-topnav-profile-panel' role='menu' aria-label='Account menu'><strong>{html_escape(clean_html(display_name))}</strong><a href='/pulse/profile' role='menuitem'>Profile</a><a href='/dashboard' role='menuitem'>Dashboard</a><a href='/account/settings' role='menuitem'>Account Settings</a><a class='logout' href='/logout' role='menuitem'>Log Out</a></div></details>"
+        f"<details class='pulse-topnav-profile-menu'><summary class='pulse-topnav-avatar' aria-label='Open account menu'>{avatar_html}<span class='pulse-topnav-presence' aria-hidden='true'></span></summary><div class='pulse-topnav-profile-panel' role='menu' aria-label='Account menu'><strong>{html_escape(clean_html(display_name))}</strong><a href='/pulse/profile' role='menuitem'>Profile</a><a href='/dashboard' role='menuitem'>Dashboard</a><a href='/pulse/creator-studio' role='menuitem'>Creator Studio</a><a href='/pulse/promote' role='menuitem'>Promote</a><a href='/account/settings' role='menuitem'>Account Settings</a><a href='/pulse/help' role='menuitem'>Help &amp; Support</a><a class='logout' href='/logout' role='menuitem'>Log Out</a></div></details>"
         "<a class='button primary pulse-create-strong' href='#create' data-pulse-create-trigger='1'>Create</a></div>"
         "</header>"
     )
@@ -40612,12 +40687,22 @@ def pulse_shell_rail_items(user=None, is_admin=False):
         ("Videos", "/pulse/videos", "▣"),
         ("Live", "/pulse/live", "●"),
         ("Communities", "/pulse/communities", "◇"),
-        ("Marketplace", app_first_href("marketplace"), "▣"),
+        # Not "▣" -- that is Videos', and the two rendered as the same mark in
+        # two different rail groups.
+        ("Marketplace", marketplace_href(), "◫"),
         ("Music", "/pulse/music", "♪"),
-        ("Events", "/pulse/events", "E"),
-        ("Messenger", "/pulse/messages", "M"),
-        ("Notifications", "/pulse/notifications", "A"),
-        ("Pulse Radio", "/pulse/music#pulse-radio", "R"),
+        # Glyphs, not initials. "E" for Events and "M" for Messenger were the
+        # first letter of the label rendered next to the label, which is a
+        # placeholder that reads as one: five rows of the rail looked unfinished
+        # beside the sixteen that had real marks. Every replacement is drawn from
+        # a Unicode block this list already proves renders in the shell font --
+        # Geometric Shapes (▦ ▣ ◇), Dingbats (✦), Misc Symbols (⚙), Math
+        # Operators -- rather than from emoji, which would break the monochrome
+        # set, and rather than from rarer blocks that risk tofu.
+        ("Events", "/pulse/events", "▤"),
+        ("Messenger", "/pulse/messages", "✉"),
+        ("Notifications", "/pulse/notifications", "⚑"),
+        ("Pulse Radio", "/pulse/music#pulse-radio", "≈"),
         ("Creator Studio", "/pulse/creator-studio", "✦"),
         ("Business OS", "/business-os", "◈"),
         ("UNDX AI", "/pulse/assistant", "AI"),
@@ -40685,24 +40770,103 @@ def pulse_nav_is_current(href, active_path):
     return active == base or (base != "/pulse" and active.startswith(base.rstrip("/") + "/"))
 
 
+PULSE_RAIL_GROUPS = {
+    # Both the web paths and the app-first interstitials, because a commerce
+    # destination is reached by whichever of the two `app_first_href` /
+    # `marketplace_href` currently return, and the section a row belongs to is a
+    # fact about the destination rather than about how this deployment happens to
+    # route it today. Listing only the `/pulse/...` forms left Marketplace and
+    # Seller Tools ungrouped while the app-first links were in effect, which
+    # emptied the Shopping section and silently collapsed it -- the group simply
+    # did not appear, so the failure looked like a design choice.
+    "/pulse/marketplace": "Shopping",
+    "/marketplace": "Shopping",
+    "/open/marketplace": "Shopping",
+    "/open/product": "Shopping",
+    "/open/seller": "Shopping",
+    "/open/seller_dashboard": "Shopping",
+    "/pulse/seller": "Shopping",
+    "/seller": "Shopping",
+    # Cart is a commerce destination too. Unmapped it renders in the unlabelled
+    # primary group, directly beneath Home and Reels, which is both wrong and a
+    # harder failure to notice than the collapse above: an ungrouped row still
+    # appears, it just appears in the wrong place.
+    "/pulse/cart": "Shopping",
+    "/cart": "Shopping",
+    "/open/cart": "Shopping",
+    "/dashboard": "Your space",
+    "/pulse/creator-studio": "Your space",
+    "/business-os": "Your space",
+    "/pulse/assistant": "Your space",
+    "/pulse/undx/actions": "Your space",
+    "/pulse/premium": "Your space",
+    "/pulse/promote": "Your space",
+    "/pulse/saved": "Your space",
+    "/pulse/collections": "Your space",
+    "/pulse/settings": "Your space",
+    "/pulse/labs": "Your space",
+    "/admin/global-command": "Your space",
+}
+
+PULSE_RAIL_GROUP_ORDER = ("", "Shopping", "Your space")
+
+
+def pulse_shell_rail_group(href):
+    """Which rail section a catalogue destination belongs to.
+
+    Kept beside ``pulse_shell_rail_items`` rather than inside it: that catalogue
+    is a three-tuple the top bar and both drawers consume as well, and none of
+    them render sections. Widening the tuple would force an edit at four call
+    sites to express a decision only the rail has. Keyed by href because labels
+    are display copy, while hrefs are the identity the catalogue's
+    "appears everywhere or nowhere" contract is already keyed on.
+
+    An unclassified destination falls into the unlabelled first group, so adding
+    one to the catalogue still surfaces it -- it just lands in the primary list
+    until someone sorts it. Dropping it silently would be the worse default.
+    """
+    base = str(href or "").split("#")[0].split("?")[0].rstrip("/") or "/"
+    if base in PULSE_RAIL_GROUPS:
+        return PULSE_RAIL_GROUPS[base]
+    for prefix, group in PULSE_RAIL_GROUPS.items():
+        if base.startswith(prefix + "/"):
+            return group
+    return ""
+
+
 def pulse_rail_nav_links_html(user=None, is_admin=False, active_path=""):
     """Render the rail's links, marking the current destination.
 
     The rail previously rendered no active state at all, so on every page it
     looked identical and gave no clue where you were -- one of the concrete ways
     the site read as older than the app, which highlights the selected tab.
+
+    Twenty-five equally weighted rows is a list, not a navigation, so they are
+    emitted in labelled sections. Ordering inside a section stays the
+    catalogue's; only the partition is decided here.
     """
     active = (active_path or request.path or "").split("?")[0]
-    out = ""
+    buckets = {name: [] for name in PULSE_RAIL_GROUP_ORDER}
     for label, href, icon in pulse_shell_rail_items(user, is_admin):
         selected = pulse_nav_is_current(href, active)
         cls = "desktop-rail-link is-active" if selected else "desktop-rail-link"
         current = " aria-current='page'" if selected else ""
-        out += (
+        buckets.setdefault(pulse_shell_rail_group(href), []).append(
             f"<a class='{cls}'{current} href='{html_escape(clean_html(href))}'>"
             f"<span class='desktop-rail-ico'>{html_escape(clean_html(icon))}</span>"
             f"<span>{html_escape(clean_html(label))}</span></a>"
         )
+    out = ""
+    for name in PULSE_RAIL_GROUP_ORDER:
+        rows = buckets.get(name) or []
+        if not rows:
+            continue
+        heading = (
+            f"<p class='pulse-rail-group-label'>{html_escape(clean_html(name))}</p>"
+            if name
+            else ""
+        )
+        out += f"<div class='pulse-rail-group'>{heading}{''.join(rows)}</div>"
     return out
 
 
@@ -40732,24 +40896,70 @@ def pulse_desktop_rail_nav_html(user=None, is_admin=False, active_path=""):
     )
 
 
+PULSE_FAST_LANES = (
+    ("Create Status", "/pulse?create_status=1", "+", "Stories from your PulseSoc world"),
+    ("Active Stories", "/pulse/status?lane=trending", "↗", "Watch active stories first"),
+    ("PulseSoc Music", "/pulse/music", "♪", "Upload, search, and attach music"),
+    ("Reels", "/pulse/reels", "▶", "Full-screen short videos"),
+    ("Portfolio", "/pulse/portfolio", "$", "Holdings, watchlists, alerts, and AI context"),
+    ("Messenger", "/pulse/messages", "💬", "Chats, groups, and rooms"),
+    ("Live Stage", "/pulse/live", "●", "Rooms, streams, creator moments"),
+    ("Promote", "/pulse/promote", "↗", "Owner-only promotion gateway"),
+)
+
+
+def pulse_rail_fast_lanes_html(user=None, is_admin=False):
+    """Shortcuts the rail's own navigation does not already offer.
+
+    Seven of the ten rows here named a destination sitting a few hundred pixels
+    higher in the same rail, so the card read as a second, differently ordered
+    copy of the navigation. Filtering against the catalogue leaves the genuine
+    shortcuts -- a status composer, a filtered status lane, Portfolio -- and
+    makes the card self-maintaining: promoting one of these into
+    ``pulse_shell_rail_items`` now removes it from here rather than duplicating
+    it. "Create Signal" is dropped separately; it is the header's Create button.
+
+    Returns an empty string when nothing survives, so the card collapses instead
+    of rendering an empty heading.
+    """
+    catalogue = {
+        str(href or "").split("#")[0].split("?")[0].rstrip("/")
+        for _label, href, _icon in pulse_shell_rail_items(user, is_admin)
+    }
+    rows = ""
+    for label, href, icon, blurb in PULSE_FAST_LANES:
+        if str(href).split("#")[0].split("?")[0].rstrip("/") in catalogue:
+            continue
+        cls = "desktop-module-link pulse-status-glow-link" if "create_status" in href else "desktop-module-link"
+        rows += (
+            f"<a class='{cls}' href='{html_escape(clean_html(href))}'>"
+            f"<span class='desktop-rail-ico'>{html_escape(clean_html(icon))}</span>"
+            f"<span><strong>{html_escape(clean_html(label))}</strong>"
+            f"<small class='muted'>{html_escape(clean_html(blurb))}</small></span></a>"
+        )
+    if not rows:
+        return ""
+    return f"<section class='desktop-rail-card pulse-rail-fast-lanes'><h3>Fast Lanes</h3>{rows}</section>"
+
+
 def pulse_desktop_left_rail_html(is_admin=False, user=None):
-    shell_user = load_account_by_id((user or {}).get("user_id")) or (user or {})
-    rail_name = shell_user.get("display_name") or shell_user.get("username") or "Me"
-    rail_initials = "".join(part[:1] for part in str(rail_name).strip().split()[:2]).upper() or "ME"
+    """The feed's left rail: navigation, then feed furniture.
+
+    The rail opened with a card reading "Your PulseSoc OS" over the signed-in
+    initials, then a "Today" card whose three rows were Dashboard, Promote and
+    Log Out. Neither carried information -- the first is a slogan, the second is
+    an account menu -- and together they spent the top ~300px of the rail, which
+    is the only part of it visible without scrolling. All three destinations are
+    in the header's account popover, which is where a signed-in user looks for
+    them, so the cards are gone rather than restyled.
+
+    ``.pulse-desktop-left`` is hidden outright below 1024px by
+    ``pulse_desktop_feed.css``, so this markup is desktop-only and deleting it
+    cannot affect the phone.
+    """
     links = pulse_rail_nav_links_html(user, is_admin)
     return (
         "<aside class='pulse-desktop-left' aria-label='PulseSoc navigation rail'>"
-        "<section class='desktop-rail-card desktop-rail-profile'>"
-        f"<span class='avatar'>{html_escape(clean_html(rail_initials[:2]))}</span><span><strong>Your PulseSoc OS</strong><small class='muted'>Navigate, create, learn, and connect.</small></span>"
-        "</section>"
-        "<section class='desktop-rail-card pulse-rail-today' aria-label='PulseSoc today dashboard'>"
-        "<h3>Today</h3>"
-        "<div class='pulse-rail-today-grid'>"
-        "<a href='/dashboard'><strong>Dashboard</strong><small class='muted'>Account command center</small></a>"
-        "<a href='/pulse/promote'><strong>Promote</strong><small class='muted'>Owner tools</small></a>"
-        "<a href='/logout'><strong>Log Out</strong><small class='muted'>End this session</small></a>"
-        "</div>"
-        "</section>"
         f"<section class='desktop-rail-card desktop-rail-nav'>{links}</section>"
         "<section class='desktop-rail-card pulse-radio-dock' data-pulse-radio-dock>"
         "<h3>Pulse Radio</h3>"
@@ -40760,18 +40970,7 @@ def pulse_desktop_left_rail_html(is_admin=False, user=None):
         "</section>"
         f"{pulse_signal_ad_card('creator')}"
         f"{premium_promo_card(compact=True)}"
-        "<section class='desktop-rail-card'>"
-        "<h3>Fast Lanes</h3>"
-        "<a class='desktop-module-link pulse-status-glow-link' href='/pulse?create_status=1'><span class='desktop-rail-ico'>+</span><span><strong>Create Status</strong><small class='muted'>Stories from your PulseSoc world</small></span></a>"
-        "<a class='desktop-module-link' href='/pulse/status?lane=trending'><span class='desktop-rail-ico'>↗</span><span><strong>Active Stories</strong><small class='muted'>Watch active stories first</small></span></a>"
-        "<a class='desktop-module-link' href='/pulse/music'><span class='desktop-rail-ico'>♪</span><span><strong>PulseSoc Music</strong><small class='muted'>Upload, search, and attach music</small></span></a>"
-        "<a class='desktop-module-link' href='/pulse/reels'><span class='desktop-rail-ico'>▶</span><span><strong>Reels</strong><small class='muted'>Full-screen short videos</small></span></a>"
-        "<a class='desktop-module-link' href='/pulse/portfolio'><span class='desktop-rail-ico'>$</span><span><strong>Portfolio</strong><small class='muted'>Holdings, watchlists, alerts, and AI context</small></span></a>"
-        "<a class='desktop-module-link' href='/pulse/messages'><span class='desktop-rail-ico'>💬</span><span><strong>Messenger</strong><small class='muted'>Chats, groups, and rooms</small></span></a>"
-        "<a class='desktop-module-link' href='/pulse/live'><span class='desktop-rail-ico'>●</span><span><strong>Live Stage</strong><small class='muted'>Rooms, streams, creator moments</small></span></a>"
-        "<a class='desktop-module-link' href='/pulse/promote'><span class='desktop-rail-ico'>↗</span><span><strong>Promote</strong><small class='muted'>Owner-only promotion gateway</small></span></a>"
-        "<a class='desktop-module-link' href='#create' data-pulse-create-trigger='1'><span class='desktop-rail-ico'>+</span><span><strong>Create Signal</strong><small class='muted'>Publish with AI assistance</small></span></a>"
-        "</section>"
+        f"{pulse_rail_fast_lanes_html(user, is_admin)}"
         "</aside>"
     )
 
@@ -41160,7 +41359,7 @@ def marketplace_promo_card(compact=False):
     return promotion_card(
         "Marketplace",
         "Discover trusted sellers, creator products, and commerce signals inside the PulseSoc economy.",
-        app_first_href("marketplace"),
+        marketplace_href(),
         "Explore Marketplace",
         "▣",
         "marketplace",
@@ -41274,58 +41473,478 @@ def pulse_mobile_inline_ad_zone():
     )
 
 
-def pulse_desktop_right_rail_html():
+def pulse_rail_people_html(cur, user=None):
+    """People to follow, from the graph ``/pulse/friends`` already computes.
+
+    The rail had no people module at all -- twenty cards of topics, rooms,
+    momentum and apps, and not one human being -- on a product whose stated
+    hierarchy is PEOPLE before content. ``pulse_friend_graph`` was already
+    producing a ranked ``suggested`` list for one page; this surfaces it where
+    discovery actually happens.
+
+    Returns "" when the graph is empty, which on a young account it will be:
+    a "People" heading over nothing is worse than no heading. The failure branch
+    returns "" for the same reason -- the rail is context, and context that
+    cannot be loaded should be absent, not apologetic.
+    """
+    uid = int((user or {}).get("user_id") or 0)
+    if not uid:
+        return ""
+    try:
+        graph = pulse_friend_graph(cur, uid)
+        rows = ""
+        for person_id in (graph.get("suggested") or [])[:4]:
+            ident = pulse_person_public_payload(cur, person_id)
+            pid = ident.get("public_player_id") or ""
+            if not pid:
+                continue
+            name = ident.get("display_name") or "PulseSoc member"
+            # The engine's catch-all label carries no information (see
+            # GENERIC_CREATOR_LABELS in pulse_home_core.js); a username does.
+            label = ident.get("primary_label") or ""
+            if str(label).strip().lower() in {"", "member", "pulsesoc member"}:
+                label = f"@{ident.get('username')}" if ident.get("username") else ""
+            avatar = ident.get("avatar_url") or ""
+            face = (
+                f"<img class='desktop-rail-face' src='{html_escape(clean_html(avatar))}' alt='' loading='lazy' decoding='async'>"
+                if avatar
+                else f"<span class='desktop-rail-ico'>{html_escape(clean_html(name[:1].upper()))}</span>"
+            )
+            sub = f"<small class='muted'>{html_escape(clean_html(label))}</small>" if label else ""
+            rows += (
+                f"<a class='desktop-intel-row' href='/pulse/profile/{html_escape(clean_html(pid))}'>"
+                f"{face}<span><strong>{html_escape(clean_html(name))}</strong>{sub}</span></a>"
+            )
+        if not rows:
+            return ""
+        return (
+            "<section class='desktop-rail-card home-intel-people'><h3>People to follow</h3>"
+            f"<div class='desktop-intel-grid'>{rows}</div>"
+            "<a class='desktop-rail-more' href='/pulse/friends'>See all suggestions</a></section>"
+        )
+    except Exception:
+        return ""
+
+
+def pulse_rail_communities_html(cur):
+    """Featured spaces, from the catalogue whose pages actually exist.
+
+    The card this replaces was driven by ``intelligence_panel``'s ``top_spaces``:
+    four invented names -- Scam Watch, Alpha Arena, Roast Battle, Market
+    Psychology -- linked to ``/pulse/spaces/<slug>``. None of those slugs are in
+    ``PULSE_SPACES``, so ``pulse_space_detail_page`` fell through to its
+    not-found branch and every one of the four answered 200 with "This space is
+    being prepared." Four links that look live, resolve, and lead nowhere.
+
+    ``PULSE_SPACES`` is the catalogue those pages are built from, so a slug taken
+    from it cannot be dead by construction.
+
+    Membership is counted from ``pulse_space_members`` and omitted when zero,
+    which on a young install is all of them. ``/pulse/spaces`` -- which this rail
+    links to as "Browse all spaces" -- used to render
+    ``counts.get(slug, space["member_count"])``, and the fallback is a literal in
+    the catalogue: 304 members for Haiti Crypto Community, 298 for USA Crypto
+    Intelligence. So the rail said nothing and its own destination advertised a
+    crowd of 270-odd people who do not exist. That is now fixed at both ends --
+    `pulse_spaces_page`, the admin spaces table, and
+    ``space_discovery_engine.score_space``, whose ``member_count or
+    space["member_count"]`` could not tell a counted zero from an uncounted one.
+    The Trust and Energy percentages on that page are still catalogue constants
+    and are deliberately left alone: what those numbers should measure is a
+    product decision, where "how many people are in this space" is arithmetic.
+
+    Ordered by the real count so that once membership exists the busiest spaces
+    lead; ties keep catalogue order, which is what a fresh install gets.
+    """
+    featured = [space for space in PULSE_SPACES if space.get("featured")]
+    if not featured:
+        return ""
+    counts = {}
+    try:
+        cur.execute("SELECT space_slug, COUNT(*) AS total FROM pulse_space_members GROUP BY space_slug")
+        for row in cur.fetchall():
+            item = dict(row)
+            counts[item.get("space_slug")] = int(item.get("total") or 0)
+    except Exception:
+        counts = {}
+    featured.sort(key=lambda space: -counts.get(space.get("slug"), 0))
+    rows = ""
+    for space in featured[:4]:
+        members = counts.get(space.get("slug"), 0)
+        # The region is the honest alternative to a member count: it is a fact
+        # about the space, whereas the raw `category` value is an internal
+        # grouping key ("countries", "crypto") that reads as a typo in a
+        # subtitle.
+        sub = f"{members} member{'' if members == 1 else 's'}" if members else (space.get("region") or "")
+        sub_html = f"<small class='muted'>{html_escape(clean_html(sub))}</small>" if sub else ""
+        rows += (
+            f"<a class='desktop-intel-row' href='/pulse/spaces/{html_escape(clean_html(space['slug']))}'>"
+            "<span class='desktop-rail-ico'>◇</span>"
+            f"<span><strong>{html_escape(clean_html(space['name']))}</strong>{sub_html}</span></a>"
+        )
     return (
-        "<aside class='pulse-desktop-right' aria-label='PulseSoc intelligence rail'>"
-        "<section class='desktop-rail-card home-intel-overview' data-desktop-intel-card>"
-        "<h3>PulseSoc Intelligence</h3>"
-        "<div class='desktop-rail-stat'><span><strong data-desktop-posts-today>0</strong><small class='muted'>posts today</small></span>"
-        "<span><strong data-desktop-mood>Curious</strong><small class='muted'>community mood</small></span></div>"
-        "<div class='desktop-energy-meter' aria-hidden='true'><span data-desktop-energy style='--energy:58%'></span></div>"
-        "<p class='muted' data-desktop-suggested-action>Signals are loading quietly so the feed stays fast.</p>"
-        "</section>"
-        f"{pulse_daily_mentor_card_html(desktop=True)}"
-        f"{creator_promo_card()}"
-        "<section class='desktop-rail-card home-intel-trending'><h3>Trending Signals</h3><div class='desktop-intel-grid' data-desktop-trending>"
-        "<a class='desktop-intel-row' href='/pulse/topic/scamshield'><span class='desktop-rail-ico'>#</span><span><strong>#scamshield</strong><small class='muted'>Safety intelligence</small></span></a>"
+        "<section class='desktop-rail-card home-intel-communities'><h3>Communities</h3>"
+        f"<div class='desktop-intel-grid'>{rows}</div>"
+        "<a class='desktop-rail-more' href='/pulse/spaces'>Browse all spaces</a></section>"
+    )
+
+
+def pulse_rail_live_html(cur):
+    """Live right now -- or nothing.
+
+    The card this replaces was headed "Live Network" and its first row read
+    "<N> signals today", where N was ``posts_today``. Posts published today are
+    not live sessions; the number was true and the sentence it appeared in was
+    not. Below it sat "Realtime layer ready", which is a description of our
+    infrastructure, on a surface meant to tell a reader what is happening.
+
+    So: real rows from ``pulse_live_sessions``, or the module collapses. A
+    social product with nobody live should say nothing, not describe itself.
+
+    Restricted to ``audience='public'``, which is stricter than the live
+    discovery query at :41804 -- that one selects every live row and leaves
+    visibility to ``pulse_live_can_view`` on the detail page. Sound for a page
+    the viewer chose to open; wrong for a rail, which renders the title and the
+    host's name without being asked, and for a followers-only stream those two
+    strings are precisely what the audience setting withholds. A blocked or
+    removed session is excluded for the same reason: the gate that would catch it
+    runs one click too late for a card that appears unbidden.
+    """
+    try:
+        cur.execute(
+            """
+            SELECT l.id, l.title, l.viewer_count,
+                   COALESCE(u.display_name, u.username, 'PulseSoc creator') AS creator_name
+            FROM pulse_live_sessions l
+            LEFT JOIN users u ON u.user_id = l.user_id
+            WHERE l.status IN ('live','publishing','reconnecting')
+              AND LOWER(COALESCE(l.audience,'public')) = 'public'
+              AND LOWER(COALESCE(l.moderation_status,'approved'))
+                  NOT IN ('blocked','removed','restricted','suspended')
+            ORDER BY COALESCE(l.viewer_count, 0) DESC, l.started_at DESC
+            LIMIT 4
+            """
+        )
+        rows = ""
+        for row in cur.fetchall():
+            item = dict(row)
+            title = item.get("title") or f"{item.get('creator_name')} is live"
+            viewers = int(item.get("viewer_count") or 0)
+            watching = f"{viewers} watching" if viewers else str(item.get("creator_name") or "")
+            rows += (
+                f"<a class='desktop-intel-row is-live' href='/pulse/live/{html_escape(clean_html(str(item.get('id'))))}'>"
+                "<span class='desktop-rail-ico'>●</span>"
+                f"<span><strong>{html_escape(clean_html(title))}</strong>"
+                f"<small class='muted'>{html_escape(clean_html(watching))}</small></span></a>"
+            )
+        if not rows:
+            return ""
+        return (
+            "<section class='desktop-rail-card home-intel-live'><h3>Live now</h3>"
+            f"<div class='desktop-intel-grid'>{rows}</div></section>"
+        )
+    except Exception:
+        return ""
+
+
+def pulse_rail_shop_html(cur, limit=3):
+    """A small commerce shelf, or none.
+
+    Commerce gets one card near the bottom of the rail and three products in it.
+    The brief's constraint is that commerce must not take over Home, and the
+    honest reading of that is a frequency cap expressed in the layout itself
+    rather than a rotation the reader cannot see.
+
+    Prices come from ``marketplace_web.derive_price`` and links from
+    ``marketplace_storefront.product_path``, so a product in the rail is priced
+    and addressed exactly as the same product in the Marketplace grid -- the
+    shared logic is the price and the canonical URL, which is what can drift.
+    The 296px card geometry is the rail's, not the grid's.
+
+    Variants are fetched because ``derive_price`` treats them as the price
+    authority and falls back to ``price_label`` only when there are none: the
+    label is a display string a human typed and is unset on more than half the
+    live rows, while ``marketplace_listing_variants.price_cents`` is what the
+    supplier sync writes and what checkout would charge. Calling
+    ``derive_price(listing)`` with no variants would therefore have priced a
+    variant-backed listing from a field its seller never filled -- and shown the
+    rail a different number than the product page shows. One extra query for the
+    whole shelf, not one per row.
+
+    Eligibility mirrors the marketplace search predicate: a listing the shopper
+    could not reach from Marketplace must not be advertised on Home.
+
+    Both helpers are imported inside the function rather than at module scope,
+    and their absence collapses the card instead of raising. The rail must not
+    be the reason `bot` fails to import: this is the only module on Home that
+    depends on the web-storefront layer, and that layer lands on its own
+    schedule. Deriving the price locally instead was the alternative and is the
+    worse one -- a second price derivation is a second answer to "what does this
+    cost", and the reason to share that logic at all is so the rail and the
+    product page cannot disagree about money. So the card either prices a
+    product exactly as the Marketplace does, or it does not appear.
+    """
+    try:
+        from services import marketplace_seller_identity as seller_identity
+        from services import marketplace_storefront, marketplace_web
+    except Exception:
+        return ""
+    try:
+        cur.execute(
+            f"""
+            SELECT l.id, l.title, l.price_label, l.currency,
+                   l.cover_image_url, l.gallery_json, l.video_url,
+                   {seller_identity.store_name_select('ms')}
+            FROM marketplace_listings l
+            LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id
+            WHERE l.status IN ('active','approved')
+              AND COALESCE(l.approval_status,'approved') IN ('approved','review_ready','')
+              AND {seller_identity.store_name_sql('ms')} IS NOT NULL
+            ORDER BY l.featured DESC, l.id DESC
+            LIMIT ?
+            """,
+            (int(limit),),
+        )
+        listings = [dict(row) for row in cur.fetchall()]
+    except Exception:
+        return ""
+    if not listings:
+        return ""
+    variants_by_listing = {}
+    try:
+        ids = [int(item.get("id") or 0) for item in listings if item.get("id")]
+        if ids:
+            cur.execute(
+                "SELECT listing_id, price_cents, currency, status "
+                f"FROM marketplace_listing_variants WHERE listing_id IN ({','.join('?' * len(ids))})",
+                tuple(ids),
+            )
+            for row in cur.fetchall():
+                variant = dict(row)
+                variants_by_listing.setdefault(int(variant.get("listing_id") or 0), []).append(variant)
+    except Exception:
+        # An unreachable variants table means every price falls back to the
+        # seller's label, which is the same answer the product page would give
+        # if it hit the same failure. Degraded, not wrong.
+        variants_by_listing = {}
+    rows = ""
+    for listing in listings:
+        try:
+            price = marketplace_web.derive_price(
+                listing, variants_by_listing.get(int(listing.get("id") or 0)) or ()
+            )
+            media = marketplace_web.gallery_items(listing, limit=1)
+        except Exception:
+            price, media = None, []
+        title = listing.get("title") or "Marketplace listing"
+        thumb = (
+            f"<img class='desktop-rail-thumb' src='{html_escape(clean_html(media[0].url))}' alt='' loading='lazy' decoding='async'>"
+            if media and getattr(media[0], "url", "")
+            else "<span class='desktop-rail-ico'>▣</span>"
+        )
+        # No price, no price line -- an empty or guessed price on a product card
+        # is the one piece of metadata a shopper is entitled to trust.
+        sub = (
+            f"<small class='muted'>{html_escape(clean_html(price.display))}</small>"
+            if price is not None and price.known
+            else ""
+        )
+        rows += (
+            f"<a class='desktop-intel-row' href='{html_escape(clean_html(marketplace_storefront.product_path(listing.get('id'))))}'>"
+            f"{thumb}<span><strong>{html_escape(clean_html(title))}</strong>{sub}</span></a>"
+        )
+    if not rows:
+        return ""
+    return (
+        "<section class='desktop-rail-card home-intel-shop'><h3>From the Marketplace</h3>"
+        f"<div class='desktop-intel-grid'>{rows}</div>"
+        f"<a class='desktop-rail-more' href='{html_escape(clean_html(marketplace_href()))}'>Browse Marketplace</a></section>"
+    )
+
+
+def pulse_rail_intelligence_html(intel):
+    """Pulse Intelligence, Trending and Safety -- rendered here, not hydrated.
+
+    These three cards shipped as empty shells with ``data-desktop-posts-today``,
+    ``data-desktop-trending`` and ``data-desktop-scams`` hooks for ``renderIntel``
+    to fill. ``renderIntel`` is not on this page. It lives in an inline script in
+    an older Home template; the Home that ships today is rendered by
+    ``static/js/pulse_home_core.js``, which contains no ``data-desktop-*``
+    selector at all (grep it). So the hooks were never written to, and what a
+    reader actually saw was a card permanently reading "0 posts today / Signals
+    are loading quietly so the feed stays fast", a "Trending" card that was a
+    heading over nothing, and a "Safety Status" card the same. Three of the five
+    cards the old rail displayed were empty, and the one number on screen was a
+    hardcoded zero rather than a count.
+
+    Rendering server-side rather than adding the missing hydration to
+    ``pulse_home_core.js``: the data is already computed for this request by
+    ``intelligence_panel``, and the same values are what the feed response
+    carries, so a client fetch would be a second round trip for numbers the page
+    already has. It also makes these modules fail the same way as the other four
+    -- absent when empty -- instead of failing as furniture.
+
+    Each card collapses on its own. A zero is not a signal: "0 posts today" is
+    the module reporting that it has nothing to report, which is the thing this
+    rail is supposed to stop doing.
+    """
+    intel = intel or {}
+    cards = ""
+
+    posts_today = int(intel.get("posts_today") or 0)
+    open_reports = int(intel.get("open_reports") or 0)
+    if posts_today or open_reports:
+        stats = ""
+        if posts_today:
+            stats += (
+                f"<span><strong>{posts_today}</strong>"
+                f"<small class='muted'>post{'' if posts_today == 1 else 's'} today</small></span>"
+            )
+        if open_reports:
+            stats += (
+                f"<span><strong>{open_reports}</strong>"
+                f"<small class='muted'>open report{'' if open_reports == 1 else 's'}</small></span>"
+            )
+        # `suggested_action` has exactly two values, both derived from whether
+        # scam warnings exist, so it is a statement about real state rather than
+        # generated advice. Carried; the energy meter and "community mood" that
+        # sat beside it were not -- see the note in `pulse_desktop_right_rail_html`.
+        action = str(intel.get("suggested_action") or "").strip()
+        action_html = f"<p class='muted'>{html_escape(clean_html(action))}</p>" if action else ""
+        cards += (
+            "<section class='desktop-rail-card home-intel-overview'>"
+            "<h3>PulseSoc Intelligence</h3>"
+            f"<div class='desktop-rail-stat'>{stats}</div>"
+            f"{action_html}"
+            "<a class='desktop-rail-more' href='/pulse/premium'>Open Intelligence</a>"
+            "</section>"
+        )
+
+    trending = [t for t in (intel.get("trending_topics") or []) if str(t.get("tag") or "").strip()][:6]
+    if trending:
+        rows = ""
+        for topic in trending:
+            tag = str(topic.get("tag")).strip()
+            count = int(topic.get("count") or 0)
+            rows += (
+                f"<a class='desktop-intel-row' href='/pulse/topic/{quote(tag, safe='')}'>"
+                "<span class='desktop-rail-ico'>#</span>"
+                f"<span><strong>#{html_escape(clean_html(tag))}</strong>"
+                f"<small class='muted'>{count} post{'' if count == 1 else 's'}</small></span></a>"
+            )
+        # "N live signals" was the old subtitle for this exact number. The number
+        # counts tagged posts among the last 200; none of them are live and none
+        # of them are signals.
+        cards += (
+            "<section class='desktop-rail-card home-intel-trending'><h3>Trending</h3>"
+            f"<div class='desktop-intel-grid'>{rows}</div></section>"
+        )
+
+    warnings = (intel.get("scam_warnings") or [])[:3]
+    if warnings:
+        rows = ""
+        for warning in warnings:
+            title = str(warning.get("title") or "Community warning").strip()
+            link = str(warning.get("permalink") or "")
+            if not link:
+                continue
+            rows += (
+                f"<a class='desktop-intel-row' href='{html_escape(clean_html(link))}'>"
+                "<span class='desktop-rail-ico'>!</span>"
+                f"<span><strong>Scam watch</strong>"
+                f"<small class='muted'>{html_escape(clean_html(title))}</small></span></a>"
+            )
+        if rows:
+            cards += (
+                "<section class='desktop-rail-card home-intel-safety'><h3>Safety</h3>"
+                f"<div class='desktop-intel-grid'>{rows}</div>"
+                # `/pulse/safety` is an alias onto the network dashboard's safety
+                # subsystem and answered 302 -> /dashboard/network for this
+                # viewer. `/pulse/scam-alerts` is the feed tab these very posts
+                # come from, so it is both reachable and the same kind of thing.
+                "<a class='desktop-rail-more' href='/pulse/scam-alerts'>All scam alerts</a></section>"
+            )
+    return cards
+
+
+def pulse_desktop_right_rail_html(user=None):
+    """The discovery rail: Intelligence, then people, then places, then commerce.
+
+    This was twenty cards. Six of them were navigation the left rail already
+    carries (Quick Apps listed eight destinations, every one of them a rail
+    link); two were the same ``data-desktop-educators`` hook, and since
+    ``renderIntel`` fills it with ``querySelector`` the second card could never
+    update -- it displayed its server-rendered placeholder permanently; one
+    ("Market Intelligence") had no data source at all, just a fixed row reading
+    "Context mode"; four were promotion cards for Premium, Marketplace, Teachers
+    and UNDX AI, each of which is one click away in the left rail; and two were
+    sponsored placeholders occupying 500px between them with no sponsor.
+
+    What is left is ordered the way the brief orders discovery -- intelligence,
+    trending, people, communities, live, commerce -- and every module is built
+    from a query or collapses. A reader should be able to believe the rail.
+
+    Two more cards are gone for reasons worth recording, because neither looks
+    removable from the markup alone:
+
+    "PulseSoc Daily Mentor" rendered a question, a textarea and three buttons --
+    Send, "Ask AI to help me answer", "Post this as a PulseSoc". Nothing on this
+    page listens to any of them. Their handlers (``dailyMentorState``,
+    ``renderDailyMentorMessage``) are in the same inline script as
+    ``renderIntel``, which Home no longer serves, and no file under ``static/js``
+    mentions ``daily-mentor`` at all. The question was not even the rotating
+    ``daily_prompt()`` -- it was the literal "What crypto scam did you almost
+    fall for?" with a fixed ``data-prompt-id``. So this was three dead buttons
+    and a textarea that discarded what a reader typed into it. The helper
+    ``pulse_daily_mentor_card_html`` is kept and still renders on its other
+    caller; reviving it is a feature, not a cleanup.
+
+    "Grow Your Reach" was a Promote gateway. Promote now lives in the account
+    popover, where the rest of the owner tooling went, and it has no business
+    competing with discovery for rail space on a social home page.
+
+    Takes one connection for the whole rail rather than one per module: the pool
+    is small and a discovery rail is not worth four of it. ``intelligence_panel``
+    opens its own connection and closes it before this one is used, so the two
+    do not overlap.
+    """
+    try:
+        intel = pulse_feed_engine.intelligence_panel()
+    except Exception:
+        intel = {}
+    people_html = communities_html = live_html = shop_html = ""
+    conn = None
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        people_html = pulse_rail_people_html(cur, user)
+        communities_html = pulse_rail_communities_html(cur)
+        live_html = pulse_rail_live_html(cur)
+        shop_html = pulse_rail_shop_html(cur)
+    except Exception:
+        # A rail is decoration around the feed. It must never be the reason a
+        # reader cannot read; every module already collapses on its own, and
+        # this catches the connection itself failing.
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return (
+        "<aside class='pulse-desktop-right' aria-label='PulseSoc discovery rail'>"
+        f"{pulse_rail_intelligence_html(intel)}"
+        f"{people_html}"
+        f"{communities_html}"
+        "<section class='desktop-rail-card home-intel-teachers'><h3>Teachers</h3><div class='desktop-intel-grid'>"
+        "<a class='desktop-intel-row' href='/pulse/teachers'><span class='desktop-rail-ico'>T</span>"
+        "<span><strong>Teacher network</strong><small class='muted'>Courses, live classes, verified educators.</small></span></a>"
         "</div></section>"
+        f"{live_html}"
+        f"{shop_html}"
         f"{pulse_signal_ad_card('premium')}"
-        "<section class='desktop-rail-card'><h3>Rooms & Live</h3><div class='desktop-intel-grid' data-desktop-spaces>"
-        "<a class='desktop-intel-row' href='/pulse/messages'><span class='desktop-rail-ico'>↗</span><span><strong>General PulseSoc</strong><small class='muted'>Open the live room layer</small></span></a>"
-        "</div></section>"
-        "<section class='desktop-rail-card'><h3>Creator Momentum</h3><div class='desktop-intel-grid' data-desktop-top-posts>"
-        "<div class='desktop-intel-row'><span class='desktop-rail-ico'>AI</span><span><strong>Quality signals</strong><small class='muted'>Top posts will surface here.</small></span></div>"
-        "</div></section>"
-        "<section class='desktop-rail-card home-intel-live'><h3>Live Network</h3><div class='desktop-intel-grid' data-desktop-live-activity>"
-        "<div class='desktop-intel-row is-live'><span class='desktop-rail-ico'>●</span><span><strong>Realtime layer ready</strong><small class='muted'>New posts, reactions, and replies hydrate calmly.</small></span></div>"
-        "</div></section>"
-        "<section class='desktop-rail-card home-intel-recommended'><h3>Recommended For You</h3><div class='desktop-intel-grid' data-desktop-recommended>"
-        "<a class='desktop-intel-row' href='/pulse/discover'><span class='desktop-rail-ico'>◎</span><span><strong>Discover creators</strong><small class='muted'>Recommendations use available PulseSoc activity only.</small></span></a>"
-        "<a class='desktop-intel-row' href='/pulse/communities'><span class='desktop-rail-ico'>◇</span><span><strong>Communities</strong><small class='muted'>Find rooms and groups without leaving PulseSoc.</small></span></a>"
-        "</div></section>"
-        "<section class='desktop-rail-card home-quick-apps' id='pulseHomeQuickApps'><h3>Quick Apps</h3><div class='pulse-quick-app-grid'>"
-        f"<a href='/pulse/communities'>Communities</a><a href='{app_first_href('marketplace')}'>Marketplace</a><a href='/pulse/music'>Music</a><a href='/pulse/events'>Events</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/business-os'>Business OS</a><a href='/pulse/assistant'>UNDX AI</a><a href='/pulse/discover#apps'>More Apps</a>"
-        "</div></section>"
-        "<section class='desktop-rail-card home-promotion-gateway'><h3>Grow Your Reach</h3><p class='muted'>Promotion starts from real owner content and checks growth readiness before any launch.</p><a class='button primary' href='/pulse/promote'>Open Promote</a></section>"
-        "<section class='desktop-rail-card'><h3>Educator Signal</h3><div class='desktop-intel-grid' data-desktop-educators>"
-        "<a class='desktop-intel-row' href='/pulse/teachers'><span class='desktop-rail-ico'>T</span><span><strong>Trusted teachers</strong><small class='muted'>Education-first creators belong here.</small></span></a>"
-        "</div></section>"
-        "<section class='desktop-rail-card home-intel-safety'><h3>Safety Status</h3><div class='desktop-intel-grid' data-desktop-scams>"
-        "<div class='desktop-intel-row'><span class='desktop-rail-ico'>!</span><span><strong>Scam Shield calm</strong><small class='muted'>No active warnings loaded.</small></span></div>"
-        "</div></section>"
-        f"{pulse_signal_ad_card('marketplace')}"
-        f"{marketplace_promo_card()}"
-        "<section class='desktop-rail-card'><h3>Active Conversations</h3><div class='desktop-intel-grid' data-desktop-active-convos>"
-        "<a class='desktop-intel-row' href='/pulse/messages'><span class='desktop-rail-ico'>💬</span><span><strong>Messenger pulse</strong><small class='muted'>Chats hydrate quietly.</small></span></a>"
-        "</div></section>"
-        "<section class='desktop-rail-card'><h3>Trusted Educators</h3><div class='desktop-intel-grid' data-desktop-educators>"
-        "<a class='desktop-intel-row' href='/pulse/teachers'><span class='desktop-rail-ico'>T</span><span><strong>Teacher network</strong><small class='muted'>Verified lessons and safety-first learning.</small></span></a>"
-        "</div></section>"
-        f"{teacher_promo_card()}"
-        "<section class='desktop-rail-card'><h3>Market Intelligence</h3><div class='desktop-intel-grid' data-desktop-market-intel>"
-        "<div class='desktop-intel-row'><span class='desktop-rail-ico'>◎</span><span><strong>Context mode</strong><small class='muted'>Watch sentiment, scams, and creator momentum.</small></span></div>"
-        "</div></section>"
-        f"{intelligence_promo_card()}"
         "</aside>"
     )
 
@@ -41396,7 +42015,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         ("Portfolio", "/pulse/portfolio"),
         ("Spaces", "/pulse/spaces"),
         ("Friends", "/pulse/friends"),
-        ("Marketplace", app_first_href("marketplace")),
+        ("Marketplace", marketplace_href()),
         ("Notifications", "/pulse/notifications"),
         ("Messenger", "/pulse/messages"),
         ("Profile", "/pulse/profile"),
@@ -41426,7 +42045,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     drawer_groups = [
         ("Primary", [("Home", "/pulse"), ("Discover", "/pulse/discover"), ("Create Status", "/pulse?create_status=1"), ("Reels", "/pulse/reels"), ("Videos", "/pulse/videos"), ("Live", "/pulse/live"), ("PulseSoc Music", "/pulse/music"), ("Pulse Radio", "/pulse/music#pulse-radio"), *([("PulseSoc Labs", "/pulse/labs")] if user_is_super_user(user) else [])]),
         ("Social", [("Friends", "/pulse/friends"), ("Communities", "/pulse/communities"), ("Groups", "/pulse/groups"), ("Messenger", "/pulse/messages"), ("Notifications", "/pulse/notifications"), ("My Posts", "/pulse/my-posts"), ("Profile", "/pulse/profile")]),
-        ("Creator / Business", [("Creator Studio", "/pulse/creator-studio"), ("Seller Tools", app_first_href("seller")), ("Marketplace", app_first_href("marketplace")), ("Promote", "/pulse/promote"), ("Premium", "/pulse/premium"), ("Portfolio", "/pulse/portfolio")]),
+        ("Creator / Business", [("Creator Studio", "/pulse/creator-studio"), ("Seller Tools", app_first_href("seller")), ("Marketplace", marketplace_href()), ("Promote", "/pulse/promote"), ("Premium", "/pulse/premium"), ("Portfolio", "/pulse/portfolio")]),
         ("Content", [("Events", "/pulse/events"), ("Scam Alerts", "/pulse/scam-alerts"), ("Arena Highlights", "/pulse/arena"), ("Roast Clips", "/pulse/roast-clips"), ("Saved", "/pulse/saved"), ("Collections", "/pulse/collections")]),
         ("Utility", [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera/post"), ("Settings", "/pulse/settings"), ("Help", "/help"), ("Log Out", "/logout")]),
     ]
@@ -41467,7 +42086,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         )
     desktop_top_nav_html = pulse_desktop_top_nav_html(user)
     desktop_left_rail_html = pulse_desktop_left_rail_html(bool(admin_current_user()), user)
-    desktop_right_rail_html = pulse_desktop_right_rail_html()
+    desktop_right_rail_html = pulse_desktop_right_rail_html(user)
     status_rail_html = pulse_status_rail_html(user)
     live_now_html = ""
     boot_profile = (request.args.get("boot_profile") or "core").strip().lower()
@@ -41515,7 +42134,7 @@ textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px
 	@media(max-width:375px){.mobile-bottom-nav{padding-left:4px;padding-right:4px;gap:1px}.mobile-bottom-nav a{font-size:9px;border-radius:8px}.mobile-bottom-nav .nav-ico{font-size:16px}.pulse-fab{right:12px;width:46px;height:46px;min-height:46px}}
 	@media(max-width:430px){.wrap,.pulse-shell{padding-left:10px;padding-right:10px}.top .actions,.pulse-actions,.composer-tools{grid-template-columns:1fr!important}.badge{max-width:100%;white-space:normal}.card{padding:11px}.hero h1{font-size:30px}.button,button{padding:9px 10px}.comment-composer{grid-template-columns:30px minmax(0,1fr) 34px 36px}.comment-avatar{width:30px;height:30px}.quick-action{font-size:11px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-	</style><link rel="stylesheet" href="/static/css/pulse_composer_premium.css?v=music-modal-20260621c"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_sci_fi_system.css?v=sci-fi-system-20260617a"><link rel="stylesheet" href="/static/css/pulsesoc_promotions.css"></head><body>
+	</style><link rel="stylesheet" href="/static/css/pulse_composer_premium.css?v=music-modal-20260621c"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_sci_fi_system.css?v=sci-fi-system-20260617a"><link rel="stylesheet" href="/static/css/pulsesoc_promotions.css"><link rel="stylesheet" href="/static/css/pulse_desktop_shell.css?v=pulse-desktop-20260927d"></head><body>
 __DESKTOP_TOP_NAV__
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="pulse-drawer" id="pulseDrawer" aria-hidden="true"><header><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><a class="drawer-logout" href="/logout">Log Out</a><button class="icon-btn" id="drawerClose" type="button" aria-label="Close menu">×</button></header>__DRAWER__</aside>
@@ -42618,7 +43237,15 @@ def api_pulse_search():
             "title": r.get("title") or "Marketplace listing",
             "description": (r.get("short_description") or r.get("description") or r.get("seller_store_name") or "Marketplace")[:180],
             "type": "marketplace",
-            "url": f"/pulse/marketplace?listing={r.get('id')}",
+            # The product's canonical URL. `?listing=<id>` was here, and on the web
+            # it was a dead link that looked alive: `Filters.from_args` parses
+            # category / q / sort / page and discards everything else, so a search
+            # result delivered the shopper to the unfiltered Marketplace grid with
+            # a 200 and no error. Native was unaffected either way --
+            # `notificationRouting.ts` resolves the path form at :474 and the query
+            # form at :481, both to `MarketplaceDetail` -- so this is a strict
+            # improvement rather than a trade.
+            "url": f"/pulse/marketplace/{r.get('id')}",
             "meta": r.get("price_label") or r.get("category") or "Marketplace",
         },
     )
@@ -47743,7 +48370,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
         ("Events", "/pulse/events"),
         ("Communities", "/pulse/communities"),
         ("Roast Battle", "/pulse/roast-battle"),
-        ("Marketplace", app_first_href("marketplace")),
+        ("Marketplace", marketplace_href()),
         ("Creator Studio", "/pulse/creator-studio"),
         ("Seller Tools", app_first_href("seller")),
         ("Promote", "/pulse/promote"),
@@ -49547,11 +50174,69 @@ def pulse_friends_page():
     cur = conn.cursor()
     graph = pulse_friend_graph(cur, user["user_id"])
 
+    # Every person card on this page carried the literal string
+    # "Mutual spaces: Scam Watch, Alpha Arena". Neither slug exists in
+    # PULSE_SPACES, so it named two communities that cannot be joined, and it
+    # named them identically for every human on the page -- including on the
+    # viewer's own friends, where "mutual" is a claim about a relationship. The
+    # Home rail now links here ("See all suggestions"), so this is a destination
+    # that has to tell the truth.
+    #
+    # Two queries for the whole page rather than two per card: the viewer's own
+    # memberships once, then every membership row for the people being rendered.
+    # `pulse_space_members` is small and the alternative is N round trips inside
+    # a render loop.
+    viewer_spaces = set()
+    try:
+        cur.execute("SELECT space_slug FROM pulse_space_members WHERE user_id=?", (int(user["user_id"]),))
+        viewer_spaces = {str(dict(row).get("space_slug") or "") for row in cur.fetchall()}
+        viewer_spaces.discard("")
+    except Exception:
+        viewer_spaces = set()
+    space_names = {str(space.get("slug")): str(space.get("name") or "") for space in PULSE_SPACES}
+    member_spaces = {}
+    if viewer_spaces:
+        candidate_ids = set()
+        for key in ("incoming", "friends", "following", "followers", "suggested"):
+            for entry in graph.get(key) or []:
+                candidate_ids.add(safe_int(entry.get("requester_user_id"), 0) if isinstance(entry, dict) else safe_int(entry, 0))
+        candidate_ids.discard(0)
+        if candidate_ids:
+            try:
+                ids = sorted(candidate_ids)
+                cur.execute(
+                    "SELECT user_id, space_slug FROM pulse_space_members "
+                    f"WHERE user_id IN ({','.join('?' * len(ids))})",
+                    tuple(ids),
+                )
+                for row in cur.fetchall():
+                    item = dict(row)
+                    member_spaces.setdefault(safe_int(item.get("user_id"), 0), set()).add(str(item.get("space_slug") or ""))
+            except Exception:
+                member_spaces = {}
+
+    def mutual_spaces_html(person_id):
+        """The shared spaces, or nothing at all.
+
+        There is no honest filler here. "No mutual spaces" is a sentence about
+        an absence that the reader did not ask about, and the old string was a
+        fabrication, so the module collapses instead: a person card with no
+        shared context is simply a person card.
+        """
+        shared = viewer_spaces & (member_spaces.get(safe_int(person_id, 0)) or set())
+        labels = sorted(space_names.get(slug) or slug for slug in shared)
+        if not labels:
+            return ""
+        shown = ", ".join(labels[:2])
+        if len(labels) > 2:
+            shown += f" +{len(labels) - 2}"
+        return f"<p>Mutual spaces: {html_escape(clean_html(shown))}</p>"
+
     def person_card(person_id, mode="suggested", request_id=""):
         ident = pulse_person_public_payload(cur, person_id)
         avatar = f"<img src='{html_escape(clean_html(ident['avatar_url']))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("display_name") or "P")[:1])
         username = f"<span class='pill'>@{html_escape(clean_html(ident['username']))}</span>" if ident.get("username") else ""
-        mutual = "Mutual spaces: Scam Watch, Alpha Arena"
+        mutual = mutual_spaces_html(person_id)
         actions = ""
         if mode == "incoming":
             actions = f"<button class='primary' data-accept='{html_escape(clean_html(request_id))}'>Accept</button><button data-decline='{html_escape(clean_html(request_id))}'>Decline</button>"
@@ -49560,7 +50245,7 @@ def pulse_friends_page():
         else:
             actions = f"<button class='primary' data-friend-public='{html_escape(clean_html(ident['public_player_id']))}'>Add Friend</button><button data-follow-public='{html_escape(clean_html(ident['public_player_id']))}'>Follow</button>"
         actions += f"<button data-message-public='{html_escape(clean_html(ident['public_player_id']))}'>Message</button>"
-        return f"<article class='card friend-card'><div class='person'><span class='avatar'>{avatar}</span><div><h3>{html_escape(clean_html(ident['display_name']))}{pulse_premium_mark_html(ident.get('premium_mark'))}</h3><div class='actions'>{username}<span class='pill'>{html_escape(clean_html(ident['rank']))}</span></div><p>{mutual}</p></div></div><div class='actions friend-actions'>{actions}</div></article>"
+        return f"<article class='card friend-card'><div class='person'><span class='avatar'>{avatar}</span><div><h3>{html_escape(clean_html(ident['display_name']))}{pulse_premium_mark_html(ident.get('premium_mark'))}</h3><div class='actions'>{username}<span class='pill'>{html_escape(clean_html(ident['rank']))}</span></div>{mutual}</div></div><div class='actions friend-actions'>{actions}</div></article>"
 
     incoming_html = "".join(person_card(int(row.get("requester_user_id") or 0), "incoming", row.get("id")) for row in graph["incoming"])
     friends_html = "".join(person_card(fid, "friend") for fid in graph["friends"])
@@ -54637,9 +55322,22 @@ def pulse_spaces_page():
     conn.close()
     cards = ""
     for space in PULSE_SPACES:
-        metrics = space_discovery_engine.score_space(space, counts.get(space["slug"], space.get("member_count", 0)))
+        # `counts` is the real count from `pulse_space_members`. It used to fall
+        # back to `space["member_count"]`, a literal in the catalogue -- 304 for
+        # Haiti Crypto Community, 298 for USA Crypto Intelligence -- so on an
+        # install where nobody has joined anything, every card on this page
+        # advertised a crowd of about 270 people who do not exist. Home's
+        # Communities rail links here ("Browse all spaces"), so this is a
+        # destination that has to agree with the rail, and the rail counts rows.
+        #
+        # A space with no members says so by omission rather than by printing
+        # "0 members", which is a number nobody needs to read; region and
+        # category still give the card something true to say.
+        members = counts.get(space["slug"], 0)
+        metrics = space_discovery_engine.score_space(space, members)
         featured = " featured-space" if space.get("featured") else ""
-        cards += f"<article class='card{featured}'><span class='pill'>{html_escape(clean_html(space.get('category') or 'Community'))}</span><h2>{html_escape(clean_html(space['name']))}</h2><p>{html_escape(clean_html(space['description']))}</p><p><span class='pill'>{html_escape(clean_html(space.get('region') or 'Global'))}</span> <span class='pill'>{counts.get(space['slug'], space.get('member_count',0))} members</span> <span class='pill'>Trust {metrics['trust_score']}%</span> <span class='pill'>Energy {metrics['activity_score']}%</span></p><div class='mini-chart'><span style='width:{int(metrics['score'])}%'></span></div><div class='actions'><a class='button primary' href='/pulse/spaces/{space['slug']}'>Open Space</a><button data-join-space='{space['slug']}'>Join</button><a class='button' href='/pulse?topic={space['slug']}'>Preview</a></div></article>"
+        member_pill = f" <span class='pill'>{members} member{'' if members == 1 else 's'}</span>" if members else ""
+        cards += f"<article class='card{featured}'><span class='pill'>{html_escape(clean_html(space.get('category') or 'Community'))}</span><h2>{html_escape(clean_html(space['name']))}</h2><p>{html_escape(clean_html(space['description']))}</p><p><span class='pill'>{html_escape(clean_html(space.get('region') or 'Global'))}</span>{member_pill} <span class='pill'>Trust {metrics['trust_score']}%</span> <span class='pill'>Energy {metrics['activity_score']}%</span></p><div class='mini-chart'><span style='width:{int(metrics['score'])}%'></span></div><div class='actions'><a class='button primary' href='/pulse/spaces/{space['slug']}'>Open Space</a><button data-join-space='{space['slug']}'>Join</button><a class='button' href='/pulse?topic={space['slug']}'>Preview</a></div></article>"
     script = "document.addEventListener('click',async e=>{const b=e.target.closest('[data-join-space]');if(!b)return;try{await pulseApi('/api/pulse/spaces/join',{method:'POST',body:JSON.stringify({space_slug:b.dataset.joinSpace})});toast('Joined space.')}catch(err){toast(err.message)}});"
     return pulse_social_shell("PulseSoc Spaces", "Global intelligence communities for countries, crypto, cybersecurity, creators, sports, AI, business, and education.", f"<style>.featured-space{{border-color:rgba(255,209,102,.4);box-shadow:0 0 34px rgba(255,209,102,.14)}}.mini-chart{{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}}.mini-chart span{{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#36e58f,#6edff6,#ffd166)}}</style><section class='grid'>{cards}</section>", "", script)
 
@@ -54917,101 +55615,487 @@ def pulse_camera_studio_page():
     return pulse_social_shell("Camera Creator Studio", "Capture photos and videos, apply premium filters, and publish safely across PulseSoc.", main, "", script)
 
 
+# =============================================================================
+# The web Marketplace storefront
+# =============================================================================
+#
+# Two routes -- a discovery page and a product page -- built from three layers
+# that are deliberately kept apart:
+#
+#   services/marketplace_web.py         rows  -> facts
+#   services/marketplace_storefront.py  facts -> markup
+#   this file                           SQL and HTTP, nothing else
+#
+# Neither service module imports Flask or `bot`, so the whole storefront can be
+# rendered against real production rows by a plain script with no app boot. That
+# is not a stylistic preference: it is how the renderer was verified against all
+# 47 rows of `marketplace_listings` before either route below existed, which is
+# the only way to find out that a crafted `?category=` used to mint an indexable
+# empty page, or that a seller was being offered a button to report themselves.
+#
+# Two wrappers, one body
+# ----------------------
+# `pulse_social_shell()` is the right frame for a signed-in member and the wrong
+# frame for a crawler, for two reasons that are in its first few lines: it calls
+# `require_account()` and redirects anyone anonymous to `/login`, and the
+# document it emits hardcodes `noindex,nofollow`. Googlebot is anonymous, so
+# under that shell alone no Marketplace URL can ever be indexed -- every product
+# page is a 302 to a login form.
+#
+# Loosening the shell is the wrong fix: the member view is personalised, and
+# `noindex` on a personalised view is correct. So `_marketplace_storefront_reply`
+# serves the *same* `page.body_html` inside either the member shell or
+# `marketplace_storefront.public_document()`, and the entire difference between
+# the two experiences lives in the frame. One renderer, one stylesheet, one set
+# of structured data, no second storefront to keep in sync.
+#
+# Because one URL now answers with two different documents depending on a cookie,
+# both replies carry `Vary: Cookie`. Without it a shared cache could hand a
+# signed-out visitor a member's frame, or hand Googlebot a `noindex` copy of a
+# page that is supposed to be indexable.
+
+#: How many eligible listings one storefront request will read.
+#:
+#: Filtering, sorting and paging happen in Python rather than SQL, which is the
+#: right trade at the catalogue's real size -- 15 eligible listings out of 47
+#: rows, so a round trip per facet would cost more than the work it saves. This
+#: constant is where that trade-off stops being true. Past a few hundred rows
+#: the facets belong in the query (a `WHERE` on category, an `ORDER BY`, a
+#: `LIMIT/OFFSET`) and the taxonomy belongs in its own `GROUP BY`. The limit is
+#: here rather than implicit so the ceiling is visible and a page can never
+#: become unbounded work.
+MARKETPLACE_STOREFRONT_SCAN_LIMIT = 600
+
+#: The columns the storefront needs on top of `marketplace_listings.*`.
+#:
+#: `seller_username` is what makes "Message seller" work without JavaScript --
+#: it is the query the messenger's people search takes. `seller_avatar_url` is
+#: the store avatar on the seller card. Both come from `users`, whose primary
+#: key is `user_id`, not `id`.
+MARKETPLACE_STOREFRONT_SELLER_COLUMNS = """
+                   COALESCE(u.username,'') AS seller_username,
+                   COALESCE(u.avatar_url,'') AS seller_avatar_url,
+                   COALESCE(ms.status,'missing') AS seller_status"""
+
+
+def marketplace_storefront_viewer(user):
+    """The `Viewer` for this request.
+
+    Viewer state gates *rendering* only. Every affordance it hides -- Promote,
+    Save, Report -- is re-authorized by the API route behind it, because a hidden
+    button is a courtesy and never a permission.
+    """
+
+    if not user:
+        return marketplace_storefront.Viewer()
+    return marketplace_storefront.Viewer(
+        user_id=safe_int(user.get("user_id"), 0),
+        signed_in=True,
+        is_admin=bool(user.get("is_admin") or user.get("is_owner")),
+    )
+
+
+def marketplace_storefront_variants(cur, listing_ids):
+    """`{listing_id: [variant rows]}` for the given listings, in one query.
+
+    Not `pulse_marketplace_supplier_facts_for_listings`: that function is keyed
+    on a row in the supplier *source* table and returns nothing at all for a
+    listing without one, which is correct for a provenance verdict and wrong
+    here. A merchant-authored listing with hand-entered variants still has a
+    price range and a size selector, and the storefront has to show them.
+
+    Variants are the storefront's price authority. A supplier-imported listing
+    carries its money in `marketplace_listing_variants.price_cents` and its
+    availability in that table's `stock_state`; `marketplace_listings.price_label`
+    is only written at publish time. Reading the listing alone told 31 correctly
+    priced production products that they had no price.
+    """
+
+    safe_ids = [int(item_id or 0) for item_id in listing_ids if int(item_id or 0)]
+    if not safe_ids:
+        return {}
+    from services import marketplace_variants as _variants
+
+    by_listing = {}
+    try:
+        placeholders = ",".join(["?"] * len(safe_ids))
+        cur.execute(
+            f"""SELECT * FROM {_variants.VARIANT_TABLE}
+                 WHERE listing_id IN ({placeholders})
+                   AND COALESCE(status,'active') NOT IN ('archived','deleted')
+                 ORDER BY listing_id ASC, position ASC, id ASC""",
+            safe_ids,
+        )
+        for row in cur.fetchall():
+            item = dict(row)
+            by_listing.setdefault(int(item.get("listing_id") or 0), []).append(item)
+    except Exception:
+        # A deployment whose variant table has not been created yet is not a
+        # broken Marketplace. Every consumer of this mapping treats a missing
+        # entry as "this listing has no variants", which is the pre-variant
+        # behaviour: one price from `price_label`, no option controls.
+        app.logger.warning("marketplace storefront variants unavailable", exc_info=True)
+        return {}
+    return by_listing
+
+
+def marketplace_storefront_payloads(cur, rows):
+    """Run listing rows through the same serializer the app reads.
+
+    `pulse_marketplace_listing_payload` is what strips the reviewer-only columns,
+    normalizes every media URL through `pulse_media_url`, orders the gallery
+    cover-first and drops media whose moderation status removed it. The renderer
+    reads `payload["media"]` first when building a gallery, so passing raw rows
+    here would have put a moderation-removed cover back on the page -- and would
+    have let the web and the app disagree about the same product's price label
+    and store name, which is the class of bug this serializer exists to prevent.
+    """
+
+    ordered = [dict(row) for row in rows]
+    media_by_listing = pulse_marketplace_media_rows_for_listings(
+        cur, [int(item.get("id") or 0) for item in ordered]
+    )
+    return [
+        pulse_marketplace_listing_payload(item, media_by_listing.get(int(item.get("id") or 0), []))
+        for item in ordered
+    ]
+
+
+def marketplace_storefront_app_cta(destination, resource_id=None):
+    """The "Open in PulseSoc" affordance, as an addition and never a redirect.
+
+    The website is the canonical, indexable surface for a product now, so this is
+    a link a visitor may take -- not a gate in front of the page. The href is
+    built by `app_links` rather than hand-written, because that module validates
+    the destination against what the released binary actually resolves; a
+    hand-made link is how a button reading "Open this listing" ends up landing on
+    the app's Home tab.
+    """
+
+    href = app_first_href(destination, resource_id)
+    label = app_links.destination_label(destination, "Open in PulseSoc")
+    return (
+        '<aside class="mkt-appcta">'
+        f'<p>Prefer the app? <a href="{html_escape(href)}"'
+        f' data-app-link="{html_escape(destination)}">{html_escape(label)}</a></p>'
+        "</aside>"
+    )
+
+
+def _marketplace_storefront_reply(page, user, status=200):
+    """One `RenderedPage`, wrapped for whoever asked for it.
+
+    Signed in -> the member shell, personalised and `noindex`.
+    Signed out -> the minimal public document, indexable, with the real
+    `<head>` metadata and structured data the shell has no way to carry.
+    """
+
+    if user:
+        # `pulse_social_shell` returns a `Response` already -- wrapping it in a
+        # second one puts a Response object in the body and werkzeug fails at
+        # send time, not here. Take the one it built and set status on it.
+        response = pulse_social_shell(
+            page.title,
+            page.meta_description,
+            f"{page.assets_html}{page.body_html}",
+            "",
+            "",
+            show_intro=False,
+        )
+        if response.status_code in (301, 302, 303, 307, 308):
+            # The session evaporated between `require_account()` above and the
+            # shell's own call. Honour the redirect rather than dressing it up.
+            return response
+        response.status_code = status
+        # The member document is personalised and carries the member's own
+        # avatar and nav. It must not be stored by anything shared.
+        response.headers["Cache-Control"] = "private, no-store"
+    else:
+        response = Response(
+            marketplace_storefront.public_document(
+                page,
+                origin=marketplace_web.PUBLIC_ORIGIN,
+                sign_in_href=url_for("login_page", next=request.full_path.rstrip("?")),
+            ),
+            status=status,
+            mimetype="text/html",
+        )
+        # Anonymous and identical for everyone, so it is cacheable -- briefly.
+        # 120 seconds is short enough that a seller who edits a listing sees it,
+        # and long enough to absorb a crawl or a burst from one shared link.
+        response.headers["Cache-Control"] = "public, max-age=0, s-maxage=120"
+    response.headers["Content-Type"] = "text/html; charset=utf-8"
+    # One URL, two documents, chosen by the session cookie. Without this a shared
+    # cache may serve either visitor the other's frame -- which for a crawler
+    # means being served the `noindex` member copy of an indexable page.
+    response.headers["Vary"] = "Cookie"
+    # Both branches above chose a `Cache-Control` for a reason -- `private,
+    # no-store` for the personalised copy, a short shared TTL for the public one.
+    # Say so, or `add_pwa_headers` replaces whichever one was chosen with
+    # `no-store` because the path begins with `/pulse/`. See the opt-out there.
+    response.pulse_cache_owned_by_view = True
+    return response
+
+
+def marketplace_public_paths(limit=5000):
+    """Every Marketplace URL that is worth a crawl, with a real `lastmod`.
+
+    Returns `(path, lastmod)` pairs rather than bare paths because a product
+    sitemap whose `lastmod` is "today" for every row is worse than one with no
+    `lastmod` at all: after two crawls Google has learned the field is noise and
+    stops using it to schedule, which is the one job the sitemap exists to do.
+    `seo_engine.sitemap_xml` stamps today on everything, so the Marketplace gets
+    its own serializer instead of joining `pulse_public_paths`.
+
+    Two rules decide membership, and both are read from the same helpers the pages
+    themselves use rather than restated here:
+
+      * `marketplace_listing_lifecycle.public_sql` -- published and approved.
+      * `discovery_visibility.discovery_visible_sql` -- the seller's account is
+        one a buyer may see at all.
+
+    That is what keeps deleted, suspended, unapproved, private and blocked
+    products out. Restating either predicate as its own WHERE clause here is the
+    failure this is written to avoid: the sitemap would drift from the route, and
+    the symptom would be Google crawling URLs that answer 404 (or worse, a sitemap
+    that omits live products).
+
+    Discovery URLs follow the same indexability rule the renderer applies, so only
+    page 1 of a department is listed -- no `?q=`, no `?page=2`, no `?size=`. Those
+    are `noindex,follow` pages, and submitting a URL you tell the crawler not to
+    index is a contradiction Search Console reports as an error.
+    """
+
+    from services.discovery_visibility import discovery_visible_sql
+
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            f"""SELECT l.id, l.category, l.updated_at, l.created_at, l.published_at
+                  FROM marketplace_listings l
+                  LEFT JOIN users u ON u.user_id=l.seller_user_id
+                  LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+                 WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+                   AND {discovery_visible_sql('u')}
+                 ORDER BY l.id DESC
+                 LIMIT {int(limit)}"""
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception:
+        # A sitemap that cannot read the catalogue must shrink, not lie. Returning
+        # the static entry alone is safe -- Google re-reads a sitemap, and an
+        # absent URL is re-discovered by the internal link from that entry.
+        app.logger.exception("marketplace sitemap read failed")
+        return [(marketplace_storefront.BASE_PATH, datetime.utcnow().strftime("%Y-%m-%d"))]
+
+    def stamp(row):
+        for key in ("updated_at", "published_at", "created_at"):
+            raw = str(row.get(key) or "").strip()
+            if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
+                return raw[:10]
+        return datetime.utcnow().strftime("%Y-%m-%d")
+
+    entries = [(marketplace_storefront.BASE_PATH, datetime.utcnow().strftime("%Y-%m-%d"))]
+
+    # Department pages, from the catalogue's own breadcrumbs. `build_taxonomy` and
+    # `category_matches` are the same pair the on-page category nav and the
+    # `?category=` filter use, so a department listed here is one a visitor can
+    # actually reach and one the renderer will class as indexable. Deriving the
+    # slug any other way is how a sitemap comes to contain a department whose page
+    # renders zero products: the folding that merges "Mens Clothing" with "Men's
+    # Clothing" lives in those two functions and nowhere else.
+    taxonomy = marketplace_web.build_taxonomy([row.get("category") for row in rows])
+    for node in taxonomy:
+        stamps = [
+            stamp(row)
+            for row in rows
+            if marketplace_web.category_matches(row.get("category"), node.slug)
+        ]
+        if stamps:
+            entries.append(
+                (f"{marketplace_storefront.BASE_PATH}?category={node.slug}", max(stamps))
+            )
+
+    for row in rows:
+        entries.append((marketplace_storefront.product_path(row.get("id")), stamp(row)))
+    return entries
+
+
+@webhook_app.route("/sitemap-marketplace.xml", methods=["GET"])
+@public_route(
+    reason=(
+        "A sitemap. It lists only URLs that are already public -- every entry is "
+        "produced by the same two visibility predicates the storefront routes "
+        "apply, so it cannot name a product a visitor could not open. Reachable "
+        "anonymously because a crawler is anonymous, which is the entire point."
+    )
+)
+def sitemap_marketplace_xml():
+    init_db()
+    body = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ]
+    for path, lastmod in marketplace_public_paths():
+        # A listing page gains and loses products as sellers publish; a product
+        # page changes only when its own seller edits it.
+        is_product = path.startswith(marketplace_storefront.BASE_PATH + "/")
+        changefreq = "weekly" if is_product else "daily"
+        priority = "0.8" if is_product else "0.85"
+        # `html_escape` on the loc, not optional: a department slug reaches here
+        # from listing data, and a raw `&` in a URL is a hard XML parse error that
+        # invalidates the whole sitemap rather than one entry.
+        body.append("  <url>")
+        body.append(f"    <loc>{html_escape(marketplace_web.PUBLIC_ORIGIN + path)}</loc>")
+        body.append(f"    <lastmod>{html_escape(lastmod)}</lastmod>")
+        body.append(f"    <changefreq>{changefreq}</changefreq>")
+        body.append(f"    <priority>{priority}</priority>")
+        body.append("  </url>")
+    body.append("</urlset>")
+    return Response("\n".join(body), mimetype="application/xml")
+
+
 @webhook_app.route("/pulse/marketplace", methods=["GET"])
+@public_route(
+    reason=(
+        "A shop window. The storefront is the Marketplace's indexable public "
+        "surface, and a crawler is always anonymous -- while this route "
+        "redirected signed-out visitors to /login, no PulseSoc product could "
+        "appear in a search result. It reads only listings that both "
+        "`marketplace_listing_lifecycle.public_sql` and `discovery_visible_sql` "
+        "already class as publicly discoverable, which is the same pair the "
+        "buyer search API applies, so nothing here widens what is public. "
+        "Signed-in state still changes the page: `require_account()` is called "
+        "and drives the member shell, the merchant panel, and whether Save, "
+        "Report and Promote render at all."
+    )
+)
 def pulse_marketplace_page():
     init_db()
+    # Not `if not user: redirect(login)`. Anonymous is a first-class, indexable
+    # case now: the storefront is a public shop window, and the whole point of
+    # the SEO work is that a crawler (which is always anonymous) reaches real
+    # product markup instead of a login form.
     user = require_account()
-    if not user:
-        return redirect(url_for("login_page", next=request.path))
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
-    seller = dict(cur.fetchone() or {})
-    # `discovery_visible_sql` is applied here as well as the lifecycle rule.
-    # Without it this grid was the one buyer-side surface in the product that
-    # showed listings from QA and deactivated sellers: the search endpoint below
-    # applies both predicates, the app only ever reads marketplace through that
-    # endpoint, and this page applied only the first. So the same catalogue
-    # answered differently depending on whether you scrolled it or searched it,
-    # and the looser answer was the one App Review item 4 is about.
+    seller = {}
+    if user:
+        cur.execute(
+            "SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],)
+        )
+        seller = dict(cur.fetchone() or {})
+    # Both visibility predicates, not just the lifecycle one.
     #
-    # It is also what keeps a card's link honest. The cards now link to
+    # `marketplace_listing_lifecycle.public_sql` answers "is this listing
+    # published and approved". `discovery_visible_sql` answers "is its seller's
+    # account one a buyer may see at all" -- it is what hides QA accounts and
+    # deactivated sellers. This grid used to apply only the first while the
+    # search endpoint applied both, so the same catalogue answered differently
+    # depending on whether you scrolled it or searched it, and the looser answer
+    # was the one App Review item 4 is about.
+    #
+    # It is also what keeps a card's link honest. Cards link to
     # `/pulse/marketplace/<id>`, which applies both predicates, so a grid that
-    # applied fewer would have rendered its own links as 404s.
+    # applied fewer would be rendering its own links as 404s.
     from services.discovery_visibility import discovery_visible_sql
-    cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
-        FROM marketplace_listings l
-        LEFT JOIN users u ON u.user_id=l.seller_user_id
-        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-        WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
-          AND {discovery_visible_sql('u')}
-        ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
-    listings = [dict(row) for row in cur.fetchall()]
-    conn.close()
-    def marketplace_card(row):
-        listing_id = int(row.get("id") or 0)
-        seller_id = int(row.get("seller_user_id") or 0)
-        promote = ""
-        if seller_id == int(user.get("user_id") or 0):
-            promote = f"<button data-promote-content='marketplace_listing' data-content-id='{listing_id}' data-content-label='{html_escape(clean_html(row.get('title') or 'Marketplace listing'))}'>Promote Listing</button>"
-        # A listing with no price gets no price pill, rather than a pill filled
-        # with prose. `pulse_marketplace_listing_payload` stopped inventing
-        # "Request access" for the clients; this page builds its own HTML from
-        # the row and so kept saying it, which left an unpriced listing -- a
-        # dropship draft, say -- priced on the web and unpriced in the app, for
-        # the same product. The empty pill is not the alternative either: it
-        # reads as a price the seller set to nothing.
-        price_label = clean_html(row.get("price_label"))
-        price_pill = f"<span class='pill'>{price_label}</span> " if price_label else ""
-        # No "Safety N" pill. `marketplace_listings.safety_score` is written by
-        # the submit-for-review route as the *risk* score `score_text` returns
-        # (`safety_score=int(review["risk_score"])`), where 0 is clean and 100 is
-        # "guaranteed profit, risk free, 100x". Printed as safety it was exactly
-        # inverted: the worst listing the engine can score advertised
-        # "Safety 100" and every honest one read "Safety 0". Measured over the
-        # real engine, not inferred from the name.
-        #
-        # Restored polarity is not the fix. A raw moderation integer is not a
-        # buyer concept in either direction, and a listing is only on this page
-        # because moderation approved it -- that approval is the signal. The
-        # reviewer's working number stays with the reviewer (§27/§95); the admin
-        # queue reads the same column as risk and is already correct.
-        return f"<article class='card'><h2><a href='{app_first_href('product', listing_id)}'>{html_escape(clean_html(row.get('title')))}</a></h2><p>{html_escape(clean_html(row.get('description')))}</p><p><span class='pill'>{html_escape(clean_html(row.get('category') or 'Education'))}</span> {price_pill}</p><p>Seller: {html_escape(clean_html(marketplace_seller_identity.display_store_name(row)))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
 
-    listing_html = "".join(marketplace_card(row) for row in listings)
-    seller_form = f"<section class='card'><h2>Merchant Access</h2><p class='muted'>Apply, verify, and wait for approval before listing products.</p><div class='actions'><a class='button primary' href='{app_first_href('seller_apply')}'>Apply as Merchant</a><a class='button' href='{app_first_href('seller_dashboard')}'>Merchant Dashboard</a></div></section>"
-    listing_form = ""
-    if seller and seller.get("status") == "approved":
-        listing_form = f"<section class='card'><h2>Create Listing</h2><p class='muted'>Approved merchants can create reviewed products.</p><a class='button primary' href='{app_first_href('marketplace_create')}'>Create Product</a></section>"
-    elif seller:
-        listing_form = f"<section class='card'><h2>Application Status</h2><p class='metric'>{html_escape(clean_html(seller.get('status') or 'pending_review'))}</p><p>Products unlock after approval.</p></section>"
-    script = """
-    const marketplaceResults=document.querySelector('[data-marketplace-results]');
-    const marketplaceSearch=document.querySelector('[data-marketplace-search]');
-    const marketplaceCurrentUserId=%d;
-    const marketplaceProductHrefTemplate=%s;
-    const marketplaceProductHref=id=>marketplaceProductHrefTemplate.replace(%s,encodeURIComponent(String(id)));
-    const marketplaceEsc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';const priceText=String(row.price_label||'').trim();return `<article class="card"><h2><a href="${marketplaceProductHref(listingId)}">${marketplaceEsc(row.title||'Marketplace listing')}</a></h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> ${priceText?`<span class="pill">${marketplaceEsc(priceText)}</span> `:''}</p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
-    let marketplaceSearchTimer=0;
-    async function runMarketplaceSearch(query=''){if(!marketplaceResults)return;marketplaceResults.innerHTML='<article class="card"><p class="muted">Searching marketplace...</p></article>';try{const d=await pulseApi('/api/pulse/marketplace/search?q='+encodeURIComponent(query||''));marketplaceResults.innerHTML=(d.items||[]).map(marketplaceListingHtml).join('')||'<article class="card"><h2>No marketplace matches.</h2><p class="muted">Try another item, category, or seller.</p></article>'}catch(err){marketplaceResults.innerHTML=`<article class="card"><p class="muted">${marketplaceEsc(err.message||'Marketplace search failed.')}</p></article>`}}
-    marketplaceSearch?.addEventListener('submit',e=>{e.preventDefault();runMarketplaceSearch(e.target.q.value.trim())});
-    marketplaceSearch?.q?.addEventListener('input',e=>{clearTimeout(marketplaceSearchTimer);marketplaceSearchTimer=setTimeout(()=>runMarketplaceSearch(e.target.value.trim()),320)});
-    document.getElementById('sellerApply')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/seller/apply',{method:'POST',body:JSON.stringify({display_name:document.getElementById('sellerName').value,bio:document.getElementById('sellerBio').value})});toast('Seller application saved.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
-    document.getElementById('listingCreate')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/listings/create',{method:'POST',body:JSON.stringify({title:document.getElementById('listingTitle').value,category:document.getElementById('listingCategory').value,description:document.getElementById('listingDescription').value,price_label:document.getElementById('listingPrice').value})});toast('Listing created.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
-    document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
-    """ % (
-        int(user.get("user_id") or 0),
-        # The URL shape is built by `app_links`, never by this script. The
-        # browser substitutes an id into it and nothing else.
-        json.dumps(app_links.open_interstitial_url_template("product", source="web")),
-        json.dumps(app_links.CLIENT_ID_TOKEN),
+    load_error = False
+    listings = []
+    variants_by_listing = {}
+    try:
+        cur.execute(
+            f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}
+                  FROM marketplace_listings l
+                  LEFT JOIN users u ON u.user_id=l.seller_user_id
+                  LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+                 WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+                   AND {discovery_visible_sql('u')}
+                 ORDER BY l.featured DESC, l.id DESC
+                 LIMIT {int(MARKETPLACE_STOREFRONT_SCAN_LIMIT)}"""
+        )
+        listings = marketplace_storefront_payloads(cur, cur.fetchall())
+        variants_by_listing = marketplace_storefront_variants(
+            cur, [int(item.get("id") or 0) for item in listings]
+        )
+    except Exception:
+        # A failed read is an error state, never an empty one. "No products are
+        # listed yet" is a claim about the catalogue, and a page that could not
+        # read the catalogue has not earned the right to make it. The renderer
+        # takes `load_error` and says so instead.
+        app.logger.exception("marketplace discovery read failed")
+        load_error = True
+    finally:
+        conn.close()
+
+    # The merchant panel is real functionality or it is absent. Each branch links
+    # to a surface that exists, and the wording states the visitor's actual
+    # position -- no merchant record, an application under review, or approved --
+    # rather than a generic invitation that is wrong for two of the three.
+    merchant_html = ""
+    if user:
+        merchant_actions = [
+            f'<a class="mkt-ghost" href="{html_escape(app_first_href("seller_dashboard"))}">'
+            f"Merchant dashboard</a>"
+        ]
+        if seller and seller.get("status") == "approved":
+            merchant_actions.insert(
+                0,
+                f'<a class="mkt-cta" href="{html_escape(app_first_href("marketplace_create"))}">'
+                f"Create a product</a>",
+            )
+            merchant_note = "You are an approved merchant."
+        elif seller:
+            merchant_note = (
+                "Your merchant application is "
+                f"{html_escape(clean_html(seller.get('status') or 'pending_review'))}. "
+                "Products unlock after approval."
+            )
+        else:
+            merchant_actions.insert(
+                0,
+                f'<a class="mkt-cta" href="{html_escape(app_first_href("seller_apply"))}">'
+                f"Apply as a merchant</a>",
+            )
+            merchant_note = (
+                "Sell on PulseSoc. Applications are reviewed before a store can list products."
+            )
+        merchant_html = (
+            '<section class="mkt-merchant" aria-labelledby="mkt-merchant-h">'
+            '<h2 id="mkt-merchant-h">Sell on PulseSoc</h2>'
+            f"<p>{merchant_note}</p>"
+            f'<div class="mkt-actions">{"".join(merchant_actions)}</div>'
+            "</section>"
+        )
+
+    page = marketplace_storefront.render_discovery(
+        listings=listings,
+        variants_by_listing=variants_by_listing,
+        # Every facet is read from the query string and nowhere else, which is
+        # what makes a filtered view shareable, bookmarkable and crawlable.
+        # `Filters.from_args` parses and clamps; it never trusts.
+        filters=marketplace_storefront.Filters.from_args(request.args),
+        viewer=marketplace_storefront_viewer(user),
+        app_cta_html=marketplace_storefront_app_cta("marketplace"),
+        merchant_html=merchant_html,
+        load_error=load_error,
     )
-    search_bar = "<section class='card'><form data-marketplace-search role='search'><div class='actions'><input name='q' type='search' placeholder='Search marketplace items, categories, or sellers' autocomplete='off' aria-label='Search marketplace'><button class='primary' type='submit'>Search</button></div></form></section>"
-    listing_empty = '<article class="card"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'
-    main = f"{seller_form}{listing_form}{search_bar}<section class='grid' data-marketplace-results>{listing_html or listing_empty}</section>{pulse_promotion_modal_html()}<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'><script src='/static/js/pulsesoc_promotions.js' defer></script>"
-    return pulse_social_shell("PulseSoc Marketplace", "Creator products, educational services, templates, books, scam-prevention guides, and coaching foundations. No risky financial products.", main, "", script)
+    # 503, not 200, when the catalogue could not be read: a crawler must not be
+    # allowed to record an error page as the Marketplace's contents.
+    response = _marketplace_storefront_reply(page, user, status=503 if load_error else 200)
+    if load_error:
+        # Two headers the success path must not carry and the failure path must.
+        # `Retry-After` is the half of a 503 that says "come back" -- without it a
+        # crawler is free to treat the failure as indefinite. And the short shared
+        # TTL that makes the good page cheap would, here, pin the apology in front
+        # of every visitor who follows the same link for two minutes.
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Retry-After"] = "120"
+    return response
 
 
 # --- A shared marketplace listing link ---------------------------------------
@@ -55043,100 +56127,193 @@ def pulse_marketplace_page():
 # API returns. Nothing here decides what is public; it asks the things that
 # already do.
 #
-# Note that both predicates are used, not just the first. The grid above applies
-# only `public_sql`, so it can show listings from QA or deactivated sellers that
-# search hides. A deep link is reached from search on native, so it inherits the
-# stricter pair; matching the looser grid would have made a shared link show
-# something the app would not.
+# Both predicates are applied here and on the grid, so browsing and following a
+# shared link agree about what exists. They did not always: the grid applied only
+# `public_sql` and could show listings from QA or deactivated sellers that search
+# and this page hide, which made the grid render its own links as 404s.
+#
+# Anonymous visitors are served too, and that is the point of the rewrite. A
+# product page is the indexable surface of the whole Marketplace, and a crawler
+# is always anonymous -- so redirecting a signed-out visitor to `/login` here
+# meant no product could ever appear in a search result. The member and the
+# crawler get the same body; only the frame differs. See
+# `_marketplace_storefront_reply`.
 @webhook_app.route("/pulse/marketplace/<int:listing_id>", methods=["GET"])
+@public_route(
+    reason=(
+        "The canonical public URL for one product, and the page every "
+        "Marketplace share link, sitemap entry and Product structured-data "
+        "block points at. Anonymous access is the feature: a signed-out visitor "
+        "and Googlebot are the same visitor, so gating this route is the same "
+        "as having no indexable catalogue. One listing is read under both "
+        "visibility predicates -- lifecycle and seller discoverability -- and "
+        "anything they exclude 404s without distinguishing withdrawn from "
+        "nonexistent. No buyer identity, order, payment or seller contact detail "
+        "is rendered; Save, Report and Promote require a session and are "
+        "re-authorized by their own API routes."
+    )
+)
 def pulse_marketplace_listing_page(listing_id):
     init_db()
     user = require_account()
-    if not user:
-        return redirect(url_for("login_page", next=request.path))
     from services.discovery_visibility import discovery_visible_sql
+
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute(
-        f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},
-                   COALESCE(ms.status,'missing') AS seller_status,
-                   COALESCE(u.username,'') AS seller_username
-            FROM marketplace_listings l
-            LEFT JOIN users u ON u.user_id=l.seller_user_id
-            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-            WHERE l.id=? AND {marketplace_listing_lifecycle.public_sql('l', 'ms')}
-              AND {discovery_visible_sql('u')}
-            LIMIT 1""",
-        (listing_id,))
-    row = cur.fetchone()
+    visible_sql = (
+        f"{marketplace_listing_lifecycle.public_sql('l', 'ms')} "
+        f"AND {discovery_visible_sql('u')}"
+    )
+    select_head = (
+        f"SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},"
+        f"{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}\n"
+        "          FROM marketplace_listings l\n"
+        "          LEFT JOIN users u ON u.user_id=l.seller_user_id\n"
+        "          LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id"
+    )
+    # "Not found" and "could not look it up" must not collapse into each other.
+    # An unguarded read here answered 500 for a failed query, which is the one
+    # status a canonical product URL must never return: Google treats a 5xx as
+    # "try later" only if it is *told* to, a bare 500 renders the trace page as
+    # the product's contents, and the visitor sees a system-notice card where a
+    # product should be. A read failure is 503 + Retry-After — the URL stays in
+    # the index and the crawl comes back. A row the predicates exclude is 404,
+    # which retires it. Those are opposite outcomes and they need distinct paths.
+    try:
+        cur.execute(
+            f"{select_head}\n         WHERE l.id=? AND {visible_sql}\n         LIMIT 1",
+            (listing_id,),
+        )
+        row = cur.fetchone()
+    except Exception:
+        conn.close()
+        app.logger.exception("marketplace listing read failed listing_id=%s", listing_id)
+        response = _marketplace_storefront_reply(
+            marketplace_storefront.render_unavailable(
+                canonical_path=marketplace_storefront.product_path(listing_id)
+            ),
+            user,
+            status=503,
+        )
+        # Both branches of the helper set a caching header appropriate to a *good*
+        # page. Neither is right here: the anonymous one would let a shared cache
+        # hold the failure for two minutes and serve it to everyone who follows the
+        # link. `Retry-After` is what turns the 503 into "come back", which is the
+        # whole point of choosing it over a 404.
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Retry-After"] = "120"
+        return response
     if not row:
         conn.close()
         # A withdrawn, paused, rejected or never-approved listing is not
         # distinguished from one that never existed, and deliberately so: saying
         # "this was removed" about an id the visitor guessed would confirm the
-        # row exists. It is also what the app shows -- such a listing is not in
-        # search, so the product page is unreachable there too.
+        # row exists. It is also the right answer for a crawler -- a 404 retires
+        # the URL from the index, which is exactly what a delisted product wants,
+        # where a 200 with an apology would keep a dead product ranking.
         abort(404)
     row = dict(row)
-    media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [listing_id])
-    conn.close()
-    listing = pulse_marketplace_listing_payload(row, media_by_listing.get(listing_id, []))
+    seller_id = safe_int(row.get("seller_user_id"), 0)
 
-    seller_id = int(row.get("seller_user_id") or 0)
-    owned = seller_id == int(user.get("user_id") or 0)
-    gallery = "".join(
-        f"<img src='{html_escape(clean_html(entry.get('media_url')))}' alt='' loading='lazy'>"
-        if (entry.get("media_type") or "image") == "image"
-        else f"<video src='{html_escape(clean_html(entry.get('media_url')))}' controls preload='none'"
-             f" poster='{html_escape(clean_html(entry.get('poster_url') or ''))}'></video>"
-        for entry in (listing.get("media") or []))
-    gallery_block = f"<div class='grid'>{gallery}</div>" if gallery else ""
-    promote = ""
-    if owned:
-        promote = (f"<button data-promote-content='marketplace_listing' "
-                   f"data-content-id='{listing_id}' "
-                   f"data-content-label='{html_escape(clean_html(row.get('title') or 'Marketplace listing'))}'>"
-                   f"Promote Listing</button>")
-    # Same rule as the grid card: no price, no pill. This page and that one show
-    # the same listing, so a phrase here would reappear as a disagreement
-    # between browsing and following a shared link.
-    price_label = clean_html(row.get("price_label"))
-    price_pill = f"<span class='pill'>{price_label}</span> " if price_label else ""
-    main = (
-        f"<section class='card'>"
-        f"<p><a href='{app_first_href('marketplace')}'>&larr; Marketplace</a></p>"
-        f"<h1>{html_escape(clean_html(row.get('title')))}</h1>"
-        f"<p><span class='pill'>{html_escape(clean_html(row.get('category') or 'Education'))}</span> "
-        # No "Safety N" pill here either -- see `marketplace_card` on the grid
-        # for the measurement. The two surfaces printed the same inverted number
-        # for the same row, so fixing one would have moved the lie rather than
-        # removed it.
-        f"{price_pill}</p>"
-        f"<p>Seller: {html_escape(clean_html(marketplace_seller_identity.display_store_name(row)))}</p>"
-        f"{gallery_block}"
-        f"<p>{html_escape(clean_html(row.get('description') or row.get('short_description') or ''))}</p>"
-        f"<p>Safety notice: educational products only. Payments and payout release "
-        f"are staged for compliance.</p>"
-        f"<div class='actions'>"
-        f"<button data-contact-seller='{seller_id}'>Contact Seller</button>"
-        f"<button data-save-listing='{listing_id}'>Save</button>"
-        f"<button data-report-listing='{listing_id}'>Report</button>{promote}"
-        f"</div></section>"
-        f"{pulse_promotion_modal_html()}"
-        f"<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'>"
-        f"<script src='/static/js/pulsesoc_promotions.js' defer></script>")
-    # The same three buyer actions the grid card offers, bound the same way, so a
-    # member who arrives by link is not on a page with fewer verbs than the one
-    # they would have reached by browsing.
-    script = """
-    document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
-    """
-    return pulse_social_shell(
-        clean_html(row.get("title") or "Marketplace listing"),
-        clean_html(row.get("short_description") or row.get("category") or
-                   "PulseSoc Marketplace listing"),
-        main, "", script)
+    listing = marketplace_storefront_payloads(cur, [row])[0]
+    variants = marketplace_storefront_variants(cur, [listing_id]).get(listing_id, [])
+
+    # Related products, and how the department is decided.
+    #
+    # `marketplace_listings.category` is a supplier breadcrumb -- "Home & Garden >
+    # Bedding > Duvet Covers" -- so SQL equality on it would only ever match a
+    # product imported from the identical leaf. The department is the first
+    # segment, and `category_matches` is the same comparison the discovery page's
+    # category filter uses, so "More from this department" means the same thing on
+    # both pages. Matched in Python over one bounded read rather than with a
+    # `LIKE` the two SQL dialects would treat differently.
+    related = []
+    related_variants = {}
+    seller_listing_count = 0
+    try:
+        cur.execute(
+            f"{select_head}\n         WHERE l.id<>? AND {visible_sql}\n"
+            "         ORDER BY l.featured DESC, l.id DESC\n"
+            f"         LIMIT {int(MARKETPLACE_STOREFRONT_SCAN_LIMIT)}",
+            (listing_id,),
+        )
+        pool = marketplace_storefront_payloads(cur, cur.fetchall())
+        crumbs = marketplace_web.parse_category_path(row.get("category"))
+        department = marketplace_web.slugify(crumbs[0]) if crumbs else ""
+        same_department = [
+            item
+            for item in pool
+            if department
+            and marketplace_web.category_matches(item.get("category"), department)
+        ]
+        # No top-up from unrelated departments. A rail headed "More from this
+        # department" that quietly fills with whatever else is in stock is a
+        # false statement about the products in it; an empty rail is omitted by
+        # the renderer instead.
+        related = same_department[:4]
+        related_variants = marketplace_storefront_variants(
+            cur, [int(item.get("id") or 0) for item in related]
+        )
+        # A real count of this seller's other public listings, used by the seller
+        # card. Counted from the same visibility-filtered pool rather than with a
+        # `COUNT(*)` of the table, so the number matches what a click would show.
+        seller_listing_count = 1 + sum(
+            1 for item in pool if safe_int(item.get("seller_user_id"), 0) == seller_id
+        )
+    except Exception:
+        # The product is the page. Losing the suggestions rail is a degraded
+        # page, not a broken one, so it degrades rather than 500s.
+        app.logger.warning("marketplace related products unavailable", exc_info=True)
+    finally:
+        conn.close()
+
+    viewer = marketplace_storefront_viewer(user)
+
+    # Promote is rendered for the listing's owner and nobody else, because that is
+    # precisely who the server will accept it from.
+    #
+    # Rendering is not the authorization: `POST /api/promotions` calls
+    # `pulsesoc_promotions.assert_content_owner`, which raises 403 unless
+    # `marketplace_listings.seller_user_id` equals the caller's own user id
+    # (`services/pulsesoc_promotions.py:278`). There is no admin bypass anywhere in
+    # that module. So the condition here is `owns(seller_id)` alone, matched to the
+    # server's rule rather than guessed at.
+    #
+    # This block used to read `or viewer.is_admin`, which was not a security hole
+    # -- the server still refused -- but was worse than one in user-facing terms: a
+    # button offered to every admin on every listing, which opened a budget-and-
+    # audience modal and then failed at submit with "Only the content owner can
+    # manage this promotion." A control that cannot succeed must not be drawn.
+    promote_html = ""
+    if viewer.owns(seller_id):
+        promote_html = (
+            '<button class="mkt-ghost" type="button"'
+            ' data-promote-content="marketplace_listing"'
+            f' data-content-id="{listing_id}"'
+            f' data-content-label="{html_escape(clean_html(row.get("title") or "Marketplace listing"))}">'
+            "Promote listing</button>"
+            f"{pulse_promotion_modal_html()}"
+            "<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'>"
+            "<script src='/static/js/pulsesoc_promotions.js' defer></script>"
+        )
+
+    page = marketplace_storefront.render_product(
+        listing=listing,
+        variants=variants,
+        related=related,
+        related_variants=related_variants,
+        # The chosen variant travels in the query string, so a specific colour
+        # and size is a shareable URL and the selection survives a reload. Only
+        # option values that exist in a real variant row are honoured; the
+        # renderer discards the rest rather than reflecting them.
+        selected_options=request.args,
+        viewer=viewer,
+        app_cta_html=marketplace_storefront_app_cta("product", listing_id),
+        promote_html=promote_html,
+        seller_listing_count=seller_listing_count,
+    )
+    return _marketplace_storefront_reply(page, user)
 
 
 def pulse_marketplace_gallery_urls(value):
@@ -57886,7 +59063,7 @@ def pulse_merchant_profile_page(username):
         listings = [dict(row) for row in cur.fetchall()]
     conn.close()
     if not seller:
-        return pulse_social_shell("Merchant", "Merchant profile not found.", f"<section class='card'><a class='button' href='{app_first_href('marketplace')}'>Back to Marketplace</a></section>")
+        return pulse_social_shell("Merchant", "Merchant profile not found.", f"<section class='card'><a class='button' href='{marketplace_href()}'>Back to Marketplace</a></section>")
     cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(l.get('title') or ''))}</h2><p>{html_escape(clean_html(l.get('short_description') or l.get('description') or ''))}</p><span class='pill'>{html_escape(clean_html(l.get('price_label') or ''))}</span></article>" for l in listings)
     cards_empty = '<article class="card"><h2>No public products yet.</h2></article>'
     main = f"<section class='card'><h2>{html_escape(clean_html(seller.get('display_name') or 'Merchant'))}</h2><p><span class='pill'>Verified merchant</span> <span class='pill'>Trust {100-int(seller.get('risk_score') or 0)}</span></p><p>{html_escape(clean_html(seller.get('bio') or ''))}</p></section><section class='grid'>{cards or cards_empty}</section>"
@@ -57984,7 +59161,7 @@ def pulse_creator_monetization_page():
     steps = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in readiness.get("next_steps", []))
     body = f"""
     <section class='grid'><div class='card'><h2>Creator Readiness</h2><p class='metric'>{readiness['readiness_score']}%</p><p>{'Ready to prepare monetized tools.' if readiness['ready'] else 'Keep building trust before paid tools unlock.'}</p></div><div class='card'><h2>Audience Growth</h2><p class='metric'>{counts['posts']}</p><p>PulseSoc posts published.</p></div><div class='card'><h2>Revenue Placeholder</h2><p class='metric'>$0</p><p>Real payout release stays off until compliance is ready.</p></div></section>
-    <section class='card'><h2>Your Next Unlock</h2><ul>{steps}</ul><div class='actions'><a class='button primary' href='{app_first_href('marketplace')}'>Prepare Marketplace Product</a><a class='button' href='/pulse/teacher-dashboard'>Open Teacher Tools</a><a class='button' href='/pulse/live'>Livestream Readiness</a></div></section>
+    <section class='card'><h2>Your Next Unlock</h2><ul>{steps}</ul><div class='actions'><a class='button primary' href='{marketplace_href()}'>Prepare Marketplace Product</a><a class='button' href='/pulse/teacher-dashboard'>Open Teacher Tools</a><a class='button' href='/pulse/live'>Livestream Readiness</a></div></section>
     <section class='grid'>{product_cards}</section>
     """
     return pulse_social_shell("Creator Monetization", "Trust-first creator revenue readiness for premium tools, courses, marketplace products, and livestream monetization placeholders.", body)
@@ -82529,7 +83706,7 @@ def pulse_discover_page():
             ],
         )
         + "<section class='card' id='apps'><h2>Apps</h2><div class='actions'>"
-        f"<a class='button' href='/pulse/communities'>Communities</a><a class='button' href='{app_first_href('marketplace')}'>Marketplace</a>"
+        f"<a class='button' href='/pulse/communities'>Communities</a><a class='button' href='{marketplace_href()}'>Marketplace</a>"
         "<a class='button' href='/pulse/music'>Music</a><a class='button' href='/pulse/events'>Events</a>"
         "<a class='button' href='/pulse/creator-studio'>Creator Studio</a><a class='button' href='/pulse/promote'>Promote</a>"
         "<a class='button' href='/business-os'>Business OS</a>"
@@ -82592,7 +83769,7 @@ def pulse_promote_page():
     main = pulse_gateway_card_html(
         "Promote",
         "Start promotion from owned content only. Campaign launch remains gated by growth readiness, billing, and review.",
-        [("My Posts", "/pulse/my-posts"), ("Marketplace", app_first_href("marketplace")), ("Creator Studio", "/pulse/creator-studio")],
+        [("My Posts", "/pulse/my-posts"), ("Marketplace", marketplace_href()), ("Creator Studio", "/pulse/creator-studio")],
         [("Launch Without Content", "Choose an owned post, Reel, or listing first."), ("Estimated Reach", "Forecasting provider is not configured; fake reach is not shown.")],
     )
     return pulse_social_shell("Promote", "A safe gateway to owner-only PulseSoc promotion tools.", main)
@@ -82635,7 +83812,7 @@ def pulse_seller_tools_gateway_page():
     main = pulse_gateway_card_html(
         "Seller Tools",
         "Seller tools use marketplace and dashboard seller APIs. Revenue, orders, and billing are not fabricated.",
-        [("Seller Dashboard", app_first_href("seller_dashboard")), ("Create Product", app_first_href("marketplace_create")), ("Marketplace", app_first_href("marketplace"))],
+        [("Seller Dashboard", app_first_href("seller_dashboard")), ("Create Product", app_first_href("marketplace_create")), ("Marketplace", marketplace_href())],
         [("Synthetic Sales Demo", "Fake sales and order data are not shown.")],
     )
     return pulse_social_shell("Seller Tools", "Seller storefront, product, and promotion readiness tools.", main)
@@ -86633,7 +87810,7 @@ def pulse_profile_page_for_user(target_user_id):
     premium_html = pulse_premium_mark_html(ident.get("premium_mark"))
     if is_owner:
         action_html = "<a class='button primary' href='/pulse/profile/edit'>Edit Profile</a><button type='button' data-share-profile>Share Profile</button><a class='button' href='/account'>Settings</a>"
-        more_tools_html = f"<a href='/pulse/profile/edit'>Profile Controls</a><a href='/account'>Account</a><a href='/privacy-center'>Privacy</a><a href='/pulse/teachers'>Teacher Status</a><a href='{app_first_href('marketplace')}'>Marketplace</a><a href='/pulse/music'>PulseSoc Music</a><a href='/pulse/creator/dashboard'>Creator Tools</a><a href='/pulse/live'>Livestream Studio</a><a href='/arena'>Arena Call Signs</a>"
+        more_tools_html = f"<a href='/pulse/profile/edit'>Profile Controls</a><a href='/account'>Account</a><a href='/privacy-center'>Privacy</a><a href='/pulse/teachers'>Teacher Status</a><a href='{marketplace_href()}'>Marketplace</a><a href='/pulse/music'>PulseSoc Music</a><a href='/pulse/creator/dashboard'>Creator Tools</a><a href='/pulse/live'>Livestream Studio</a><a href='/arena'>Arena Call Signs</a>"
     else:
         action_html = f"<button class='primary profile-action-primary' data-follow-public='{html_escape(clean_html(ident['public_player_id']))}'><span aria-hidden='true'>＋</span> Follow</button><button class='profile-action-message' data-message-public='{html_escape(clean_html(ident['public_player_id']))}'><span aria-hidden='true'>◇</span> Message</button><button class='profile-action-more' type='button' data-profile-more-toggle aria-label='More actions' aria-expanded='false'>•••</button>"
         more_tools_html = f"<button class='profile-sheet-action' data-friend-public='{html_escape(clean_html(ident['public_player_id']))}'><span class='profile-sheet-icon' aria-hidden='true'>＋</span><span><strong>Add Friend</strong><small>Send a connection request</small></span></button><button class='profile-sheet-action' data-share-profile><span class='profile-sheet-icon' aria-hidden='true'>↗</span><span><strong>Share Profile</strong><small>Send this profile securely</small></span></button><div class='profile-sheet-divider' role='separator'></div><button class='profile-sheet-action profile-sheet-safety' data-open-report-profile><span class='profile-sheet-icon' aria-hidden='true'>!</span><span><strong>Report Profile</strong><small>Alert the PulseSoc safety team</small></span></button><button class='profile-sheet-action profile-sheet-danger' data-open-block-profile><span class='profile-sheet-icon' aria-hidden='true'>⊘</span><span><strong>Block User</strong><small>Stop contact and hide their activity</small></span></button>"
@@ -87401,7 +88578,7 @@ def pulse_videos_page():
       <main class='videos-main videos-mobile-fallback'>
         <header class='videos-mobile-header' aria-label='Mobile Videos header'><div class='videos-mobile-topline'><div class='videos-mobile-left'><button class='videos-mobile-icon videos-mobile-menu' type='button' data-videos-drawer-open aria-label='Open navigation'>☰</button><h1>Videos</h1></div><div class='videos-mobile-actions'><button class='videos-mobile-icon' type='button' data-mobile-video-search aria-label='Search videos'>⌕</button><a class='videos-mobile-icon videos-mobile-alert' data-header-notifications href='/pulse/notifications' aria-label='Notifications'>{PULSE_NOTIFICATION_BELL_ICON}<span class='pulse-notification-badge' data-alert-unread data-notification-unread hidden>0</span></a><a class='videos-mobile-avatar' href='/pulse/profile' aria-label='Profile'>{mobile_avatar}</a></div></div><p>Discover high-quality videos from creators</p></header>
         <div class='videos-mobile-drawer-backdrop' data-videos-drawer-backdrop aria-hidden='true'></div>
-        <aside class='videos-mobile-drawer' data-videos-mobile-drawer aria-hidden='true' aria-label='PulseSoc navigation'><div class='videos-drawer-head'><strong>PulseSoc</strong><button class='videos-drawer-close' type='button' data-videos-drawer-close aria-label='Close navigation'>×</button></div><nav class='videos-drawer-nav'><a href='/pulse'>Home</a><a href='/pulse/videos' aria-current='page'>Videos</a><a href='/pulse/reels'>Reels</a><a href='/pulse/music'>Music</a><a href='/pulse/live'>Live</a><a href='/pulse/messages'>Messages</a><a href='/pulse/notifications'>Alerts</a><a href='{app_first_href('marketplace')}'>Marketplace</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/pulse/premium'>Premium</a><a href='/pulse/profile'>Profile</a></nav></aside>
+        <aside class='videos-mobile-drawer' data-videos-mobile-drawer aria-hidden='true' aria-label='PulseSoc navigation'><div class='videos-drawer-head'><strong>PulseSoc</strong><button class='videos-drawer-close' type='button' data-videos-drawer-close aria-label='Close navigation'>×</button></div><nav class='videos-drawer-nav'><a href='/pulse'>Home</a><a href='/pulse/videos' aria-current='page'>Videos</a><a href='/pulse/reels'>Reels</a><a href='/pulse/music'>Music</a><a href='/pulse/live'>Live</a><a href='/pulse/messages'>Messages</a><a href='/pulse/notifications'>Alerts</a><a href='{marketplace_href()}'>Marketplace</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/pulse/premium'>Premium</a><a href='/pulse/profile'>Profile</a></nav></aside>
         <header class='videos-title-row'><div><h1>Videos</h1><p>Discover high-quality videos from creators around the world.</p></div><form class='video-search-bar' data-video-search><input type='search' data-video-search-input placeholder='Search videos or creators' autocomplete='off' aria-label='Search videos'><button type='submit'>Search</button></form></header>
         <nav class='video-category-chips' aria-label='Video categories'>{category_html}</nav>
         <section class='video-toolbar'><div><label class='sr-only' for='videoSort'>Sort videos</label><select id='videoSort' data-video-sort><option value='recent'>Most Recent</option><option value='trending'>Trending</option><option value='most_viewed'>Most Viewed</option><option value='top_rated'>Top Rated</option></select></div><div class='video-view-toggle' aria-label='Video view mode'><button type='button' class='active' data-video-view='grid'>Grid</button><button type='button' data-video-view='list'>List</button></div></section>
@@ -87780,7 +88957,7 @@ def pulse_video_detail_page(video_id):
       </header>
       <div class='video-watch-shell'>
         <aside class='video-watch-left-rail' aria-label='Video navigation'>
-          <a href='/pulse'>⌂ Home</a><a href='/pulse' >▤ Feed</a><a href='/pulse/reels'>▻ Reels</a><a class='active' href='/pulse/videos'>▶ Videos</a><a href='/pulse/status'>◴ Status</a><a href='/pulse/groups'>♧ Groups</a><a href='/pulse/events'>◇ Events</a><a href='{app_first_href('marketplace')}'>▧ Marketplace</a><a href='/pulse/premium/intelligence'>✦ Pulse AI</a><a href='/pulse/music'>♪ Pulse Music</a><a href='/pulse/bookmarks'>▱ Bookmarks</a><a href='/pulse/settings/privacy'>Privacy Center</a><a href='/pulse/help'>Help & Support</a><div class='video-watch-premium'><strong>Go Premium</strong><p class='muted'>Unlock creator-grade video tools.</p></div>
+          <a href='/pulse'>⌂ Home</a><a href='/pulse' >▤ Feed</a><a href='/pulse/reels'>▻ Reels</a><a class='active' href='/pulse/videos'>▶ Videos</a><a href='/pulse/status'>◴ Status</a><a href='/pulse/groups'>♧ Groups</a><a href='/pulse/events'>◇ Events</a><a href='{marketplace_href()}'>▧ Marketplace</a><a href='/pulse/premium/intelligence'>✦ Pulse AI</a><a href='/pulse/music'>♪ Pulse Music</a><a href='/pulse/bookmarks'>▱ Bookmarks</a><a href='/pulse/settings/privacy'>Privacy Center</a><a href='/pulse/help'>Help & Support</a><div class='video-watch-premium'><strong>Go Premium</strong><p class='muted'>Unlock creator-grade video tools.</p></div>
         </aside>
         <main class='video-watch-main'>
       <article class='card video-detail-card'>
@@ -96739,11 +97916,19 @@ def api_pulse_marketplace_listing_save():
         VALUES (?, ?, 'marketplace', ?, ?, ?, ?, '', ?, ?, ?, ?)
         ON CONFLICT(user_id, content_type, content_id) DO UPDATE SET collection_id=excluded.collection_id, title=excluded.title, preview_text=excluded.preview_text, thumbnail_url=excluded.thumbnail_url, updated_at=excluded.updated_at
         """,
-        # `?listing=<id>`, not a bare `/pulse/marketplace`. The saved row is a
-        # reference to one listing, and the client's target resolver already
-        # parses this exact shape; writing the tab root meant every saved product
-        # in the library opened the Marketplace tab instead of the product.
-        (user["user_id"], collection_id, str(listing_id), title, preview, thumbnail, f"/pulse/marketplace?listing={listing_id}", json.dumps({"listing_id": listing_id}), now, now),
+        # The listing's canonical URL. The saved row is a reference to one product,
+        # and this column is read straight into an `href` by the web saved-library
+        # renderer, so its value is a link a person clicks.
+        #
+        # It was `?listing=<id>`, chosen when the only consumer was the native
+        # resolver, which parses that shape. The web storefront does not: it reads
+        # four query keys and ignores the rest, so every saved product in the web
+        # library opened the unfiltered Marketplace. The path form fixes that and
+        # costs native nothing -- `notificationRouting.ts:474` resolves
+        # `/pulse/marketplace/<id>` to `MarketplaceDetail` directly, and
+        # `saveContract.saveTargetFromUrl` now matches both shapes so the
+        # `?listing=` rows already in `pulse_saved_items` keep working.
+        (user["user_id"], collection_id, str(listing_id), title, preview, thumbnail, f"/pulse/marketplace/{listing_id}", json.dumps({"listing_id": listing_id}), now, now),
     )
     conn.commit(); conn.close()
     return jsonify({"ok": True, "saved": True, "is_saved": True, "changed": not currently_saved, "content_type": "marketplace", "content_id": str(listing_id), "message": "Product saved."})
@@ -102231,10 +103416,14 @@ def admin_spaces_command_page():
     conn.close()
     rows = ""
     for space in PULSE_SPACES:
-        metrics = space_discovery_engine.score_space(space, counts.get(space["slug"], space.get("member_count", 0)))
+        # The real count, not the catalogue's seed literal. An operator reading
+        # this table is deciding whether a space is worth keeping; a column that
+        # reports 304 for an empty space makes that decision for them, wrongly.
+        space_members = counts.get(space["slug"], 0)
+        metrics = space_discovery_engine.score_space(space, space_members)
         schedule = ai_schedules.get(space["slug"], {})
         ai_enabled = int(schedule.get("enabled") or 0)
-        rows += f"<tr><td>{html_escape(clean_html(space['name']))}</td><td>{html_escape(clean_html(space.get('category') or ''))}</td><td>{html_escape(clean_html(space.get('region') or ''))}</td><td>{counts.get(space['slug'], space.get('member_count',0))}</td><td>{metrics['trust_score']}%</td><td>{metrics['activity_score']}%</td><td>{ai_counts.get(space['slug'],0)} posts<br><span class='muted'>{'Live' if ai_enabled else 'Paused'} · {html_escape(clean_html(schedule.get('next_run') or 'scheduled'))}</span></td><td><form method='post'><input type='hidden' name='slug' value='{html_escape(clean_html(space['slug']))}'><button name='action' value='feature'>Feature</button><button name='action' value='freeze'>Freeze</button><button name='action' value='resume_ai'>Resume AI</button><button name='action' value='pause_ai'>Pause AI</button></form></td></tr>"
+        rows += f"<tr><td>{html_escape(clean_html(space['name']))}</td><td>{html_escape(clean_html(space.get('category') or ''))}</td><td>{html_escape(clean_html(space.get('region') or ''))}</td><td>{space_members}</td><td>{metrics['trust_score']}%</td><td>{metrics['activity_score']}%</td><td>{ai_counts.get(space['slug'],0)} posts<br><span class='muted'>{'Live' if ai_enabled else 'Paused'} · {html_escape(clean_html(schedule.get('next_run') or 'scheduled'))}</span></td><td><form method='post'><input type='hidden' name='slug' value='{html_escape(clean_html(space['slug']))}'><button name='action' value='feature'>Feature</button><button name='action' value='freeze'>Freeze</button><button name='action' value='resume_ai'>Resume AI</button><button name='action' value='pause_ai'>Pause AI</button></form></td></tr>"
     latest_ai = ""
     for row in latest_ai_rows:
         try:
@@ -106077,6 +107266,197 @@ def admin_ai_command_page():
     return admin_page_html("AI Admin Command", body, admin)
 
 
+def _pulsedrop_cell(value) -> str:
+    return html_escape(clean_html("" if value is None else str(value)))
+
+
+def _pulsedrop_setting_card(item, may_edit):
+    """One tunable, its provenance, and the controls to change it.
+
+    The provenance pill is the reason this is a card rather than a table row.
+    ``PulseDrop enabled: off`` is two different incidents depending on whether a
+    human switched it off or the deployment never set the variable, and an
+    operator who cannot tell them apart will either re-break a deliberate
+    shutdown or wait for a worker that was never configured to run.
+    """
+    overridden = bool(item.get("overridden"))
+    source = "Set here" if overridden else "From environment"
+    pill = f"<span class='pill{' on' if overridden else ''}'>{source}</span>"
+    clear = (
+        f"<button name='form_action' value='clear'>Clear</button>"
+        if overridden and may_edit else ""
+    )
+    if not may_edit:
+        control = "<span class='muted'>Read only</span>"
+    elif item.get("kind") == "flag":
+        # Only the button that changes something, so a kill switch is one
+        # unambiguous click during an incident rather than a select plus a save.
+        turning_on = not item.get("value")
+        control = (
+            f"<input type='hidden' name='value' value='{'true' if turning_on else 'false'}'>"
+            f"<button class='primary' name='form_action' value='set'>"
+            f"{'Turn on' if turning_on else 'Turn off'}</button>{clear}"
+        )
+    else:
+        spec = item.get("spec")
+        control = (
+            f"<input type='number' name='value' value='{_pulsedrop_cell(item.get('value'))}' "
+            f"min='{int(getattr(spec, 'low', 0))}' max='{int(getattr(spec, 'high', 0))}'>"
+            f"<button class='primary' name='form_action' value='set'>Save</button>{clear}"
+        )
+    return (
+        "<div class='card'>"
+        f"<h3>{_pulsedrop_cell(item.get('label'))}</h3>"
+        f"<p class='metric'>{_pulsedrop_cell(item.get('display'))}</p>"
+        f"<p>{pill} <span class='pill'>{_pulsedrop_cell(item.get('key'))}</span></p>"
+        f"<p class='muted'>{_pulsedrop_cell(item.get('help'))}</p>"
+        "<form method='post'>"
+        f"<input type='hidden' name='key' value='{_pulsedrop_cell(item.get('key'))}'>"
+        f"{control}</form></div>"
+    )
+
+
+@webhook_app.route("/admin/pulsedrop", methods=["GET", "POST"])
+@admin_required
+def admin_pulsedrop_page():
+    """Operator surface for the commerce curator: is it on, is it working, what did it do.
+
+    All of the reading and all of the writing live in ``services.pulsedrop.ops``
+    and ``services.pulsedrop.config``; what is here is the admin session, the
+    permission split, the audit line and the markup.
+    """
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    from services.pulsedrop import ops as pulsedrop_ops
+
+    message = ""
+    if request.method == "POST":
+        # Viewing is a ``system.view`` question and changing is a
+        # ``settings.edit`` one, because they have different right answers:
+        # everyone on call should be able to see whether PulseDrop is publishing,
+        # and a much smaller group should be able to change what it publishes.
+        if not admin_has_permission(admin, "settings.edit"):
+            log_admin_audit(admin.get("id"), "admin_permission_denied", "permission", "settings.edit", {"path": request.path})
+            return Response("Forbidden", status=403)
+        action = clean_html(request.form.get("form_action") or "")[:40]
+        key = clean_html(request.form.get("key") or "")[:80]
+        raw = clean_html(request.form.get("value") or "")[:80]
+        changed, message = pulsedrop_ops.apply_action(action, key, raw, admin_user_id=int(admin.get("id") or 0))
+        if changed:
+            log_admin_audit(admin.get("id"), f"pulsedrop_{action}", "pulsedrop_setting", key, {"value": raw})
+
+    data = pulsedrop_ops.dashboard()
+    acct = data["account"]
+    health = data["health"]
+    schedule = data["schedule"]
+    may_edit = admin_has_permission(admin, "settings.edit")
+
+    if acct.get("provisioned"):
+        # The login assertion is on the page because it is the security property
+        # of a system account, and because a hand-edited row could turn it back
+        # on without anything else noticing.
+        login_pill = "<span class='pill on'>Login disabled</span>" if acct.get("login_disabled") else "<span class='pill warn'>LOGIN ENABLED</span>"
+        account_card = (
+            "<div class='card'><h2>Account</h2>"
+            f"<p class='metric'>@{_pulsedrop_cell(acct.get('username'))}</p>"
+            f"<p>{_pulsedrop_cell(acct.get('display_name'))} · user_id {_pulsedrop_cell(acct.get('user_id'))} · "
+            f"{_pulsedrop_cell(acct.get('follower_count'))} followers</p>"
+            f"<p>{login_pill} <span class='pill'>{_pulsedrop_cell(acct.get('status'))}</span></p></div>"
+        )
+    else:
+        # Not an error state. The worker provisions the account on its first
+        # cycle, so this is simply what a deployment that has never run looks
+        # like, and saying so stops it being reported as a fault.
+        account_card = (
+            "<div class='card'><h2>Account</h2><p class='metric'>Not provisioned</p>"
+            "<p class='muted'>@pulsedrop is created by the worker's first cycle. "
+            "If PulseDrop is enabled and this still says not provisioned, the worker is not running.</p></div>"
+        )
+
+    lease_line = (
+        f"a tick is running now (held by {_pulsedrop_cell(schedule.get('held_by'))})"
+        if schedule.get("held")
+        else f"next evaluation {_pulsedrop_cell(schedule.get('due_in') or 'unknown')}"
+    )
+    run_now = (
+        "<form method='post' style='display:inline'>"
+        "<input type='hidden' name='key' value=''>"
+        "<button name='form_action' value='run_now'>Evaluate on next cycle</button></form>"
+        if may_edit else ""
+    )
+
+    health_cards = (
+        "<section class='grid'>"
+        f"{account_card}"
+        f"<div class='card'><h2>Last run</h2><p class='metric'>{_pulsedrop_cell(health.get('last_run_outcome') or 'never')}</p>"
+        f"<p>{_pulsedrop_cell(health.get('last_run_at'))}</p>"
+        f"<p class='muted'>{lease_line}</p><p>{run_now}</p></div>"
+        # Reported next to the last run, not instead of it, because the gap
+        # between the two is the diagnosis: most ticks are supposed to publish
+        # nothing, so an old publication beside a recent run is health, and a
+        # stale run is the worker being down.
+        f"<div class='card'><h2>Last publication</h2><p class='metric'>{_pulsedrop_cell(health.get('last_publication_at') or 'none yet')}</p>"
+        f"<p class='muted'>{_pulsedrop_cell(health.get('failures_shown'))} failed of the last {_pulsedrop_cell(health.get('runs_shown'))} runs</p></div>"
+        f"<div class='card'><h2>Renders</h2><p class='metric'>{_pulsedrop_cell(health.get('renders_failed'))} failed</p>"
+        f"<p class='muted'>{_pulsedrop_cell(health.get('renders_stuck'))} stuck over {pulsedrop_ops.STALL_MINUTES} min</p></div>"
+        "</section>"
+    )
+
+    setting_sections = "".join(
+        f"<h2>{_pulsedrop_cell(group)}</h2><section class='grid'>"
+        + "".join(_pulsedrop_setting_card(item, may_edit) for item in items)
+        + "</section>"
+        for group, items in data["groups"]
+    )
+
+    run_rows = "".join(
+        f"<tr><td>{_pulsedrop_cell(r.get('started_at'))}</td><td>{_pulsedrop_cell(r.get('outcome'))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('reason'))}</td><td>{_pulsedrop_cell(r.get('decision'))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('eligible'))}/{_pulsedrop_cell(r.get('evaluated'))}</td>"
+        f"<td>{_pulsedrop_cell(', '.join(f'{k} {v}' for k, v in sorted((r.get('rejected') or {}).items())))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('duration_ms'))} ms</td></tr>"
+        for r in data["runs"]
+    )
+    pub_rows = "".join(
+        f"<tr><td>{_pulsedrop_cell(p.get('published_at'))}</td><td>{_pulsedrop_cell(p.get('surface'))}</td>"
+        f"<td>{_pulsedrop_cell(p.get('state'))}</td>"
+        f"<td><a href='/pulse/marketplace/{_pulsedrop_cell(p.get('listing_id'))}'>{_pulsedrop_cell(p.get('listing_title') or p.get('listing_id'))}</a></td>"
+        f"<td>{_pulsedrop_cell(p.get('seller_username') or p.get('seller_user_id'))}</td>"
+        f"<td>{_pulsedrop_cell(p.get('category'))}</td><td>{_pulsedrop_cell(p.get('post_id'))}</td></tr>"
+        for p in data["publications"]
+    )
+    render_rows = "".join(
+        f"<tr><td>{_pulsedrop_cell(r.get('updated_at'))}</td><td>{_pulsedrop_cell(r.get('listing_id'))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('source_kind'))}</td><td>{_pulsedrop_cell(r.get('state'))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('attempts'))}/{_pulsedrop_cell(r.get('max_attempts'))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('failure_reason'))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('duration_seconds'))}s</td></tr>"
+        for r in data["renders"]
+    )
+
+    body = f"""
+    <h1>PulseDrop</h1>
+    <p class='muted'>The autonomous commerce curator. It publishes as @pulsedrop and never as the seller:
+    every post names the merchant and links to their listing.</p>
+    <p>{html_escape(clean_html(message))}</p>
+    {health_cards}
+    {setting_sections}
+    <h2>Run log</h2>
+    <section class='card'><p class='muted'>PulseDrop publishing nothing is its normal healthy state — an empty
+    catalog, everything on cooldown and a crash all look identical from outside, so every tick writes its outcome here.</p>
+    <table class='table'><tr><th>Started</th><th>Outcome</th><th>Reason</th><th>Decision</th><th>Eligible</th><th>Rejected</th><th>Took</th></tr>
+    {run_rows or '<tr><td colspan=7>No runs recorded yet.</td></tr>'}</table></section>
+    <h2>Publications</h2>
+    <section class='card'><table class='table'><tr><th>Published</th><th>Surface</th><th>State</th><th>Listing</th><th>Seller</th><th>Category</th><th>Post</th></tr>
+    {pub_rows or '<tr><td colspan=7>Nothing published yet.</td></tr>'}</table></section>
+    <h2>Reel renders</h2>
+    <section class='card'><table class='table'><tr><th>Updated</th><th>Listing</th><th>Source</th><th>State</th><th>Attempts</th><th>Failure</th><th>Duration</th></tr>
+    {render_rows or '<tr><td colspan=7>No renders yet.</td></tr>'}</table></section>
+    """
+    return admin_page_html("PulseDrop", body, admin)
+
+
 @webhook_app.route("/api/media/upload", methods=["POST"])
 def api_media_upload():
     init_db()
@@ -106937,6 +108317,19 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
             "system_account_label": pulse_feed_engine.MEMBER_000_SYSTEM_LABEL,
             "automation_disclosure": "This account is operated automatically by PulseSoc. It is not a human user.",
             "transparency_disclosure": "Automated posts are generated by PulseSoc systems and remain subject to platform safety and quality controls.",
+            # Lay the banner out whole instead of cropping it to fill the hero.
+            # Declared by the server because the app previously inferred it from
+            # the cover's *filename*, which stops being true the moment the
+            # artwork is redated. See pulse_feed_engine for the full note.
+            "brand_cover_fit": pulse_feed_engine.MEMBER_000_COVER_FIT,
+            "brand_cover_aspect_ratio": pulse_feed_engine.MEMBER_000_COVER_ASPECT_RATIO,
+            # This account has no social graph, and that is a property of living
+            # at ``user_id=0`` rather than of being automated: no
+            # ``pulse_follows`` row can point at it, so its follower count is not
+            # zero, it is undefined. The counts are therefore omitted below and
+            # the client is told why, so that a *followable* automated account
+            # -- @pulsedrop is one -- still shows its real ones.
+            "has_social_graph": False,
             "profile_visibility": "public",
             "account_status": "active",
             "profile_state": "available",
@@ -107011,6 +108404,20 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
             cur, target_user_id, viewer_user_id, account=account
         ),
     })
+    # @pulsedrop is an ordinary ``users`` row on purpose, so everything above --
+    # the real follower count, the real post count, this viewer's real
+    # ``viewer_follows`` -- is already correct for it and must not be replaced.
+    # The overlay only *adds* the fields that make the profile honest about being
+    # automated, which is why it is merged last and merged narrowly. A failure
+    # here costs the disclosure, not the profile, so it degrades rather than
+    # 500s: the account is followable and visible either way.
+    try:
+        from services.pulsedrop import account as pulsedrop_account
+
+        if pulsedrop_account.is_pulsedrop(target_user_id, cur):
+            payload.update(pulsedrop_account.profile_overlay())
+    except Exception:
+        logging.getLogger(__name__).exception("PULSEDROP_PROFILE_OVERLAY_FAILED user_id=%s", target_user_id)
     return payload
 
 
