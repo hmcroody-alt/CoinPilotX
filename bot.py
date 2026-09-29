@@ -363,6 +363,7 @@ from services import (
     schema_guard,
     premium_capability_engine,
     payment_provider,
+    seller_payment_onboarding,
     stripe_webhook_verification,
     premium_entitlement_service,
     premium_identity_engine,
@@ -99718,6 +99719,246 @@ def seller_destination_account_id(payout):
     return account_id
 
 
+def _seller_onboarding_emit(user_id, seller_type):
+    """A funnel logger for one onboarding attempt.
+
+    Structured stdout, because that is what reaches the deployed log stream —
+    `logging.exception` alone did not, which is why the first production failure
+    of the JSON route below left no line behind and had to be reproduced by hand.
+
+    Carries the correlation id, never the user id, the account id, or anything
+    Stripe was told. The gap this incident lived in — "she clicked" to "she
+    reached Stripe" — is now one grep for SELLER_ONBOARDING across a deploy,
+    rather than an inference across three services and an email template.
+    """
+
+    def _emit(event, payload):
+        fields = " ".join(
+            f"{key}={value}" for key, value in sorted(dict(payload or {}).items())
+        )
+        print(f"SELLER_ONBOARDING event={event} seller_type={seller_type} {fields}", flush=True)
+
+    return _emit
+
+
+def _seller_onboarding_snapshot_writer(seller_type):
+    """Persist an authoritative Stripe reading through the existing writers.
+
+    Both of them, in the order the return leg uses. `record_account_snapshot`
+    lands the capability flags and requirements in two tables in one
+    transaction; `_persist_onboarding_status` writes the one column that
+    projection deliberately will not touch.
+
+    Doing both here is also a repair, not just bookkeeping. The first live seller
+    on this platform is sitting at `charges_enabled=1, payouts_enabled=1,
+    onboarding_status='onboarding_started'` — exactly the shape
+    `services/stripe_onboarding_return` was written about — and because
+    `seller_destination_account_id` refuses on the *word* regardless of the
+    flags, every sale of theirs books `ledger_pending_onboarding` instead of
+    `transfer_eligible`. A seller in that state who opens payment setup now has
+    their status corrected from Stripe's own answer on the way through.
+    """
+
+    def _write(user_id, status):
+        try:
+            from services.business_os.payments import connect_accounts as _bos_connect
+
+            _bos_connect.record_account_snapshot(user_id, status)
+        except Exception:
+            logging.exception("SELLER_ONBOARDING_SNAPSHOT_FAILED user_id=%s", user_id)
+        try:
+            _persist_onboarding_status(user_id, seller_type, status)
+        except Exception:
+            logging.exception("SELLER_ONBOARDING_STATUS_WRITE_FAILED user_id=%s", user_id)
+
+    return _write
+
+
+def _seller_onboarding_error_page(seller_type, result):
+    """What a seller sees when onboarding could not start.
+
+    Never Home, and never a bare "something went wrong". A member who tapped
+    "Set up payments with Stripe" and landed on a feed has been told nothing and
+    has no next move — which is the shape of the failure this whole change is
+    about. This page names what happened, says plainly whether retrying can help,
+    and offers the payouts page, which shows the same state with the rest of the
+    seller's context around it.
+    """
+    state = str(result.get("state") or "")
+    retryable = bool(result.get("retryable")) or state == seller_payment_onboarding.START_FAILED
+    message = html_escape(clean_html(str(result.get("message") or "Payment setup could not start.")))
+    attempt = html_escape(clean_html(str(result.get("attempt") or "")))
+    if state == seller_payment_onboarding.START_NOT_APPROVED:
+        title = "Approval is needed first"
+        # The same two destinations `seller_payouts_page` sends an unapproved
+        # member to. There is no `/pulse/teacher/apply` route — the teacher lane
+        # applies through its own page — so this cannot be one f-string.
+        target = "/pulse/teachers" if seller_type == "teacher" else "/pulse/merchant/apply"
+        action = f"<a class='button primary' href='{target}'>Open application</a>"
+    else:
+        title = "We couldn't open Stripe"
+        retry = (
+            "<a class='button primary' href='/seller/payments/setup'>Try again</a>"
+            if retryable
+            else ""
+        )
+        action = f"{retry}<a class='button' href='/pulse/{seller_type}/payouts'>Payments &amp; payouts</a>"
+    body = (
+        f"<section class='card'><h2>{html_escape(title)}</h2><p>{message}</p>"
+        f"<div class='actions'>{action}</div>"
+        # Printed so a support conversation can name the exact attempt without
+        # the seller having to describe what they saw.
+        f"<p class='muted'>Reference: {attempt}</p></section>"
+    )
+    response = pulse_social_shell(
+        "Payment setup",
+        "Stripe Connect onboarding for approved sellers.",
+        body,
+    )
+    return response, int(result.get("http_status") or 503)
+
+
+@webhook_app.route("/seller/payments/setup", methods=["GET"])
+@auth_required
+def seller_payments_setup():
+    """The durable, emailable front door to Stripe Connect onboarding.
+
+    ## Why this route exists at all
+
+    An approved seller tapped "Set up payments with Stripe" in her approval email
+    on an iPhone and landed inside the PulseSoc app, never seeing Stripe. The CTA
+    resolved to
+
+        https://pulsesoc.com/pulse/merchant/payouts?pulse_app=1&pulse_src=email
+
+    which is where Stripe *returns* a seller to, not where onboarding starts —
+    `payments_email_templates._seller_approved` fell back to it because no caller
+    has ever set `ctx["stripe_onboarding_url"]`. And because `/pulse/*` is claimed
+    by the published apple-app-site-association, iOS handed that URL to the app
+    before any HTTP request was made. There was no redirect to follow and no log
+    line to find: the server was never asked.
+
+    The onboarding logic was never the problem. `POST /api/pulse/payouts/connect`
+    below has always reused the seller's account and minted a fresh AccountLink.
+    It simply had no door a mail client could knock on — you cannot put a JSON
+    POST in an email. This is that door, and both routes now go through the same
+    service so they cannot drift into two policies.
+
+    ## Why the path is /seller/... and not /pulse/...
+
+    So that every copy of the app already on a phone leaves it alone. `/seller/*`
+    is absent from `native_app_links.APPLE_LINK_COMPONENTS`, so iOS does not
+    match it and Safari handles it — which means the old emails already sitting in
+    inboxes start working the moment this deploys, with no new binary and no App
+    Store review. `app_links.WEB_INTENT_PREFIXES` states the same intent for
+    every link the server builds.
+
+    ## Why GET is safe
+
+    Mail security scanners fetch links before a human ever sees them, so this
+    must be idempotent: the Stripe account create carries an idempotency key
+    derived from the seller, the payout row write is an upsert, and an
+    AccountLink is single-use and short-lived anyway. A prefetch therefore costs
+    one reused account and one wasted link, and the seller's own click still gets
+    a fresh one. Nothing here charges, transfers, or enables anything.
+    """
+    init_db()
+    user = require_account()
+    if not user:
+        # `full_path`, not `path`. The intent to set up payments is the only thing
+        # this link carries, and dropping it at the login wall would land an
+        # approved seller on Home after signing in — exactly the dead end that
+        # made the original CTA useless.
+        return redirect(url_for("login_page", next=request.full_path))
+
+    seller_type = seller_payment_onboarding.normalize_seller_type(
+        request.args.get("seller_type")
+    )
+    # Deliberately no seller id from the query string. Onboarding is started for
+    # *the authenticated account* and nothing else; a `?sellerId=` would make this
+    # an IDOR that hands one seller a Stripe link for another's account.
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    emit = _seller_onboarding_emit(user["user_id"], seller_type)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        # Two lanes, two approval authorities, same as the JSON route. The
+        # teacher lane has its own table and the service says nothing about it.
+        if seller_type == "teacher":
+            if not approved_teacher_for_user(cur, user["user_id"]):
+                emit(seller_payment_onboarding.EVENT_ERROR, {"reason": "not_approved"})
+                return _seller_onboarding_error_page(
+                    seller_type,
+                    {
+                        "state": seller_payment_onboarding.START_NOT_APPROVED,
+                        "message": "Approved teacher status is required before payment setup.",
+                        "http_status": 403,
+                    },
+                )
+        else:
+            refusal = seller_payment_onboarding.authorize(cur, user["user_id"], seller_type)
+            if refusal:
+                emit(seller_payment_onboarding.EVENT_ERROR, {"reason": "not_approved"})
+                return _seller_onboarding_error_page(seller_type, refusal)
+
+        result = seller_payment_onboarding.start_onboarding(
+            conn=conn,
+            cur=cur,
+            user=dict(user),
+            seller_type=seller_type,
+            base_url=(APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/"),
+            now=now,
+            provider=payment_provider,
+            stripe_configured=bool(STRIPE_SECRET_KEY),
+            existing_account=seller_payout_account(cur, user["user_id"], seller_type),
+            emit=emit,
+            on_snapshot=_seller_onboarding_snapshot_writer(seller_type),
+        )
+    except Exception as exc:
+        trace_id = secrets.token_hex(6)
+        print(
+            f"SELLER_ONBOARDING event=crash trace_id={trace_id} "
+            f"seller_type={seller_type} exc={type(exc).__name__}: {str(exc)[:400]}",
+            flush=True,
+        )
+        logging.exception("SELLER_PAYMENTS_SETUP_FAILED trace_id=%s", trace_id)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return _seller_onboarding_error_page(
+            seller_type,
+            {
+                "state": seller_payment_onboarding.START_FAILED,
+                "message": (
+                    "Payment setup couldn't be opened. This is a problem on PulseSoc's "
+                    "side, not with your account."
+                ),
+                "attempt": trace_id,
+                "retryable": True,
+                "http_status": 500,
+            },
+        )
+    finally:
+        conn.close()
+
+    if result["state"] == seller_payment_onboarding.START_REDIRECT:
+        # 303 so a browser that arrived here by any means follows with a GET, and
+        # so this hop is never cached as the seller's permanent destination — the
+        # AccountLink behind it is single-use and expires.
+        response = redirect(result["url"], code=303)
+        response.headers["Cache-Control"] = "no-store, private"
+        return response
+    if result["state"] == seller_payment_onboarding.START_ALREADY_ENABLED:
+        # Stripe says this account is done. Restarting onboarding here is the
+        # defect `stripe_onboarding_return` documents: telling someone to finish
+        # setting up when they already have. The payouts page shows them what
+        # Stripe actually decided.
+        response = redirect(f"/pulse/{seller_type}/payouts", code=303)
+        response.headers["Cache-Control"] = "no-store, private"
+        return response
+    return _seller_onboarding_error_page(seller_type, result)
+
+
 @webhook_app.route("/api/pulse/payouts/connect", methods=["POST"])
 def api_pulse_payouts_connect():
     init_db()
@@ -99751,73 +99992,65 @@ def api_pulse_payouts_connect():
         if refusal:
             conn.close()
             return refusal
-    account = seller_payout_account(cur, user["user_id"], seller_type)
-    connected_account_id = account.get("connected_account_id") or ""
     trace_id = secrets.token_hex(6)
     try:
-        if STRIPE_SECRET_KEY:
-            if not connected_account_id:
-                stripe_account = payment_provider.create_connected_account(user, seller_type)
-                if not stripe_account.get("ok"):
-                    conn.close()
-                    return api_error(
-                        stripe_account.get("message") or "Payout setup could not start.",
-                        int(stripe_account.get("http_status") or 503),
-                        trace_id,
-                        code=stripe_account.get("code") or "",
-                        provider_error=stripe_account.get("provider_error") or {},
-                        retryable=bool(stripe_account.get("retryable")),
-                    )
-                connected_account_id = stripe_account.get("provider_account_id") or ""
-            cur.execute(
-                """
-                INSERT INTO seller_payout_accounts
-                (user_id, seller_type, provider, connected_account_id, provider_account_id, onboarding_status, payouts_enabled, charges_enabled, last_checked_at, last_synced_at, created_at, updated_at)
-                VALUES (?, ?, 'stripe', ?, ?, 'onboarding_started', 0, 0, ?, ?, ?, ?)
-                ON CONFLICT(user_id, seller_type) DO UPDATE SET connected_account_id=excluded.connected_account_id,
-                  provider_account_id=excluded.provider_account_id, onboarding_status='onboarding_started', last_checked_at=excluded.last_checked_at, last_synced_at=excluded.last_synced_at, updated_at=excluded.updated_at
-                """,
-                (user["user_id"], seller_type, connected_account_id, connected_account_id, now, now, now, now),
-            )
-            conn.commit()
-            base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
-            # Two different events, two different URLs. Stripe sends
-            # `refresh_url` when the link went stale before it was used and
-            # `return_url` when the seller came out the other end; pointing both
-            # at the same page discarded the only thing that told them apart, so
-            # a seller who finished and a seller whose link expired were shown
-            # the same words. The return leg is also the only moment we know to
-            # re-read the account, which is why it is a route of its own rather
-            # than the payouts page with a query flag.
-            link = payment_provider.create_onboarding_link(
-                connected_account_id,
-                refresh_url=f"{base}/pulse/{seller_type}/payouts/refresh",
-                return_url=f"{base}/pulse/{seller_type}/payouts/return",
-            )
-            if not link.get("ok"):
-                conn.close()
-                return api_error(
-                    link.get("message") or "Payout setup could not start.",
-                    int(link.get("http_status") or 503),
-                    trace_id,
-                    code=link.get("code") or "",
-                    provider_error=link.get("provider_error") or {},
-                    retryable=bool(link.get("retryable")),
-                )
-            conn.close()
-            return jsonify({"ok": True, "message": "Stripe onboarding ready.", "onboarding_url": link.get("url"), "connected_account_id": connected_account_id})
-        cur.execute(
-            """
-            INSERT INTO seller_payout_accounts
-            (user_id, seller_type, provider, onboarding_status, payouts_enabled, charges_enabled, missing_requirements_json, last_checked_at, created_at, updated_at)
-            VALUES (?, ?, 'stripe', 'stripe_not_configured', 0, 0, ?, ?, ?, ?)
-            ON CONFLICT(user_id, seller_type) DO UPDATE SET onboarding_status='stripe_not_configured',
-              missing_requirements_json=excluded.missing_requirements_json, last_checked_at=excluded.last_checked_at, updated_at=excluded.updated_at
-            """,
-            (user["user_id"], seller_type, json.dumps(["STRIPE_SECRET_KEY required for live Connect onboarding"]), now, now, now),
+        # One service, three surfaces. This route, the durable email link at
+        # `/seller/payments/setup`, and the app all ask the same function the same
+        # question, because three implementations of "start onboarding" is how
+        # they drift into disagreeing about who is allowed to start and what the
+        # return URLs are. This body used to be that third implementation.
+        #
+        # The behaviour it gains by delegating: Stripe is re-read for a seller who
+        # already has an account, so an account Stripe has already finished is
+        # answered with `already_enabled` instead of being sent back through
+        # onboarding, and the stored status is repaired from Stripe's own answer.
+        result = seller_payment_onboarding.start_onboarding(
+            conn=conn,
+            cur=cur,
+            user=dict(user),
+            seller_type=seller_type,
+            base_url=(APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/"),
+            now=now,
+            provider=payment_provider,
+            stripe_configured=bool(STRIPE_SECRET_KEY),
+            existing_account=seller_payout_account(cur, user["user_id"], seller_type),
+            emit=_seller_onboarding_emit(user["user_id"], seller_type),
+            on_snapshot=_seller_onboarding_snapshot_writer(seller_type),
         )
-        conn.commit(); conn.close()
-        return jsonify({"ok": True, "message": "Payout profile saved. Stripe Connect is not configured yet, so bank onboarding cannot open in this environment."})
+        state = result["state"]
+        if state == seller_payment_onboarding.START_REDIRECT:
+            conn.close()
+            return jsonify({
+                "ok": True,
+                "message": result.get("message") or "Stripe onboarding ready.",
+                "onboarding_url": result.get("url"),
+                "connected_account_id": result.get("connected_account_id") or "",
+            })
+        if state == seller_payment_onboarding.START_ALREADY_ENABLED:
+            conn.close()
+            # No `onboarding_url`, on purpose: the web card reads that key and
+            # navigates. A seller Stripe has already cleared must not be sent
+            # back through onboarding, so there is nowhere to navigate to.
+            return jsonify({
+                "ok": True,
+                "already_enabled": True,
+                "message": result.get("message") or "Your Stripe account is set up.",
+                "charges_enabled": bool(result.get("charges_enabled")),
+                "payouts_enabled": bool(result.get("payouts_enabled")),
+                "payouts_url": f"/pulse/{seller_type}/payouts",
+            })
+        if state == seller_payment_onboarding.START_STRIPE_UNCONFIGURED:
+            conn.close()
+            return jsonify({"ok": True, "message": result.get("message") or ""})
+        conn.close()
+        return api_error(
+            result.get("message") or "Payout setup could not start.",
+            int(result.get("http_status") or 503),
+            trace_id,
+            code=result.get("code") or "",
+            provider_error=result.get("provider_error") or {},
+            retryable=bool(result.get("retryable")),
+        )
     except Exception as exc:
         # `logging.exception` alone does not reach the deployed log stream — this
         # route failed in production for a seller and left no line behind, which

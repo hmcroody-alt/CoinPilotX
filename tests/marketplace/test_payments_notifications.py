@@ -216,6 +216,16 @@ class Rendering(unittest.TestCase):
         known = {
             "/pulse/merchant/payouts", "/pulse/merchant/dashboard", "/pulse/merchant/apply",
             "/pulse/seller-store", "/pulse/orders", "/pulse/help", "/terms", "/privacy",
+            # Stripe Connect onboarding initiation. Registered in bot.py as
+            # `seller_payments_setup` and present in
+            # scripts/parity/url_map_snapshot.json, so this is a route that exists
+            # rather than an exemption. It is listed separately from
+            # /pulse/merchant/payouts on purpose: payouts is where Stripe *returns*
+            # a seller to, and an email CTA pointed there reached the installed iOS
+            # app instead of Stripe, because /pulse/* is claimed by the Apple
+            # app-site association. This path is deliberately outside /pulse so it
+            # stays in the browser. See tests/test_seller_stripe_onboarding_entry.py.
+            "/seller/payments/setup",
         }
         for key in templates.template_keys():
             rendered = templates.render(key, SAMPLE_CONTEXT)
