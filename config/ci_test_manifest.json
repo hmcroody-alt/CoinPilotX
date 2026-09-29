@@ -568,6 +568,7 @@
     "tests/test_seller_money_read.py",
     "tests/test_seller_money_routes.py",
     "tests/test_seller_mutation_routes_are_gated.py",
+    "tests/test_seller_stripe_onboarding_entry.py",
     "tests/test_share_link_app_intent.py",
     "tests/test_signup_verification_delivery.py",
     "tests/test_site_identity.py",
