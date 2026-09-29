@@ -65,6 +65,27 @@ COMPANY_NAME = "CoinPlotXAI Inc."
 #: through ``app_links.app_intent_url`` so an installed app opens natively and a
 #: browser still resolves the same resource.
 SELLER_PAYMENTS_PATH = "/pulse/merchant/payouts"
+
+#: Where "Set up payments with Stripe" points. NOT ``SELLER_PAYMENTS_PATH``, and
+#: the distinction is the whole incident.
+#:
+#: `/pulse/merchant/payouts` is where Stripe Connect *returns* a seller to. It is
+#: also a native destination claimed by the app's associated-domains file, so on
+#: an iPhone iOS hands it to PulseSoc before any HTTP request is made. An
+#: approved seller tapped this button in her approval email and landed on a
+#: PulseSoc screen that cannot start onboarding — the app has no Stripe secret
+#: key and cannot mint an AccountLink — and never saw Stripe at all.
+#:
+#: `/seller/payments/setup` is a durable server route that exists to be put in an
+#: email: it is safe and idempotent on GET (mail scanners prefetch links), it
+#: mints a fresh single-use AccountLink at click time rather than baking a
+#: short-lived one into an email that may be opened days later, and it is
+#: web-intent in both declarations that matter — absent from
+#: `native_app_links.APPLE_LINK_COMPONENTS` and listed in
+#: `app_links.WEB_INTENT_PREFIXES` — so it stays in the browser on every copy of
+#: the app already installed, with no new build needed to fix an old email.
+SELLER_STRIPE_SETUP_PATH = "/seller/payments/setup"
+
 SELLER_DASHBOARD_PATH = "/pulse/merchant/dashboard"
 SELLER_APPLY_PATH = "/pulse/merchant/apply"
 SELLER_ORDERS_PATH = "/pulse/seller-store?mode=orders"
@@ -161,11 +182,25 @@ def _url(path_or_url: Any, source: str = "email") -> str:
         # Never emit a cleartext link from a money email.
         return ""
     try:
-        return app_links.app_intent_url(raw, source)
+        built = app_links.app_intent_url(raw, source)
     except Exception:
         # A link that cannot be built must not take the whole email down with
         # it: the seller still needs to read that their payout failed.
         return raw if raw.startswith("https://") else ""
+    if built.startswith("/"):
+        # `app_intent_url` hands a web-intent path back untouched. That is right
+        # for a page, which has a base URL, and useless in an email, where a
+        # relative href resolves against the mail client and goes nowhere. Every
+        # CTA under /account/, /checkout/, /dashboard or /seller/payments had
+        # that shape. Absolutised here, and deliberately without the app-intent
+        # markers: a web-intent path must stay in the browser, which for
+        # /seller/payments/setup is the entire fix -- minting a Stripe
+        # AccountLink needs the secret key and the app cannot do it.
+        try:
+            return app_links.canonical_web_url(built)
+        except Exception:
+            return ""
+    return built
 
 
 def _paragraph(text: str, *, color: str = BODY, size: int = 15, top: int = 0) -> str:
@@ -404,7 +439,11 @@ SpecBuilder = Callable[[Mapping[str, Any]], Dict[str, Any]]
 def _seller_approved(ctx: Mapping[str, Any]) -> Dict[str, Any]:
     first = _esc(ctx.get("seller_first_name") or "there")
     store = _esc(ctx.get("store_name") or "your store")
-    onboarding = _url(ctx.get("stripe_onboarding_url") or SELLER_PAYMENTS_PATH)
+    # The fallback is the durable *initiation* route, never the payouts page.
+    # `stripe_onboarding_url` has never been set by any caller of this template,
+    # so the fallback was the only value this button ever had — and it pointed at
+    # Stripe's return page, which the app claims. See SELLER_STRIPE_SETUP_PATH.
+    onboarding = _url(ctx.get("stripe_onboarding_url") or SELLER_STRIPE_SETUP_PATH)
     dashboard = _url(ctx.get("seller_dashboard_url") or SELLER_DASHBOARD_PATH)
     return {
         "subject": f"Your {PRODUCT_NAME} seller application has been approved",
@@ -546,7 +585,12 @@ def _seller_declined(ctx: Mapping[str, Any]) -> Dict[str, Any]:
 
 def _stripe_verification_required(ctx: Mapping[str, Any]) -> Dict[str, Any]:
     first = _esc(ctx.get("seller_first_name") or "there")
-    onboarding = _url(ctx.get("stripe_onboarding_url") or SELLER_PAYMENTS_PATH)
+    # Requirements can appear long after a successful onboarding, and the seller
+    # satisfies them on Stripe's pages, not on ours. Same durable initiation
+    # route as the approval email: it mints a fresh link for an account that
+    # still owes Stripe something, and short-circuits to the payouts page for one
+    # that does not.
+    onboarding = _url(ctx.get("stripe_onboarding_url") or SELLER_STRIPE_SETUP_PATH)
     deadline = _esc(ctx.get("requirements_deadline") or "")
     items = ctx.get("requirements") or []
     listed = "".join(
@@ -703,7 +747,10 @@ def _payout_paid(ctx: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def _seller_account_restricted(ctx: Mapping[str, Any]) -> Dict[str, Any]:
-    payments = _url(ctx.get("seller_payments_url") or SELLER_PAYMENTS_PATH)
+    # "Resolve with Stripe" has to reach Stripe. A restriction is lifted by
+    # satisfying requirements on Stripe's own pages, so this is the initiation
+    # route rather than the PulseSoc payouts page the label does not promise.
+    payments = _url(ctx.get("seller_payments_url") or SELLER_STRIPE_SETUP_PATH)
     reason = _esc(ctx.get("failure_reason") or ctx.get("disabled_reason") or "")
     return {
         "subject": "Your payment account has been restricted",

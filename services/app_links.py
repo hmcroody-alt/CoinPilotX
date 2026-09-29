@@ -900,6 +900,25 @@ WEB_INTENT_PREFIXES = (
     # /pulse/* so the association hands these URLs to Safari. Change one and the
     # other is wrong.
     "/pulse/app",
+    # Stripe Connect seller onboarding initiation. This entry is load-bearing and
+    # the reason is worth stating, because the path looks like it should be an app
+    # destination and must never become one.
+    #
+    # An approved seller tapped "Set up payments with Stripe" in her approval
+    # email and landed inside the PulseSoc app instead of at Stripe. The CTA
+    # pointed at /pulse/merchant/payouts -- a real native destination -- so iOS
+    # matched the association and opened the app before any HTTP request was
+    # made. The app cannot start onboarding: minting an AccountLink needs the
+    # Stripe secret key, which is server-side only. Only a browser hop can do it.
+    #
+    # Two declarations keep this in the browser and they must stay in agreement:
+    # services/native_app_links.APPLE_LINK_COMPONENTS does not claim /seller/*
+    # (which is what stops every already-installed binary from intercepting it,
+    # with no new build required), and this prefix states the same intent for
+    # every link the server builds. Saying it here is what makes the choice
+    # legible rather than accidental, and what stops a later `seller_payments`
+    # Destination from silently re-breaking the one link this incident was about.
+    "/seller/payments",
     "/api/",
     "/static/",
     "/.well-known/",
@@ -1097,6 +1116,35 @@ def _safe_params(params: Mapping[str, object] | None) -> Iterable[tuple[str, str
 # --------------------------------------------------------------------------
 # Adapter for existing relative links (email / push migration)
 # --------------------------------------------------------------------------
+
+
+def canonical_web_url(path: str) -> str:
+    """A web-intent path as an absolute URL on the canonical host.
+
+    `app_intent_url` returns a web-intent path *untouched*, which is right for a
+    page rendering its own relative hrefs and wrong for an email: a mail client
+    has no base URL, so a relative href is simply dead. Every email CTA under
+    `/account/`, `/checkout/`, `/dashboard` or `/seller/payments` had that shape.
+
+    Deliberately does not add `pulse_app`/`pulse_src`. Those markers mean "the
+    installed app should take this", and the whole point of a web-intent path is
+    that it must not.
+
+    Off-host and already-absolute links come back untouched -- a Stripe URL must
+    stay Stripe's own -- and an unsafe path raises rather than being emitted.
+    """
+
+    raw = str(path or "").strip()
+    if not raw:
+        return raw
+    if "://" in raw or raw.startswith("//"):
+        return raw
+    if not raw.startswith("/"):
+        return raw
+    _reject_unsafe(raw, "Link")
+    head, sep, tail = raw.partition("?")
+    normalized = _normalize_path(head)
+    return f"{CANONICAL_APP_ORIGIN}{normalized}{sep}{tail}"
 
 
 def app_intent_url(link: str, source: str = DEFAULT_APP_LINK_SOURCE) -> str:
@@ -1500,6 +1548,7 @@ __all__ = [
     "FALLBACK_WEB",
     "WEB_INTENT_OVERRIDES",
     "app_intent_url",
+    "canonical_web_url",
     "app_link_source",
     "app_scheme_url",
     "app_store_qr_asset",
