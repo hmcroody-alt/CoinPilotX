@@ -25,18 +25,40 @@ helper and stay green.
 
 Every assertion below is therefore made against bytes served by the app. That
 rule is what makes the checks here survive an implementation swap, and it has now
-been tested by one: the search surface used to be an inline JavaScript twin of
-the card, rendered in the browser, and this file used to execute it under node.
-Search is now ``?q=`` rendered on the server by the same function as the grid, so
-the twin and the node harness are gone -- but the property each assertion names
-is unchanged, because none of them named the twin. They named what a member is
-served when they search.
+been tested by three of them, in order:
+
+* The search surface used to be an inline JavaScript twin of the card, rendered
+  in the browser, and this file used to execute it under node. Search is now
+  ``?q=`` rendered on the server by the same function as the grid, so the twin
+  and the node harness are gone.
+* The member grid moved to the storefront engine, which emits a nest of classed
+  elements where the old card emitted one paragraph of pills.
+* The product page followed it (``render_product``, 90dfe0a1a), which is what
+  retired the pill paragraph this file used to read it through.
+
+None of those was a change to what a member is owed, and the property each
+assertion names is unchanged, because none of them named a template. They named
+what a member is served. What has to be re-pointed on each swap is the
+*extraction* -- and a stale extraction here does not read as "the probe cannot
+see the page", it reads as "the page renders no price", which is this file's own
+subject. So each reader below carries a vacuity guard.
 
 Two shapes in particular have to stay failures rather than becoming "no price": a
-surface that never renders a price at all, and one that renders an empty
-``<span class="pill"></span>``, which is not "no price" but "a price the seller
-set to nothing". Every claim below is paired with a control that a price *does*
-appear where one exists, so neither can pass by rendering nothing.
+surface that never renders a price at all, and one that renders its price element
+*empty*, which is not "no price" but "a price the seller set to nothing". Every
+claim below is paired with a control that a price *does* appear where one exists,
+so neither can pass by rendering nothing.
+
+## What an unpriced listing is allowed to lose with its price
+
+Its add-to-cart, and only that. ``mw.cart_affordance`` answers
+``CART_HIDDEN_NO_PRICE`` for a listing whose price is unknown, mirroring
+``POST /api/pulse/marketplace/cart``, which refuses ``price_minor <= 0`` with 400
+``ITEM_UNAVAILABLE``. So an unpriced listing is genuinely not purchasable and a
+button offered on one would be a button that always fails. Both surfaces withhold
+it, and the tests below name that coupling as a closed set rather than tolerating
+whatever happens to differ -- an unpriced card that also dropped its seller line
+or its photograph is still a regression here.
 
 ## Three price values, not one
 
@@ -121,12 +143,13 @@ client = app.test_client()
 with client.session_transaction() as session:
     session["account_user_id"] = viewer_id
 
-# The two surfaces are read with two different extractions, deliberately. The
-# member grid is served by the storefront engine and emits a storefront card; the
-# product page is still the template this bug family shipped in, and emits a pill
-# paragraph. Reading each with the pattern that fits it is what lets the
-# agreement test below compare the price the two surfaces *arrive at* instead of
-# the markup they arrive at it in -- which they can no longer share.
+# The two surfaces are read with two different extractions, deliberately. Both
+# are the storefront engine now, but they are not one renderer: the grid emits a
+# storefront card and the product page emits a purchase panel, and the panel is
+# the richer of the two because it is the only one with a variant picker behind
+# it. Reading each with the pattern that fits it is what lets the agreement test
+# below compare the price the two surfaces *arrive at* instead of the markup they
+# arrive at it in -- which they do not share and are not required to.
 CARD = re.compile(r'<article class="mkt-card">.*?</article>', re.S)
 CARD_LINK = re.compile(r'class="mkt-card-link" href="/pulse/marketplace/(\d+)"')
 
@@ -151,24 +174,28 @@ def cards_by_listing(html):
     return found
 
 
-def pill_paragraph(html):
-    '''The first paragraph carrying any pill, or None. The product page's shape.
+def purchase_panel(html):
+    '''The product page's purchase panel, or None. Where its price lives.
 
-    This used to key off the Safety pill, on the grounds that it was the one
-    element of the row always present -- which kept "the price paragraph is
-    gone" and "the price pill is gone" distinguishable. That pill has been
-    removed: it printed `marketplace_listings.safety_score`, which holds the
-    reviewer's *risk* number, so the worst listing the engine can score read
-    "Safety 100" to a buyer.
+    This used to be `pill_paragraph`, which read the price out of a `<p>` of
+    `<span class="pill">`. That paragraph belonged to the template this bug
+    family shipped in, and the product page no longer runs it -- it renders
+    through `marketplace_storefront.render_product`, which prints the price in a
+    `.mkt-price` block inside this panel. The old reader returned None against
+    every page, which the assertions correctly reported as "no price rendered"
+    and which was in fact "no paragraph to find one in".
 
-    The category pill inherits the job. It is emitted unconditionally
-    (`row.get('category') or 'Education'`), so a None here still means the
-    paragraph itself is missing rather than the price within it.
+    Scoped to the panel rather than the whole document for the reason the grid
+    card is scoped to one `<article>`: the page also carries a related-products
+    rail of real cards with real prices on it, and a price read from the document
+    at large could be a neighbouring product's. The panel is labelled, emitted
+    unconditionally, and holds the price, the stock line and every buy control, so
+    a None here means the panel itself is gone rather than the price within it.
     '''
-    for para in re.findall(r"<p>.*?</p>", html, re.S):
-        if re.search(r"class=['\"]pill['\"]>", para):
-            return para
-    return None
+    found = re.search(
+        r'<section class="mkt-panel" aria-label="Purchase options">.*?</section>',
+        html, re.S)
+    return None if found is None else found.group(0)
 
 
 grid_response = client.get("/pulse/marketplace")
@@ -189,7 +216,7 @@ for lid in %(ids)r:
     body = response.get_data(as_text=True)
     pages[str(lid)] = {
         "status": response.status_code,
-        "paragraph": pill_paragraph(body),
+        "panel": purchase_panel(body),
         "invented": %(invented)r in body,
         "title": ("Listing %%d" %% lid) in body,
     }
@@ -241,11 +268,56 @@ def price_probe():
     return parse_report(proc.stdout, proc.stderr)
 
 
-def _pills(paragraph):
-    """The pill texts inside a product page's pill paragraph, in order."""
-    if paragraph is None:
+def _product_price(panel):
+    """The raw contents of a product page's price element, or ``None``.
+
+    The same three-way reading as ``_card_price`` below and for the same reason:
+    ``None`` is "no price element", ``""`` is "a price the seller set to nothing",
+    and the two must not be conflated. Returned unstripped so a stray separator
+    fails the comparisons rather than being tidied away by the reader.
+    """
+    if panel is None:
         return None
-    return re.findall(r"<span class=['\"]pill['\"]>(.*?)</span>", paragraph, re.S)
+    found = re.search(
+        r'<span class="mkt-price-value"[^>]*>(.*?)</span>', panel, re.S)
+    return None if found is None else found.group(1)
+
+
+def _panel_hooks(panel):
+    """The ``data-mkt-*`` hooks the purchase panel carries, deduplicated.
+
+    This is the product page's port of "the priced card's pills, minus the price"
+    -- the claim that dropping a price drops the price and nothing else.
+
+    Read from the script hooks rather than from the CSS classes, which is the one
+    place this port is not a transliteration of the card's. The panel's classes
+    carry *visual weight* as well as identity: it shows one filled action, so
+    Message seller is a `.mkt-ghost` beside an Add to cart and promotes itself to
+    `.mkt-cta` when there is none. An unpriced panel therefore differs from a
+    priced one by a class that has nothing to do with whether a price was
+    invented, and a class fingerprint would either fail on that or have to encode
+    a styling rule to excuse it. The `data-mkt-*` attributes are what the scripts
+    bind to, so they name the affordances themselves and do not move when one
+    changes weight.
+
+    Deduplicated and sorted because these are a set of affordances, not an
+    ordering: three separate `.mkt-ghost` buttons are three hooks with three
+    distinct names, so nothing is lost by not counting repeats.
+    """
+    if panel is None:
+        return None
+    return sorted(set(re.findall(r"\bdata-mkt-([a-z]+(?:-[a-z]+)*)", panel)))
+
+
+#: The panel hooks an unpriced listing is expected to lose along with its price,
+#: and the only ones. ``price`` is the price itself; ``add`` is the button, absent
+#: by ``CART_HIDDEN_NO_PRICE`` as the module docstring explains; ``variant`` is the
+#: field that button posts and exists only alongside it.
+#:
+#: Note that ``variants`` -- the form's client-side variant table -- is *not* in
+#: this set and is present on both, which is why these are matched as whole
+#: attribute names rather than by prefix.
+PRICE_COUPLED_HOOKS = ("price", "add", "variant")
 
 
 def _card_price(card):
@@ -278,6 +350,17 @@ def _card_parts(card):
     if card is None:
         return None
     return re.findall(r'<[a-z0-9]+ class="(mkt-[a-z-]+)', card)
+
+
+#: The card elements an unpriced listing is expected to lose along with its price,
+#: and the only ones. The price element, then the add-to-cart row and its button,
+#: withheld by ``CART_HIDDEN_NO_PRICE`` -- see the module docstring.
+#:
+#: Named as a closed set rather than derived by diffing the two fingerprints,
+#: because the property this file holds is that *nothing else* goes with the
+#: price. "Ignore whatever differs" would report an unpriced card that had also
+#: lost its seller line as agreement.
+PRICE_COUPLED_PARTS = ("mkt-card-price", "mkt-card-actions", "mkt-add")
 
 
 #: ``loading`` and ``fetchpriority`` are a position-dependent loading hint: the
@@ -365,15 +448,22 @@ def test_a_priced_listing_still_shows_its_price_in_the_grid(price_probe):
 def test_an_unpriced_grid_card_has_no_price_pill(price_probe, listing_id):
     """No price means no element, not an element holding prose or nothing.
 
-    Three claims, because two of them pass for a card that has quietly stopped
+    Four claims, because three of them pass for a card that has quietly stopped
     rendering: the price element is absent outright, the card is otherwise
-    structurally identical to the priced one, and neither the phrase nor the
-    priced listing's label appears anywhere in it.
+    structurally identical to the priced one bar the purchase controls, it offers
+    no add-to-cart, and neither the phrase nor the priced listing's label appears
+    anywhere in it.
 
     The structural half is derived from the priced card rather than written as a
     literal, so that adding a line to the card does not have to be a change to
     this file -- the same reason the old assertion derived its expected pills
     from the priced card's.
+
+    The add-to-cart is the one thing an unpriced card is allowed to lose with its
+    price, so it is subtracted from that comparison -- and then pinned back
+    positively, because subtracting it without re-asserting it would leave this
+    file unable to notice a quick-add appearing on a listing that cannot be
+    bought. The module docstring has the reason it cannot.
     """
     card = price_probe["grid_cards"].get(str(listing_id))
     assert card is not None, (
@@ -385,7 +475,8 @@ def test_an_unpriced_grid_card_has_no_price_pill(price_probe, listing_id):
         "%r. An absent price is an absent element: an element present and empty "
         "is a price the seller set to nothing, and one holding prose is a price "
         "invented on the way out" % (listing_id, price))
-    priced = _card_parts(price_probe["grid_cards"][str(PRICED)])
+    priced_card = price_probe["grid_cards"][str(PRICED)]
+    priced = _card_parts(priced_card)
     # Without this the comparison below is two empty lists agreeing. A card whose
     # classes this reader cannot see has no fingerprint, and no fingerprint
     # matches every other card that also has none.
@@ -393,11 +484,25 @@ def test_an_unpriced_grid_card_has_no_price_pill(price_probe, listing_id):
         "the priced card's fingerprint is %r, which does not include a price "
         "element -- so the comparison below would pass for any card at all. The "
         "class-attribute reader has gone blind, not the renderer." % (priced,))
-    assert _card_parts(card) == [p for p in priced if p != "mkt-card-price"], (
+    assert _card_parts(card) == [p for p in priced if p not in PRICE_COUPLED_PARTS], (
         "the grid card for unpriced listing %d is built out of %r; it must carry "
-        "every element the priced card carries (%r) except the price. Dropping "
-        "the price must not drop anything else with it."
-        % (listing_id, _card_parts(card), priced))
+        "every element the priced card carries (%r) except the price and the "
+        "purchase controls %r. Dropping the price must not drop anything else "
+        "with it."
+        % (listing_id, _card_parts(card), priced, list(PRICE_COUPLED_PARTS)))
+    # The other half of that subtraction. Vacuity-guarded against the priced card,
+    # so this cannot pass by the grid having stopped offering quick-add at all --
+    # which would be a real change, owned by `test_storefront_add_to_cart.py`, and
+    # should be read here as "that coupling is no longer testable from this file"
+    # rather than as an unpriced card behaving itself.
+    assert "data-mkt-add" in priced_card, (
+        "the priced card offers no add-to-cart, so the claim below -- that an "
+        "unpriced one does not either -- is true of every card on the page and "
+        "proves nothing about the price")
+    assert "data-mkt-add" not in card, (
+        "the grid card for unpriced listing %d offers an add-to-cart. The cart "
+        "route refuses a listing with no price (400 ITEM_UNAVAILABLE), so this "
+        "is a button that cannot work: %r" % (listing_id, card))
     assert INVENTED not in card and PRICED_LABEL not in card, (
         "the grid card for unpriced listing %d names a price somewhere outside "
         "its price element: %r" % (listing_id, card))
@@ -419,25 +524,52 @@ def test_a_priced_product_page_still_shows_its_price(price_probe):
     page = price_probe["pages"][str(PRICED)]
     assert page["status"] == 200 and page["title"], (
         "the priced listing's product page did not serve (%s)" % page["status"])
-    assert PRICED_LABEL in (_pills(page["paragraph"]) or []), (
-        "the product page for a priced listing does not show its price; pills "
-        "were %r" % (_pills(page["paragraph"]),))
+    assert page["panel"] is not None, (
+        "the priced listing's product page rendered no purchase panel, so there "
+        "is nowhere for a price to be. The panel is emitted unconditionally, so "
+        "this is the extraction or the renderer -- not a missing price.")
+    assert _product_price(page["panel"]) == PRICED_LABEL, (
+        "the product page for a priced listing does not show its price; its "
+        "price element holds %r" % (_product_price(page["panel"]),))
 
 
 @pytest.mark.parametrize("listing_id", UNPRICED)
 def test_an_unpriced_product_page_has_no_price_pill(price_probe, listing_id):
-    """The page a shared link opens must agree with the card that links to it."""
+    """The page a shared link opens must agree with the card that links to it.
+
+    The grid card's three claims, on the page's own shape: the price element is
+    absent rather than empty, the panel is otherwise the priced one minus the
+    purchase controls, and the phrase is nowhere in the document.
+    """
     page = price_probe["pages"][str(listing_id)]
     assert page["status"] == 200 and page["title"], (
         "listing %d's product page did not serve (%s), so nothing below is "
         "about an unpriced page" % (listing_id, page["status"]))
-    pills = _pills(page["paragraph"])
-    priced = _pills(price_probe["pages"][str(PRICED)]["paragraph"])
-    assert pills == [p for p in priced if p != PRICED_LABEL], (
-        "the product page for unpriced listing %d rendered %r; the priced "
-        "page renders %r" % (listing_id, pills, priced))
-    assert "" not in (pills or []), (
-        "listing %d's product page rendered an empty price pill" % listing_id)
+    panel = page["panel"]
+    assert panel is not None, (
+        "listing %d's product page rendered no purchase panel at all, so this "
+        "test is not looking at an unpriced page -- it is looking at nothing"
+        % listing_id)
+    price = _product_price(panel)
+    assert price is None, (
+        "the product page for unpriced listing %d rendered a price element "
+        "holding %r. An absent price is an absent element: an element present "
+        "and empty is a price the seller set to nothing, and one holding prose "
+        "is a price invented on the way out" % (listing_id, price))
+    priced = _panel_hooks(price_probe["pages"][str(PRICED)]["panel"])
+    # The same guard the grid's fingerprint carries, for the same reason: a panel
+    # whose hooks this reader cannot see has no hooks, and no hooks match every
+    # other panel that also has none.
+    assert "price" in priced, (
+        "the priced panel's hooks are %r, which do not include the price -- so "
+        "the comparison below would pass for any panel at all. The hook reader "
+        "has gone blind, not the renderer." % (priced,))
+    assert _panel_hooks(panel) == [h for h in priced if h not in PRICE_COUPLED_HOOKS], (
+        "the product page for unpriced listing %d offers %r; it must offer "
+        "everything the priced page offers (%r) except the price and the "
+        "purchase controls %r. Dropping the price must not drop the seller "
+        "contact, Save or Report with it."
+        % (listing_id, _panel_hooks(panel), priced, list(PRICE_COUPLED_HOOKS)))
     assert not page["invented"], (
         "listing %d's product page still serves the words %r"
         % (listing_id, INVENTED))
@@ -447,46 +579,44 @@ def test_the_grid_and_the_product_page_price_a_listing_the_same_way(price_probe)
     """Browsing and following a shared link must not disagree about the price.
 
     The two surfaces build their HTML separately, which is how one of them came
-    to be fixed without the other in the first place. They are now separate in a
-    second way: the grid is rendered by the storefront engine and the product page
-    by the template this bug family shipped in, so they no longer emit comparable
-    markup and this can no longer be a string comparison of the two paragraphs.
+    to be fixed without the other in the first place. They are both the storefront
+    engine now, but they are still two renderers -- a card and a purchase panel --
+    so this cannot be a string comparison of their markup.
 
     Comparing markup was never the point of it, though -- it was a proxy for "a
     member sees the same price in both places", with byte-equality standing in for
-    "and no stray separator either". Both survive: the price *text* is compared
-    exactly, unstripped, so a separator left inside the grid's price element still
-    fails here.
+    "and no stray separator either". Both survive, and more directly than before:
+    each surface's price element is read on its own terms and the *text* is
+    compared exactly, unstripped, so a separator left inside either one fails here.
 
-    The product page's price is isolated as "the pills a priced page has that an
-    unpriced one does not", rather than by looking for the label, so this test
-    cannot pass by finding what it went looking for. That the unpriced page is
-    itself right is established above, independently, by
-    ``test_an_unpriced_product_page_has_no_price_pill``.
+    Neither side is read by looking for the label, so this cannot pass by finding
+    what it went looking for; and the three-way reading of each reader keeps
+    "absent" distinct from "empty", so a surface that renders an empty price
+    element does not agree with one that renders none.
     """
-    baseline = _pills(price_probe["pages"][str(BLANK)]["paragraph"])
-    assert baseline is not None, (
-        "the unpriced product page rendered no pill paragraph, so there is no "
-        "baseline to separate a price pill from the rest")
+    # Both surfaces answering None for all three listings is agreement, and it is
+    # also what two broken readers look like. This is what excludes that: the
+    # priced listing must produce a real price on both, so at least one comparison
+    # below is between two present prices.
+    assert _card_price(price_probe["grid_cards"].get(str(PRICED))) == PRICED_LABEL, (
+        "the priced listing shows no price in the grid, so every comparison "
+        "below is None against None and agreement is vacuous")
+    assert _product_price(price_probe["pages"][str(PRICED)]["panel"]) == PRICED_LABEL, (
+        "the priced listing shows no price on its product page, so every "
+        "comparison below is None against None and agreement is vacuous")
 
     for listing_id in ALL_LISTINGS:
         card = price_probe["grid_cards"].get(str(listing_id))
-        paragraph = price_probe["pages"][str(listing_id)]["paragraph"]
-        assert card is not None and paragraph is not None, (
+        panel = price_probe["pages"][str(listing_id)]["panel"]
+        assert card is not None and panel is not None, (
             "listing %d did not render on one of the two surfaces: grid card=%r "
-            "product paragraph=%r" % (listing_id, card, paragraph))
+            "product panel=%r" % (listing_id, card, panel))
 
-        grid_price = _card_price(card)
-        page_prices = [p for p in _pills(paragraph) if p not in baseline]
-
-        assert (grid_price is None) == (page_prices == []), (
-            "listing %d is priced on one surface and not the other: the grid's "
-            "price element holds %r and its product page shows %r"
-            % (listing_id, grid_price, page_prices))
-        if grid_price is not None:
-            assert page_prices == [grid_price], (
-                "listing %d shows %r in the grid and %r on its product page"
-                % (listing_id, grid_price, page_prices))
+        assert _card_price(card) == _product_price(panel), (
+            "listing %d shows %r in the grid and %r on its product page. A "
+            "member browsing and a member following a shared link must not be "
+            "told different things about the price."
+            % (listing_id, _card_price(card), _product_price(panel)))
 
 
 @pytest.mark.parametrize("listing_id", ALL_LISTINGS)
