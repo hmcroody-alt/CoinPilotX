@@ -188,7 +188,14 @@ export const linking: LinkingOptions<RootStackParamList> = {
           statusId: Number
         }
       },
-      MarketplaceDetail: {
+      /**
+       * The product page, not the browse grid. `getStateFromPath` above resolves
+       * this path through `nativeObjectDestination` and never reaches this
+       * declaration, but a route table that still named `MarketplaceDetail` was a
+       * second answer to the question the resolver had just answered -- and it is
+       * the answer `getPathFromState` reads when the app generates a link.
+       */
+      MarketplaceProduct: {
         path: "pulse/marketplace/:listingId",
         parse: {
           listingId: Number
