@@ -81,6 +81,10 @@ import { useAuth } from "../session/auth";
 import { ContentTranslation } from "../components/ContentTranslation";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { RootStackParamList } from "../navigation/types";
+import {
+  DeliveryEstimateLine,
+  useDeliveryEstimate
+} from "../components/commerce/DeliveryEstimateLine";
 import { peekSaveState, useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { storeLight } from "../theme/marketplaceLight";
@@ -134,6 +138,26 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
     refreshToken: reloadNonce
   });
   const [qty, setQty] = useState(1);
+
+  /**
+   * When this should arrive, asked of the server and of nothing else.
+   *
+   * The reference is the listing id on its own: this screen has no variant
+   * selector, so there is no variant key to append, and `services/delivery`
+   * accepts a bare listing id as a reference to its default variant. The day a
+   * selector lands here, the selected key joins the reference and the estimate
+   * follows it — which is the whole reason the reference is a string the server
+   * parses rather than two arguments.
+   *
+   * `qty` is passed because freight is quoted for a parcel and three of something
+   * is a different parcel. No country: the server resolves the destination from
+   * the session, and a country this screen guessed would be a confident date for
+   * somewhere the buyer does not live.
+   */
+  const delivery = useDeliveryEstimate(listingId > 0 ? String(listingId) : null, {
+    quantity: qty,
+    debounceMs: 350
+  });
   // One action at a time, but each action reports its own progress. A shared
   // "busy" boolean made every button read "Please wait…" while a different
   // button was working, which is indistinguishable from a hang.
@@ -609,7 +633,24 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Delivery</Text>
           <Protection icon="cube-outline" text={fulfillmentCopy(listing)} />
-          <Protection icon="calendar-outline" text="Delivery timing is arranged with the seller after your order is confirmed." />
+          {/* This used to be a hardcoded line: "Delivery timing is arranged with
+              the seller after your order is confirmed." It was true for a
+              locally-shipped listing and false for a CJ-fulfilled one, where the
+              supplier quotes a transit range and no seller arranges anything —
+              and it was shown on both, because the screen had no way to ask.
+              Now the server answers, and the seller-arranged sentence survives as
+              exactly one branch of `deliveryCopy` (`not_supplier_fulfilled`),
+              reached only for the listings it describes.
+
+              The component owns its own request rather than taking a prop: the
+              answer depends on a destination the server resolves from the
+              session, so it is not something this screen holds or could pass
+              down. */}
+          <DeliveryEstimateLine
+            answer={delivery.answer}
+            loading={delivery.loading}
+            onRetry={delivery.retry}
+          />
         </View>
 
         <View style={styles.section}>

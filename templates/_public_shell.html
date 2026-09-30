@@ -66,6 +66,19 @@ dd{margin:6px 0 0;color:#a9bfca}
 footer{padding:32px 0 60px;color:#7f97a4;font-size:14px;border-top:1px solid rgba(110,223,246,.12)}
 footer a{margin-right:16px;display:inline-block}
 @media(max-width:640px){.button{width:100%}}
+/* The delivery estimate under a product's price. Inlined here with the rest of
+   this page's CSS, not shipped as a stylesheet: the whole shell is deliberately
+   one request, and a render-blocking <link> for six declarations on the
+   most-crawled page on the site is the wrong trade. */
+.pulse-delivery{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0 0;font-size:15px;color:#c9dbe4}
+.pulse-delivery__text{font-weight:700;color:#f2fbff}
+.pulse-delivery__shipping{font-weight:800;color:#36e58f}
+/* Dimmed while a fetch is in flight, and the transition is what stops it
+   flickering on a fast reply. Never `display:none` -- the sentence is the point. */
+.pulse-delivery--pending .pulse-delivery__text{color:#a9bfca;font-weight:600}
+.pulse-delivery--terminal .pulse-delivery__text{color:#a9bfca;font-weight:600}
+.pulse-delivery__where{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:#7f97a4}
+.pulse-delivery__where select{min-height:36px;border-radius:9px;border:1px solid rgba(110,223,246,.26);background:#0b1626;color:#f2fbff;padding:4px 8px}
 </style>
 <script type="application/ld+json">{{ schema_json|safe }}</script>
 </head>
