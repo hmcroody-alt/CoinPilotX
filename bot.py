@@ -307,6 +307,7 @@ from services import (
     realtime_sync_engine,
     realtime_service,
     telegram_text_router,
+    legal_acceptance,
     live_market_service,
     live_archive_service,
     live_archive_share_service,
@@ -7084,7 +7085,15 @@ def register_failed_login(email, user_id=0, reason="invalid_credentials"):
 ACCOUNT_ALREADY_EXISTS_MESSAGE = "An account already exists for that contact method."
 
 
-def create_account(full_name, email, password, phone="", country="", email_opt_in=False, sms_opt_in=False, username="", age_confirmed=False):
+def create_account(full_name, email, password, phone="", country="", email_opt_in=False, sms_opt_in=False, username="", age_confirmed=False, *, accepted_terms_source):
+    # Keyword-only, no default, and it carries the provenance rather than a bare
+    # boolean: `None` for no acceptance, otherwise which surface asked. One
+    # argument instead of two because there is no such thing as an acceptance
+    # without a place it came from, and no default because one of the three
+    # callers must answer `None` -- /admin/users/new creates an account on someone
+    # else's behalf, and that person has agreed to nothing. A default would let
+    # that path record a consent nobody gave, or let a fourth caller record none
+    # and be indistinguishable from the two that do.
     email = normalize_email(email)
     logging.info("signup normalized email=%s db_engine=%s", mask_email(email), db_service.ENGINE_NAME)
     log_auth_event("signup_started", email, status="started", details={"db_engine": db_service.ENGINE_NAME})
@@ -7184,6 +7193,12 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
         )
         user_id = cur.lastrowid
         pulse_id_service.ensure_user_pulse_id(cur, user_id)
+        if accepted_terms_source:
+            # On this cursor, so the acceptance commits with the account it is a
+            # precondition of. Written afterwards on a second connection there
+            # would be a window in which the account exists and the record of why
+            # it was allowed to does not -- which is the state this replaces.
+            legal_acceptance.record(cur, user_id, source=accepted_terms_source)
         logging.info("database insert generated user_id=%s email=%s", user_id, mask_email(email))
         pulsesoc_notification_system.ensure_user_notification_defaults(user_id, conn=conn)
         cur.execute(
@@ -7821,7 +7836,7 @@ def signup_page():
             return render_account_page("signup", "Create Account", error="Agree to the Terms, Privacy Policy, and no-tolerance safety rules before creating your account.")
         if len(password) < 8:
             return render_account_page("signup", "Create Account", error="Use at least 8 characters for your password.")
-        user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in, username, age_confirmed)
+        user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in, username, age_confirmed, accepted_terms_source="web_signup")
         if error:
             existing_user = load_account_by_email(email) if email else None
             if existing_user and not int(existing_user.get("email_verified") or 0):
@@ -7931,6 +7946,13 @@ def login_page():
         if user_is_owner_account(user):
             ensure_owner_super_user(cur, conn)
         cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
+        # This form has always required the tick to sign in and always discarded
+        # it, so every existing member has re-agreed on every visit with nothing
+        # kept. Recording it is what makes the requirement mean something: a
+        # member who predates the acceptance table, or who last agreed to a
+        # superseded version, comes on file at the current one the next time they
+        # sign in. Already on file is a no-op, not a second row.
+        legal_acceptance.record(cur, user["user_id"], source="web_login")
         cancel_scheduled_account_deletion(cur, user["user_id"])
         notify_user(
             cur,
@@ -8241,7 +8263,17 @@ def api_mobile_auth_register():
         return api_error("Please enter a valid phone number or leave it blank.", 400)
     if sms_opt_in and not phone:
         return api_error("SMS opt-in requires a phone number.", 400)
-    user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in, username, age_confirmed)
+    # `age_confirmed` is the whole consent on iOS, not half of it: the app offers
+    # one checkbox reading "I'm 16+ and agree to the ..." over links to the Terms
+    # and Privacy Policy, and submits it in this single field. So a true value
+    # here is a member who was shown both and ticked both. Recording it under
+    # `mobile_register` keeps that provenance legible -- a reviewer can tell a
+    # combined tick from the web form's two separate ones.
+    #
+    # The app should send acceptance as its own field so the two can be refused
+    # independently. That is a client change and a release; it does not make the
+    # consent already given unrecordable in the meantime.
+    user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in, username, age_confirmed, accepted_terms_source="mobile_register" if age_confirmed else None)
     if error:
         existing_user = load_account_by_email(email) if email else None
         if existing_user and not int(existing_user.get("email_verified") or 0):
@@ -23714,7 +23746,11 @@ def admin_user_new_page():
             if not is_valid_email(email):
                 error = "Enter a valid email."
             else:
-                user, error = create_account(full_name, email, password, clean_html(request.form.get("phone", "")), clean_html(request.form.get("country", "")), False, False)
+                # None: an administrator cannot accept the Terms on a member's
+                # behalf, and this form never shows them. The account therefore
+                # starts with nothing on file and `legal_acceptance.outstanding()`
+                # reports both documents, which is the truth about it.
+                user, error = create_account(full_name, email, password, clean_html(request.form.get("phone", "")), clean_html(request.form.get("country", "")), False, False, accepted_terms_source=None)
                 if user:
                     log_admin_audit(admin["id"], "admin_created_user", "user", str(user["user_id"]), {"email": mask_email(email)})
                     message = f"User created. Temporary password was generated only for this admin session: {clean_html(password)}"
@@ -120616,6 +120652,15 @@ def _init_db_impl():
         pulse_id_service.ensure_schema(cur, is_postgres=db_service.IS_POSTGRES)
     except Exception as exc:
         logging.exception("PULSE_ID_SCHEMA_SKIPPED error=%s", exc)
+
+    # Here and nowhere else. `create_account` and `login_page` both write an
+    # acceptance from inside an open transaction on their own connection, so
+    # creating the table on demand would be a second connection asking for a write
+    # lock the caller still holds -- which fails the signup it was recording.
+    # Unguarded, unlike the line above: the point of the table is that an account
+    # cannot come into existence without a record of what it agreed to, and a
+    # swallowed failure here would quietly restore exactly the defect it replaces.
+    legal_acceptance.ensure_schema(conn)
 
     # Here as well as in `create_account`, so the invariant exists from boot
     # rather than from whenever somebody next signs up. Safe at this line for the

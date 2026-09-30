@@ -191,6 +191,51 @@ On iOS the same information is lost differently: `SignupScreen.tsx` uses **one**
 checkbox for age and terms together ("I'm 16+ and agree to the…") and submits it as
 `age_confirmed`. The terms half of the consent has no field.
 
+**Fixed in this branch, by mirroring the seller design.**
+`services/legal_acceptance.py` stores a row per `(user, document, version)` with
+`UNIQUE` on the triple, created in `init_db()` — not on demand, because the
+callers write from inside an open transaction and a second connection asking for
+the write lock fails the signup it was recording. That was the first attempt and
+it turned a missing audit row into total signup failure; the module docstring says
+so, so the next person does not rediscover it.
+
+`create_account()` now takes a keyword-only `accepted_terms_source` with **no
+default**, carrying provenance rather than a boolean. There is no acceptance
+without a place it came from, and no default because one of the three callers must
+answer `None`: `/admin/users/new` creates an account for someone who was never
+shown the documents. A default would let that path record a consent nobody gave,
+or let a fourth signup path record none and be indistinguishable from the two that
+do. A caller that omits it raises.
+
+All three now answer: `web_signup`, `mobile_register` (from `age_confirmed`, which
+on iOS *is* the whole consent — one checkbox reading "I'm 16+ and agree to the…"
+over both links), and `None` for the admin path. **Login records too**, which is
+what makes the tick it has always demanded mean something: every existing member
+comes on file at the current version the next time they sign in, and re-accepting
+a version already stored is a no-op rather than a row per visit.
+
+Versions name what each document says about itself — both state "Last updated: May
+2026" — and `tests/test_legal_acceptance.py` pins each constant against the
+rendered page. Revising a document without bumping its constant fails there.
+Without that pin the column would record which string was in the Python file, not
+which text the member read.
+
+`outstanding(user_id)` is why a version is stored instead of a boolean: when §1's
+rewrite lands, `DOCUMENTS` changes and every member is correctly outstanding again.
+A test asserts that by bumping a version rather than editing a document.
+
+**Still open — OWNER DECISION REQUIRED.** The signup checkbox also binds the member
+to the "no-tolerance rules", and `/community-rules` publishes no revision date, so
+there is no version to record and nothing to detect a rewrite against. It is
+declared in `UNVERSIONED_DOCUMENTS` rather than given an invented version, which
+would look like coverage. Either publish a revision date there and add it to
+`DOCUMENTS`, or stop naming it in what the member agrees to.
+
+Also still open, and a client change: the iPhone app should send acceptance as its
+own field so age and terms can be refused independently. Recording the combined
+tick under a distinct source keeps the provenance legible in the meantime — a
+reviewer can tell it from the web form's two separate boxes.
+
 ### D-L3 — The only seller-facing fee disclosure states a rate that has never been charged (HIGH)
 
 `mobile-native/src/screens/SellerStoreScreen.tsx:709`:
