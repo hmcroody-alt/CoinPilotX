@@ -2132,6 +2132,30 @@ def legal_seller_terms_page():
     return legal_money_page("Seller Terms", "<p>Sellers are responsible for taxes, truthful listings, safe fulfillment, accurate education claims, and compliance with marketplace and teacher rules. Scam promotion, guaranteed-profit claims, misleading financial advice, and unsafe content are prohibited.</p><p>Payouts require approval, provider onboarding, and ongoing trust review. CoinPlotXAI may hold, reverse, suspend, or review funds when fraud, disputes, safety risks, or policy violations are detected.</p>")
 
 
+# The shipped iPhone app tells members that these three URLs carry "the full
+# canonical version -- the one that is legally operative", so a 404 here is the
+# app pointing at nothing while claiming otherwise. They redirect rather than
+# render because the operative text has exactly one home: a second copy would be
+# a second document to keep current, and the one that drifted would still be the
+# one a user was shown.
+@webhook_app.route("/legal/terms", methods=["GET"])
+@public_route(reason="Canonical legal URL named by the iPhone app's in-app Terms screen. Redirects to /terms, which is itself public -- terms must be readable before there is an account to read them with.")
+def legal_terms_canonical_page():
+    return redirect("/terms", code=301)
+
+
+@webhook_app.route("/legal/privacy", methods=["GET"])
+@public_route(reason="Canonical legal URL named by the iPhone app's in-app Privacy screen. Redirects to /privacy, which is itself public -- a privacy notice that required an account would be unreadable by the people deciding whether to create one.")
+def legal_privacy_canonical_page():
+    return redirect("/privacy", code=301)
+
+
+@webhook_app.route("/legal/guidelines", methods=["GET"])
+@public_route(reason="Canonical legal URL named by the iPhone app's in-app Community Guidelines screen. Redirects to /community-rules, which is itself public.")
+def legal_guidelines_canonical_page():
+    return redirect("/community-rules", code=301)
+
+
 @webhook_app.route("/about", methods=["GET"])
 def about_page():
     # The canonical node, not a local copy of one. What was here named the

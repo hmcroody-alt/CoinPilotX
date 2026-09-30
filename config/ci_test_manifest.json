@@ -717,6 +717,7 @@
     "tests/web_parity/test_session_sweep.py",
     "tests/web_parity/test_suite_database_isolation.py",
     "tests/web_surface/test_activity_feed.py",
+    "tests/web_surface/test_app_canonical_legal_urls.py",
     "tests/web_surface/test_dashboard_module_links.py",
     "tests/web_surface/test_desktop_shell_breakpoint_scope.py",
     "tests/web_surface/test_emoji_primitive.py",
