@@ -306,13 +306,28 @@ written, not a decision — the routine already guards every write with
 `if column in user_columns`, so it was built to tolerate schema change, and these
 two columns simply were never added to the list.
 
-**Two of the three device registries survive it.** Only `push_subscriptions` (web) is
+**Three of the four device registries survive it.** Only `push_subscriptions` (web) is
 deleted. `user_device_tokens` and `notification_device_tokens` keep `push_token`,
 `device_id` and `user_agent`, with `enabled` still 1 and `revoked_at` still NULL — so
 to every reader they are indistinguishable from a live device. No `account_status`
 filter exists anywhere in the push path (checked `services/push_service.py` and
 `services/pulsesoc_notification_system.py`). Not verified: whether a notification is
 ever actually addressed to a deleted account.
+
+**Correction to an earlier count in this document: there are four registries, not
+three.** `pulse_notification_devices` (`bot.py:123823`) was missed on the first pass
+because it is written by `services/notification_service.py:1656` rather than by either
+push service, and it is the most serious of the four: it stores the *entire* web-push
+subscription in `subscription_json` — the actual delivery credential, not a preview —
+alongside `user_agent`, and its two unsubscribe paths
+(`notification_service.py:2341,2350` and `push_service.py:514,599`) only set
+`active=0`. `active` defaults to 1. A row left behind by deletion is therefore an
+addressable device, marked live, belonging to an account that no longer exists.
+
+It was found by asking the schema rather than by reading the routine: any table
+carrying both a `user_id` and a `push_token`/`endpoint` column *plus* a device or
+subscription column is a per-user push registry. That query returns four tables. The
+same query is now the gate (below), so a fifth is covered the day it appears.
 
 **Also untouched:** `pulse_messages.body` (the member's DMs remain, readable by the
 other participant and by anyone with DB access), buyer addresses inside
@@ -511,8 +526,8 @@ does not exist.
 |---|---|---|---|
 | D-P1 | iOS deletion is scheduled, promised by date, and never executed | **P0** | Technical defect; fix needs owner approval (destructive worker) |
 | D-P2 | Data export promises an emailed archive; nothing fulfils it | **P0** | Technical + statutory deadline question |
-| D-P3 | Deletion leaves `recovery_email` / `recovery_phone` intact | High | Technical defect, §106-eligible |
-| D-P4 | Deletion clears 1 of 3 device registries; tokens stay `enabled=1` | High | Technical defect, §106-eligible |
+| D-P3 | Deletion leaves `recovery_email` / `recovery_phone` intact | High | **RESOLVED** — §106 technical fix |
+| D-P4 | Deletion clears 1 of 4 device registries; tokens stay `enabled=1` | High | **RESOLVED** — §106 technical fix |
 | D-P5 | No retention schedule or expiry sweep for any personal data | High | Needs counsel before code |
 | D-P6 | Buyer street addresses inside `seller_transactions.metadata_json` | High | Needs counsel (retention + discoverability) |
 | D-P7 | DMs stored plaintext while App Store screenshots claim E2E encryption | High | Owner decision (tracked) |
@@ -520,7 +535,59 @@ does not exist.
 | D-P9 | `admin_users` holds staff home address, DOB, next of kin, with no staff notice | Medium | Needs counsel |
 | D-P10 | `META_MUSE_MODEL` can enable training on user content via env var alone | Medium | Owner decision |
 
-D-P3 and D-P4 are the two clean §106 technical fixes here — narrow, verifiable, and
+D-P3 and D-P4 were the two clean §106 technical fixes here — narrow, verifiable, and
 requiring no legal judgement, because the deletion routine already decided that
-contact details and push registrations go, and simply missed tables added after it
-was written. They are the next implementation candidates.
+contact details and push registrations go, and simply missed columns and tables added
+after it was written.
+
+### D-P3 / D-P4 — RESOLVED. Technical fix only, no legal judgement.
+
+`bot.permanently_delete_account` now clears seven further `users` columns and deletes
+from three further tables.
+
+**Columns added to the update dictionary.** `recovery_email` and `recovery_phone` were
+the reported defect. Fixing only those two would have left the same class of bug in
+place, so the whole `users` column list was read (`bot.py:120624-120722`) and five more
+personal-data columns were found missing from the routine: `date_of_birth`,
+`social_links_json`, `expertise_tags_json`, `roast_call_sign`, `roast_call_sign_slug`.
+All seven are now cleared. Each is still written through the routine's pre-existing
+`if column in user_columns` guard, so a deployment whose schema lacks one of them is
+unaffected — no new failure mode.
+
+**Tables added to the delete loop.** `pulse_notification_devices`,
+`user_device_tokens`, `notification_device_tokens`. `push_subscriptions` was already
+there. `table_columns` returns `[]` for a table that does not exist, and the loop skips
+any table without a `user_id`, so this too cannot fail on a deployment missing one.
+
+**Deliberately left alone, and why.** `referral_code` and `referred_by` (clearing them
+would rewrite another member's referral history, which is not this member's data to
+erase); `pulse_id` (the permanent internal identity minted by `pulse_id_service`,
+which is what lets the soft-deleted row stay referentially intact); and the billing,
+subscription and moderation columns (`subscription_*`, `payment_*`, `stripe_*`,
+`restricted_reason`, `suspended_reason`). Whether a deleted account may retain a
+billing history is a retention question — it belongs to D-P5 and to counsel, not to
+this fix. Nothing here was decided by code.
+
+**The guard.** `tests/test_account_deletion_removes_contact_data.py`, 6 tests,
+registered in `config/ci_test_manifest.json`. Neither half names what it checks,
+because a test listing `recovery_email` would have passed the day before that column
+existed and gone on passing afterwards — which is exactly how this defect got in:
+
+* every live `users` column whose name is drawn from a contact/identity vocabulary is
+  seeded with a sentinel, and no sentinel may survive deletion. Matched on whole
+  `_`-separated name parts rather than substrings, after `hidden_from_discovery`
+  (dis**cover**y) was caught as a false positive;
+* every table matching the push-registry shape is seeded with a row, and no row may
+  survive. A future fifth registry fails here rather than silently retaining a token.
+
+Two named tests sit alongside the two sweeps, covering `recovery_email`/`recovery_phone`
+and `pulse_notification_devices.subscription_json` explicitly, so that a later
+narrowing of the vocabulary or the shape heuristic — which would quietly shrink a sweep
+toward vacuity — still fails on the cases actually reported. A seventh assertion checks
+the fixture seeded something at all, and that at least four registries were detected.
+
+**Scope limit, stated so it is not mistaken for more than it is.** This gate covers
+contact details and device registrations. It does not assert that deletion empties the
+row, and it makes no claim about D-P1 — **an account deletion requested through the iOS
+app still never executes.** This fix improves what `permanently_delete_account` does
+when it runs; it does not make it run.

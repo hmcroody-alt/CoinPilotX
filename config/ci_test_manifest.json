@@ -412,6 +412,7 @@
     "tests/sentinel_integration/test_rate_guard_routes.py",
     "tests/sentinel_integration/test_request_bridge_hook.py",
     "tests/staging/test_cj_postgres.py",
+    "tests/test_account_deletion_removes_contact_data.py",
     "tests/test_account_email_uniqueness.py",
     "tests/test_account_enumeration_guard.py",
     "tests/test_agora_private_mux_input.py",

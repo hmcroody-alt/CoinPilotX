@@ -7316,6 +7316,13 @@ def permanently_delete_account(user, password):
             "avatar_thumbnail_url": "",
             "banner_url": "",
             "cover_url": "",
+            "date_of_birth": "",
+            "recovery_email": "",
+            "recovery_phone": "",
+            "social_links_json": "",
+            "expertise_tags_json": "",
+            "roast_call_sign": "",
+            "roast_call_sign_slug": "",
             "telegram_user_id": None,
             "telegram_username": "",
             "telegram_chat_id": None,
@@ -7339,7 +7346,22 @@ def permanently_delete_account(user, password):
         values.append(user_id)
         cur.execute(f"UPDATE users SET {', '.join(assignments)} WHERE user_id=?", values)
 
-        for table in ("push_subscriptions", "password_reset_tokens", "email_verification_tokens", "telegram_link_codes"):
+        # Four push registries, not one. `push_subscriptions` was the only one
+        # here because it was the only one that existed when this was written;
+        # the other three were added later by their own services and each keeps
+        # a live token. `pulse_notification_devices` is the one that matters most
+        # -- it stores the whole web-push subscription in `subscription_json`,
+        # and its unsubscribe path only sets `active=0`, so a row left behind is
+        # an addressable device belonging to an account that no longer exists.
+        for table in (
+            "push_subscriptions",
+            "pulse_notification_devices",
+            "user_device_tokens",
+            "notification_device_tokens",
+            "password_reset_tokens",
+            "email_verification_tokens",
+            "telegram_link_codes",
+        ):
             columns = set(table_columns(cur, table))
             if "user_id" in columns:
                 cur.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
