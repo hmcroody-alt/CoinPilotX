@@ -474,3 +474,13 @@ D-L5 and D-L6 are still open, plus the owner decisions each landed fix left behi
 charged and need text a lawyer has seen, so neither is a §106 technical fix. The
 largest non-legal gap D-L4 exposed is that three of its four controls are enforced
 by nothing — recorded in place as an owner decision.
+
+§11–14 — the personal data inventory, the data-flow map and the vendor/subprocessor
+inventory — are in `PULSE_DATA_AND_VENDOR_INVENTORY.md`, with their own defect
+register D-P1..D-P10. Two of those outrank everything still open here: the iOS
+account-deletion flow names a date and then never deletes anything (D-P1), and the
+data-export request promises an emailed archive that nothing assembles (D-P2). Both
+are surfaces representing a state the backend does not hold, which is the same defect
+shape as D-L2 and D-L4 — but the fix for D-P1 is a job that irreversibly destroys
+accounts on a timer, so it needs the owner and it needs counsel to draw the deletion
+scope first.
