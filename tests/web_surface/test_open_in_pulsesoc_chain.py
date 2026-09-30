@@ -259,7 +259,10 @@ def test_the_interstitial_hands_off_to_the_app_with_the_same_listing(interstitia
     # `pulse/marketplace/:listingId` to MarketplaceProduct, and that agreement is
     # pinned in tests/web_surface/test_scheme_urls_match_the_native_route_table.py
     # so a rename on either side breaks a test rather than a phone. This
-    # assertion is the server half; that file is the join.
+    # assertion is the server half; that file is the join; and
+    # mobile-native/src/navigation/__tests__/marketplaceDeepLinkIdentity.test.ts
+    # is the app half, which proves all three of the app's resolvers agree on the
+    # screen once the path arrives.
     assert url == f"{app_links.APP_SCHEME}pulse/marketplace/{listing_id}", url
 
 
