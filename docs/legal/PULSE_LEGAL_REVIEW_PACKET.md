@@ -241,3 +241,212 @@ question from "may we launch" to "what is currently being represented".
 A fee document, a published seller agreement, or a set attestation. Each requires
 counsel's clearance first, and an engineer producing any of them would be the failure
 §2 exists to prevent.
+
+---
+
+## §112 — Final report
+
+### What the product is
+
+1. PulseSoc is a social-commerce platform: UGC, private messaging and calls, live
+   streaming, a marketplace, a self-serve ads platform, and a crypto-analytics
+   subsystem. Any single-half description is wrong.
+2. It runs as one Flask application: 1,818 routes in `bot.py`, 118 more from
+   `services/` blueprints, and a 122-screen iOS app that is not a subset of the web.
+3. Commerce and payments are **already live in production** and have taken real money.
+   This audit is therefore not a pre-launch review; it is a review of what is being
+   represented right now.
+4. The contracting entity is CoinPlotXAI Inc.; the brand is PulseSoc. The split is
+   pinned by a test and must not be mass-replaced.
+5. The crypto subsystem is live and is the easiest thing to forget. Price analytics
+   with alerting invites an investment-advice reading; its disclaimer must be retained,
+   not dropped as legacy.
+
+### What users are told today
+
+6. Three generations of legal surface coexist — crypto-era hardcoded HTML, mid-era
+   Jinja templates, and a modern sourced commerce-policy system — and none is aware of
+   the others.
+7. Two refund policies are published simultaneously and nothing reconciles them.
+8. Two seller-terms surfaces exist and are unrelated artefacts: published prose no
+   version points at, and a version identifier acceptance is recorded against.
+9. Web and iOS maintain two independent sets of core policy text with no shared source
+   and no test asserting they agree.
+10. The footer carrying every legal link lives in a shell 6 of 30 templates extend. The
+    signed-in application does not use it.
+11. The checkout page contains zero references to terms, privacy, returns, refunds or
+    shipping.
+12. The iOS app ships two documents the website does not publish at all — a cookie
+    notice and an open-source licence notice — while telling the user its own copies
+    are not the operative ones.
+13. The commerce-era pages (`/returns`, `/refund-policy`, `/shipping`, `/contact`) are
+    the model the rest should follow: every sentence's provenance is documented and
+    they refuse to claim what the code does not do.
+
+### What was found
+
+14. 22 gaps registered across three documents: D-L1..D-L11 (legal surface),
+    D-P1..D-P10 (data and vendors), D-A1 (ads targeting).
+15. Two are P0 and both are promises the product makes in its own words: iOS deletion
+    names a date and deletes nothing (D-P1); a data export request promises an emailed
+    archive nothing assembles (D-P2).
+16. The single most serious *silent* finding was D-P4. Deletion cleared one of four
+    push registries. The worst survivor, `pulse_notification_devices`, holds the entire
+    web-push subscription in `subscription_json`, and its unsubscribe path only sets
+    `active=0` — so to every reader a leftover row is a live, addressable device
+    belonging to an account that no longer exists.
+17. D-A1 is new and was found while enumerating features, not while reading policy. The
+    ads product accepts, stores and displays an age range; estimates its reach against
+    `users.date_of_birth`, a column with **no writer anywhere** for members; and ignores
+    age entirely at delivery.
+18. The two halves of D-A1 point in opposite directions, which is worse than either
+    alone: the estimate tells the advertiser *nobody* while delivery reaches
+    *everybody*.
+19. The platform holds no member age data at all. Signup collects a boolean whose web
+    label states no number, while iOS states two different numbers (D-L8). Age
+    targeting is not merely unimplemented — it is currently unimplementable.
+20. Staff carry the heaviest personal data in the schema — `admin_users` and
+    `employees` hold date of birth, home address and emergency contact — and no notice
+    addresses them (D-P9).
+21. Message bodies are stored in plain text while the App Store screenshots claim
+    end-to-end encryption (D-P7). The claim is in the pixels, not the text.
+22. Buyer street addresses sit inside `seller_transactions.metadata_json` (D-P6), which
+    makes them undiscoverable by schema inspection and unreachable by a column-based
+    deletion routine.
+23. No retention schedule exists for any category of personal data, and nothing expires
+    (D-P5).
+24. 20+ vendors receive personal data, including up to five model vendors depending on
+    routing. No subprocessor list is published.
+25. `META_MUSE_MODEL` can enable training on user content by environment variable alone
+    (D-P10), which means a no-training decision is reversible without a code change.
+26. Twelve of the eighteen required documents are absent, draft-only, single-platform,
+    or describing the previous company.
+27. Sellers can *accept* an agreement whose prose is unpublishable pending review
+    (D-L9). The block is correct; the defect is that acceptance is collectable anyway.
+28. The platform's own readiness gate already reports that commerce is not ready
+    (D-L10). It is accurate.
+
+### Root causes, not symptoms
+
+29. **There is no migration framework.** Schema arrives as `CREATE TABLE IF NOT EXISTS`
+    and `add_columns_if_missing` in whichever module wanted it. A routine that
+    enumerates columns and tables by hand can never be visited by the change that adds
+    one. This is the direct and sufficient cause of D-P3 and D-P4.
+30. Consequently both fixes derive their expectations from the **live schema** rather
+    than from a list. A test naming `recovery_email` would have passed the day before
+    that column existed and gone on passing after — which is precisely how the defect
+    got in.
+31. The cause of D-L2, D-L3, D-L4 and D-L6 is one pattern violated four times: **the
+    disclosure did not read from the authority that enforces the behaviour.** The
+    commerce-era pages obey that rule; everything else states a constant.
+32. The cause of D-A1 is the same rule applied to a control instead of a disclosure:
+    the write path, the estimate and the delivery path were each built against their own
+    idea of what age targeting means, and nothing tied them together.
+33. Three generations of legal surface exist because each new product era added pages
+    without retiring the previous era's. Nothing enumerates the set, so nothing noticed.
+
+### What was repaired
+
+34. Six defects fixed, none of which writes, edits or publishes a sentence of policy.
+35. **D-L1** — three of five canonical legal URLs the shipped iOS binary calls "legally
+    operative" now resolve to the text that was always there.
+36. **D-L2** — terms acceptance is recorded against the version of each document the
+    member actually read, using the versioned-acceptance pattern the seller path
+    already had. The consent requirement is unchanged; what changed is that the platform
+    can now prove it was given, and can tell who has not seen a rewrite.
+37. **D-L3** — the one seller-facing fee statement read 10%, a rate no code path yields
+    and no seller was ever charged. It now renders whatever the fee authority discloses,
+    and states nothing when that read fails.
+38. **D-L4** — the Privacy Center could not be submitted without erasing a choice
+    already made, and rendered the one enforced control inverted. It now states the
+    decision in force.
+39. **D-P3** — deletion blanks seven further personal-data columns, including both
+    recovery channels. A deletion that blanks `email` and `phone` while leaving a
+    working recovery email has not removed the member's contact details.
+40. **D-P4** — deletion now clears all four push registries.
+41. Deliberately left alone by D-P3/D-P4: `referral_code`/`referred_by` (clearing
+    rewrites another member's history), `pulse_id` (permanent internal identity), and
+    all billing, subscription and moderation columns — a retention question for counsel,
+    not something to settle by writing an assertion.
+
+### Evidence
+
+42. New tests: deletion (6), legal acceptance (10), Privacy Center (7), canonical legal
+    URLs (11), seller fee disclosure jest (7). All passing.
+43. D-P4 was **mutation-proved**: the test file run in a detached `HEAD~1` worktree
+    produced 4 failed / 2 passed with the exact survivor lists recorded in the data
+    inventory. A hardlink sandbox was tried first and discarded as invalid — the test's
+    own `abspath(__file__)` resolved back to the real repository, which would have made
+    the proof vacuous.
+44. Protection gates re-run green: CI test manifest (9), route auth (12), environment
+    contract (14), site identity (7), email uniqueness (24), realtime-audio change gate
+    (no protected path touched), `ast.parse` on `bot.py`, and a full mobile typecheck.
+45. Every load-bearing claim in these documents was verified against source directly
+    rather than taken from a search summary. That discipline is why the fourth push
+    registry was found: the hand-written inventory said three, a shape query against the
+    live schema said four, and the inventory was corrected rather than the count quietly
+    adjusted.
+
+### What was deliberately not done
+
+46. No legal text drafted, proposed or published. No policy page created.
+47. **No attestation variable set.** `MARKETPLACE_STANDARD_V1_OWNER_APPROVED`,
+    `…_SELLER_DISCLOSURE_READY` and `…_EFFECTIVE_AT` are untouched, so the platform fee
+    remains 0%. Setting one would activate a 5% fee, which is an owner's act.
+48. **D-A1 not fixed**, for three reasons in order of weight: the shipped iOS wizard
+    always sends `min_age >= 13`, so a server-side refusal would break every campaign
+    creation; the surface belongs to another mission already in flight; and the honest
+    remedy is to withdraw a capability or begin collecting dates of birth, which is an
+    owner decision that first requires a minimum age the platform has never stated.
+49. Nothing deployed. No production writes. No other agent's files modified — `main` has
+    not moved from the baseline, so the branch merges cleanly.
+
+### Handoff
+
+50. Branch `claude/pulse-legal-audit`, 10 commits, pushed; remote SHA verified identical
+    to local. Documents: surface audit, data and vendor inventory, product and role map,
+    and this packet.
+51. The next action is **not** engineering. It is counsel answering the nine questions
+    in §110.I and the owner answering the decisions in §110.J. Twelve of the 22 gaps
+    cannot move until then, and the minimum-age question (D-L8) blocks the most
+    downstream work of any single item.
+
+---
+
+## §114 — Principal-engineer final check
+
+Asked of this work as if reviewing someone else's:
+
+**Did anything here state a legal conclusion?** No. Every gap is stated as a
+disagreement between two artefacts in the repository — a screen and a table, a
+document and a code path — with both sides cited. Where a judgement was needed, it is
+marked for counsel or the owner and left undone.
+
+**Is any fix load-bearing on an assumption that could be false in production?** The
+deletion change adds columns behind a pre-existing `if column in user_columns:` guard
+and tables behind `table_columns()`, which returns `[]` on any error. A deployment whose
+schema lacks any of them is unaffected. `roast_call_sign_slug` was checked for a UNIQUE
+index before being blanked; it has none.
+
+**Could any of the new tests pass vacuously?** Each has a guard against its own
+vacuity: the deletion fixture asserts it seeded something, and a separate test asserts
+the vocabulary still matches the columns that actually regressed plus a floor of four
+registries. The mutation run confirms four of the six genuinely go red without the fix.
+
+**Is there a defect found and then quietly dropped?** One, now recorded: an earlier
+version of the data inventory said "three device registries". A mechanical query said
+four. The document was corrected in place rather than the number adjusted, because the
+miscount was itself evidence of how the defect arose.
+
+**Is anything represented as more complete than it is?** Two statements are
+deliberately narrowed. D-P3/D-P4 does **not** claim deletion empties the whole row —
+billing, subscription and moderation history remain, pending counsel. And the fix does
+**not** help the iOS deletion flow, which still never executes; that is D-P1 and it is
+said in the same paragraph as the fix, so nobody reads the resolution as broader than
+it is.
+
+**What would a reviewer most reasonably object to?** That D-A1 was documented rather
+than fixed. The objection is fair and the reasons are in item 48. The decisive one is
+that the available server-side fix would break the shipped Ads wizard for every
+advertiser — a regression traded for a documentation improvement, which is the wrong
+trade under the priority order this work follows.
