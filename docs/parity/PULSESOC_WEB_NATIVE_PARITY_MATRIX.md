@@ -17,7 +17,7 @@ comes from the handler AST. Classification:
 
 | Verdict | Count |
 | --- | --- |
-| PARITY | 95 |
+| PARITY | 96 |
 | REDIRECT_ONLY | 17 |
 | BLUEPRINT_UNVERIFIED | 2 |
 
@@ -54,6 +54,7 @@ comes from the handler AST. Classification:
 | deep_link | PulseAI | `/pulse/ai` | PARITY | `/pulse/ai` |
 | master_navigation | Alert Management | `/pulse/alerts` | REDIRECT_ONLY | `/pulse/alerts` |
 | master_navigation | Camera | `/pulse/camera/photo?target=feed` | PARITY | `/pulse/camera/photo` |
+| deep_link | MarketplaceCart | `/pulse/cart` | PARITY | `/pulse/cart` |
 | master_navigation | Create Post | `/pulse/compose` | REDIRECT_ONLY | `/pulse/compose` |
 | deep_link | DashboardComposeAlias | `/pulse/compose` | REDIRECT_ONLY | `/pulse/compose` |
 | master_navigation | Courses | `/pulse/courses` | PARITY | `/pulse/courses` |
