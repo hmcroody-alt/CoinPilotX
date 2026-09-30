@@ -374,6 +374,7 @@
     "tests/pulse_analytics/test_query_plans.py",
     "tests/pulse_analytics/test_seller_scope.py",
     "tests/pulse_commerce/test_commerce_card_parity.py",
+    "tests/pulse_commerce/test_commerce_i18n_delivery.py",
     "tests/pulse_experiments/test_assignment.py",
     "tests/pulse_experiments/test_exposure.py",
     "tests/pulse_experiments/test_protected_domains.py",

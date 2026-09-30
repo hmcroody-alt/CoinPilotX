@@ -72,6 +72,20 @@ CACHE_PINNED_ASSETS = {
         "apps-menu-width-20260927a",
         "94bcf4e6cc11fd9a490bf8c0f41be6fc8be7ea0540e58c40bcdb9eb35ba828db",
     ),
+    # Joined the pin with the commerce card's translation fix. These two are the
+    # worst possible pair to leave unpinned: `pulse_i18n.js` *is* the catalogue,
+    # so a returning browser holding last week's copy has last week's words and
+    # renders an English chip beside a French one from the same card. And the
+    # only symptom is text in the wrong language, which no other check in this
+    # repo can see.
+    "static/js/pulse_i18n.js": (
+        "commerce-i18n-20260929a",
+        "347e07cf3b5c6df9815d12fc26f40add5c9d4efcdceb7b6afe3b55bb418d9b45",
+    ),
+    "static/js/pulse_commerce_card.js": (
+        "commerce-i18n-20260929a",
+        "49170d75d69795fcdfdf93a8d81ebe837414a0472987f9d0a64e0aa19f0a68c7",
+    ),
 }
 
 
