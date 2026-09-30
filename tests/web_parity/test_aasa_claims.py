@@ -273,3 +273,60 @@ def test_divergent_component_lists_raise_instead_of_guessing():
     # The per-app question still has an answer, and it is per-app.
     assert health.opens_in_app_anywhere(payload, "/pulse/post/1")
     assert health.opens_in_app_anywhere(payload, "/saved")
+
+
+# ---------------------------------------------------------------------------
+# The interstitial prefix must stay unclaimed
+# ---------------------------------------------------------------------------
+
+
+def _interstitial_prefix():
+    """The first path segment of whatever the builder actually emits.
+
+    Derived, not hardcoded as "/open", so renaming the route moves this guard
+    with it instead of leaving a test that passes about a path nobody serves.
+    """
+    from services import app_links
+
+    path = app_links.open_interstitial_url("product", 42).split("?", 1)[0]
+    assert path.startswith("/"), path
+    return "/" + path.strip("/").split("/")[0]
+
+
+def test_the_interstitial_prefix_is_not_claimed_by_the_association(components):
+    """The invariant the whole on-site "Open in PulseSoc" repair rests on.
+
+    iOS does not consult associated domains for a navigation to the domain the
+    page is already on, so the canonical universal link is inert as an on-site
+    CTA -- it reloads the page the button sits on. On-site CTAs therefore go
+    through the interstitial, which answers with a `pulsesoc://` button: a
+    custom scheme, which sidesteps the same-domain rule entirely.
+
+    That only works while the association leaves this prefix alone. It does
+    today -- not by an `exclude`, but because no component matches it, which is
+    a *weaker* guarantee than an exclusion and the reason this is asserted. Add
+    a broad component later (a catch-all, or `/open/*` in the belief it "helps
+    the app open") and iOS swallows the interstitial: the member gets the app at
+    whatever route the association resolves, the App Store fallback and the QR
+    code never render, and anyone without the app installed is left on a page
+    that had one job. Nothing would log, and a simulator cannot see it at all
+    because associated domains do not work there.
+    """
+    prefix = _interstitial_prefix()
+    for url in (prefix, f"{prefix}/", f"{prefix}/product/42", f"{prefix}/settings"):
+        assert not health.opens_in_app(components, url), (
+            f"{url} is the open-in-app interstitial. The association claiming it "
+            "replaces the page that offers the pulsesoc:// button, the App Store "
+            "link and the QR code with an app launch -- which is the exact "
+            "dead end the interstitial exists to fix."
+        )
+
+
+def test_the_interstitial_carve_out_costs_the_app_nothing(components):
+    """Paired with the test above, for the same reason `/pulse/app` has a pair.
+
+    Keeping a prefix unclaimed is only correct if it is *that* prefix. These are
+    the paths a careless exclusion would take down with it.
+    """
+    for url in ("/pulse", "/pulse/marketplace/42", "/pulse/post/812", "/saved"):
+        assert health.opens_in_app(components, url), f"{url} must still open the app"

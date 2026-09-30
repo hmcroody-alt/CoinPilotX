@@ -52,12 +52,19 @@
   PulseSoc button is dead" defect; it was never a signing, entitlement or AASA
   problem, and the AASA needs no change to fix it.
 
-  `app_open_cta` goes through `/open/<destination>[/<id>]`, which is already
-  `exclude: true` in the association file. iOS hands it to Safari deliberately,
-  and the page offers the member the choice: a `pulsesoc://` button that opens
-  the app straight to this destination, or the App Store for someone who does
-  not have it. One extra tap, and it is the only arrangement that serves both
-  without guessing which one is reading.
+  `app_open_cta` goes through `/open/<destination>[/<id>]`, which the
+  association leaves unclaimed -- no component matches it, so iOS hands it to
+  Safari and the page offers the member the choice: a `pulsesoc://` button that
+  opens the app straight to this destination, or the App Store for someone who
+  does not have it. The custom scheme is what does the work; being a different
+  URL shape is not the point, not being subject to the same-domain rule is. One
+  extra tap, and it is the only arrangement that serves both without guessing
+  which one is reading.
+
+  Unclaimed-by-omission is weaker than an explicit `exclude`, so it is pinned by
+  `tests/web_parity/test_aasa_claims.py`: a broad component added to the
+  association later would otherwise swallow this page and take the App Store
+  fallback down with it.
 
   Same accessibility properties as `app_cta` above -- a real <a>, a label that
   survives out of context, no ids, no positioning.

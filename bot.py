@@ -1559,9 +1559,14 @@ def app_cta_html(destination, resource_id=None, source="web", label=None, classe
     it. Every caller of this helper is a page on pulsesoc.com, so the canonical
     universal link `build_app_link` returns is same-domain -- and iOS does not
     consult associated domains for a same-domain tap, so it never opened the app
-    from here. `/open/...` is already `exclude: true` in the association file, so
-    Safari keeps it by design and the member is offered a real `pulsesoc://`
-    button. `build_app_link` remains correct for anything sent off-domain.
+    from here. `/open/...` is left unclaimed by the association -- not by an
+    `exclude`, but because no component matches it at all -- so Safari keeps the
+    URL and the member is offered a real `pulsesoc://` button, a custom scheme
+    that sidesteps the same-domain rule entirely. That is a weaker guarantee
+    than an exclusion would be, so it is pinned by
+    `tests/web_parity/test_aasa_claims.py::test_the_interstitial_prefix_is_not_claimed_by_the_association`;
+    adding a broad component later would otherwise silently swallow this page.
+    `build_app_link` remains correct for anything sent off-domain.
     """
     try:
         href = app_links.open_interstitial_url(destination, resource_id, source)
