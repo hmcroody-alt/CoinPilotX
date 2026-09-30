@@ -431,17 +431,33 @@ def state(listing: Mapping[str, Any] | None) -> str:
     ``public_denial_code`` and the client helper that mirrors it. ``NOT_PRICED``
     comes last because a sold-out unpriced listing is more usefully described as
     sold out.
+
+    Reads the failing *rule* rather than the denial code, because the price is now
+    one of the publication rules (``lifecycle.VISIBILITY_RULES`` explains why it
+    sits apart from the rest) and its buyer-facing code is the shared
+    ``ITEM_UNAVAILABLE``. Branching on the code would have collapsed this surface's
+    more specific ``NOT_PRICED`` into ``UNAVAILABLE`` -- the same loss of
+    information the rule table exists to prevent, arriving by the back door.
+    Rule order gives ``NOT_PRICED`` its "last" position for free: ``in_stock``
+    precedes ``priced`` in the table, so a sold-out unpriced listing still reads
+    as sold out.
     """
     if not listing:
         return REMOVED
-    denial = lifecycle.public_denial_code(listing)
-    if denial == "OUT_OF_STOCK":
-        return OUT_OF_STOCK
-    if denial:
-        # SELLER_UNAVAILABLE and ITEM_UNAVAILABLE both land here. The buyer's
-        # next move after each is the same — none — and telling a stranger which
-        # of the two applies would report a seller's suspension to the public.
+    rule = lifecycle.failing_purchase_rule(listing)
+    if rule is not None:
+        if rule.key == "in_stock":
+            return OUT_OF_STOCK
+        if rule.key == "priced":
+            return NOT_PRICED
+        # `seller_approved`, `seller_named` and `released` all land here. The
+        # buyer's next move after each is the same — none — and telling a stranger
+        # which of them applies would report a seller's suspension to the public.
         return UNAVAILABLE
+    # Kept after the shared rule rather than replaced by it. The rule tests label
+    # *membership*, because it has a SQL twin and must not import `bot`; this
+    # tests what the label actually parses to, which is the stricter question and
+    # the one checkout asks. A label of "$0.00" satisfies the rule and fails here.
     if _price_minor(listing) <= 0:
         return NOT_PRICED
     return AVAILABLE
