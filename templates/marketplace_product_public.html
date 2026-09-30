@@ -61,6 +61,33 @@
 
     {% if category %}<p class="meta" style="margin-top:4px">{{ category }}</p>{% endif %}
 
+    {#
+      WHEN IT ARRIVES, DIRECTLY UNDER THE PRICE
+      -----------------------------------------
+      This page said nothing about delivery at all, which is part of how the
+      blanket "delivery timing is arranged with the seller after your order is
+      confirmed" line survived: no public surface asked the real question.
+
+      The markup comes from `services.delivery.web.html` rather than from Jinja
+      here, so the anonymous page and the signed-in page -- which is built as an
+      f-string in bot.py and has no template to extend -- emit one structure with
+      one set of hooks. Every *sentence* in it comes from
+      `services/delivery/copy.py`, the table the app's `deliveryCopy.ts` mirrors
+      and a contract test pins to it. Neither this template nor the script
+      chooses any words; a page that did would be exactly the surface §91-93
+      exists to stop from disagreeing with the app about one parcel.
+
+      Already escaped: every interpolated value goes through `web._attr`, and
+      none of them originates with a seller.
+
+      Rendered with its sentence in place even while the estimate is pending,
+      instead of being created by the script, because a div that grows a line of
+      text after a fetch pushes the buy control down the page -- the layout shift
+      Core Web Vitals measures. The render itself never waits for CJ: the server
+      answers from the delivery cache only.
+    #}
+    {{ delivery_html | safe }}
+
     <div class="actions">
       {{ app_cta("product", resource_id=listing_id, label="Open in the PulseSoc app") }}
       {#
@@ -125,4 +152,19 @@
       <a href="/support">contact support</a>.
     </p>
   </section>
+
+  {#
+    The one script on this page, and the only thing that turns the pending
+    sentence above into a date.
+
+    Last in the content block rather than in the shell's <head>: the shell is
+    shared with eight feature pages that have no delivery element, and `defer`
+    on a page-specific 3KB file that eight other pages would also fetch is a
+    byte each of them spends on nothing.
+
+    `?v=` because /static is served with a one-year immutable cache -- an edit
+    without a bump ships a fix nobody receives. Bump it here AND at the
+    signed-in page's copy in bot.py.
+  #}
+  <script src="/static/js/pulse_delivery.js?v=1" defer></script>
 {% endblock %}

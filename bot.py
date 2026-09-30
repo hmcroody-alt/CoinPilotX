@@ -1477,6 +1477,14 @@ _load_route_pack("private_office_relationships", "services.private_office_relati
 # communications engine's room-scope calls. Fail-closed behind
 # PRIVATE_MEETINGS_ENABLED (default OFF) plus the Office second lock.
 _load_route_pack("private_office_meetings", "services.private_office_meetings_routes")
+# Delivery intelligence: POST /api/pulse/delivery/estimate plus an admin health
+# surface. The server is the only place a delivery promise is composed, so every
+# client reads it from here rather than assembling one -- two clients assembling
+# one produce two promises for one parcel. Safe to register unconfigured: with no
+# PULSE_DELIVERY_* variables set the endpoint answers
+# `handling_time_undeclared` and never a date, which is the shadow-mode property
+# §101-103 asks for without a flag anyone could switch on ahead of the policy.
+_load_route_pack("pulse_delivery", "services.delivery_routes")
 # Private Office is Relationship Intelligence, Private Meetings and Office
 # Security. Six packs that used to load here were withdrawn with the features
 # they served: structured records, document intelligence, private briefings,
@@ -58792,12 +58800,39 @@ def _marketplace_public_product_response(listing_id, listing):
                                                 or listing.get("short_description") or ""))
                    if para.strip()]
 
+    # The delivery line, from the cache only and with no visitor destination.
+    #
+    # `shared_cache=True` is not a hint: this response carries
+    # `Cache-Control: public, max-age=300`, so one rendering is served to every
+    # reader behind the same cache, and a window resolved from the first reader's
+    # country would be served to the rest as though it were theirs. The flag makes
+    # `delivery.web` refuse a per-visitor destination -- it raises if handed one --
+    # and fall back to the corridor implied by `MARKETPLACE_SHIPPING_COUNTRIES`
+    # naming a single country, which is a fact about PulseSoc's checkout rather
+    # than about the reader and is therefore the same for all of them.
+    #
+    # Nothing here can call CJ: `cache_only` is set inside `delivery.web`, so a
+    # cold corridor costs this render nothing and is filled in by the page's own
+    # fetch to `/api/pulse/delivery/estimate`.
+    # Imported in the function, matching `pulse_snapshot_delivery_promise` below:
+    # the delivery package reaches `marketplace_fulfillment` and the supplier
+    # connection layer, and a module-scope import here would add that chain to
+    # every boot of this monolith for the sake of one page.
+    from services.delivery import web as delivery_web
+
+    delivery_line = delivery_web.context(str(listing_id), shared_cache=True)
+
     response = webhook_app.make_response(render_template(
         "marketplace_product_public.html",
         page=meta,
         robots=robots,
         schema_json=marketplace_seo.product_page_graph(listing),
         listing_id=listing_id,
+        # The markup, not the dict. `delivery.web.html` is the one renderer for
+        # this block, shared with the signed-in page below, which is built as an
+        # f-string and has no template to extend -- two renderers would be two
+        # sets of hooks for one script to keep working with.
+        delivery_html=delivery_web.html(delivery_line),
         product_path=marketplace_seo.PRODUCT_PATH.format(listing_id=listing_id),
         index_path=marketplace_seo.INDEX_PATH,
         price=price,
@@ -58983,6 +59018,25 @@ def pulse_marketplace_listing_page(listing_id):
     # between browsing and following a shared link.
     price_label = clean_html(row.get("price_label"))
     price_pill = f"<span class='pill'>{price_label}</span> " if price_label else ""
+    # The delivery line, and this is the one product surface that may print a
+    # real window resolved from the reader.
+    #
+    # `pulse_social_shell` responses are `no-store` -- `add_pwa_headers` stamps it
+    # on every `/pulse/` path and this route never sets `g.pulse_public_cacheable`
+    # -- so one rendering reaches exactly one member. That is why `headers` and
+    # `buyer_user_id` are passed here and deliberately are *not* passed by the
+    # anonymous rendering of this same URL, which is `public, max-age=300` and so
+    # can only state the corridor the platform's own checkout configuration
+    # implies. Same estimate, same sentences, different destination tier, and the
+    # tier is a property of the response's cacheability rather than of the page.
+    #
+    # `cache_only` is set inside `delivery.web`, so this costs no CJ call and no
+    # part of it is on this render's critical path: a cold product ships the
+    # pending sentence and `pulse_delivery.js` fills it in from the endpoint.
+    from services.delivery import web as delivery_web
+
+    delivery_line = delivery_web.context(
+        str(listing_id), buyer_user_id=user.get("user_id"), headers=request.headers)
     main = (
         f"<section class='card'>"
         f"<p><a href='{app_first_href('marketplace')}'>&larr; Marketplace</a></p>"
@@ -58993,6 +59047,11 @@ def pulse_marketplace_listing_page(listing_id):
         # for the same row, so fixing one would have moved the lie rather than
         # removed it.
         f"{price_pill}</p>"
+        # Directly under the price, matching the app's PDP and the anonymous web
+        # page. `delivery_web.html` is the only renderer of this markup on either
+        # surface, so the two pages cannot disagree about structure, and every
+        # sentence inside it comes from `services/delivery/copy.py`.
+        f"{delivery_web.html(delivery_line)}"
         f"<p>Seller: {html_escape(clean_html(marketplace_seller_identity.display_store_name(row)))}</p>"
         f"{gallery_block}"
         f"<p>{html_escape(clean_html(row.get('description') or row.get('short_description') or ''))}</p>"
@@ -59004,8 +59063,16 @@ def pulse_marketplace_listing_page(listing_id):
         f"<button data-report-listing='{listing_id}'>Report</button>{promote}"
         f"</div></section>"
         f"{pulse_promotion_modal_html()}"
+        # The delivery rules, inline and from `delivery.web` rather than from a
+        # second hand-written copy in this file -- see `web.CSS` for why the
+        # anonymous shell's literal copy can no longer drift from it.
+        f"{delivery_web.style_tag()}"
         f"<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'>"
-        f"<script src='/static/js/pulsesoc_promotions.js' defer></script>")
+        f"<script src='/static/js/pulsesoc_promotions.js' defer></script>"
+        # Bump the `?v=` here AND in `marketplace_product_public.html` together:
+        # /static is a one-year immutable cache, so a single-sided bump ships two
+        # different versions of this file to the two product pages.
+        f"<script src='/static/js/pulse_delivery.js?v=1' defer></script>")
     # The same three buyer actions the grid card offers, bound the same way, so a
     # member who arrives by link is not on a page with fewer verbs than the one
     # they would have reached by browsing.
@@ -59884,6 +59951,65 @@ def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now="", prov
          tx.get("created_at") or timestamp, timestamp, timestamp))
 
 
+def pulse_snapshot_delivery_promise(tx, now=""):
+    """Write down the delivery window this buyer was shown, once, at payment.
+
+    Read out of the transaction's own ``metadata_json`` under ``delivery_quote``,
+    the same way :func:`marketplace_order_line` reads ``commercial_quote``. The
+    reason it is read rather than recomputed is the whole of §36-37: recomputing
+    it here would answer a different question than the one the buyer agreed to,
+    because every input to it — supplier aging, route availability, the operator's
+    handling time — has moved since the page they bought from.
+
+    **An absent key is the normal case today and records nothing.** Checkout does
+    not yet attach a quote, so most orders get no promise row, and that is the
+    correct outcome rather than a gap to paper over: ``promise.read`` answers
+    ``None``, and ``promise.accuracy`` excludes it with ``no_promise_recorded``
+    instead of scoring it. There is deliberately no fallback that quotes the
+    variant now and calls the result a promise — that would put a number in the
+    accuracy ledger that no buyer ever saw, which is worse than an empty ledger
+    because it looks like data.
+
+    Never raises. A settlement must not fail over a record that is, by design,
+    optional.
+    """
+    tx = dict(tx or {})
+    transaction_id = int(tx.get("id") or 0)
+    if transaction_id <= 0:
+        return None
+    try:
+        details = json.loads(tx.get("metadata_json") or "{}")
+    except Exception:
+        details = {}
+    quoted = details.get("delivery_quote") if isinstance(details, dict) else None
+    if not isinstance(quoted, dict):
+        return None
+    try:
+        from services.delivery import promise as delivery_promise
+        conn = db(); cur = conn.cursor()
+        try:
+            delivery_promise.create_schema(cur)
+            conn.commit()
+        finally:
+            cur.close(); conn.close()
+        quantity, _unit = marketplace_order_line(details, int(tx.get("amount_cents") or 0))
+        return delivery_promise.snapshot(
+            seller_transaction_id=transaction_id,
+            listing_id=tx.get("item_id"),
+            variant_ref=str(quoted.get("variant_ref") or ""),
+            quantity=quantity,
+            destination=quoted.get("destination") or {},
+            result=quoted.get("result") or quoted,
+            # The moment of payment, not the moment the estimate was computed. A
+            # promise is dated by when it became binding.
+            promised_at=now or datetime.utcnow().isoformat(timespec="seconds"),
+        )
+    except Exception:  # noqa: BLE001 - an unrecorded promise must not lose a sale
+        logging.exception("DELIVERY_PROMISE_SNAPSHOT_FAILED seller_transaction_id=%s",
+                          transaction_id)
+        return None
+
+
 def marketplace_transfer_group(metadata):
     """Recover the transfer group the charge carried, from its own metadata.
 
@@ -59920,10 +60046,21 @@ def pulse_finalize_marketplace_settlement(tx, provider_payment_id="", transfer_g
     try:
         marketplace_order_fulfillment.open_from_transaction(conn.cursor(), tx)
         conn.commit()
-    except Exception as exc:  # noqa: BLE001 - never lose a settlement over this
-        log_error(f"marketplace fulfillment open failed for tx {tx.get('id')}: {exc}")
+    except Exception:  # noqa: BLE001 - never lose a settlement over this
+        # Was `log_error(...)`, which is defined nowhere in this repository. The
+        # handler written to make sure a fulfillment problem could not lose a
+        # settlement raised `NameError` from inside itself the moment it fired, so
+        # the one failure it existed to absorb was the one it propagated. Found
+        # while wiring the promise snapshot below it, which had copied the idiom.
+        logging.exception("MARKETPLACE_FULFILLMENT_OPEN_FAILED seller_transaction_id=%s",
+                          tx.get("id"))
     finally:
         conn.close()
+    # Alongside the fulfillment record, and for the same reason it opens here: this
+    # is the first moment the buyer is owed something, which is the moment the
+    # window they were shown becomes a promise. Insert-only, so a redelivered
+    # webhook re-reads it rather than rewriting it.
+    pulse_snapshot_delivery_promise(tx)
     from services import marketplace_settlement_service
     return marketplace_settlement_service.settle_paid_transaction(
         tx, payout_ready=payout_ready, provider_payment_id=provider_payment_id,
@@ -121977,6 +122114,14 @@ def _init_db_impl():
         marketplace_order_fulfillment.create_schema(cur)
     except Exception:
         logging.getLogger(__name__).exception("ORDER_FULFILLMENT_SCHEMA_BOOTSTRAP_FAILED")
+    # The delivery promise, third for the same reason: §70's accuracy reporting and
+    # §71-72's calibration both read this table from workers that serve no
+    # requests, so it cannot be created lazily on a checkout path they never run.
+    try:
+        from services.delivery import promise as delivery_promise
+        delivery_promise.create_schema(cur)
+    except Exception:
+        logging.getLogger(__name__).exception("DELIVERY_PROMISE_SCHEMA_BOOTSTRAP_FAILED")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

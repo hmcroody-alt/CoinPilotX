@@ -1507,6 +1507,10 @@ def quote_for_order(*, connection_id, business_id, store_id, actor_user_id, orde
             "destination": option.get("destination"),
             "freight_total": option.get("provider_total"), "currency": option.get("currency"),
             "estimated_transit": option.get("estimated_transit"),
+            # The typed range travels with the words it came from. A caller that
+            # renders a date needs `transit`; one that shows the supplier's own
+            # phrasing needs `estimated_transit`; neither should re-parse.
+            "transit": option.get("transit"),
             "restrictions": option.get("restrictions") or [],
             "available": bool(option.get("available")),
             "quoted_at": option.get("quoted_at"),
