@@ -1,4 +1,4 @@
-{% from "_app_link_cta.html" import app_cta, app_store_badge with context %}
+{% from "_app_link_cta.html" import app_open_cta, app_store_badge with context %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -201,7 +201,7 @@
       <p class="app-cta-title">Getting help inside the app</p>
       <p class="app-cta-note">Notification, Messenger, and privacy controls live in the app's own settings too. Your tickets and account are the same on both.</p>
       <div class="app-cta-actions">
-        {{ app_cta("home", source="web", classes="button primary") }}
+        {{ app_open_cta("home", source="web", classes="button primary") }}
         {{ app_store_badge() }}
       </div>
     </aside>

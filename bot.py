@@ -1596,6 +1596,26 @@ def inject_app_link_helpers():
     def app_link(destination, resource_id=None, source="web", **params):
         return app_links.build_app_link(destination, resource_id, params or None, source)
 
+    def app_open_link(destination, resource_id=None, source="web"):
+        """The link to use when the CTA is rendered ON pulsesoc.com.
+
+        `app_link` builds the canonical `https://pulsesoc.com/...?pulse_app=1`
+        universal link, which is right in an email, a push payload or an SMS --
+        anywhere the tap starts off-domain. It is wrong here, and wrong in a way
+        that looks fine in review: the public product page is itself served from
+        pulsesoc.com, so the button was a link from a page to that same page.
+        iOS does not consult associated domains for a same-domain tap, so the
+        app is never offered; the request goes to Flask and re-renders the page
+        the member is already looking at. Reported as "the button does nothing",
+        which is exactly what it does.
+
+        `open_interstitial_url` is the on-domain answer and raises for any
+        destination the shipped binary cannot resolve, so a button that would
+        strand someone fails at render instead of in a member's hand.
+        """
+
+        return app_links.open_interstitial_url(destination, resource_id, source)
+
     try:
         banner_path = request.path
     except RuntimeError:
@@ -1603,6 +1623,7 @@ def inject_app_link_helpers():
 
     return {
         "app_link": app_link,
+        "app_open_link": app_open_link,
         "app_link_label": app_links.destination_label,
         "app_store_url": pulsesoc_app_store_url,
         "smart_app_banner_meta": app_promotion.smart_app_banner_meta(banner_path),
@@ -58985,9 +59006,29 @@ def marketplace_storefront_app_cta(destination, resource_id=None):
     the destination against what the released binary actually resolves; a
     hand-made link is how a button reading "Open this listing" ends up landing on
     the app's Home tab.
+
+    `open_interstitial_url`, and NOT `app_first_href`, which is what this used to
+    call and is the whole of the reported defect. Those two answer different
+    questions. `app_first_href` answers "where should a link to this destination
+    point on the web", and since `product` became web-first its answer is
+    `/pulse/marketplace/<id>` -- correct for a breadcrumb or a card, and for this
+    button it is the page the visitor is already standing on. So the CTA was an
+    anchor to itself. On a phone it did not open the app, did not go Home and did
+    not error; it re-rendered the same listing, which is why it was reported as a
+    button that does nothing.
+
+    Routing it through `/open/...` instead of the canonical
+    `/pulse/marketplace/<id>?pulse_app=1` universal link is deliberate and is not
+    a workaround. That link is tapped from the same origin it addresses, and iOS
+    does not consult associated domains for a same-domain navigation, so it could
+    never have opened the app from this page either. `/open/...` is already
+    `exclude: true` in the shipped association file, so Safari keeps it by
+    design and the member is offered the choice -- which means this fix needs no
+    AASA change, and so cannot disturb the Stripe onboarding paths that share
+    that file.
     """
 
-    href = app_first_href(destination, resource_id)
+    href = app_links.open_interstitial_url(destination, resource_id, "web")
     label = app_links.destination_label(destination, "Open in PulseSoc")
     return (
         '<aside class="mkt-appcta">'
