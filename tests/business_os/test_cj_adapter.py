@@ -647,6 +647,43 @@ def test_shipping_unsupported_route_and_missing_total_are_not_free_shipping():
     assert adapter.estimate_shipping(shipping_payload())["quotes"][0]["provider_total"] is None
 
 
+def test_shipping_quote_carries_a_typed_transit_range_beside_the_raw_words():
+    """No consumer should ever have to parse CJ's aging string itself.
+
+    The adapter is the only layer that sees ``arrivalTime``, so it is where the
+    typed range has to be produced. Leaving only the string here is what makes
+    four surfaces write four different parsers of it.
+    """
+    fixture = [{"option": {"enName": "CJPacket"}, "channelId": "c1", "optionId": "o1",
+        "totalPostageFee": "8.50", "arrivalTime": "7-20"}]
+    adapter, _, _, _ = make_adapter(Response(fixture))
+    quote = adapter.estimate_shipping(shipping_payload())["quotes"][0]
+    assert quote["estimated_transit"] == "7-20"
+    assert quote["transit"] == {"min_days": 7, "max_days": 20,
+                                "basis": "UNSPECIFIED", "source_text": "7-20"}
+
+
+def test_shipping_aging_falls_back_to_the_nested_option():
+    """Some channels state aging only inside ``option``. Reading one place and
+    not the other loses the estimate for those channels entirely."""
+    fixture = [{"option": {"enName": "USPS+", "arrivalTime": "3-7"}, "optionId": "o1",
+        "totalPostageFee": "4.71"}]
+    adapter, _, _, _ = make_adapter(Response(fixture))
+    quote = adapter.estimate_shipping(shipping_payload())["quotes"][0]
+    assert quote["transit"]["max_days"] == 7
+
+
+def test_an_unreadable_aging_leaves_transit_none_not_a_default():
+    """A quote with real freight but unusable aging is a quote we can price and
+    cannot date. It must not acquire a duration on the way out."""
+    fixture = [{"option": {"enName": "CJPacket"}, "optionId": "o1",
+        "totalPostageFee": "8.50", "arrivalTime": ""}]
+    adapter, _, _, _ = make_adapter(Response(fixture))
+    quote = adapter.estimate_shipping(shipping_payload())["quotes"][0]
+    assert quote["provider_total"] == "8.50"
+    assert quote["transit"] is None
+
+
 @pytest.mark.parametrize("status,body,code", [(429, None, "RATE_LIMITED"), (401, None, "REAUTH_REQUIRED"),
     (503, None, "PROVIDER_UNAVAILABLE"), (200, {"code": 1600200, "result": False}, "RATE_LIMITED"),
     (200, {"code": 900, "result": False, "message": "CJ API suspended: reactivate your account"}, "REACTIVATION_REQUIRED")])

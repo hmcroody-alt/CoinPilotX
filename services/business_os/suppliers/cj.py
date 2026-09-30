@@ -16,6 +16,7 @@ from decimal import Decimal, InvalidOperation
 import requests
 
 from .errors import SupplierError
+from .normalize import transit_days
 from .quota import DurableCJQuota
 
 BASE_URL = "https://developers.cjdropshipping.com/api2.0/v1"
@@ -654,13 +655,23 @@ class CJAdapter:
         for quote in data:
             quote = _dict(quote)
             option = _dict(quote.get("option") or {})
+            # CJ states aging on the quote and, for some channels, only on the
+            # nested option. Reading both is strictly wider than reading one:
+            # the fallback fires exactly where the old value was already blank.
+            aging = quote.get("arrivalTime")
+            if aging is None or not str(aging).strip():
+                aging = option.get("arrivalTime")
             quotes.append({"service": _text(option.get("enName"), 200), "channel_id": _text(quote.get("channelId"), 200),
                 "option_id": _text(quote.get("optionId"), 200), "origin": row["srcAreaCode"], "destination": row["destAreaCode"],
                 "base": _money(quote.get("postage")), "provider_total": _money(quote.get("totalPostageFee")),
                 "tax": _money(quote.get("taxesFee")), "tariff": _money(quote.get("tariff")),
                 "clearance": _money(quote.get("clearanceOperationFee")), "remote_fee": _money(quote.get("remoteFee")),
                 "discount_fee": _money(quote.get("discountFee")), "wrap_postage": _money(quote.get("wrapPostage")),
-                "currency": "USD", "weight_grams": row["weight"], "estimated_transit": _text(quote.get("arrivalTime"), 200),
+                "currency": "USD", "weight_grams": row["weight"], "estimated_transit": _text(aging, 200),
+                # `estimated_transit` keeps CJ's exact words; `transit` is the
+                # typed read, or None when CJ said nothing a range can be made
+                # from. No consumer may parse the string for itself.
+                "transit": transit_days(aging),
                 "restrictions": [_text(_dict(t).get("msgEn"), 1000) for t in _list(quote.get("ruleTips", []), maximum=100)],
                 "available": not bool(quote.get("error") or quote.get("errorEn")), "quoted_at": _now(), "guaranteed": False})
         return {"quotes": quotes, "points_info": self.points_info, "state": "QUOTED" if quotes else "UNSUPPORTED_ROUTE"}
