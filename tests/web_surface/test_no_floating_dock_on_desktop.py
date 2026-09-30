@@ -320,3 +320,106 @@ def test_every_fixed_dock_is_registered(parsed):
         + "\n\nAdd each to DOCKS with the desktop navigation that replaces it, "
         "or to NOT_NAVIGATION if it is not a navigation surface."
     )
+
+
+# ---------------------------------------------------------------------------
+# The other side of the same trade
+# ---------------------------------------------------------------------------
+
+#: Where the dock's own job is handed off on a page that has no desktop chrome
+#: to inherit it. Keyed by the replacement selector, because that is the thing
+#: that has to become visible; the dock side is already covered above.
+DESKTOP_HANDOFFS = {
+    ".reels-desktop-create": {
+        "sheet": "pulse_reels_experience.css",
+        # `/pulse/reels` has no desktop rail and the dock's plus button was the
+        # only way to create a Reel. Measured on the rendered page after the
+        # dock was suppressed: at 1440 the page offered zero visible create
+        # controls -- watch-only, with no error and nothing to click -- against
+        # one at 390. The toolbar is the desktop half.
+        #
+        # `.reels-toolbar`'s own `display: grid !important` in this sheet
+        # (line ~916) is NOT the competitor it appears to be: it is nested in
+        # `@media (max-width: 900px)` inside `@media (min-width: 901px)`, which
+        # can never both match, so the block is dead. Named here anyway,
+        # because the ordering check below should still fire if someone
+        # un-nests it.
+        "competing": ".reels-toolbar",
+    },
+}
+
+
+@pytest.mark.parametrize("selector", sorted(DESKTOP_HANDOFFS))
+def test_a_desktop_handoff_appears_and_outranks_what_hides_it(parsed, selector):
+    """Suppressing a dock deletes whatever only the dock could reach.
+
+    Presence is not enough, for the reason this file already records once: a
+    media query adds no specificity, so a correct `@media (min-width: 1024px)`
+    block placed above the rule it means to override loses the cascade, parses
+    cleanly and changes nothing. That shipped green on the messenger and was
+    caught only by a browser.
+
+    Two checks here, and the *second* is the load-bearing one. Ordering is
+    asserted because it is cheap and it is what bit the messenger. But the
+    reels toolbar's competing `display` is not in this sheet at all -- it comes
+    from the page-local `<style>` block in bot.py's reels response, which the
+    head emits after the <link> to this file. No amount of reordering inside
+    one sheet beats a later one, so `!important` is the only lever, and
+    dropping it is the edit that actually restores the dead end.
+
+    Both directions were checked against a browser at 390 and 1440 rather than
+    argued from the cascade: deleting the reveal or dropping its `!important`
+    turns this red, while relocating the pair within the sheet leaves the
+    rendered page correct and is right to stay green.
+    """
+    entry = DESKTOP_HANDOFFS[selector]
+    rules = parsed[entry["sheet"]]
+    competing = entry["competing"]
+
+    assert any(_targets(sel, selector) for sel, _b, _c in rules), (
+        f"no rule in {entry['sheet']} selects {selector!r}. If the handoff was "
+        "renamed, update this registry; if it was removed, say so here -- an "
+        "entry that matches nothing is a guard that cannot fail"
+    )
+    assert _shown_above(rules, selector, DESKTOP), (
+        f"{selector} never becomes visible at >= {DESKTOP}px, so the page has "
+        "no create path on desktop once the dock is hidden. That is the dead "
+        "end this entry exists to prevent, and it renders as a working page."
+    )
+
+    shows = [
+        idx
+        for idx, (sel, body, conditions) in enumerate(rules)
+        if _targets(sel, selector)
+        and re.search(r"display:\s*(?!none)\S+", body)
+        and (_min_widths(conditions) or [10**6])[0] <= DESKTOP
+    ]
+    blockers = [
+        idx
+        for idx, (sel, body, conditions) in enumerate(rules)
+        if (_targets(sel, selector) or _targets(sel, competing))
+        and re.search(r"display:\s*none", body)
+        and not _min_widths(conditions)
+    ] + [
+        idx
+        for idx, (sel, body, conditions) in enumerate(rules)
+        if _targets(sel, competing)
+        and re.search(r"display:\s*(?!none)[^;]*!important", body)
+        and not any("width" in c for c in conditions)
+    ]
+    assert max(shows) > max(blockers or [-1]), (
+        f"the rule that reveals {selector} at >= {DESKTOP}px sits at document "
+        f"position {max(shows)}, above a rule at {max(blockers)} that hides it "
+        f"or floats {competing} unconditionally.\n"
+        "  Equal specificity, so the later rule wins and this one does not "
+        "apply. The sheet parses, this file's presence checks pass, and "
+        "desktop still has no create path. Move the block to the end of the "
+        "sheet rather than adding specificity."
+    )
+
+    for idx in shows:
+        assert "!important" in rules[idx][1], (
+            f"{selector}'s reveal at position {idx} is not !important, but "
+            f"{competing} declares `display: grid !important`. Order cannot "
+            "beat importance -- the rule loses wherever it sits."
+        )
