@@ -586,6 +586,15 @@ narrowing of the vocabulary or the shape heuristic — which would quietly shrin
 toward vacuity — still fails on the cases actually reported. A seventh assertion checks
 the fixture seeded something at all, and that at least four registries were detected.
 
+**Proven able to fail.** Run against the immediately preceding commit in a detached
+worktree, 4 of the 6 tests go red and name the defect precisely: the column sweep
+reports `['date_of_birth', 'expertise_tags_json', 'recovery_email', 'recovery_phone',
+'roast_call_sign', 'roast_call_sign_slug', 'social_links_json']` surviving, and the
+registry sweep reports `{'notification_device_tokens': 1, 'pulse_notification_devices':
+1, 'user_device_tokens': 1}`. The two that pass on both sides are meant to: one asserts
+the password no longer authenticates (already true before this change, kept as a
+control), the other checks the fixture seeded anything at all.
+
 **Scope limit, stated so it is not mistaken for more than it is.** This gate covers
 contact details and device registrations. It does not assert that deletion empties the
 row, and it makes no claim about D-P1 — **an account deletion requested through the iOS
