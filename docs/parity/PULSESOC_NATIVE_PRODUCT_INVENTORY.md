@@ -5,7 +5,7 @@
 
 - Screens registered in navigators: **162**
 - `*Screen.tsx` files: **141**
-- Screens with a `pulsesoc.com` deep link: **63**
+- Screens with a `pulsesoc.com` deep link: **64**
 - Master-navigation destinations: **51**
 
 `linking.ts` sets `prefixes: ["pulsesoc://", "https://pulsesoc.com"]`, so every
@@ -100,6 +100,7 @@ path below is simultaneously a native deep link and a URL the website must answe
 | LiveEventCreateGateway | `/pulse/live/events/create` |
 | LiveScheduleGateway | `/pulse/live/schedule` |
 | Marketplace | `/pulse/marketplace` |
+| MarketplaceCart | `/pulse/cart` |
 | MarketplaceCreateGateway | `/pulse/marketplace/create` |
 | MerchantApply | `/pulse/merchant/apply` |
 | MerchantDashboard | `/pulse/merchant/dashboard` |
