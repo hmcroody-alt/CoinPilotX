@@ -227,6 +227,55 @@ class WebCartTestCase(unittest.TestCase):
         self.assertEqual(known, served,
                          "pulsesoc_cart.js and _line_state() disagree about line states")
 
+    def test_a_line_says_which_variant_it_is(self):
+        """Two sizes of one shirt are two rows that must not read identically.
+
+        ``_variant_label()`` exists to make a line self-describing, and the
+        serializer has always sent it. The page ignored it, so a cart holding
+        Small and Medium showed the same title, the same picture and the same
+        price twice -- and "Remove" then removes whichever one the buyer did
+        not mean. Asserted against the serializer's own key so that renaming
+        the field server-side fails here rather than blanking the line.
+        """
+        source = os.path.join(REPO, "services", "marketplace_cart_routes.py")
+        with open(source, encoding="utf-8") as handle:
+            self.assertIn('"variant_label"', handle.read(),
+                          "the serializer no longer sends variant_label")
+
+        script = os.path.join(REPO, "static", "js", "pulsesoc_cart.js")
+        with open(script, encoding="utf-8") as handle:
+            js = handle.read()
+        self.assertIn("line.variant_label", js,
+                      "the cart page never reads variant_label, so two variants "
+                      "of one listing render as the same row twice")
+
+    def test_the_title_column_is_allowed_to_shrink(self):
+        """The bug was one CSS keyword, and it has no other symptom.
+
+        The line was ``grid-template-columns:72px 1fr auto``. An ``auto`` track
+        claims its min-content width first, and the controls are wide
+        ("Accept new price", a quantity box, "Remove"), so on a phone the title
+        was left ~150px and a 140-character supplier title wrapped into a
+        word-per-line ribbon 16 lines tall. A bare ``1fr`` would not have saved
+        it either: a flex track's automatic minimum is min-content, so the
+        column refuses to shrink below its longest word.
+
+        ``minmax(0,1fr)`` is what actually lets the column shrink, and it reads
+        like a formatting detail, so this pins it. Both layouts are checked --
+        the phone one and the one the media query restores -- because the
+        starving track was in the wide layout and only the breakpoint keeps it
+        away from small screens now.
+        """
+        page = os.path.join(REPO, "templates", "marketplace_cart.html")
+        with open(page, encoding="utf-8") as handle:
+            css = handle.read()
+        tracks = re.findall(r"\.cart \.line\{[^}]*grid-template-columns:([^;}]+)", css)
+        tracks += re.findall(r"\.cart \.line\{grid-template-columns:([^;}]+)", css)
+        self.assertTrue(tracks, "no .cart .line grid declaration found")
+        for track in tracks:
+            self.assertIn("minmax(0,1fr)", track.replace(" ", ""),
+                          f"the title column cannot shrink: {track.strip()!r}")
+
     def test_the_app_handoff_href_comes_from_the_registry(self):
         """Injected by the route, not written into the JavaScript.
 
