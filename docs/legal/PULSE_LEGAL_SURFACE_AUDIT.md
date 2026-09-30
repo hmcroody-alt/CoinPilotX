@@ -308,6 +308,37 @@ they submit the form again for any reason, the stored opt-out is overwritten wit
 `0`. A privacy control that silently discards the user's choice is the most
 sensitive possible place for this bug.
 
+**RESOLVED — technical fix only, no legal judgement.**
+
+The GET branch now reads the row back after the POST commits, so the form states
+the stored decision instead of a constant. Three details of the read matter:
+
+* An unsaved member is shown the state that is **enforced**, not a plausible
+  default. `pulse_ads_service.user_personalized_ads_opt_out` treats a missing
+  `privacy_preferences` row as opted out, so a page rendering that box unticked
+  would tell a member they are being personalized while the ad server excludes
+  them — the same class of misstatement as the original defect, pointing the
+  other way.
+* A NULL column keeps its declared default rather than being read as `0`. A
+  half-written row is an absence of a decision, not a revocation of one.
+* The row is read through `db_service.row_values()`, because `sqlite3.Row`
+  iterates values while the Postgres compatibility row iterates column names.
+
+The guard is `tests/test_privacy_center_controls.py`. It asserts agreement
+between three things — what the form renders, what the table holds, and, for the
+one control that is actually enforced, what the ad path itself concludes. A test
+that only round-tripped the form would pass against a page storing a preference
+nothing acts on. Mutation-proved: restoring the hardcoded form turns 4 of 7 red.
+
+**OWNER DECISION REQUIRED — three of the four controls are enforced by nothing.**
+`personalized_ads_opt_out` is read on the ad path. `analytics_opt_out`,
+`public_profile` and `creator_visibility` are written by this page and read by no
+code in the repository. The read-back fix makes that representation *more*
+convincing, not less: the page now faithfully reports a stored value that has no
+effect on anything. Either the enforcement is built or the controls are removed;
+continuing to offer a privacy choice that does nothing is the decision that needs
+making, and it is a product and legal one, not a technical defect.
+
 ### D-L5 — Checkout discloses no terms at the point of authorisation (HIGH)
 
 Described in §2.2. The cart hands off to a Stripe-hosted Checkout Session
@@ -433,9 +464,13 @@ rest are not:
 * **D-L3** is disclosure plumbing. The one seller-facing fee statement read 10%, a
   rate no code path yields and no seller was ever charged; it now renders whatever
   the fee authority discloses, and states nothing when that read fails.
+* **D-L4** is read-back. The Privacy Center could not be submitted without erasing
+  a choice already made, and showed the enforced ads preference inverted. The four
+  controls it offers are unchanged; what changed is that the page now states the
+  decision that is in force.
 
-D-L4 through D-L6 are still open, plus the owner decisions each landed fix left
-behind (listed in place above). D-L4 is the next technical one — the Privacy Center
-discarding a saved opt-out is a §106 defect, not a legal judgement. D-L5 and D-L6
-change what a user is told before their card is charged and need text a lawyer has
-seen.
+D-L5 and D-L6 are still open, plus the owner decisions each landed fix left behind
+(listed in place above). Both change what a user is told before their card is
+charged and need text a lawyer has seen, so neither is a §106 technical fix. The
+largest non-legal gap D-L4 exposed is that three of its four controls are enforced
+by nothing — recorded in place as an owner decision.

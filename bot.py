@@ -104967,6 +104967,67 @@ def trust_public_page(title, headline, body_html, cta="/signup"):
     return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name="description" content="{html_escape(clean_html(headline))}"><meta name="robots" content="index,follow"><link rel="canonical" href="https://pulsesoc.com{html_escape(clean_html(request.path))}"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-favicon-32-20260913.png"><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 15% 0,rgba(110,223,246,.18),transparent 26rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:22px 0 80px}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px}}a{{color:inherit}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{padding:42px 0 18px}}h1{{font-size:clamp(38px,7vw,74px);line-height:.95;margin:8px 0}}p{{color:var(--muted);line-height:1.6}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.84));padding:16px}}.button{{min-height:46px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;text-decoration:none;font-weight:950;padding:12px 15px;display:inline-flex;align-items:center;justify-content:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}li{{margin:8px 0;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">CoinPlotXAI</a><a class="button" href="{html_escape(clean_html(cta))}">Get Started</a></nav><section class="hero"><span class="badge">Trust-first platform</span><h1>{html_escape(clean_html(headline))}</h1></section>{body_html}</main></body></html>""")
 
 
+#: The Privacy Center's four controls, and the value a member has before they have
+#: ever saved. Not a guess about what looks reasonable: the one control anything
+#: enforces is `personalized_ads_opt_out`, and
+#: `pulse_ads_service.user_personalized_ads_opt_out` reads a missing row as `1`
+#: (opted out). Rendering any other default would show a member a state the ad
+#: server does not agree with. The other three match the `privacy_preferences`
+#: column defaults, so a saved row and an unsaved member read identically.
+PRIVACY_CENTER_CONTROLS = (
+    ("analytics_opt_out", 0, "Opt out of optional analytics where legally required"),
+    ("personalized_ads_opt_out", 1, "Opt out of personalized ads"),
+    ("public_profile", 1, "Public profile visible"),
+    ("creator_visibility", 1, "Creator visibility enabled"),
+)
+
+
+def privacy_center_preferences(user_id):
+    """A member's saved privacy choices, or the defaults if they have none.
+
+    The page used to render these four boxes with literal `checked` attributes and
+    never query the table its own POST writes. Two consequences, the second worse
+    than the first:
+
+    A member who opted out of analytics came back to an unchecked box — and since
+    an HTML checkbox sends nothing when unchecked, the next save of *any* control
+    on the form silently wrote their opt-out back to 0. The form could not be used
+    without discarding a choice already made.
+
+    And a member who had consented to personalized ads — the one control that is
+    actually enforced — was shown "Opt out of personalized ads" ticked while the ad
+    server was personalizing for them. The page asserted the opposite of what was
+    in force, which is worse than asserting nothing.
+
+    Columns are selected in an explicit order and read with `row_values` rather
+    than by iterating the row, because iteration yields values on SQLite and column
+    names on Postgres.
+    """
+
+    names = [name for name, _default, _label in PRIVACY_CENTER_CONTROLS]
+    prefs = {name: default for name, default, _label in PRIVACY_CENTER_CONTROLS}
+    if not user_id:
+        return prefs
+    conn = db()
+    try:
+        row = conn.execute(
+            f"SELECT {', '.join(names)} FROM privacy_preferences WHERE user_id=?",
+            (int(user_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return prefs
+    for name, value in zip(names, db_service.row_values(row)):
+        # A NULL column keeps the default rather than becoming 0. The table
+        # predates two of these columns, so an old row can hold NULL where a new
+        # one holds a choice, and reading that as "opted in" would revoke a
+        # preference on behalf of a member who never expressed one.
+        if value is not None:
+            prefs[name] = 1 if int(value) else 0
+    return prefs
+
+
 @webhook_app.route("/privacy-center", methods=["GET", "POST"])
 def privacy_center_page():
     init_db()
@@ -105006,7 +105067,18 @@ def privacy_center_page():
     controls = ""
     if user:
         retention = f"Raw analytics: {int(os.getenv('RAW_ANALYTICS_RETENTION_DAYS', '90') or 90)} days · Security logs: {int(os.getenv('SECURITY_LOG_RETENTION_DAYS', '180') or 180)} days · Aggregate analytics: {int(os.getenv('AGGREGATE_ANALYTICS_RETENTION_DAYS', '730') or 730)} days"
-        controls = f"<section class='card'><h2>Your Controls</h2><p>{html_escape(clean_html(message))}</p><form method='post'><label><input type='checkbox' name='analytics_opt_out'> Opt out of optional analytics where legally required</label><br><label><input type='checkbox' name='personalized_ads_opt_out' checked> Opt out of personalized ads</label><br><label><input type='checkbox' name='public_profile' checked> Public profile visible</label><br><label><input type='checkbox' name='creator_visibility' checked> Creator visibility enabled</label><br><button class='button'>Save Privacy Controls</button></form><p><strong>Account data controls:</strong> Download account data and delete account workflows are visible here for staged rollout and support-assisted processing.</p><p><strong>Retention:</strong> {html_escape(clean_html(retention))}</p><p><a href='/terms'>Terms</a> · <a href='/community-rules'>Community Rules</a> · <a href='/advertising-policy'>Advertising Policy</a> · <a href='/creator-monetization-policy'>Creator Monetization Policy</a></p></section>"
+        # Read back *after* the POST above has committed, so the boxes show what is
+        # stored rather than what was submitted. Those differ whenever a write is
+        # rejected, and a form that echoes the request confirms a save that may not
+        # have happened.
+        saved = privacy_center_preferences(user["user_id"])
+        boxes = "".join(
+            "<label><input type='checkbox' name='{}'{}> {}</label><br>".format(
+                name, " checked" if saved.get(name) else "", html_escape(clean_html(label))
+            )
+            for name, _default, label in PRIVACY_CENTER_CONTROLS
+        )
+        controls = f"<section class='card'><h2>Your Controls</h2><p>{html_escape(clean_html(message))}</p><form method='post'>{boxes}<button class='button'>Save Privacy Controls</button></form><p><strong>Account data controls:</strong> Download account data and delete account workflows are visible here for staged rollout and support-assisted processing.</p><p><strong>Retention:</strong> {html_escape(clean_html(retention))}</p><p><a href='/terms'>Terms</a> · <a href='/community-rules'>Community Rules</a> · <a href='/advertising-policy'>Advertising Policy</a> · <a href='/creator-monetization-policy'>Creator Monetization Policy</a></p></section>"
     return trust_public_page("Privacy Center", "Your data is not the product.", f"<p>{html_escape(clean_html(policy['principle']))}</p><section class='grid'>{cards}</section>{controls}", "/dashboard" if user else "/signup")
 
 
