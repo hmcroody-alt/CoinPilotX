@@ -27,8 +27,11 @@ a navigation to the domain the page is already on. A
 `https://pulsesoc.com/pulse/marketplace/9?pulse_app=1` href rendered on
 pulsesoc.com is therefore inert -- it reloads the page the button sits on.
 That link is still correct, and still tested, for an off-domain surface such
-as an email. On-site CTAs go through `/open/...`, which the shipped AASA
-already excludes, so Safari keeps the URL and the member is offered a choice.
+as an email. On-site CTAs go through `/open/...`, which the association leaves
+unclaimed -- no component matches it, so Safari keeps the URL and the member is
+offered a real `pulsesoc://` button, a custom scheme that is not subject to the
+same-domain rule. Unclaimed-by-omission is weaker than an explicit `exclude`,
+so `tests/web_parity/test_aasa_claims.py` pins it.
 
 Run: python3 -m pytest tests/web_surface/test_open_in_pulsesoc_chain.py
 """
@@ -256,7 +259,10 @@ def test_the_interstitial_hands_off_to_the_app_with_the_same_listing(interstitia
     # `pulse/marketplace/:listingId` to MarketplaceProduct, and that agreement is
     # pinned in tests/web_surface/test_scheme_urls_match_the_native_route_table.py
     # so a rename on either side breaks a test rather than a phone. This
-    # assertion is the server half; that file is the join.
+    # assertion is the server half; that file is the join; and
+    # mobile-native/src/navigation/__tests__/marketplaceDeepLinkIdentity.test.ts
+    # is the app half, which proves all three of the app's resolvers agree on the
+    # screen once the path arrives.
     assert url == f"{app_links.APP_SCHEME}pulse/marketplace/{listing_id}", url
 
 

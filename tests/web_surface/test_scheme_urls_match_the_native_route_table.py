@@ -2,11 +2,20 @@
 
 The interstitial's whole job is to hand a member a `pulsesoc://` URL that opens
 the app on the thing they were already reading. Every other link in that chain
-is now tested: the PDP emits an off-domain-navigating CTA, the CTA resolves to a
-real page, that page carries the listing id into a scheme URL. Then the chain
-leaves Python and nothing checked the join.
+is tested: the PDP emits an off-domain-navigating CTA, the CTA resolves to a real
+page, that page carries the listing id into a scheme URL.
 
-That join is a string agreement between two files that share no code. The server
+The app's own side is tested too, and thoroughly --
+`mobile-native/src/navigation/__tests__/marketplaceDeepLinkIdentity.test.ts`
+takes `/pulse/marketplace/<id>` through all three resolvers that can receive it
+(`nativeObjectDestination`, `linking.getStateFromPath`, `routeNotificationTarget`)
+and asserts they name one screen. What neither side tests is the *handoff*: that
+file starts from a path typed into it, and knows nothing about
+`services/app_links.py`. It would stay green if the server began emitting a
+different path tomorrow, and it speaks only for marketplace. This file is the
+seam between them, for every destination.
+
+That seam is a string agreement between two files that share no code. The server
 builds `pulsesoc://` + `path_template` from `services/app_links.py`. The app
 matches it against the `config.screens` tree in
 `mobile-native/src/navigation/linking.ts`. Rename a route on either side, or mark
@@ -16,9 +25,10 @@ passes every server-side test -- and opens the app to whatever React Navigation
 falls back to. "Opens the app to the wrong place" is the defect this mission
 exists to repair, arriving one layer later than it did the first time.
 
-iOS gives no error for an unresolvable scheme URL, nothing logs server-side
-because following a `pulsesoc://` href never reaches us, and a simulator will not
-show it either. So it has to be caught here.
+iOS gives no error for an unresolvable scheme URL, and nothing logs server-side
+because following a `pulsesoc://` href never reaches us. A simulator only shows
+it if you are signed in on that simulator, which is not something CI has. So it
+has to be caught here.
 
 This checks *real URLs*, not templates: each destination is resolved through the
 same `resolve_destination_path` the interstitial calls, then matched against the
