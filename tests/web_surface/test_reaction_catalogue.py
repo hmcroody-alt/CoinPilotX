@@ -53,6 +53,14 @@ CACHE_PINNED_ASSETS = {
         "commerce-attachment-20260928a",
         "c06338609b3c3ed5cca95dc9a6afd6abebd0d12721fdc04d0f5e65927ac91c08",
     ),
+    "static/css/pulse_app_cta.css": (
+        "bare-asset-tokens-20260930a",
+        "dd7e7ef3330df4d4e986fe30f730f6066ace7ff0e0f201f094d9e5ed84db6af3",
+    ),
+    "static/css/pulse_camera_engine.css": (
+        "bare-asset-tokens-20260930a",
+        "88b6369a0948d7b7dd9b4885820b3c8a801ae2232256735f03fbd322d0d9ecbd",
+    ),
     "static/css/pulse_cinematic_media.css": (
         "static-bg-20260806a",
         "98035d84a5d8d6f93044e2a55373bfa63ac2f5e0c915fddabd3f92bfff7ecc71",
@@ -92,6 +100,10 @@ CACHE_PINNED_ASSETS = {
         "cache-sweep-20260930a",
         "b1ad05102509b862897b01d31ad05ea9a76eeb6349b8f679405009f4f29af53d",
     ),
+    "static/css/pulse_mobile_system.css": (
+        "bare-asset-tokens-20260930a",
+        "49a26a16c99d2d30c9217f39ee5a33a4452a4fab28e33bd85c7886558a4ba6d2",
+    ),
     "static/css/pulse_reaction_system.css": (
         "video-action-fit-20260927i",
         "6ff68ca37cb663b328b315dbdfcd7e63614e2dee96f996946ab2800eb18db50b",
@@ -128,6 +140,10 @@ CACHE_PINNED_ASSETS = {
         "cache-sweep-20260930a",
         "d3613426dc60ab4cdb6f20857b704b271007b0f1134dff09c46d903757d2f79f",
     ),
+    "static/css/pulsesoc_promotions.css": (
+        "bare-asset-tokens-20260930a",
+        "7313b11bdba2508a2069bc82ccbd314a905d946410023c1eb2d9caeb0bed6e1c",
+    ),
     "static/js/admin_ops_center.js": (
         "opsv2-20260722i",
         "9c1dfbbef0332f46212a76565e1df6c60d9df078aac126982a8d6de7616e2de0",
@@ -135,6 +151,10 @@ CACHE_PINNED_ASSETS = {
     "static/js/pulse_ads_hooks.js": (
         "pulse-sci-fi-ads-20260626b",
         "edb876c680772f4296b970d31d82c70e17c9247110b261af9ff70e22644012df",
+    ),
+    "static/js/pulse_camera_engine.js": (
+        "bare-asset-tokens-20260930a",
+        "4b5988ca8dd27e0226bcf55031f852dbe1a9bfdf814ed0e9c7fa038df9ebcbb5",
     ),
     "static/js/pulse_commerce_card.js": (
         "commerce-i18n-20260929a",
@@ -167,6 +187,10 @@ CACHE_PINNED_ASSETS = {
     "static/js/pulse_i18n.js": (
         "commerce-i18n-20260929a",
         "347e07cf3b5c6df9815d12fc26f40add5c9d4efcdceb7b6afe3b55bb418d9b45",
+    ),
+    "static/js/pulse_media_picker.js": (
+        "bare-asset-tokens-20260930a",
+        "d4576671086e394f0b646502d2500fb13edb473c39e78e8a49d408a72b9f5827",
     ),
     "static/js/pulse_media_renderer.js": (
         "cache-sweep-20260930a",
@@ -219,6 +243,14 @@ CACHE_PINNED_ASSETS = {
     "static/js/pulsesoc_intelligence_center.js": (
         "cache-sweep-20260930a",
         "96f793669f3c28fd7f23469a1b00685d719750cef5ca1094a7fbd9a2db99f595",
+    ),
+    "static/js/pulsesoc_promotions.js": (
+        "bare-asset-tokens-20260930a",
+        "bf311ed0148573c65b44f4ab2dfdbb442d713168c478537a12723161272f5dfc",
+    ),
+    "static/js/time.js": (
+        "bare-asset-tokens-20260930a",
+        "1a6493a59ca495ce0c0a1cab1d966a642d91706df5c59a9c12c4a9f8bb765921",
     ),
 }
 
@@ -546,6 +578,30 @@ def test_every_cache_busted_asset_is_pinned():
     records its digest.
     """
     sources = _asset_reference_sources()
+
+    # `served` below selects on `any(tokens)`, and a bare-only asset's token dict
+    # is `{"": {...}}` -- `any([""])` is False, so it was filtered out and pinned
+    # by nothing. That was the wider hole: /static is sent
+    # `max-age=31536000, immutable` by *path prefix*, not by whether a token is
+    # present, so a bare URL is cached for a year with no token to bump. It is not
+    # stale-until-bumped, it is undeliverable, and this gate could not see it.
+    #
+    # Eight assets were in that state. Closing the hole and introducing their
+    # tokens has to happen together: assert this on the old tree and it fails for
+    # eight files nobody has given a token yet, which is why the check arrives
+    # with them.
+    bare = sorted(path for path, tokens in sources.items() if "" in tokens)
+    assert not bare, (
+        f"{len(bare)} asset(s) are referenced with no ?v= token at all: "
+        + "; ".join(f"{p} from {sorted(sources[p][''])}" for p in bare)
+        + ". /static is served `max-age=31536000, immutable` by path prefix, so a "
+        "bare URL is frozen in every warm cache with no token to bump -- no "
+        "future edit can reach a returning visitor. Give it a token at every "
+        "reference (bot.py *and* templates/) and pin it below. If the asset is "
+        "stripped from the page by an exact-string `.replace()` in a boot "
+        "profile, the token has to go into that string too or the strip silently "
+        "stops matching."
+    )
     served = {path for path, tokens in sources.items() if any(tokens)}
     unpinned = sorted(served - set(CACHE_PINNED_ASSETS))
     assert not unpinned, (
@@ -559,4 +615,48 @@ def test_every_cache_busted_asset_is_pinned():
     assert not missing, (
         f"CACHE_PINNED_ASSETS pins {missing}, which nothing serves with "
         "a ?v= token. Drop the entry, or restore the token it is guarding."
+    )
+
+
+def test_a_boot_profile_strip_still_matches_the_tag_it_strips():
+    """Tokenizing an asset must not orphan the string that removes it.
+
+    `/pulse` renders under a boot profile, and the narrower profiles drop scripts
+    by exact-string `.replace()` on the already-rendered HTML rather than by not
+    emitting them. So the strip string embeds the whole tag, `?v=` token and all.
+    Give a bare asset a token in its declaration and forget the strip, and the
+    strip matches nothing: the script starts loading under the very profiles that
+    exist to remove it, no test notices, and the page gets heavier for the clients
+    least able to afford it.
+
+    That is not hypothetical -- `pulse_media_picker.js` and `time.js` are both
+    stripped this way and both were bare, so introducing their tokens had to
+    rewrite three `.replace()` calls alongside two declarations.
+
+    This compares the two sides as source text: every tag a profile strips must
+    still appear verbatim in the page bot.py builds.
+    """
+    source = read(BOT)
+
+    # The tag is a quoted literal whose *inside* uses the other quote character
+    # (`.replace('<script src="...">', "")`), so the delimiter is captured and
+    # back-referenced rather than excluded by a character class.
+    stripped = re.findall(
+        r"""rendered_html\.replace\(\s*(['"])(<(?:script|link)\b.*?)\1\s*,\s*(['"])\3\s*\)""",
+        source,
+    )
+    assert stripped, (
+        "no boot-profile strip calls found. If they moved, point this test at "
+        "them; the check is the only thing keeping a tokenized declaration and "
+        "the string that removes it in agreement."
+    )
+
+    orphans = [tag for _q, tag, _q2 in stripped if source.count(tag) < 2]
+    assert not orphans, (
+        f"{len(orphans)} boot-profile strip(s) match no tag bot.py emits: "
+        + "; ".join(orphans)
+        + ". The strip is exact-string, so it now removes nothing and the asset "
+        "loads under the profile that exists to drop it. Most likely a `?v=` "
+        "token was added or bumped in the declaration but not in the "
+        "`.replace()` argument -- they have to move together."
     )
