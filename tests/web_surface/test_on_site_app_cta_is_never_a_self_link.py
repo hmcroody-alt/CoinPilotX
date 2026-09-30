@@ -134,6 +134,29 @@ def test_the_storefront_cta_does_not_ask_the_web_link_helper():
     )
 
 
+def test_the_server_rendered_twin_uses_the_on_site_helper_too():
+    """`app_cta_html` is the same component for pages built as f-strings.
+
+    Four surfaces reach it -- the reel detail page, a group, a profile and a
+    post -- and every one of them is served from pulsesoc.com, so they inherited
+    the identical same-domain link. Fixing only the Jinja macro would have left
+    four dead buttons behind and no test able to see them.
+    """
+    body = _read(BOT_PY)
+    match = re.search(r"def app_cta_html\(.*?\n(?=\S|\ndef )", body, re.S)
+    assert match, "app_cta_html is gone; re-point this test"
+    func = match.group(0)
+    assert "open_interstitial_url" in func, (
+        "app_cta_html no longer builds its href with open_interstitial_url, so "
+        "every f-string page's app button is a same-domain link again."
+    )
+    assert "build_app_link(" not in func, (
+        "app_cta_html is back to build_app_link. That emits the canonical "
+        "universal link, which is correct off-domain and inert here: iOS does "
+        "not consult associated domains for a same-domain tap."
+    )
+
+
 @pytest.mark.parametrize(
     "destination,resource_id,expected",
     [

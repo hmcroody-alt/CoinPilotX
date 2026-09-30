@@ -1554,9 +1554,17 @@ def app_cta_html(destination, resource_id=None, source="web", label=None, classe
 
     The label always comes from the destination registry unless overridden, so a
     button cannot claim to open a post and land on Home.
+
+    `open_interstitial_url`, for the same reason the `app_open_cta` macro uses
+    it. Every caller of this helper is a page on pulsesoc.com, so the canonical
+    universal link `build_app_link` returns is same-domain -- and iOS does not
+    consult associated domains for a same-domain tap, so it never opened the app
+    from here. `/open/...` is already `exclude: true` in the association file, so
+    Safari keeps it by design and the member is offered a real `pulsesoc://`
+    button. `build_app_link` remains correct for anything sent off-domain.
     """
     try:
-        href = app_links.build_app_link(destination, resource_id, None, source)
+        href = app_links.open_interstitial_url(destination, resource_id, source)
     except app_links.AppLinkError as exc:
         logging.info(
             "%s destination=%s resource_present=%s error=%s",
