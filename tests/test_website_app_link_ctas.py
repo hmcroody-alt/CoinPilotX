@@ -9,8 +9,12 @@ that are easy to break silently:
      so a correct-looking `{% from "_app_link_cta.html" import app_cta %}` without
      `with context` raises UndefinedError and 500s the whole page. That is exactly
      how this first landed.
-  2. The href is the canonical builder's output, marker and all. A hand-written
-     app link in a template is the failure mode the component exists to prevent.
+  2. The href is the `/open/...` handoff, and specifically NOT the canonical
+     `?pulse_app=1` marker link. A hand-written app link in a template is one
+     failure mode the component exists to prevent; emitting the marker from a
+     page served by pulsesoc.com is the other, and it is the one that shipped.
+     iOS does not consult associated domains for a same-domain tap, so the
+     marker reached Flask and 302'd installed members to the App Store.
   3. Ordinary web navigation is preserved. The rule is add, not convert: a signed-in
      member clicking "Explore PulseSoc" wants the web feed.
 
@@ -85,13 +89,33 @@ def test_homepage_offers_an_app_link_and_a_store_badge(homepage):
     assert "app-store" in found, "homepage lost its App Store badge"
 
 
-def test_the_app_cta_href_is_the_canonical_builder_output(homepage):
+def test_the_app_cta_href_is_the_on_site_handoff(homepage):
     href, _ = ctas(homepage)["home"]
     # Jinja autoescapes the query separator; compare on the decoded form.
-    assert href.replace("&amp;", "&") == app_links.build_app_link("home", source="web")
-    assert href.startswith(f"{app_links.CANONICAL_APP_ORIGIN}/pulse?")
-    assert f"{app_links.APP_INTENT_PARAM}=1" in href
+    assert href.replace("&amp;", "&") == app_links.open_interstitial_url("home", source="web")
+    assert href.startswith("/open/home?")
     assert f"{app_links.APP_SOURCE_PARAM}=web" in href
+
+
+def test_no_component_cta_carries_the_app_intent_marker(homepage):
+    """The marker is never correct on a link tapped from pulsesoc.com itself.
+
+    iOS does not consult associated domains for a same-domain tap, so the
+    request reaches Flask, `route_app_intent_links_to_the_app_store` sees iOS
+    plus the marker, and 302s to the App Store -- sending a member who already
+    has PulseSoc to a download page for the app in their hand. The server cannot
+    tell that case apart from "no app installed", because they are identical on
+    the wire. Absolute vs relative makes no difference; the origin of the tap is
+    what matters, and this component only ever renders on our own pages.
+    """
+
+    for destination, (href, _) in ctas(homepage).items():
+        if destination == "app-store":
+            continue
+        assert app_links.APP_INTENT_PARAM not in href, (
+            f"the {destination!r} CTA carries {app_links.APP_INTENT_PARAM}; tapped "
+            f"on pulsesoc.com that opens the App Store, not the app"
+        )
 
 
 def test_the_store_badge_uses_the_configured_listing(homepage):
@@ -178,17 +202,17 @@ def cta_module():
     )
 
 
-def test_mutation_the_component_is_what_produces_the_marker(client, monkeypatch):
+def test_mutation_the_component_is_what_produces_the_href(client, monkeypatch):
     # If the CTA's href were hand-written in the template instead of coming from
     # the shared builder, neutering the builder would change nothing and every
     # assertion above would be measuring a hardcoded string.
     before, _ = ctas(client.get("/", headers=HTTPS).get_data(as_text=True))["home"]
-    assert app_links.APP_INTENT_PARAM in before
+    assert before.startswith("/open/")
 
     monkeypatch.setattr(
         bot.app_links,
-        "build_app_link",
-        lambda destination, resource_id=None, params=None, source=None: "/sentinel",
+        "open_interstitial_url",
+        lambda destination, resource_id=None, source=None: "/sentinel",
     )
     after = ctas(client.get("/", headers=HTTPS).get_data(as_text=True))["home"]
     assert after[0] == "/sentinel"

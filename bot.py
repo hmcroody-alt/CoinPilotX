@@ -1577,12 +1577,23 @@ def app_cta_html(destination, resource_id=None, source="web", label=None, classe
 
 @webhook_app.context_processor
 def inject_app_link_helpers():
-    """Canonical app-link helpers for templates.
+    """App-link helpers for templates.
 
     Exposed so a template never hand-writes an app link. `app_link` raises on an
     unknown destination or a malformed id, which is deliberate: a template that
     asks for something the released binary cannot open should fail in review,
     not ship a button that lands members on the wrong screen.
+
+    `app_link` is `open_interstitial_url`, NOT `build_app_link`. Every template
+    in this repo is a page served from pulsesoc.com, so a canonical
+    `?pulse_app=1` marker link is never the right answer here: iOS does not
+    consult associated domains for a same-domain tap, the request reaches Flask,
+    and `route_app_intent_links_to_the_app_store` 302s an iPhone that already
+    has PulseSoc installed to the App Store listing for the app it is holding.
+    That is what "Open in the PulseSoc app" on the public product page did. The
+    marker link remains correct off-site -- in email, share sheets and invites --
+    and those callers reach `app_links.build_app_link` directly rather than
+    through a template.
 
     `app_store_url` is the same authority the referral redirect and the
     app-intent fallback use, so the listing URL lives in exactly one place.
@@ -1593,8 +1604,8 @@ def inject_app_link_helpers():
     one listing beside a button naming another is the failure worth preventing.
     """
 
-    def app_link(destination, resource_id=None, source="web", **params):
-        return app_links.build_app_link(destination, resource_id, params or None, source)
+    def app_link(destination, resource_id=None, source="web"):
+        return app_links.open_interstitial_url(destination, resource_id, source=source)
 
     try:
         banner_path = request.path

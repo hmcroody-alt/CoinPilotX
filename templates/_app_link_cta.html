@@ -2,10 +2,16 @@
   Shared app-link call to action.
 
   One component so every "open this in the app" button on the website is built
-  the same way and points at the same canonical link. Templates must not
-  hand-write app links: `app_link()` validates the destination against what the
-  released binary actually resolves and raises otherwise, which is how a button
-  reading "Open this listing" is stopped from shipping if it would land on Home.
+  the same way. Templates must not hand-write app links: `app_link()` validates
+  the destination against what the released binary actually resolves and raises
+  otherwise, which is how a button reading "Open this listing" is stopped from
+  shipping if it would land on Home.
+
+  The href is the `/open/<destination>` handoff, not the canonical
+  `?pulse_app=1` marker link. This macro renders on pulsesoc.com by definition,
+  and iOS does not consult associated domains for a same-domain tap -- a marker
+  link here reaches Flask and 302s an installed member to the App Store. See
+  `app_links.open_interstitial_url`, which explains it at length.
 
   Deliberately NOT a replacement for ordinary web navigation. A signed-in member
   clicking "Open PulseSoc" in the site header wants the web feed; this component
