@@ -477,14 +477,25 @@ def test_every_documented_exception_is_still_present_in_the_source():
 # path -> the *app-first* destinations that page is expected to offer. `seller` is
 # the "Seller Tools" nav entry, which every shell renders, so it is on all of them.
 #
-# `marketplace` and `product` used to be in every one of these sets and are
-# deliberately in none of them: the sets describe `/open/...` hrefs, and those two
-# destinations no longer produce one. What they produce instead is asserted by
-# `test_every_marketplace_path_on_the_page_is_one_the_registry_produces` below,
-# which is the assertion that would fail if the flag flip half-landed.
+# `marketplace` and `product` used to be in every one of these sets, because the
+# whole family was app-first and every link to them was an `/open/...` href. They
+# are web-first now, so ordinary navigation to them is a `/pulse/...` path --
+# asserted by `test_every_marketplace_path_on_the_page_is_one_the_registry_produces`
+# below, which is what would fail if that flag flip half-landed.
+#
+# `marketplace` is back in the `/pulse/marketplace` set for a different reason,
+# and the distinction is worth stating because it looks like a regression toward
+# the app-first shape. It is not navigation: it is the storefront's app CTA
+# ("Prefer the app? Open the PulseSoc Marketplace"), which must open the app and
+# so cannot be answered by `app_first_href`. That helper answers "where does a
+# WEB link to this destination go", and its web-first answer is the page the
+# button is rendered on -- a link from /pulse/marketplace to /pulse/marketplace.
+# Tapping it re-rendered the same page, which is how it was reported: a button
+# that does nothing. An app CTA on a pulsesoc.com page goes through `/open/...`.
 PAGES = {
     "/pulse": {"marketplace_create", "seller"},
     "/pulse/marketplace": {
+        "marketplace",
         "marketplace_create",
         "seller",
         "seller_apply",

@@ -1554,9 +1554,22 @@ def app_cta_html(destination, resource_id=None, source="web", label=None, classe
 
     The label always comes from the destination registry unless overridden, so a
     button cannot claim to open a post and land on Home.
+
+    `open_interstitial_url`, for the same reason the `app_open_cta` macro uses
+    it. Every caller of this helper is a page on pulsesoc.com, so the canonical
+    universal link `build_app_link` returns is same-domain -- and iOS does not
+    consult associated domains for a same-domain tap, so it never opened the app
+    from here. `/open/...` is left unclaimed by the association -- not by an
+    `exclude`, but because no component matches it at all -- so Safari keeps the
+    URL and the member is offered a real `pulsesoc://` button, a custom scheme
+    that sidesteps the same-domain rule entirely. That is a weaker guarantee
+    than an exclusion would be, so it is pinned by
+    `tests/web_parity/test_aasa_claims.py::test_the_interstitial_prefix_is_not_claimed_by_the_association`;
+    adding a broad component later would otherwise silently swallow this page.
+    `build_app_link` remains correct for anything sent off-domain.
     """
     try:
-        href = app_links.build_app_link(destination, resource_id, None, source)
+        href = app_links.open_interstitial_url(destination, resource_id, source)
     except app_links.AppLinkError as exc:
         logging.info(
             "%s destination=%s resource_present=%s error=%s",
@@ -1596,6 +1609,26 @@ def inject_app_link_helpers():
     def app_link(destination, resource_id=None, source="web", **params):
         return app_links.build_app_link(destination, resource_id, params or None, source)
 
+    def app_open_link(destination, resource_id=None, source="web"):
+        """The link to use when the CTA is rendered ON pulsesoc.com.
+
+        `app_link` builds the canonical `https://pulsesoc.com/...?pulse_app=1`
+        universal link, which is right in an email, a push payload or an SMS --
+        anywhere the tap starts off-domain. It is wrong here, and wrong in a way
+        that looks fine in review: the public product page is itself served from
+        pulsesoc.com, so the button was a link from a page to that same page.
+        iOS does not consult associated domains for a same-domain tap, so the
+        app is never offered; the request goes to Flask and re-renders the page
+        the member is already looking at. Reported as "the button does nothing",
+        which is exactly what it does.
+
+        `open_interstitial_url` is the on-domain answer and raises for any
+        destination the shipped binary cannot resolve, so a button that would
+        strand someone fails at render instead of in a member's hand.
+        """
+
+        return app_links.open_interstitial_url(destination, resource_id, source)
+
     try:
         banner_path = request.path
     except RuntimeError:
@@ -1603,6 +1636,7 @@ def inject_app_link_helpers():
 
     return {
         "app_link": app_link,
+        "app_open_link": app_open_link,
         "app_link_label": app_links.destination_label,
         "app_store_url": pulsesoc_app_store_url,
         "smart_app_banner_meta": app_promotion.smart_app_banner_meta(banner_path),
@@ -3994,7 +4028,8 @@ def app_first_link_map_script():
 
 
 def render_app_only_destination(
-    destination_key, source, can_open_app, scheme_path=None, status=200
+    destination_key, source, can_open_app, scheme_path=None, status=200,
+    web_path=None,
 ):
     """The "this lives in the iPhone app" page, for one destination.
 
@@ -4035,13 +4070,52 @@ def render_app_only_destination(
         "yes" if scheme_url else "no",
     )
 
-    body = render_template(
-        "app_only_destination.html",
-        heading=f"{noun} is available in the PulseSoc iPhone app",
-        explanation=(
+    # Two different pages share this renderer, and the copy has to follow the
+    # destination or it lies to one of them.
+    #
+    # `web_equivalent=False` is the original case: there genuinely is no web
+    # surface, so "we are still building this for the web" is true and the only
+    # way out is the app.
+    #
+    # `web_equivalent=True` arrives here through `/open/...`, which did not
+    # exist when this copy was written -- the `display_name` docstring in
+    # `app_links` even warns that a heading naming a surface is "only worth
+    # setting on the `web_equivalent=False` ones". A member who taps
+    # "Open in the PulseSoc app" on a product page they are *currently reading*
+    # was being told that experience is still being built for the web. That is
+    # false, and it reads as a broken site rather than an invitation.
+    #
+    # The back link matters for the same reason. It pointed at "/" for both
+    # cases, so declining the app cost a member the listing and dropped them on
+    # the homepage -- a Home dead end on the exact journey this mission exists
+    # to repair. When there is a web page for the resource, that is where Back
+    # goes.
+    web_first = bool(spec is not None and spec.web_equivalent)
+    if web_first:
+        heading = f"{noun} is also in the PulseSoc iPhone app"
+        explanation = (
+            "The app remembers where you left off and notifies you when "
+            "something happens. This page keeps working in your browser."
+        )
+    else:
+        heading = f"{noun} is available in the PulseSoc iPhone app"
+        explanation = (
             "We are still building this experience for the web. Install PulseSoc "
             "on iPhone to pick up exactly where you left off."
-        ),
+        )
+
+    # Only ever a builder's output, never request input: `web_path` is the
+    # already-validated path from `resolve_destination_path`. Falling back to
+    # "/" keeps the link present rather than emitting an empty href.
+    back_href = web_path if (web_first and web_path) else "/"
+    back_label = "Keep reading on the web" if back_href != "/" else "Back to PulseSoc"
+
+    body = render_template(
+        "app_only_destination.html",
+        heading=heading,
+        explanation=explanation,
+        back_href=back_href,
+        back_label=back_label,
         app_store_url=pulsesoc_app_store_url(),
         qr_src=app_links.app_store_qr_asset(),
         app_scheme_url=scheme_url,
@@ -6261,6 +6335,13 @@ def render_account_page(page, title, **context):
     context.setdefault("paid_digital_access_available", paid_digital_access_available)
     context.setdefault("message", "")
     context.setdefault("error", "")
+    # The auth forms carry the caller's intended destination across the POST.
+    # It has to come from here rather than from `request.args` in the template,
+    # because the re-render after a failed attempt IS the POST -- there is no
+    # query string on it, so a template reading args alone emits an empty field
+    # and the second attempt lands on Home. That is the common path, not the
+    # edge: mistyping a password once is ordinary.
+    context.setdefault("next_target", safe_next_value())
     return render_template("account.html", page=page, title=title, **context)
 
 
@@ -6339,11 +6420,32 @@ def is_legacy_pulsesoc_home_target(target):
     return lowered == "/pulse" and any(marker in query for marker in ("legacy", "old_home", "old-home", "global_pulsesoc_feed"))
 
 
-def safe_redirect_target(default_endpoint="dashboard_page"):
+def safe_next_value():
+    """The requested post-auth destination, or "" if there isn't a usable one.
+
+    Same validation as `safe_redirect_target` and deliberately sharing it: the
+    login form echoes this back as a hidden field so a retry keeps its intent,
+    and a field that sanitised differently from the redirect would be a way to
+    smuggle a target past the check. Only a site-relative single-slash path
+    survives, so `//evil.example.com/x`, `https://evil.example.com/x` and
+    `javascript:alert(1)` all come back as "" -- the field is emitted empty and
+    the redirect falls through to its default.
+
+    Returns "" rather than a default because the caller is filling in a form
+    input: an absent `next` must stay absent, not become a hardcoded "/pulse"
+    that then looks like a deliberate request to go home.
+    """
     target = request.args.get("next") or request.form.get("next") or ""
     if target and target.startswith("/") and not target.startswith("//"):
         if is_legacy_pulsesoc_home_target(target):
             return "/pulse"
+        return target
+    return ""
+
+
+def safe_redirect_target(default_endpoint="dashboard_page"):
+    target = safe_next_value()
+    if target:
         return target
     return "/pulse" if default_endpoint == "pulse_page" else url_for(default_endpoint)
 
@@ -7844,7 +7946,13 @@ def signup_page():
 def login_page():
     init_db()
     if request.method == "GET" and require_account():
-        return redirect("/pulse")
+        # Already signed in, so there is nothing to log into -- but honour the
+        # destination rather than dumping the member on Home. This fires more
+        # often than it looks: a public product page renders
+        # "Sign in to add to cart" for anyone it cannot see a session for, and
+        # a member arriving with a valid cookie from another tab lands here
+        # with a perfectly good `next` and no reason to be sent to the feed.
+        return redirect(safe_redirect_target("pulse_page"))
     if request.method == "POST":
         if not verify_csrf():
             return render_account_page("login", "Login", error="Security check failed. Please try again.")
@@ -50689,7 +50797,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
   </div>
 </section>
 """
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=apps-menu-width-20260927a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=desktop-dock-20260927a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=video-action-fit-20260927i"><link rel="stylesheet" href="/static/css/pulse-commerce-attachment.css?v=commerce-attachment-20260928a">{app_promotion.assets_html()}<style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:var(--text-primary)}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}{app_promotion.marketplace_note_html()}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script><script data-pulse-reaction-catalog>window.PULSE_REACTION_CATALOG={json.dumps(pulse_reactions.catalog_payload())};window.PULSE_REACTION_TRAY_SIZE={pulse_reactions.TRAY_SIZE};</script><script src="/static/js/pulse_reaction_system.js?v=cache-sweep-20260928a"></script><script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script src="/static/js/pulse_commerce_card.js?v=commerce-attachment-20260928a"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=apps-menu-width-20260927a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css?v=reels-desktop-create-20260929a"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=desktop-dock-20260927a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=video-action-fit-20260927i"><link rel="stylesheet" href="/static/css/pulse-commerce-attachment.css?v=commerce-attachment-20260928a">{app_promotion.assets_html()}<style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:var(--text-primary)}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}{app_promotion.marketplace_note_html()}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script><script data-pulse-reaction-catalog>window.PULSE_REACTION_CATALOG={json.dumps(pulse_reactions.catalog_payload())};window.PULSE_REACTION_TRAY_SIZE={pulse_reactions.TRAY_SIZE};</script><script src="/static/js/pulse_reaction_system.js?v=cache-sweep-20260928a"></script><script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script src="/static/js/pulse_commerce_card.js?v=commerce-attachment-20260928a"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -51153,8 +51261,32 @@ def pulse_reels_page():
         count=1,
     )
     main = re.sub(r"<div class='reels-sidebar-section reels-sidebar-actions' aria-label='Quick actions'>.*?</div>", "", main, count=1, flags=re.S)
-    main = main.replace("<div class='actions'><button class='button primary' type='button' data-open-reel-camera>Open Camera</button><button class='button' type='button' data-open-upload>Upload Reel</button></div>", "<p class='muted'>Use the bottom navigation plus button to create the first Reel.</p>")
-    main = main.replace("<div class='reels-toolbar'><button class='button primary' type='button' data-open-reel-camera>Camera</button><button class='button' type='button' data-open-upload>Upload</button><button class='button' type='button' data-open-sounds>Add Music</button><button class='button' type='button' data-open-live-camera>Live</button></div>", "")
+    # Names the affordance by role, not by position. The old copy read "Use the
+    # bottom navigation plus button", which is only true below 1024 -- above it
+    # the dock is hidden and the sentence pointed at nothing on screen. An empty
+    # state that names a control the reader cannot see is worse than no
+    # instruction, because it reads as a broken page rather than an empty one.
+    main = main.replace("<div class='actions'><button class='button primary' type='button' data-open-reel-camera>Open Camera</button><button class='button' type='button' data-open-upload>Upload Reel</button></div>", "<p class='muted'>No Reels yet. Use the create button to record or upload the first one.</p>")
+    # Kept in the DOM and hidden by width, rather than deleted outright.
+    #
+    # Deleting it was right when the phone dock was on every screen: the dock's
+    # plus button owned creation, and a second set of controls beside it was
+    # noise. The desktop re-architecture hides that dock above 1024, which
+    # turned the same line into a dead end -- measured on the rendered page at
+    # 1440, /pulse/reels offered zero visible ways to create a Reel, while at
+    # 390 the dock's plus was still there. A member on a laptop could watch
+    # Reels and had no way to make one.
+    #
+    # So the same handoff shape as the messenger dock: below 1024 the dock
+    # creates, at and above it this toolbar does. Never both, never neither.
+    # `.reels-desktop-create` carries the width condition in
+    # pulse_reels_experience.css, because a breakpoint belongs in a stylesheet
+    # where it can be read next to the rules it competes with -- not in a
+    # server-side string replacement that no CSS guard can see.
+    main = main.replace(
+        "<div class='reels-toolbar'>",
+        "<div class='reels-toolbar reels-desktop-create'>",
+    )
     main += pulse_reel_management_modals_html() + pulse_promotion_modal_html() + '<link rel="stylesheet" href="/static/css/pulsesoc_promotions.css"><script src="/static/js/pulsesoc_promotions.js" defer></script>'
     side = "<article class='card'><h2>Reel Intelligence</h2><p>Ranking blends retention, trust, originality, educational value, report history, and creator loyalty. Ragebait stays below quality.</p></article><article class='card'><h2>Creator Tools</h2><p>Camera, filters, sound reuse, caption AI, hook ideas, and thumbnail selection are wired into the Reels creation flow.</p></article>"
     script = """
@@ -58391,7 +58523,7 @@ def open_destination_interstitial(destination: str, resource_id: str = ""):
         "ios" if is_ios else "other",
     )
     return render_app_only_destination(
-        key, source, can_open_app=is_ios, scheme_path=path
+        key, source, can_open_app=is_ios, scheme_path=path, web_path=path
     )
 
 
@@ -58985,9 +59117,29 @@ def marketplace_storefront_app_cta(destination, resource_id=None):
     the destination against what the released binary actually resolves; a
     hand-made link is how a button reading "Open this listing" ends up landing on
     the app's Home tab.
+
+    `open_interstitial_url`, and NOT `app_first_href`, which is what this used to
+    call and is the whole of the reported defect. Those two answer different
+    questions. `app_first_href` answers "where should a link to this destination
+    point on the web", and since `product` became web-first its answer is
+    `/pulse/marketplace/<id>` -- correct for a breadcrumb or a card, and for this
+    button it is the page the visitor is already standing on. So the CTA was an
+    anchor to itself. On a phone it did not open the app, did not go Home and did
+    not error; it re-rendered the same listing, which is why it was reported as a
+    button that does nothing.
+
+    Routing it through `/open/...` instead of the canonical
+    `/pulse/marketplace/<id>?pulse_app=1` universal link is deliberate and is not
+    a workaround. That link is tapped from the same origin it addresses, and iOS
+    does not consult associated domains for a same-domain navigation, so it could
+    never have opened the app from this page either. `/open/...` is already
+    `exclude: true` in the shipped association file, so Safari keeps it by
+    design and the member is offered the choice -- which means this fix needs no
+    AASA change, and so cannot disturb the Stripe onboarding paths that share
+    that file.
     """
 
-    href = app_first_href(destination, resource_id)
+    href = app_links.open_interstitial_url(destination, resource_id, "web")
     label = app_links.destination_label(destination, "Open in PulseSoc")
     return (
         '<aside class="mkt-appcta">'

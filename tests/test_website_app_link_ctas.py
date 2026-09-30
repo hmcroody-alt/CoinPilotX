@@ -9,8 +9,16 @@ that are easy to break silently:
      so a correct-looking `{% from "_app_link_cta.html" import app_cta %}` without
      `with context` raises UndefinedError and 500s the whole page. That is exactly
      how this first landed.
-  2. The href is the canonical builder's output, marker and all. A hand-written
-     app link in a template is the failure mode the component exists to prevent.
+  2. The href is a builder's output rather than a hand-written string, which is
+     the failure mode the component exists to prevent. Which builder depends on
+     where the button is rendered: the homepage is served from pulsesoc.com, so
+     it uses `app_open_cta` / `open_interstitial_url` and its href is a relative
+     `/open/...` path. It used to assert the canonical `https://pulsesoc.com/...
+     ?pulse_app=1` universal link, and passed while the button did nothing on a
+     phone -- iOS does not consult associated domains for a same-domain
+     navigation, so that link just reloaded the page it was rendered on. The
+     canonical builder is still correct, and still tested, for an off-domain
+     surface such as an email.
   3. Ordinary web navigation is preserved. The rule is add, not convert: a signed-in
      member clicking "Explore PulseSoc" wants the web feed.
 
@@ -85,12 +93,18 @@ def test_homepage_offers_an_app_link_and_a_store_badge(homepage):
     assert "app-store" in found, "homepage lost its App Store badge"
 
 
-def test_the_app_cta_href_is_the_canonical_builder_output(homepage):
+def test_the_app_cta_href_is_the_on_site_builder_output(homepage):
     href, _ = ctas(homepage)["home"]
     # Jinja autoescapes the query separator; compare on the decoded form.
-    assert href.replace("&amp;", "&") == app_links.build_app_link("home", source="web")
-    assert href.startswith(f"{app_links.CANONICAL_APP_ORIGIN}/pulse?")
-    assert f"{app_links.APP_INTENT_PARAM}=1" in href
+    assert href.replace("&amp;", "&") == app_links.open_interstitial_url(
+        "home", None, "web"
+    )
+    assert href.startswith("/open/home?")
+    # The constraint, independent of the shape: the button must not address the
+    # site it is rendered on, or the tap is an in-site navigation and iOS never
+    # offers the app.
+    assert app_links.CANONICAL_APP_HOST not in href
+    assert app_links.APP_INTENT_PARAM not in href
     assert f"{app_links.APP_SOURCE_PARAM}=web" in href
 
 
@@ -178,17 +192,21 @@ def cta_module():
     )
 
 
-def test_mutation_the_component_is_what_produces_the_marker(client, monkeypatch):
+def test_mutation_the_component_is_what_produces_the_href(client, monkeypatch):
     # If the CTA's href were hand-written in the template instead of coming from
     # the shared builder, neutering the builder would change nothing and every
     # assertion above would be measuring a hardcoded string.
+    #
+    # Patches `open_interstitial_url`, because that is the builder the homepage
+    # reaches now. Patching `build_app_link` here would leave the sentinel
+    # unused and the test would pass for the wrong reason.
     before, _ = ctas(client.get("/", headers=HTTPS).get_data(as_text=True))["home"]
-    assert app_links.APP_INTENT_PARAM in before
+    assert before.startswith("/open/")
 
     monkeypatch.setattr(
         bot.app_links,
-        "build_app_link",
-        lambda destination, resource_id=None, params=None, source=None: "/sentinel",
+        "open_interstitial_url",
+        lambda destination, resource_id=None, source=None: "/sentinel",
     )
     after = ctas(client.get("/", headers=HTTPS).get_data(as_text=True))["home"]
     assert after[0] == "/sentinel"
@@ -214,3 +232,11 @@ def test_mutation_a_bad_destination_fails_loudly_rather_than_linking_home(client
             str(module.app_cta("not_a_real_destination"))
         with pytest.raises(app_links.AppLinkError):
             str(module.app_cta("post", "../../etc/passwd"))
+        # The same guarantee for the macro the website actually uses. Both
+        # exist, they take the same arguments and differ by one word, so a
+        # check that covered only `app_cta` would leave the on-site path --
+        # every button a member can currently see -- unguarded.
+        with pytest.raises(app_links.AppLinkError):
+            str(module.app_open_cta("not_a_real_destination"))
+        with pytest.raises(app_links.AppLinkError):
+            str(module.app_open_cta("post", "../../etc/passwd"))
