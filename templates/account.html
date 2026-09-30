@@ -404,7 +404,7 @@
           <p data-i18n="signupIntro">Create your PulseSoc account. Core tools are free for authenticated users; PulseSoc Premium is optional for prestige identity, elite creator effects, and deeper creator enhancements.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-            <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
+            <input type="hidden" name="next" value="{{ next_target }}" />
             <input name="full_name" autocomplete="name" placeholder="Display name" required />
             <input name="username" autocomplete="username" placeholder="Username / handle" required />
             <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
@@ -423,7 +423,7 @@
           <p data-i18n="loginIntro">Log in to manage your PulseSoc profile, account, alerts, and optional Telegram companion connection.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-            <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
+            <input type="hidden" name="next" value="{{ next_target }}" />
             <input name="email" type="email" autocomplete="email" placeholder="Email address" value="{{ resend_email or '' }}" required />
             <input name="password" type="password" autocomplete="current-password" placeholder="Password" required />
             <label class="consent-row"><input type="checkbox" name="terms_accepted" required /><span>I agree to the Terms, Privacy Policy, and PulseSoc no-tolerance rules for objectionable content and abusive users.</span></label>

@@ -6290,6 +6290,13 @@ def render_account_page(page, title, **context):
     context.setdefault("paid_digital_access_available", paid_digital_access_available)
     context.setdefault("message", "")
     context.setdefault("error", "")
+    # The auth forms carry the caller's intended destination across the POST.
+    # It has to come from here rather than from `request.args` in the template,
+    # because the re-render after a failed attempt IS the POST -- there is no
+    # query string on it, so a template reading args alone emits an empty field
+    # and the second attempt lands on Home. That is the common path, not the
+    # edge: mistyping a password once is ordinary.
+    context.setdefault("next_target", safe_next_value())
     return render_template("account.html", page=page, title=title, **context)
 
 
@@ -6368,11 +6375,32 @@ def is_legacy_pulsesoc_home_target(target):
     return lowered == "/pulse" and any(marker in query for marker in ("legacy", "old_home", "old-home", "global_pulsesoc_feed"))
 
 
-def safe_redirect_target(default_endpoint="dashboard_page"):
+def safe_next_value():
+    """The requested post-auth destination, or "" if there isn't a usable one.
+
+    Same validation as `safe_redirect_target` and deliberately sharing it: the
+    login form echoes this back as a hidden field so a retry keeps its intent,
+    and a field that sanitised differently from the redirect would be a way to
+    smuggle a target past the check. Only a site-relative single-slash path
+    survives, so `//evil.example.com/x`, `https://evil.example.com/x` and
+    `javascript:alert(1)` all come back as "" -- the field is emitted empty and
+    the redirect falls through to its default.
+
+    Returns "" rather than a default because the caller is filling in a form
+    input: an absent `next` must stay absent, not become a hardcoded "/pulse"
+    that then looks like a deliberate request to go home.
+    """
     target = request.args.get("next") or request.form.get("next") or ""
     if target and target.startswith("/") and not target.startswith("//"):
         if is_legacy_pulsesoc_home_target(target):
             return "/pulse"
+        return target
+    return ""
+
+
+def safe_redirect_target(default_endpoint="dashboard_page"):
+    target = safe_next_value()
+    if target:
         return target
     return "/pulse" if default_endpoint == "pulse_page" else url_for(default_endpoint)
 
@@ -7873,7 +7901,13 @@ def signup_page():
 def login_page():
     init_db()
     if request.method == "GET" and require_account():
-        return redirect("/pulse")
+        # Already signed in, so there is nothing to log into -- but honour the
+        # destination rather than dumping the member on Home. This fires more
+        # often than it looks: a public product page renders
+        # "Sign in to add to cart" for anyone it cannot see a session for, and
+        # a member arriving with a valid cookie from another tab lands here
+        # with a perfectly good `next` and no reason to be sent to the feed.
+        return redirect(safe_redirect_target("pulse_page"))
     if request.method == "POST":
         if not verify_csrf():
             return render_account_page("login", "Login", error="Security check failed. Please try again.")
