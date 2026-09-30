@@ -344,10 +344,14 @@ Signup collects a boolean, not an age. The only age copy anywhere is
 <span>I confirm I meet the age requirements for my country.</span>
 ```
 
-**No minimum age is stated.** It is enforced as a presence check at bot.py:7855 (web)
-and bot.py:8280 (iOS), stored as `users.age_confirmed`, and that is the entirety of
-the platform's age knowledge. So age targeting is not merely unimplemented — with the
-data the platform holds it is currently **unimplementable**.
+**The web surface states no minimum age at all.** The iOS surface states two different
+ones — "I'm 16+" on the signup checkbox and "at least 13 years old" in the in-app Terms
+it links to — which is already registered as D-L8. D-A1 is the other end of the same
+problem: whichever number is correct, the platform does not *record* an age. The gate
+is a presence check on a boolean at bot.py:7855 (web) and bot.py:8280 (iOS), stored as
+`users.age_confirmed`, and that is the entirety of the platform's age knowledge. So age
+targeting is not merely unimplemented — with the data the platform holds it is currently
+**unimplementable**, and D-L8 has to be settled before D-A1 can be.
 
 ### Why this branch does not fix it
 
