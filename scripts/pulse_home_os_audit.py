@@ -28,6 +28,19 @@ VERSIONED_ASSETS = [
     ("static/js/pulse_radio.js", "Pulse Radio runtime"),
 ]
 
+# `/pulse` defaults to `boot_profile=core` (bot.py:43785), and `core` deliberately
+# strips the galactic city runtime, alongside the inline shell runtime and the
+# media picker. So the profile this audit fetches decides which assets it is
+# entitled to demand: asking `core` for the environment engine asks for a script
+# that boot profile exists to remove. That contradiction is what failed here once
+# the boot profiles landed -- not a Home OS regression.
+#
+# The asset is therefore checked under a profile that keeps it, and its *absence*
+# under `core` is asserted separately. That is the same inversion 1890dbcd7 used
+# for `@keyframes pulseCityVehicle`: both directions are pinned, so neither
+# dropping the script from `normal` nor reintroducing it into `core` can pass.
+STRIPPED_BY_CORE = {"static/js/pulse_environment_engine.js"}
+
 
 def asset_versions(text: str, asset_path: str) -> set[str]:
     pattern = re.escape(f"/{asset_path}") + r"\?v=([A-Za-z0-9._-]+)"
@@ -171,14 +184,35 @@ def main() -> int:
     home_html = home.get_data(as_text=True)
     require(home.status_code == 200, "Home route loads", str(home.status_code))
     require('class="pulse-home-os"' in home_html, "Home route receives Home OS scope")
+
+    # The profile that keeps every versioned asset, so each one's token can be
+    # checked against what bot.py declares.
+    full = client.get("/pulse?boot_profile=normal")
+    full_html = full.get_data(as_text=True)
+    require(full.status_code == 200, "Home route loads under the full boot profile", str(full.status_code))
+
     for asset_path, asset_label in VERSIONED_ASSETS:
-        rendered = asset_versions(home_html, asset_path)
+        rendered = asset_versions(full_html, asset_path)
         expected = declared_versions[asset_path]
         require(
             bool(rendered) and rendered <= expected,
             f"Home loads cache-busted {asset_label}",
             f"rendered {sorted(rendered) or 'no ?v= token'} not declared in bot.py {sorted(expected)}",
         )
+        if asset_path in STRIPPED_BY_CORE:
+            require(
+                not asset_versions(home_html, asset_path),
+                f"Default boot profile still omits {asset_label}",
+                f"core rendered {sorted(asset_versions(home_html, asset_path))}, but core "
+                "exists to strip this script; reintroducing it into the default "
+                "profile undoes that decision",
+            )
+        else:
+            require(
+                bool(asset_versions(home_html, asset_path)),
+                f"Default boot profile still loads {asset_label}",
+                "core rendered no ?v= token for an asset core does not strip",
+            )
     require("data-pulse-radio-toggle" in home_html and "data-pulse-radio-player" in home_html, "Home renders Pulse Radio controls")
     # Assert the span's own content: "Pulse Radio" also appears in the player
     # panel below, so a bare substring check passes even with an empty label.
