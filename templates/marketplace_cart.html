@@ -86,22 +86,86 @@
   .cart .checkout .pay{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .cart .checkout button.ghost{background:none;border:1px solid var(--line);color:var(--dim);
     border-radius:10px;padding:10px 14px;font:inherit;cursor:pointer}
+  {#
+    Phone first, and the phone layout is two columns rather than three.
+
+    The three-column form this replaced was `72px 1fr auto`, and `auto` on the
+    controls column is what broke it: that column claims its min-content width,
+    which is the widest the row can be -- "Accept new price" plus the quantity
+    field plus "Remove", around 340px. On a 390px phone the `1fr` title column
+    was left about 150px, and a real catalogue title is 114-160 characters. The
+    result was one product rendering as a sixteen-line vertical ribbon of single
+    words, taller than the phone. The cart is where a buyer checks *what they
+    are about to pay for*, and a column of stacked words is not something anyone
+    reads for that.
+
+    So on a phone the controls get their own full-width row underneath instead
+    of competing with the title for the same horizontal space, and the title
+    column is `minmax(0,1fr)` -- a plain `1fr` has an automatic minimum of
+    min-content, so the longest unbreakable word in a title can still force the
+    column wider than its share and squeeze whatever shares the row with it.
+  #}
   .cart .line{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:#0a0a0a;
-    display:grid;grid-template-columns:72px 1fr auto;gap:14px;align-items:start}
+    display:grid;grid-template-columns:72px minmax(0,1fr);gap:12px 14px;align-items:start}
   .cart .line img{width:72px;height:72px;object-fit:cover;border-radius:10px;background:#141414}
-  .cart .line h3{margin:0 0 3px;font-size:16px}
+  .cart .line .ident{min-width:0}
+  {#
+    Two lines and then an ellipsis, which is the same budget
+    `MarketplaceCartScreen` gives the title with `numberOfLines={2}` -- the two
+    views of this one cart should not disagree about how much of a name a buyer
+    is shown. Clamping is visual only: the full title stays in the anchor's text
+    for a screen reader and for the `title` tooltip, so nothing is withheld,
+    it is just no longer allowed to set the height of the row.
+  #}
+  .cart .line h3{margin:0 0 3px;font-size:16px;line-height:1.3;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .cart .line h3 a{color:var(--ink);text-decoration:none}
   .cart .line h3 a:hover{color:var(--go)}
   .cart .line .store{margin:0;color:var(--dim);font-size:13px}
+  {#
+    What the buyer chose, which the cart API has returned as `variant_label`
+    since before this page existed and this page has never printed. "Color:
+    Snowflake Blue · Size: M" is the difference between two lines that are
+    otherwise the same product at the same price, and without it a cart holding
+    both sizes of one shirt shows the same row twice.
+  #}
+  .cart .line .variant{margin:0;color:var(--ink);font-size:13px;opacity:.85}
   .cart .line .state{display:inline-block;margin-top:6px;font-size:11px;letter-spacing:.07em;
     text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:3px 9px;color:var(--dim)}
   .cart .line.ok .state{color:var(--go);border-color:rgba(46,204,113,.45)}
   .cart .line.attn{border-color:rgba(232,196,104,.5)}
   .cart .line.attn .state{color:var(--warn);border-color:rgba(232,196,104,.5)}
   .cart .line.gone{opacity:.6}
-  .cart .line .money{text-align:right;white-space:nowrap}
-  .cart .line .money b{display:block;font-size:17px}
-  .cart .line .controls{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:8px}
+  {#
+    The money row spans both columns on a phone and sits under the picture, so
+    the amount and the controls have the full width and the title never has to
+    share it.
+  #}
+  .cart .line .money{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px 12px;
+    align-items:center;justify-content:space-between}
+  .cart .line .money b{font-size:17px;white-space:nowrap}
+  {#
+    The unit price, shown only when the quantity is not 1. `<b>` is the extended
+    amount -- what this line adds to the subtotal -- and for a line of three
+    that number appears nowhere else on the page, so "$14.99 each" is the only
+    way to see what one costs.
+  #}
+  .cart .line .each{color:var(--dim);font-size:13px;white-space:nowrap}
+  .cart .line .controls{display:flex;gap:8px;align-items:center;margin-left:auto}
+  {#
+    Only where there is genuinely room for it. The controls row needs about
+    340px at its widest, so the third column is restored at a width where the
+    title still gets roughly 320px after the picture and the gaps -- not at the
+    ~600px where it would technically fit and the title would be back to the
+    150px that caused this. A breakpoint that merely avoids overflow is how the
+    original layout looked correct on the desktop it was built on.
+  #}
+  @media (min-width:760px){
+    .cart .line{grid-template-columns:72px minmax(0,1fr) auto}
+    .cart .line .money{grid-column:auto;display:block;text-align:right}
+    .cart .line .each{margin-top:2px}
+    .cart .line .controls{margin-left:0;margin-top:8px;justify-content:flex-end}
+  }
   .cart .line .controls input{width:56px;background:#141414;color:var(--ink);border:1px solid var(--line);
     border-radius:8px;padding:5px 7px;font:inherit;text-align:center}
   .cart .line .controls button{background:none;border:1px solid var(--line);color:var(--dim);
@@ -109,10 +173,21 @@
   .cart .line .controls button:hover{color:var(--ink);border-color:var(--go)}
   .cart .line .controls button.confirm{color:var(--warn);border-color:rgba(232,196,104,.5)}
   .cart .totals{border:1px solid var(--line);border-radius:14px;padding:16px 18px;background:#0a0a0a}
-  .cart .totals .row{display:flex;justify-content:space-between;gap:18px;margin:0 0 8px;color:var(--dim)}
+  {#
+    `subtotalRow` emits `.row.grand` into `.group-foot` as well as into
+    `.totals`, so scoping these to `.totals` alone left the per-seller subtotal
+    -- the amount that seller actually charges -- as unflexed inline text
+    reading "SubtotalNot final yet". The group copy already sits on its own
+    `border-top`, so it takes the row rules without `.grand`'s second rule.
+  #}
+  .cart .totals .row,
+  .cart .group-foot .row{display:flex;justify-content:space-between;gap:18px;margin:0 0 8px;
+    color:var(--dim)}
   .cart .totals .row.grand{color:var(--ink);font-size:19px;margin:12px 0 0;
     border-top:1px solid var(--line);padding-top:12px}
-  .cart .totals .row.grand b{color:var(--go)}
+  .cart .group-foot .row.grand{color:var(--ink);font-size:17px;margin:0}
+  .cart .totals .row.grand b,
+  .cart .group-foot .row.grand b{color:var(--go)}
   .cart .pay{margin:16px 0 0}
   .cart .pay .note{color:var(--dim);font-size:13px;margin:10px 0 0;max-width:58ch}
   .cart .empty{border:1px solid var(--line);border-radius:14px;padding:26px 18px;background:#0a0a0a;
@@ -178,4 +253,4 @@
   promotions bundle the same way. `defer` runs it after parsing, so the shell's
   own inline script has already defined `pulseApi` and `toast`.
 #}
-<script src="/static/js/pulsesoc_cart.js?v=web-cart-checkout-20260927b" defer></script>
+<script src="/static/js/pulsesoc_cart.js?v=web-cart-lines-20260930a" defer></script>
