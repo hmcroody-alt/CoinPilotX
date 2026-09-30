@@ -98,7 +98,9 @@
     </figure>
     {% endif %}
 
-    <a class="back" href="/">Back to PulseSoc</a>
+    {# Both supplied by the view, which decides them from the destination: a
+       resource with a web page sends Back to that resource, not to Home. #}
+    <a class="back" href="{{ back_href|default('/', true) }}">{{ back_label|default('Back to PulseSoc', true) }}</a>
   </main>
 
   {% if can_open_app and app_scheme_url %}

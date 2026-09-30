@@ -4023,7 +4023,8 @@ def app_first_link_map_script():
 
 
 def render_app_only_destination(
-    destination_key, source, can_open_app, scheme_path=None, status=200
+    destination_key, source, can_open_app, scheme_path=None, status=200,
+    web_path=None,
 ):
     """The "this lives in the iPhone app" page, for one destination.
 
@@ -4064,13 +4065,52 @@ def render_app_only_destination(
         "yes" if scheme_url else "no",
     )
 
-    body = render_template(
-        "app_only_destination.html",
-        heading=f"{noun} is available in the PulseSoc iPhone app",
-        explanation=(
+    # Two different pages share this renderer, and the copy has to follow the
+    # destination or it lies to one of them.
+    #
+    # `web_equivalent=False` is the original case: there genuinely is no web
+    # surface, so "we are still building this for the web" is true and the only
+    # way out is the app.
+    #
+    # `web_equivalent=True` arrives here through `/open/...`, which did not
+    # exist when this copy was written -- the `display_name` docstring in
+    # `app_links` even warns that a heading naming a surface is "only worth
+    # setting on the `web_equivalent=False` ones". A member who taps
+    # "Open in the PulseSoc app" on a product page they are *currently reading*
+    # was being told that experience is still being built for the web. That is
+    # false, and it reads as a broken site rather than an invitation.
+    #
+    # The back link matters for the same reason. It pointed at "/" for both
+    # cases, so declining the app cost a member the listing and dropped them on
+    # the homepage -- a Home dead end on the exact journey this mission exists
+    # to repair. When there is a web page for the resource, that is where Back
+    # goes.
+    web_first = bool(spec is not None and spec.web_equivalent)
+    if web_first:
+        heading = f"{noun} is also in the PulseSoc iPhone app"
+        explanation = (
+            "The app remembers where you left off and notifies you when "
+            "something happens. This page keeps working in your browser."
+        )
+    else:
+        heading = f"{noun} is available in the PulseSoc iPhone app"
+        explanation = (
             "We are still building this experience for the web. Install PulseSoc "
             "on iPhone to pick up exactly where you left off."
-        ),
+        )
+
+    # Only ever a builder's output, never request input: `web_path` is the
+    # already-validated path from `resolve_destination_path`. Falling back to
+    # "/" keeps the link present rather than emitting an empty href.
+    back_href = web_path if (web_first and web_path) else "/"
+    back_label = "Keep reading on the web" if back_href != "/" else "Back to PulseSoc"
+
+    body = render_template(
+        "app_only_destination.html",
+        heading=heading,
+        explanation=explanation,
+        back_href=back_href,
+        back_label=back_label,
         app_store_url=pulsesoc_app_store_url(),
         qr_src=app_links.app_store_qr_asset(),
         app_scheme_url=scheme_url,
@@ -58478,7 +58518,7 @@ def open_destination_interstitial(destination: str, resource_id: str = ""):
         "ios" if is_ios else "other",
     )
     return render_app_only_destination(
-        key, source, can_open_app=is_ios, scheme_path=path
+        key, source, can_open_app=is_ios, scheme_path=path, web_path=path
     )
 
 
