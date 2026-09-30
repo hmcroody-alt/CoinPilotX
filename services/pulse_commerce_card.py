@@ -95,6 +95,14 @@ _PRICE_OK = frozenset({AVAILABLE, OUT_OF_STOCK, NOT_PRICED})
 #: States whose chip is styled as gone rather than as a transient stock fact.
 _GONE = frozenset({UNAVAILABLE, REMOVED})
 
+#: The store link's copy is the renderer's own. The overlay ships a key beside
+#: every string *it* supplies, but it supplies no seller CTA — the app writes
+#: that one itself — so the key is named here, and it is the same key
+#: ``CommerceOverlay.tsx`` renders through rather than a second one meaning the
+#: same thing.
+SELLER_I18N_KEY = "commerce:pulsedrop.seller.visitStore"
+SELLER_FALLBACK = "Visit store"
+
 
 def is_commerce_overlay(value: Any) -> bool:
     """Present, a mapping, and shaped like an overlay.
@@ -208,11 +216,32 @@ def _safe_route(route: Any) -> str:
     return text
 
 
-def _chip(text: str, extra: str = "") -> str:
+def _i18n(block: Any) -> str:
+    """The ``data-i18n`` marker for an overlay block, or ``""``.
+
+    The overlay ships a translation key beside every string it supplies, and the
+    app renders through the key — ``CommerceOverlay.tsx`` does
+    ``t(label.i18n_key, {defaultValue: label.fallback})``. This renderer read the
+    fallback alone, so a French member scrolling a French post met an English
+    badge and an English button on the one element that was supposed to sell
+    them something.
+
+    The English fallback stays in the markup rather than being resolved here.
+    ``/pulse/post/<id>`` is the indexable surface and a crawler should read
+    words, and the server does not know the reader's language on a cached feed
+    response either way; ``pulse_i18n.js`` swaps the text once it knows.
+    """
+    if not isinstance(block, Mapping):
+        return ""
+    key = str(block.get("i18n_key") or "").strip()
+    return f" data-i18n='{_esc(key)}'" if key else ""
+
+
+def _chip(text: str, extra: str = "", marker: str = "") -> str:
     if not text:
         return ""
     classes = "pulse-commerce-chip" + (f" {extra}" if extra else "")
-    return f"<span class='{classes}'>{_esc(text)}</span>"
+    return f"<span class='{classes}'{marker}>{_esc(text)}</span>"
 
 
 def card_html(commerce: Any, *, surface: str = "") -> str:
@@ -268,10 +297,17 @@ def card_html(commerce: Any, *, surface: str = "") -> str:
     # rebuilt from the parts this card is actually showing, and the accessible
     # surface cannot disclose more than the visual one.
     accessibility = str(commerce.get("accessibility_text") or "").strip()
-    if not accessibility or not show_price:
+    composed = not accessibility or not show_price
+    if composed:
         accessibility = ". ".join(
             part for part in (label_text, title, state_text if show_state else "") if part
         )
+    # Whichever of the two it is, it is English: the fallbacks are English, and
+    # ``editorial.accessibility_text`` says in its own docstring that it "cannot
+    # know the reader's language". That is the right sentence for a reader with
+    # no JavaScript, whose chips are English too, and the wrong one the moment a
+    # sweep translates the card around it -- so where the browser does run,
+    # `recompose` in the JS twin rebuilds it from the translated chips.
 
     thumb = (
         f"<span class='pulse-commerce-thumb'>"
@@ -280,11 +316,12 @@ def card_html(commerce: Any, *, surface: str = "") -> str:
         else "<span class='pulse-commerce-thumb is-empty' aria-hidden='true'></span>"
     )
 
-    chips = _chip(label_text, "pulse-commerce-chip-label")
+    chips = _chip(label_text, "pulse-commerce-chip-label", _i18n(label))
     if show_state:
         chips += _chip(
             state_text,
             "pulse-commerce-chip-state" + (" is-gone" if block in _GONE else ""),
+            _i18n(availability),
         )
     chips_html = f"<span class='pulse-commerce-chips'>{chips}</span>" if chips else ""
 
@@ -298,7 +335,7 @@ def card_html(commerce: Any, *, surface: str = "") -> str:
     meta_html = f"<span class='pulse-commerce-meta'>{meta}</span>" if meta else ""
 
     cta_html = (
-        f"<span class='pulse-commerce-cta'>{_esc(cta_text)}</span>"
+        f"<span class='pulse-commerce-cta'{_i18n(cta)}>{_esc(cta_text)}</span>"
         if routable and cta_text
         else ""
     )
@@ -328,7 +365,8 @@ def card_html(commerce: Any, *, surface: str = "") -> str:
 
     store_route = _safe_route(seller.get("route"))
     store_html = (
-        f"<a class='pulse-commerce-seller' href='{_esc(store_route)}'>Visit store</a>"
+        f"<a class='pulse-commerce-seller' href='{_esc(store_route)}' "
+        f"data-i18n='{_esc(SELLER_I18N_KEY)}'>{_esc(SELLER_FALLBACK)}</a>"
         if store_route
         else ""
     )
