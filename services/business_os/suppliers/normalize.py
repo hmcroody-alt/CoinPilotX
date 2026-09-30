@@ -13,10 +13,10 @@ So this is the only file in the dropshipping pipeline permitted to know a
 provider's vocabulary. Everything above it consumes the normalized shapes:
 :func:`product`, :func:`variants`, :func:`inventory`.
 
-The three refusals
-------------------
+The refusals
+------------
 Normalization is where a lossy conversion is easiest to write and hardest to
-see, so three conversions are deliberately *not* performed:
+see, so four conversions are deliberately *not* performed:
 
 1. **An unparseable price is ``None``, never ``0``.** ``float(x or 0)`` turns a
    supplier outage into a free product with a 100% margin. Every money field
@@ -28,6 +28,11 @@ see, so three conversions are deliberately *not* performed:
 3. **A rejected media URL is dropped, never substituted.** A product that loses
    every image fails import validation. It does not get a placeholder that makes
    a broken import look like a successful one.
+4. **An unreadable shipping aging is ``None``, never a duration.** There is no
+   default transit time, for the same reason ``pricing`` has no default freight
+   cost: a default margin is a policy the platform may choose, but a default
+   transit time is a claim about how long a carrier takes, and inventing one
+   puts a delivery date in front of a buyer that no provider ever stated.
 
 On untrusted content
 --------------------
@@ -41,6 +46,7 @@ applied here, at the boundary, so that no consumer has to remember to do it.
 from __future__ import annotations
 
 import ipaddress
+import math
 import re
 import unicodedata
 from urllib.parse import urlsplit
@@ -78,6 +84,29 @@ MAX_DESCRIPTION = 8000
 MAX_MEDIA = 20
 MAX_VARIANTS = 100
 MAX_URL = 2048
+
+#: How the integers in a normalized transit range are to be counted.
+#:
+#: ``UNSPECIFIED`` is the common case and is not a defect in this parser. CJ
+#: publishes its shipping aging as bare ranges — the logistics appendix lists
+#: ePacket as "7-20" and DHL as "3-7" — and states nowhere whether those are
+#: business or calendar days. So the basis is a fact we usually do not have,
+#: and it is carried as its own value rather than folded into an assumption,
+#: because the two readings differ by about 40% of wall-clock time and the
+#: caller is the only layer that knows which direction is safe to round.
+TRANSIT_BASIS_UNSPECIFIED = "UNSPECIFIED"
+TRANSIT_BASIS_BUSINESS = "BUSINESS"
+TRANSIT_BASIS_CALENDAR = "CALENDAR"
+TRANSIT_BASES = (TRANSIT_BASIS_UNSPECIFIED, TRANSIT_BASIS_BUSINESS, TRANSIT_BASIS_CALENDAR)
+
+#: Upper bound on a credible international transit range, in days.
+#:
+#: This is load-bearing beyond sanity-checking. The provider field is a free
+#: string, and the strings that turn up in a shipping payload include some that
+#: are not aging at all — a year span like "2024-2025" parses as a perfectly
+#: well-formed 2024-to-2025-day range. Rejecting the whole reading above this
+#: ceiling is what stops a misidentified string from becoming a delivery quote.
+MAX_TRANSIT_DAYS = 180
 
 _TAG = re.compile(r"<[^>]*>")
 _WHITESPACE = re.compile(r"[ \t ]+")
@@ -356,6 +385,84 @@ def storage_stock_state(state: str) -> str:
     if state in (STOCK_IN_STOCK, STOCK_OUT_OF_STOCK):
         return state
     return STOCK_UNKNOWN
+
+
+# ---------------------------------------------------------------------------
+# Delivery transit
+# ---------------------------------------------------------------------------
+
+#: Unsigned, because a transit string's "-" is a range separator and not a sign.
+#: Reusing :data:`_NUMBER` here reads "7-20" as 7 followed by *negative* 20.
+_TRANSIT_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+#: Substrings that state the basis outright. Matched against casefolded text,
+#: so these must be lowercase. The CJK forms are here because provider strings
+#: in this pipeline are routinely bilingual — the appendix ships channel names
+#: like "USPS美国专线" — and 工作日 is the ordinary way to write "business day".
+_BUSINESS_DAY_MARKERS = ("business", "working", "work day", "weekday", "工作日", "營業日", "营业日")
+_CALENDAR_DAY_MARKERS = ("calendar", "natural day", "自然日", "日曆日", "日历日")
+
+
+def transit_days(value) -> dict | None:
+    """A typed transit range from a provider aging string, or None.
+
+    CJ expresses shipping duration as ``arrivalTime`` on the accurate freight
+    endpoint and ``logisticAging`` on the simple one. Both are free strings:
+    "7-20", "5-10 days", a single "10", sometimes bilingual, sometimes empty.
+    Nothing downstream should ever see one, because every consumer that wants a
+    delivery date would otherwise write its own parse of it, and those parses
+    would disagree on the day a provider changed the format.
+
+    Returns ``{"min_days", "max_days", "basis", "source_text"}`` or ``None``.
+
+    The fourth refusal
+    ------------------
+    Per this module's header: **an unreadable aging string is ``None``, never a
+    number.** There is no default transit time and no fallback range. A default
+    would be a claim about how long a specific carrier takes on a specific
+    corridor, which is not a policy the platform is entitled to invent — the
+    same reasoning that forbids a default freight cost in ``pricing``. A caller
+    holding ``None`` must say it does not know, and the one thing it must not do
+    is show a date anyway.
+
+    Both ends round *up*
+    --------------------
+    A fractional bound is ceilinged rather than rounded. Every rounding choice
+    in a delivery estimate has a safe direction and an unsafe one: later is
+    safe, and earlier is an overpromise that surfaces as a missed delivery. The
+    same asymmetry is why a zero lower bound is raised to 1. "Arrives today" is
+    not a claim any string describing freight that still has to physically move
+    can support, and a range starting at 0 renders as exactly that.
+
+    A reversed range ("20-7") is swapped rather than rejected, because the
+    interval is unambiguous even when its order is not.
+    """
+    text = clean_text(value, 200)
+    if text is None:
+        return None
+    found = _TRANSIT_NUMBER.findall(text)
+    if not found:
+        return None
+    # Only the first two numbers can be bounds. A third means the string is
+    # carrying something else as well ("7-20, option 3"), and the trailing
+    # values are not part of the interval.
+    try:
+        bounds = [float(number) for number in found[:2]]
+    except ValueError:
+        return None
+    if any(bound != bound or bound in (float("inf"), float("-inf")) for bound in bounds):
+        return None
+    days = sorted(max(1, math.ceil(bound)) for bound in bounds)
+    low, high = (days[0], days[-1])
+    if high > MAX_TRANSIT_DAYS:
+        return None
+    lowered = text.casefold()
+    basis = TRANSIT_BASIS_UNSPECIFIED
+    if any(marker in lowered for marker in _BUSINESS_DAY_MARKERS):
+        basis = TRANSIT_BASIS_BUSINESS
+    elif any(marker in lowered for marker in _CALENDAR_DAY_MARKERS):
+        basis = TRANSIT_BASIS_CALENDAR
+    return {"min_days": low, "max_days": high, "basis": basis, "source_text": text}
 
 
 # ---------------------------------------------------------------------------

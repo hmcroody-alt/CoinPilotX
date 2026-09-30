@@ -1446,6 +1446,7 @@ def render_product(
     viewer: Viewer = Viewer(),
     app_cta_html: str = "",
     promote_html: str = "",
+    delivery_html: str = "",
     store_href: str = "",
     seller_listing_count: int = 0,
     cart_count: Optional[int] = None,
@@ -1470,6 +1471,15 @@ def render_product(
     omitted, so the script has something to enable as the selection resolves. See
     the comment at the call site for why omitting it would leave a scripted page
     permanently without a button.
+
+    `delivery_html` arrives rendered, for the same reason `app_cta_html` does:
+    this module stays unable to hold a second opinion about what a delivery
+    window says. `services.delivery.web.html` is the only renderer of that markup
+    on either web surface, and the route is the only thing that decides whether
+    the estimate may be resolved from the reader at all -- which is a property of
+    the response's cacheability, not of the page. Passing the estimate itself
+    here would move both of those decisions into a renderer that is also used to
+    build the shared-cached grid.
     """
     listing_id = int(listing.get("id") or 0)
     title = mw._clean(listing.get("title")) or "Marketplace listing"
@@ -1716,10 +1726,18 @@ def render_product(
     # them submits the variant selection, and `promote_html` is supplied by the
     # route — if it ever contains a form of its own, nesting it here would be
     # invalid HTML and the browser would drop the inner form silently.
+    #
+    # `delivery_html` goes directly under the price, inside the form, matching
+    # the anonymous page and the app's PDP. Inside is safe *because* the country
+    # picker it may contain is `<select data-delivery-country>` with no `name`:
+    # an unnamed control is not submitted, so pressing "Update selection" cannot
+    # carry a destination into the canonical URL and make one reader's corridor a
+    # shareable link. If that select ever grows a `name`, move this outside the
+    # form rather than stripping the attribute.
     variant_form = (
         f'<form class="mkt-panel-form" method="get" action="{esc(canonical)}"'
         f" data-mkt-variants='{esc(variant_payload)}'>"
-        f"{price_block}{stock_block}"
+        f"{price_block}{stock_block}{delivery_html}"
         f"{options_html(groups, selected, offered=offered)}"
         f"{note_block}"
         + (

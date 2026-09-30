@@ -224,6 +224,30 @@ question from "may we launch" to "what is currently being represented".
 | 7 | Subprocessor list unpublished | 20+ recipients, none disclosed | ☐ |
 | 8 | Staff privacy notice absent | the heaviest data in the schema | ☐ |
 
+### Deployed, and verified live (2026-09-30 01:35 PT)
+
+Merged to `main`, which is what deploys; a `railway up` CLI deploy would have been
+silently reverted by the next `main` deploy. Railway deployment `6219bd95` SUCCESS.
+Verified against production rather than against the commit:
+
+| Claim | Probe | Result |
+|---|---|---|
+| D-L1 — the app's canonical URLs resolve | `GET https://pulsesoc.com/legal/{terms,privacy,guidelines}` | **200, 200, 200** (were 404) |
+| D-L1 — the other two are still absent | `GET /legal/{cookies,licenses}` | **404, 404** — as documented; no page exists to point at, owner decision |
+| D-L2 — the new code actually booted | `to_regclass('public.user_legal_acceptances')` on prod Postgres | **table exists**, 6 columns as written, 0 rows (no signup since deploy) |
+| D-P3 — the fix operates on real columns | `information_schema.columns` on `users` | **all 7 present** in prod: `date_of_birth`, `expertise_tags_json`, `recovery_email`, `recovery_phone`, `roast_call_sign`, `roast_call_sign_slug`, `social_links_json` |
+| D-P4 — four registries, not one | `information_schema.tables` | **all 4 present**: `notification_device_tokens`, `pulse_notification_devices`, `push_subscriptions`, `user_device_tokens` — confirming three really were being left behind |
+| Fee still 0% | `railway run printenv` × 3 | **all three attestations empty** in production |
+| No boot damage | 300 lines of prod logs | **0** matches for traceback / critical / failed-to-register |
+
+The D-P4 row is the one worth reading twice: the fix is not theoretical. All four
+registries exist in production, so before this deploy a deleted account left live rows
+in three of them, including the complete web-push credential.
+
+**Not deployed: D-L3.** It is a change to `mobile-native/src/screens/SellerStoreScreen.tsx`
+and reaches users only in a new iOS build. Until that ships, the App Store binary still
+shows sellers the 10% figure.
+
 ### Cleared by this branch
 
 | # | Item | Evidence |
