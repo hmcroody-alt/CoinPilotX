@@ -31,7 +31,7 @@
   claim to a search engine.
 #}
 {% extends "_public_shell.html" %}
-{% from "_app_link_cta.html" import app_cta, app_store_badge with context %}
+{% from "_app_link_cta.html" import app_open_cta, app_store_badge with context %}
 
 {% block content %}
   <nav class="crumbs" aria-label="Breadcrumb">
@@ -62,7 +62,16 @@
     {% if category %}<p class="meta" style="margin-top:4px">{{ category }}</p>{% endif %}
 
     <div class="actions">
-      {{ app_cta("product", resource_id=listing_id, label="Open in the PulseSoc app") }}
+      {#
+        `app_open_cta`, not `app_cta`, and the distinction is the entire defect.
+        This page is served from pulsesoc.com, so `app_cta` built a link from
+        this page to this page -- the canonical listing URL carrying the app
+        marker, which is the page itself. iOS does
+        not consult associated domains for a same-domain tap, so it never
+        offered the app; Safari just reloaded the listing. On a phone that reads
+        as a button doing nothing at all, which is how it was reported.
+      #}
+      {{ app_open_cta("product", resource_id=listing_id, label="Open in the PulseSoc app") }}
       {#
         This read "Sign in to buy", and signing in led to a page offering Contact
         Seller, Save and Report -- no way to buy anything. The promise and the

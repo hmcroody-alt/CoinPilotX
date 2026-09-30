@@ -699,6 +699,8 @@
     "tests/web_surface/test_every_native_destination_resolves.py",
     "tests/web_surface/test_intelligence_subsystem_links.py",
     "tests/web_surface/test_messenger_bubble_body.py",
+    "tests/web_surface/test_no_floating_dock_on_desktop.py",
+    "tests/web_surface/test_on_site_app_cta_is_never_a_self_link.py",
     "tests/web_surface/test_open_a_thing_redirects.py",
     "tests/web_surface/test_probe_report.py",
     "tests/web_surface/test_pulse_web_surface.py",
