@@ -77,20 +77,23 @@ health = _load_aasa_health()
 #: new divergence fails, and fixing one of these also fails, which forces the
 #: list down instead of letting it rot.
 #:
-#: Neither is reachable from an on-site `app_open_cta` today, which is why this
-#: is recorded as debt rather than repaired here -- the fix belongs in
-#: `linking.ts`, needs a native rebuild to verify, and this mission does not own
-#: that file.
+#: `cart` used to be listed here on the grounds that it was "not reachable from an
+#: on-site `app_open_cta` today". That stopped being true when `/pulse/cart`
+#: shipped a web cart whose "Open cart in the app" button builds
+#: `open_interstitial_url("cart")` -- so the pinned dead end became the live one a
+#: member actually followed, and `linking.ts` has now been given the path. The
+#: entry is deleted rather than kept, because the assertion below is bidirectional
+#: and a fixed destination left in this set fails just as loudly as a new gap.
 #:
-#: - `cart` -> `pulsesoc://pulse/cart`. The `MarketplaceCart` screen really does
-#:   exist and is registered in `AppNavigator.tsx`; it was simply never given a
-#:   linking path, so the deep link cannot reach a screen that is otherwise
-#:   perfectly ready to receive it.
 #: - `notification` -> `pulsesoc://pulse/notifications/<id>`. The app declares
 #:   `notifications` for `NotificationCenter` and `pulse/notifications` for the
 #:   tab; neither takes an id, so the per-notification spelling resolves to
-#:   nothing.
-KNOWN_UNROUTED = {"cart", "notification"}
+#:   nothing *in `config.screens`*. Note that this file can only see that tree:
+#:   `linking.ts` resolves ids through `nativeObjectDestination` before the config
+#:   is consulted, and that resolver does map `/pulse/notifications/<id>`. So this
+#:   remaining entry records a gap in the declaration the app generates links
+#:   from, not a destination a member cannot reach.
+KNOWN_UNROUTED = {"notification"}
 
 
 def _route_matches(template: str, path: str) -> bool:

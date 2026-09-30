@@ -201,6 +201,22 @@ export const linking: LinkingOptions<RootStackParamList> = {
           listingId: Number
         }
       },
+      /**
+       * The buyer's cart, which `services/app_links.py` has declared
+       * `native_supported` and pointed at `MarketplaceCart` all along. The screen
+       * was registered in `AppNavigator` and reachable by tapping, but no linking
+       * path named it, so `pulsesoc://pulse/cart` -- the URL the website's "Open
+       * cart in the app" button really emits -- resolved to nothing here and was
+       * then reinterpreted as the Activity Inbox by the notification resolver.
+       *
+       * Declared here as well as in `nativeObjectDestination` for the same reason
+       * `MarketplaceProduct` is: this is the entry `getPathFromState` reads when
+       * the app generates a link, and it is the only declaration
+       * `tests/web_surface/test_scheme_urls_match_the_native_route_table.py` can
+       * see when it checks that every `native_supported` destination has a screen
+       * behind it.
+       */
+      MarketplaceCart: "pulse/cart",
       SellerStore: {
         path: "pulse/seller-store",
         parse: {

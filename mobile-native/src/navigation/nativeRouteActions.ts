@@ -154,6 +154,19 @@ export function nativeObjectDestination(routePath: string): NativeObjectDestinat
   // shared product URL exists to prevent. `MarketplaceProduct` resolves the id
   // against the listing read endpoint and can therefore open any listing.
   if (listingMatch) return { screen: "MarketplaceProduct", params: { listingId: positiveId(listingMatch[1]), title: "Marketplace" } };
+  // The cart carries no id and still belongs here, because what this function
+  // really answers is "which screen does this URL name" -- and every resolver in
+  // the app has to give the same answer. The cart is the case that proves it: the
+  // screen existed, `app_links.py` declared it, and each of the three resolvers
+  // independently failed to reach it, one of them by rewriting the request into
+  // the Activity Inbox. Declaring it once here is what makes cold start, an
+  // in-app tap and a push tap agree.
+  //
+  // `marketplace_cart_items` is keyed on the buyer and lives on the server, so
+  // the URL needs no cart identity and must never carry one: the screen asks who
+  // is signed in. That is also why an anonymous arrival is safe -- there is
+  // nothing in the link to leak or replay.
+  if (path === "/pulse/cart") return { screen: "MarketplaceCart" };
   if (messageMatch) return { screen: "Chat", params: { conversationId: positiveId(messageMatch[1]), title: "Conversation" } };
   if (notificationMatch) return { screen: "NotificationCenter", params: { notificationId: positiveId(notificationMatch[1]) } };
   if (briefingMatch) return { screen: "BriefingDetail", params: { briefingId: positiveId(briefingMatch[1]) } };
