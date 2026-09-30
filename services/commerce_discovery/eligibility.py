@@ -72,8 +72,18 @@ MAX_LISTING_RISK = 30
 MAX_SELLER_RISK = 60
 
 #: Price labels that parse to nothing but are not *errors* — the seller chose
-#: not to publish a number. Excluded from push, not from sale.
-_UNPRICED_LABELS = frozenset({"", "request access", "contact", "contact seller", "enquire", "inquire"})
+#: not to publish a number.
+#:
+#: No longer "excluded from push, not from sale". This list used to be the only
+#: place in the codebase that knew what an unpriced label looks like, while the
+#: shared publication gate required stock and never a price — so discovery
+#: declined to *recommend* these listings and every other buyer surface went on
+#: offering them, as far as a checkout that refuses ``amount_cents <= 0``.
+#: Discovery is a strict subset of purchasable (see the module docstring) and
+#: cannot be that while holding a purchasability condition the gate does not.
+#: The list moved to ``marketplace_listing_lifecycle``; this alias keeps the
+#: reads below reading well, and is the *same object*, not a copy.
+_UNPRICED_LABELS = listing_lifecycle.UNPRICED_LABELS
 
 #: Reasons a listing is not eligible, as stable codes. Surfaced only in admin
 #: observability — a buyer never sees these, and a seller sees a friendlier

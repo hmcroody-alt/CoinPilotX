@@ -29,7 +29,7 @@
   server-rendered instead, which is also the only version a crawler can read.
 #}
 {% extends "_public_shell.html" %}
-{% from "_app_link_cta.html" import app_cta, app_store_badge with context %}
+{% from "_app_link_cta.html" import app_open_cta, app_store_badge with context %}
 
 {% block content %}
   <nav class="crumbs" aria-label="Breadcrumb">
@@ -41,7 +41,7 @@
     <h1>{{ page.h1 }}</h1>
     <p class="lede">{{ page.description }}</p>
     <div class="actions">
-      {{ app_cta("marketplace", label="Open the marketplace in the app") }}
+      {{ app_open_cta("marketplace", label="Open the marketplace in the app") }}
       {#
         "Sign in to shop", not "Sign in to buy". Signing in from the grid gets
         you the member grid and a cart you can fill; it does not get you a

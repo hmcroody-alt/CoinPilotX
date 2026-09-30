@@ -103,7 +103,11 @@ describe("PulseSoc navigation route resolution", () => {
     ["/pulse/reels/18", "ReelDetail", { reelId: 18, title: "Reel" }],
     ["/pulse/status/19", "StatusDetail", { statusId: 19, title: "Status" }],
     ["/pulse/live/20", "LiveDetail", { liveId: 20, title: "Live" }],
-    ["/pulse/marketplace/21", "MarketplaceDetail", { listingId: 21, title: "Marketplace" }],
+    // `MarketplaceProduct` is the product page. `MarketplaceDetail` is the browse
+    // grid, and it opened the listing only if that id was in the page of rows its
+    // own search happened to return -- so this row used to assert that a link to
+    // a product resolved to the catalogue.
+    ["/pulse/marketplace/21", "MarketplaceProduct", { listingId: 21, title: "Marketplace" }],
     ["/pulse/messages/22", "Chat", { conversationId: 22, title: "Conversation" }],
     ["/pulse/notifications/23", "NotificationCenter", { notificationId: 23 }],
     ["/pulse/events/24", "EventDetail", { eventId: 24, title: "Event" }],

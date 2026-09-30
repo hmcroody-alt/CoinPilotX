@@ -146,7 +146,14 @@ export function nativeObjectDestination(routePath: string): NativeObjectDestinat
   if (reelMatch) return { screen: "ReelDetail", params: { reelId: positiveId(reelMatch[1]), title: "Reel" } };
   if (statusMatch) return { screen: "StatusDetail", params: { statusId: positiveId(statusMatch[1]), title: "Status" } };
   if (liveMatch) return { screen: "LiveDetail", params: { liveId: positiveId(liveMatch[1]), title: "Live" } };
-  if (listingMatch) return { screen: "MarketplaceDetail", params: { listingId: positiveId(listingMatch[1]), title: "Marketplace" } };
+  // `MarketplaceProduct`, not `MarketplaceDetail`. `MarketplaceDetail` renders
+  // `MarketplaceScreen` -- the browse grid -- which opened the product only when
+  // the id happened to appear in the page of rows its own search had just
+  // returned, and silently stayed on the grid otherwise. So a link to a real
+  // listing landed on the catalogue, which is the "wrong product" outcome a
+  // shared product URL exists to prevent. `MarketplaceProduct` resolves the id
+  // against the listing read endpoint and can therefore open any listing.
+  if (listingMatch) return { screen: "MarketplaceProduct", params: { listingId: positiveId(listingMatch[1]), title: "Marketplace" } };
   if (messageMatch) return { screen: "Chat", params: { conversationId: positiveId(messageMatch[1]), title: "Conversation" } };
   if (notificationMatch) return { screen: "NotificationCenter", params: { notificationId: positiveId(notificationMatch[1]) } };
   if (briefingMatch) return { screen: "BriefingDetail", params: { briefingId: positiveId(briefingMatch[1]) } };

@@ -112,11 +112,22 @@ def render(seeded, path):
 # ---------------------------------------------------------------------------
 
 
+#: These pages are served from pulsesoc.com, so their CTA goes through
+#: `/open/...` and not through the canonical universal link. The expectations
+#: below were written against `build_app_link` when every surface shared one
+#: builder, and they passed while the buttons did nothing on a phone: iOS does
+#: not consult associated domains for a same-domain navigation, so the
+#: canonical link resolved to the page the button was rendered on. What the
+#: assertions were really guarding -- the button exists, it is marked, it names
+#: the resource being viewed, and the id survives into the href -- is unchanged
+#: and still checked. Only the expected shape moved.
+
+
 def test_the_post_page_links_to_that_post(seeded):
     post_id = seeded["post_id"]
     href, label = ctas(render(seeded, f"/pulse/post/{post_id}"))["post"]
-    assert href == app_links.build_app_link("post", post_id, source="web")
-    assert f"/pulse/post/{post_id}?" in href
+    assert href == app_links.open_interstitial_url("post", post_id, "web")
+    assert f"/open/post/{post_id}?" in href
     # The wording rule: a button that says "this post" must open this post.
     assert label == "Open this post in PulseSoc"
 
@@ -124,13 +135,13 @@ def test_the_post_page_links_to_that_post(seeded):
 def test_the_reel_page_links_to_that_reel(seeded):
     reel_id = seeded["reel_id"]
     href, label = ctas(render(seeded, f"/pulse/reels/{reel_id}"))["reel"]
-    assert href == app_links.build_app_link("reel", reel_id, source="web")
+    assert href == app_links.open_interstitial_url("reel", reel_id, "web")
     assert label == "Open this reel in PulseSoc"
 
 
 def test_the_group_page_links_to_that_group(seeded):
     href, label = ctas(render(seeded, "/pulse/groups/ada-fans"))["group"]
-    assert href == app_links.build_app_link("group", "ada-fans", source="web")
+    assert href == app_links.open_interstitial_url("group", "ada-fans", "web")
     assert label == "Open this group in PulseSoc"
 
 
@@ -138,7 +149,7 @@ def test_the_group_page_reached_by_id_still_links_to_the_slug(seeded):
     # The route accepts either, but the CTA prefers the shareable slug form so
     # the two entrances do not hand out two different links for one group.
     href, _ = ctas(render(seeded, f"/pulse/groups/{seeded['group_id']}"))["group"]
-    assert href == app_links.build_app_link("group", "ada-fans", source="web")
+    assert href == app_links.open_interstitial_url("group", "ada-fans", "web")
 
 
 def test_a_group_with_an_unbuildable_slug_still_gets_a_button(seeded):
@@ -155,13 +166,13 @@ def test_a_group_with_an_unbuildable_slug_still_gets_a_button(seeded):
     conn.close()
 
     href, _ = ctas(render(seeded, f"/pulse/groups/{odd_id}"))["group"]
-    assert href == app_links.build_app_link("group", odd_id, source="web")
+    assert href == app_links.open_interstitial_url("group", odd_id, "web")
 
 
 def test_the_profile_page_links_to_that_profile(seeded):
     html = render(seeded, f"/pulse/profile/{seeded['user_id']}")
     href, label = ctas(html)["profile"]
-    assert f"{app_links.CANONICAL_APP_ORIGIN}/pulse/profile/" in href
+    assert href.startswith("/open/profile/")
     assert label == "Open this profile in PulseSoc"
 
 
@@ -180,12 +191,22 @@ def resource_paths(seeded):
 
 
 @pytest.mark.parametrize("page", ["post", "reel", "profile", "group"])
-def test_every_resource_cta_is_marked_and_canonical(seeded, page):
+def test_no_resource_cta_points_back_at_the_site_it_is_rendered_on(seeded, page):
+    """The cross-cutting version of the defect, checked on every resource page.
+
+    This asserted `startswith(CANONICAL_APP_ORIGIN + "/pulse/")` and a
+    `pulse_app=1` marker, which is the correct shape for an off-domain surface
+    and the wrong one here -- it made a same-domain link mandatory on four
+    pages at once. Inverted rather than deleted, because the sweep across all
+    four pages is the valuable part: it is what would catch one page being
+    quietly re-pointed at the canonical builder later.
+    """
     path = resource_paths(seeded)[page]
     href, _ = ctas(render(seeded, path))[page]
-    assert href.startswith(f"{app_links.CANONICAL_APP_ORIGIN}/pulse/")
-    assert f"{app_links.APP_INTENT_PARAM}=1" in href
-    assert f"{app_links.APP_SOURCE_PARAM}=web" in href
+    assert href.startswith("/open/"), href
+    assert app_links.CANONICAL_APP_HOST not in href, href
+    assert app_links.APP_INTENT_PARAM not in href, href
+    assert f"{app_links.APP_SOURCE_PARAM}=web" in href, href
 
 
 # ---------------------------------------------------------------------------

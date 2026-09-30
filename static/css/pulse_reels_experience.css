@@ -1757,3 +1757,44 @@ object-fit: cover !important;
 .reels-media-stage .pulse-media-vignette {
 display: none !important;
 }
+
+/* The desktop half of the Reels creation handoff.
+
+   Below 1024 the phone dock's plus button owns creating a Reel, so this toolbar
+   would be a duplicate sitting next to it. At and above 1024 that dock is
+   `display: none` (pulse_desktop_shell.css), and before this rule existed
+   nothing replaced it: measured on the rendered page at 1440, /pulse/reels
+   showed zero visible ways to create a Reel, against a dock-and-plus at 390.
+   Watch-only on a laptop, with no error and nothing to click.
+
+   Deliberately the inverse of the dock's own condition, and at the same 1024,
+   so the two can never both be on or both be off. Same shape, and the same
+   reason, as `.messenger-app-nav` in pulse_messages_v2.css.
+
+   `!important` is load-bearing here, and not for the usual reason. The
+   declaration this competes with is not in this sheet: `.reels-toolbar` gets
+   its `display` from the page-local `<style>` block in bot.py's reels
+   response, which the head emits AFTER the <link> to this file. Later in
+   document order, so no amount of reordering inside this sheet can beat it --
+   importance is the only lever, which is why both rules below carry it.
+   Removing `!important` from either leaves the sheet parsing cleanly and the
+   page unchanged.
+
+   The `display: grid !important` on `.reels-toolbar` at line 916 of this file
+   looks like the competitor and is not one: it sits inside
+   `@media (max-width: 900px)` nested in `@media (min-width: 901px)`, a pair
+   that can never both match, so that whole block is dead. Noted because it is
+   the rule anyone reading this sheet will assume they have to outrank.
+
+   Verified in a browser at 390 and 1440 rather than argued from the cascade --
+   the messenger fix shipped green and inert once already by getting exactly
+   this kind of reasoning wrong. */
+.reels-toolbar.reels-desktop-create {
+display: none !important;
+}
+
+@media (min-width: 1024px) {
+.reels-toolbar.reels-desktop-create {
+display: grid !important;
+}
+}
