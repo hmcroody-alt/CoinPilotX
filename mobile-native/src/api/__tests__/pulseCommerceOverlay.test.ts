@@ -89,7 +89,7 @@ function overlay(patch: Partial<PulseCommerceOverlay> = {}): PulseCommerceOverla
       fallback: "View product",
       enabled: true,
       route: "/pulse/marketplace/77",
-      screen: "MarketplaceDetail",
+      screen: "MarketplaceProduct",
       url: "https://pulsesoc.com/pulse/marketplace/77"
     },
     availability: { code: "", i18n_key: "", fallback: "", purchasable: true },

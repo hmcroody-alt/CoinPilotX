@@ -504,7 +504,7 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         "/pulse/marketplace/{id}",
         id_kind=ID_KIND_POSITIVE_INT,
         id_required=True,
-        native_screen="MarketplaceDetail",
+        native_screen="MarketplaceProduct",
         web_equivalent=True,
         label="Open this listing in PulseSoc",
         notes="Web-first: the public product page is the canonical URL for a listing.",
