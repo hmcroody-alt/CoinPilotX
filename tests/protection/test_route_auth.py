@@ -243,6 +243,55 @@ def test_admin_routes_do_not_become_member_routes():
     )
 
 
+def test_member_routes_do_not_become_public_routes():
+    """The other privilege drop, and the one the rank order actively hides.
+
+    `test_no_route_loses_its_gate` ranks evidence by how much it *shows*, and a
+    `@public_route(reason=...)` declaration shows the most of anything: rank 6,
+    above every gate helper. So `user` -> `public` does not merely slip past that
+    test, it reads as an improvement — deleting `require_account()` from a view
+    and declaring the result public scores better than the gated original did.
+
+    That is the correct ranking for the question that test asks (is this route's
+    shape still legible?) and the wrong answer to the question this one asks (did
+    the set of people who can read it just become everyone?). `declared` is
+    evidence about the author's intent, not about the size of the audience, and
+    the two come apart exactly here.
+
+    The check is the same shape as the admin one above: baseline-driven, so
+    opening a route is allowed but only by regenerating the baseline in the same
+    commit, which puts the decision in a reviewable diff instead of in a rank
+    comparison that cannot express it. `unknown` is not flagged — an
+    unclassified route is the subject of the default-deny test, and treating it
+    as a widening here would fire on every detector improvement.
+    """
+    baseline, current = load_baseline(), audit_by_endpoint()
+    widened = []
+    for endpoint, was in baseline["routes"].items():
+        now = current.get(endpoint)
+        if now is None or was["auth"] != route_auth.AUTH_USER:
+            continue
+        if now["auth"] == route_auth.AUTH_PUBLIC:
+            widened.append(
+                f"{endpoint} ({', '.join(sorted(now['rules']))}):\n"
+                f"      was: user   {was['evidence']}\n"
+                f"      now: public {now['evidence']}"
+            )
+
+    assert widened == [], (
+        "These routes required a signed-in member in the baseline and are now "
+        "reachable by anyone:\n  " + "\n  ".join(widened)
+        + "\n\nOpening a route to the anonymous web is sometimes right -- an "
+        "indexable page cannot be gated, because a crawler is always anonymous. "
+        "It is never right by accident, and it is never only a routing change: "
+        "everything the view renders becomes world-readable, including whatever "
+        "it renders *because* a session happened to be present.\n\n"
+        "If this is intended, regenerate the baseline in the same commit so the "
+        "widening appears in the diff, and make sure the route's own tests pin "
+        "what an anonymous visitor may now see."
+    )
+
+
 def test_no_new_route_hides_behind_the_weak_admin_gate():
     """`require_admin_password()` must not spread.
 

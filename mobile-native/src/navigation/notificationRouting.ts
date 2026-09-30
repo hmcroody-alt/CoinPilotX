@@ -471,16 +471,23 @@ async function resolveNotificationTarget(target: string): Promise<NotificationRo
     return { handled: true, target: normalized };
   }
 
+  // `MarketplaceProduct`, not `MarketplaceDetail`. `MarketplaceDetail` renders
+  // `MarketplaceScreen` -- the browse grid -- which forwarded to the product page
+  // only when the id happened to appear in the page of rows its search had just
+  // returned. This branch serves push taps *and* the pending-target replay a
+  // signed-out arrival goes through after login, so a member who followed
+  // "Open this listing in PulseSoc", signed in, and was replayed here landed on
+  // the catalogue. Held by `marketplaceDeepLinkIdentity.test.tsx`.
   const marketplacePathMatch = normalized.match(/^\/pulse\/marketplace\/(\d+)/);
   if (marketplacePathMatch?.[1] && navigationRef.isReady()) {
-    navigationRef.navigate("MarketplaceDetail", { listingId: Number(marketplacePathMatch[1]), title: "Marketplace" });
+    navigationRef.navigate("MarketplaceProduct", { listingId: Number(marketplacePathMatch[1]), title: "Marketplace" });
     return { handled: true, target: normalized };
   }
 
   if (normalized.startsWith("/pulse/marketplace") && navigationRef.isReady()) {
     const queryListingId = extractNumericQueryValue(normalized, "listing") || extractNumericQueryValue(normalized, "listing_id");
     if (queryListingId) {
-      navigationRef.navigate("MarketplaceDetail", { listingId: queryListingId, title: "Marketplace" });
+      navigationRef.navigate("MarketplaceProduct", { listingId: queryListingId, title: "Marketplace" });
     } else {
       navigationRef.navigate("Tabs", { screen: "Marketplace" });
     }

@@ -54,6 +54,7 @@ import {
 import { PulseApiError } from "../api/pulseApi";
 import { describeDeleteError } from "../api/deleteErrors";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
+import { useCommerceOverlayNavigation } from "../commerce/useCommerceOverlayNavigation";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
 import { ContentTranslation } from "../components/ContentTranslation";
 import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
@@ -99,6 +100,7 @@ const QA_RECOVERY_STATES = new Set<ConnectionState>(["loading", "connecting", "o
 
 export function ReelsScreen({ route, navigation }: Props) {
   const { authState, requestReauthentication } = useAuth();
+  const commerceNavigation = useCommerceOverlayNavigation(navigation);
   const insets = useSafeAreaInsets();
   // Scroll-driven dock hiding reads vertical deltas, which a horizontal pager
   // never produces. Opting out in spatial mode makes that explicit rather than
@@ -933,6 +935,11 @@ export function ReelsScreen({ route, navigation }: Props) {
                 const params = profileNavigationParams(target, reel.author?.display_name || "Profile");
                 if (params) navigation.navigate("ProfileDetail", params);
               }}
+              // Shared with every other surface that renders the overlay, so a
+              // product tap lands in the same place from a Reel, the feed, a
+              // post detail or the profile viewer.
+              onOpenCommerceProduct={commerceNavigation.onOpenCommerceProduct}
+              onOpenCommerceSeller={commerceNavigation.onOpenCommerceSeller}
               onOpenMusic={setMusicReel}
               onOpenMore={setMoreReel}
               onJoinLive={joinLiveReel}

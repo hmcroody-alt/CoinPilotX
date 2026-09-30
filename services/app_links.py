@@ -465,28 +465,41 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
     ),
     # --- commerce --------------------------------------------------------
     #
-    # The whole Marketplace family is app-first, and `web_equivalent=False` is
-    # how that is expressed rather than a special case somewhere downstream.
+    # Most of the Marketplace family is still app-first, and
+    # `web_equivalent=False` is how that is expressed rather than a special case
+    # somewhere downstream. It is a statement about the *website*, not about the
+    # app: the seller and order surfaces do have Flask routes, but they render
+    # through `pulse_social_shell()` with no template behind them and were never
+    # designed for the browser. Marking them `web_equivalent=True` meant
+    # `fallback_decision` sent desktop visitors *into* that unfinished surface;
+    # `False` routes them to the app-only interstitial, which is honest.
     #
-    # It is a statement about the *website*, not about the app: `/pulse/
-    # marketplace`, `/pulse/marketplace/<id>` and the seller surfaces do have
-    # Flask routes, but they render through `pulse_social_shell()` with no
-    # template behind them and were never designed for the browser. Marking them
-    # `web_equivalent=True` -- which `marketplace` and `store` previously were --
-    # meant `fallback_decision` sent desktop visitors *into* that unfinished
-    # surface. Flipping the flag routes them to the app-only interstitial
-    # instead, which is the honest answer until the web Marketplace ships.
+    # `marketplace` and `product` are the two exceptions, as of the web
+    # storefront rebuild. They are no longer shell-with-no-template pages: both
+    # are served by `services/marketplace_storefront.py` through a public,
+    # indexable document with real product structured data, and both are
+    # reachable anonymously. A desktop or Android visitor on an app-intent
+    # Marketplace link should therefore continue to the web page -- it is a
+    # complete experience, and the app-only interstitial would now be the lie.
     #
-    # To return a row to web-first: flip this flag back, delete its entry from
-    # MARKETPLACE_WEB_PATHS in bot.py, and re-run tests/test_app_links.py. The
-    # procedure is written out in docs/routing/.
+    # Their "Open in PulseSoc" affordance did not go away with the flag; it moved
+    # onto the page itself as `.mkt-appcta`, which is the correct shape for it:
+    # an addition to a working page rather than a gate in front of one.
+    #
+    # To return a row to web-first: flip this flag, delete its entry from
+    # APP_FIRST_DESPITE_WEB_ROUTE below, and re-run
+    # tests/test_app_intent_fallback_router.py, which asserts the flag against
+    # the live url_map.
     _d(
         "marketplace",
         "/pulse/marketplace",
         native_screen="Tabs>Marketplace",
-        web_equivalent=False,
+        web_equivalent=True,
         label="Open Marketplace in PulseSoc",
-        notes="App-first: the web Marketplace is not production-ready.",
+        notes=(
+            "Web-first since the storefront rebuild: /pulse/marketplace is a "
+            "public, indexable discovery page."
+        ),
         display_name="Marketplace",
     ),
     _d(
@@ -495,9 +508,12 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         id_kind=ID_KIND_POSITIVE_INT,
         id_required=True,
         native_screen="MarketplaceDetail",
-        web_equivalent=False,
+        web_equivalent=True,
         label="Open this listing in PulseSoc",
-        notes="App-first: no production-ready web route for a single listing.",
+        notes=(
+            "Web-first since the storefront rebuild: /pulse/marketplace/<id> is "
+            "the canonical public product URL and carries the Product markup."
+        ),
         display_name="This listing",
     ),
     _d(
@@ -872,9 +888,12 @@ WEB_INTENT_PREFIXES = (
 # False is no longer a harmless annotation. It takes a working web page away from
 # someone who could have used it.
 APP_FIRST_DESPITE_WEB_ROUTE: dict[str, str] = {
-    "marketplace": "Marketplace is app-first by decision until the web Marketplace is rebuilt.",
+    # `marketplace` and `product` were here. They were removed when the web
+    # storefront shipped -- the condition their entries named ("until the web
+    # Marketplace is rebuilt") was the exit criterion, and it has been met. Both
+    # are now `web_equivalent=True` and the equality check in
+    # tests/test_app_intent_fallback_router.py holds them to it.
     "marketplace_create": "Listing creation is app-first with the rest of Marketplace.",
-    "product": "Listing detail is app-first with the rest of Marketplace.",
     "store": "Merchant storefronts are app-first with the rest of Marketplace.",
     "seller": "Seller tools are app-first with the rest of Marketplace.",
     "seller_apply": "Seller onboarding is app-first with the rest of Marketplace.",

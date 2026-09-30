@@ -406,6 +406,7 @@
       "a11yVoiceProgress": "Fortschritt der Sprachnachricht",
       "a11yVoiceUnavailable": "{{label}}. Sprachnachricht nicht verfügbar.",
       "assistantAlwaysAvailable": "Immer verfügbar · PulseSoc Intelligenz",
+      "assistantConnecting": "Verbindung wird hergestellt · PulseSoc Intelligenz",
       "assistantReconnecting": "Dienst verbindet sich neu",
       "attachCamera": "Kamera",
       "attachCameraDetail": "Jetzt aufnehmen",
@@ -2421,6 +2422,22 @@
       "share": "Teilen",
       "shop": "Shop",
       "openMarketplace": "Marketplace öffnen"
+    },
+    "pulsedrop": {
+      "label": {
+        "trending": "Angesagt",
+        "newDrop": "Neu eingetroffen",
+        "popular": "Beliebt",
+        "topPick": "Top-Empfehlung",
+        "discovery": "Entdecken"
+      },
+      "availability": {
+        "unavailable": "Nicht mehr verfügbar",
+        "notPriced": "Noch kein Preis"
+      },
+      "seller": {
+        "visitStore": "Shop ansehen"
+      }
     }
   },
   "discovery": {

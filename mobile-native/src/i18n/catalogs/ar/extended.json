@@ -438,6 +438,7 @@
       "a11yVoiceProgress": "تقدّم الرسالة الصوتية",
       "a11yVoiceUnavailable": "{{label}}. الرسالة الصوتية غير متاحة.",
       "assistantAlwaysAvailable": "متاح دائمًا · ذكاء PulseSoc",
+      "assistantConnecting": "جارٍ الاتصال · ذكاء PulseSoc",
       "assistantReconnecting": "جارٍ إعادة اتصال الخدمة",
       "attachCamera": "الكاميرا",
       "attachCameraDetail": "التصوير الآن",
@@ -2537,6 +2538,22 @@
       "share": "مشاركة",
       "shop": "تسوّق",
       "openMarketplace": "فتح Marketplace"
+    },
+    "pulsedrop": {
+      "label": {
+        "trending": "الرائج",
+        "newDrop": "وصل حديثًا",
+        "popular": "شائع",
+        "topPick": "اختيارنا",
+        "discovery": "اكتشف"
+      },
+      "availability": {
+        "unavailable": "لم يعد متاحًا",
+        "notPriced": "السعر غير محدد"
+      },
+      "seller": {
+        "visitStore": "زيارة المتجر"
+      }
     }
   },
   "discovery": {

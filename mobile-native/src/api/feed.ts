@@ -1,3 +1,4 @@
+import type { PulseCommerceOverlay } from "./pulseCommerceOverlay";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { absoluteApiUrl, PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
@@ -86,6 +87,12 @@ export type PulseComment = {
 export type PulsePost = {
   id: number;
   post_id: number;
+  /**
+   * Live commerce, present only on a PulseDrop Signal. Absent on every other
+   * post. On a repost it rides on `original_post`, not on the wrapper: the
+   * resharing user is not the publisher and the nested card is the product.
+   */
+  commerce?: PulseCommerceOverlay;
   user_id?: number;
   post_type?: string;
   content_type?: string;

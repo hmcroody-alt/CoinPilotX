@@ -167,11 +167,23 @@ reached Flask. That inference is the whole mechanism, and on-site it is wrong.
 - not installed, any platform → the App Store button and the QR code.
 
 `bot.app_first_href(destination, resource_id=None)` is the single caller. Every
-Marketplace button on the website goes through it. No page hand-writes a
-Marketplace path, and `tests/test_marketplace_web_ctas_are_app_first.py` scans
-the whole of `bot.py` to keep it that way — the source layer is what survives the
-file growing, and the render layer over seven real pages is what proves the
-source layer is measuring something.
+website button whose Marketplace destination has no web surface worth landing on
+goes through it: create a product, seller tools, a seller dashboard, orders,
+purchases, a store, one order.
+
+The storefront itself is no longer in that group. `/pulse/marketplace` and
+`/pulse/marketplace/<id>` are real public pages now, so navigation goes straight
+to them, and `app_first_href` serves them in exactly one place — the "Open in
+PulseSoc" aside rendered *on* those pages, which is an invitation beside working
+content rather than a wall in front of it.
+
+What is unchanged is that no page hand-writes a Marketplace path, either way. The
+web paths come from `bot.marketplace_href()` and
+`marketplace_storefront.product_path()`, the app paths from `app_first_href`, and
+`tests/test_marketplace_web_cta_destinations.py` scans the whole of `bot.py` to
+keep it that way — the source layer is what survives the file growing, and the
+render layer over real pages is what proves the source layer is measuring
+something.
 
 ### Cards the browser renders
 
@@ -300,7 +312,7 @@ exists in a **released** binary.
 | `tests/test_app_links.py` | the registry, CTA honesty, `linking.ts` agreement |
 | `tests/test_app_intent_fallback_router.py` | the hook, the interstitial, url_map agreement, security |
 | `tests/test_open_destination_interstitial.py` | `/open/...`, the scheme button, the beacon |
-| `tests/test_marketplace_web_ctas_are_app_first.py` | every website Marketplace CTA, the source scan, the rendered pages, the search-card map, the Stripe exception |
+| `tests/test_marketplace_web_cta_destinations.py` | which Marketplace destinations are web-first vs app-first, the source scan, the rendered pages, the one app CTA on the storefront, the search-card map, the Stripe exception |
 | `tests/test_share_link_app_intent.py` | share links carry the marker |
 | `tests/test_resource_page_app_ctas.py` | resource pages emit honest CTAs |
 | `tests/web_parity/test_aasa_claims.py` | the association file's claims |

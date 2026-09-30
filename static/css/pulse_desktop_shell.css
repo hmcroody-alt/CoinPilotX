@@ -1,0 +1,746 @@
+/* PulseSoc desktop shell.
+ *
+ * Loaded last on /pulse so it wins the cascade over the legacy sheets without
+ * editing them. Everything here is inside a min-width query, so the mobile
+ * product is untouched by construction rather than by review.
+ *
+ * 1024px is the floor because pulse_desktop_feed.css hides the topbar and both
+ * rails with !important below it -- there is no desktop shell to restyle there.
+ */
+
+body.pulse-home-os {
+  --ds-bg: #070c14;
+  --ds-surface: rgba(19, 28, 43, .72);
+  --ds-surface-hover: rgba(30, 42, 61, .82);
+  --ds-surface-sunken: rgba(9, 14, 23, .6);
+  --ds-border: rgba(146, 170, 200, .13);
+  --ds-border-strong: rgba(146, 170, 200, .22);
+  --ds-text: #eef4fa;
+  --ds-text-2: #a8b7c8;
+  --ds-text-3: #76869a;
+  --ds-accent: #36e58f;
+  --ds-accent-soft: rgba(54, 229, 143, .12);
+  --ds-live: #ff6b7a;
+  --ds-radius: 14px;
+  --ds-radius-sm: 10px;
+  --ds-gap: 12px;
+  --ds-header-h: 64px;
+}
+
+@media (min-width: 1024px) {
+  /* ------------------------------------------------------- the mobile dock
+     The floating Home/Reels/Create/Messenger/Profile dock is a phone control
+     and must not appear on a desktop that already has a left rail and a header
+     carrying the same five destinations. It was appearing at every width.
+
+     Not because a breakpoint was missing -- the page's own inline stylesheet
+     gets this right, with `.mobile-bottom-nav{display:none}` as the base and
+     `display:grid` only inside `@media (max-width:900px)`. It is that
+     `pulse_home_os.css` then declares
+
+         body.pulse-home-os .mobile-bottom-nav.pulse-universal-dock
+             { display: grid !important }
+
+     with no media query at all. An unconditional `!important` does not lose to
+     a conditional plain declaration at any width, so the max-width:900px logic
+     above it had no effect on this element and the dock was pinned on from
+     390px to 1920px. The class is called `pulse-universal-dock`, so this reads
+     as a deliberate decision that the dock is universal -- which is precisely
+     the decision this mission reverses for desktop, and only for desktop.
+
+     Beating it needs `!important` too, since nothing else beats `!important`.
+     Specificity is deliberately raised one step past the rule it overrides --
+     `html` prepended, (0,3,2) against its (0,3,1) -- rather than matched and
+     left to source order. Mine is sheet 10 and `pulse_home_os.css` is sheet 3,
+     so equal specificity would win today; it would stop winning the day
+     something re-orders the <link> tags, and that failure would be silent and
+     would land on the one constraint this mission was told was non-negotiable.
+
+     Scoped to `min-width:1024px`, so every phone and portrait tablet keeps the
+     dock exactly as it is. `display` only: no `visibility`, no `transform`, no
+     off-screen positioning, because the dock must be genuinely absent from the
+     layout here, not merely invisible while still taking a tap target. */
+  html body.pulse-home-os .mobile-bottom-nav.pulse-universal-dock {
+    display: none !important;
+  }
+
+  /* ---------------------------------------------------------------- background
+     The animated city (towers, billboards, traffic, starfield) competed with
+     every post for attention. Kept as a faint static wash: the identity
+     survives, the motion and contrast do not. */
+  body.pulse-home-os {
+    background: var(--ds-bg);
+  }
+
+  body.pulse-home-os .pulse-environment-engine {
+    opacity: .3;
+    filter: saturate(.55);
+  }
+
+  body.pulse-home-os .pulse-city-billboard,
+  body.pulse-home-os .pulse-city-traffic,
+  body.pulse-home-os .pulse-city-highway {
+    display: none;
+  }
+
+  body.pulse-home-os .pulse-environment-engine *,
+  body.pulse-home-os .pulse-city-deep * {
+    animation: none !important;
+  }
+
+  /* -------------------------------------------------------------------- shell */
+  body.pulse-home-os .pulse-shell,
+  body.pulse-home-os .wrap {
+    padding-top: 0 !important;
+  }
+
+  body.pulse-home-os .pulse-desktop-layout {
+    width: min(100%, 1400px);
+    grid-template-columns: 240px minmax(0, 1fr) 320px;
+    gap: 24px;
+    align-items: start;
+    padding-inline: 20px;
+  }
+
+  body.pulse-home-os .pulse-desktop-left,
+  body.pulse-home-os .pulse-desktop-right {
+    top: calc(var(--ds-header-h) + 16px);
+    max-height: calc(100dvh - var(--ds-header-h) - 28px);
+    gap: 16px;
+    padding-bottom: 24px;
+  }
+
+  /* ------------------------------------------------------------ global header */
+  body.pulse-home-os .pulse-desktop-topbar {
+    min-height: var(--ds-header-h);
+    grid-template-columns: 210px minmax(0, 1fr) auto;
+    gap: 16px;
+    align-items: center;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--ds-border);
+    background: rgba(7, 12, 20, .88);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow: none;
+  }
+
+  /* Search was the loser of a flex fight: the form computed to 92px while its
+     own input insisted on 360px and overflowed it. Search is the primary
+     discovery affordance on this page, so it gets the free space. */
+  body.pulse-home-os .pulse-desktop-search-form {
+    width: 100%;
+    max-width: 520px;
+    margin-inline: auto;
+  }
+
+  body.pulse-home-os .pulse-desktop-search {
+    width: 100%;
+    min-width: 0;
+    height: 40px;
+    border-radius: 999px;
+    border: 1px solid var(--ds-border);
+    background: var(--ds-surface-sunken);
+    font-size: 14px;
+    padding: 0 16px;
+  }
+
+  body.pulse-home-os .pulse-desktop-search:focus {
+    border-color: var(--ds-border-strong);
+    background: var(--ds-surface);
+    outline: 2px solid var(--ds-accent-soft);
+    outline-offset: 1px;
+  }
+
+  /* The header carried six destinations plus a 20-item "Apps" panel, all of
+     which the left rail lists again. The rail is the navigation; the header
+     keeps identity, search, and the account/notification cluster. */
+  body.pulse-home-os .pulse-desktop-nav {
+    display: none;
+  }
+
+  body.pulse-home-os .pulse-desktop-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  body.pulse-home-os .pulse-topnav-control {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background: transparent;
+    display: grid;
+    place-items: center;
+    color: var(--ds-text-2);
+  }
+
+  body.pulse-home-os .pulse-topnav-control:hover,
+  body.pulse-home-os .pulse-topnav-control:focus-visible {
+    background: var(--ds-surface-hover);
+    color: var(--ds-text);
+  }
+
+  /* The header already owns a magnifier icon next to a visible search field. */
+  body.pulse-home-os .pulse-topnav-search {
+    display: none;
+  }
+
+  body.pulse-home-os .pulse-create-strong {
+    min-height: 40px;
+    border-radius: 999px;
+    padding: 0 18px;
+    font-size: 14px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* ----------------------------------------------------------------- left nav */
+  body.pulse-home-os .pulse-desktop-left > .desktop-rail-nav {
+    padding: 0;
+    gap: 2px;
+  }
+
+  body.pulse-home-os .pulse-rail-group {
+    display: grid;
+    gap: 2px;
+  }
+
+  body.pulse-home-os .pulse-rail-group + .pulse-rail-group {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--ds-border);
+  }
+
+  body.pulse-home-os .pulse-rail-group-label {
+    margin: 0 0 6px;
+    padding-inline: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--ds-text-3);
+  }
+
+  /* Each destination used to be its own bordered, glowing card. A navigation
+     list is one surface with rows in it, not 25 surfaces. */
+  body.pulse-home-os .desktop-rail-link {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    min-height: 40px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: var(--ds-radius-sm);
+    background: transparent;
+    box-shadow: none;
+    color: var(--ds-text-2);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  body.pulse-home-os .desktop-rail-link:hover,
+  body.pulse-home-os .desktop-rail-link:focus-visible {
+    background: var(--ds-surface-hover);
+    color: var(--ds-text);
+  }
+
+  body.pulse-home-os .desktop-rail-link.is-active {
+    background: var(--ds-accent-soft);
+    color: var(--ds-accent);
+  }
+
+  body.pulse-home-os .desktop-rail-link .desktop-rail-ico {
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    box-shadow: none;
+    font-size: 15px;
+    color: inherit;
+  }
+
+  body.pulse-home-os .desktop-rail-link small,
+  body.pulse-home-os .desktop-rail-link .muted {
+    display: none;
+  }
+
+  /* --------------------------------------------------------- rail card system */
+  body.pulse-home-os .desktop-rail-card {
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius);
+    background: var(--ds-surface);
+    box-shadow: none;
+    padding: 14px;
+    gap: 10px;
+  }
+
+  body.pulse-home-os .desktop-rail-card > h3 {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--ds-text-3);
+  }
+
+  body.pulse-home-os .desktop-intel-row {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    min-height: 38px;
+    padding: 6px 8px;
+    margin-inline: -8px;
+    border: 0;
+    border-radius: var(--ds-radius-sm);
+    background: transparent;
+    box-shadow: none;
+    text-decoration: none;
+    color: var(--ds-text);
+  }
+
+  body.pulse-home-os a.desktop-intel-row:hover,
+  body.pulse-home-os a.desktop-intel-row:focus-visible {
+    background: var(--ds-surface-hover);
+  }
+
+  body.pulse-home-os .desktop-intel-row strong {
+    font-size: 13.5px;
+    font-weight: 650;
+  }
+
+  body.pulse-home-os .desktop-intel-row small {
+    font-size: 12px;
+    color: var(--ds-text-3);
+  }
+
+  body.pulse-home-os .desktop-intel-row .desktop-rail-ico {
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 8px;
+    background: var(--ds-surface-sunken);
+    box-shadow: none;
+    font-size: 12px;
+    color: var(--ds-text-2);
+  }
+
+  /* ------------------------------------------------------------ center column */
+  /* Without an explicit track the single auto column sizes to max-content, and a
+     grid item is allowed to be wider than its area -- the column measured 967px
+     inside a 740px slot and slid under the discovery rail. */
+  body.pulse-home-os .pulse-desktop-center {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--ds-gap);
+    padding-top: calc(var(--ds-header-h) + 16px);
+  }
+
+  body.pulse-home-os .pulse-desktop-left,
+  body.pulse-home-os .pulse-desktop-right {
+    margin-top: calc(var(--ds-header-h) + 16px);
+  }
+
+  body.pulse-home-os .pulse-desktop-center .pulse-grid,
+  body.pulse-home-os .pulse-desktop-center .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--ds-gap);
+  }
+
+  body.pulse-home-os .pulse-desktop-center .card {
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius);
+    background: var(--ds-surface);
+    box-shadow: none;
+  }
+
+  /* --------------------------------------------------------- network feature
+     A 266px illustrated globe headlined with the community mood -- "Curious" set
+     at 56px -- opened the column, above the composer and above every post. It is
+     an aggregate, and an aggregate is context, not the thing you came for. The
+     same numbers are in the discovery rail, and the full experience is still at
+     /pulse/premium/intelligence, so nothing here is lost; it stops being the
+     first thing on the page. */
+  body.pulse-home-os .pulse-desktop-center .pulse-network-feature {
+    display: none;
+  }
+
+  body.pulse-home-os .pulse-home-status-rail {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  body.pulse-home-os .pulse-status-mini-rail {
+    gap: 10px;
+  }
+
+  /* With nothing posted, the rail was a 94x96 "Add Status" tile beside a second
+     94px tile whose text was "No Status yet. Create one." -- two stacked panels
+     to say one thing, the second of them repeating the first as prose. Compacted
+     to a single 56px row while empty, and back to full tiles the moment a status
+     exists.
+
+     Gated on the `hidden` attribute because `hydrateStatusRail` is what toggles
+     it (`empty.hidden = !!real.length`), and the same panel is reused to report
+     a failed fetch. So the panel is compacted here, never removed -- collapsing
+     it would silently swallow the error state it doubles as, and a feed that
+     cannot reach the status service would look like a feed with no statuses.
+
+     `!important` mirrors `pulse_home_os.css:1002` and `:1010-1015`, which pin the
+     tile to exactly 94x96 with six important declarations. */
+  body.pulse-home-os .pulse-status-mini-rail:has([data-status-empty]:not([hidden])) {
+    grid-auto-columns: auto !important;
+    align-items: center;
+  }
+
+  body.pulse-home-os .pulse-status-mini-rail:has([data-status-empty]:not([hidden])) .pulse-status2-create,
+  body.pulse-home-os .pulse-status-mini-rail:has([data-status-empty]:not([hidden])) .pulse-status2-empty {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 10px;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 56px !important;
+    min-height: 0 !important;
+    max-height: 56px !important;
+    padding: 0 16px !important;
+    text-align: left;
+  }
+
+  /* The tile's caption ("Stories from your PulseSoc world") and the empty
+     panel's second sentence are both restatements once the two sit on one row. */
+  body.pulse-home-os .pulse-status-mini-rail:has([data-status-empty]:not([hidden])) .pulse-status2-create small,
+  body.pulse-home-os .pulse-status-mini-rail:has([data-status-empty]:not([hidden])) .pulse-status2-empty small {
+    display: none !important;
+  }
+
+  /* ---------------------------------------------------------------- composer
+     Collapsed, the composer is a prompt and the three things people attach to a
+     post. Everything else -- the eight post types, the upload meter, the hint
+     line, the publish button -- is answering a question nobody has asked yet, so
+     it waits for `.is-expanded`.
+
+     The class is already applied: focusing the textarea calls expandComposer,
+     and six other entry points add it too, so this is disclosure over existing
+     wiring rather than new behaviour. Nothing is removed from the DOM, so the
+     composer's own scripts keep finding every control they bind. */
+  body.pulse-home-os .pulse-publisher-card {
+    padding: 14px 16px;
+  }
+
+  body.pulse-home-os .pulse-publisher-card:not(.is-expanded) .pulse-composer-top,
+  body.pulse-home-os .pulse-publisher-card:not(.is-expanded) .composer-type-row,
+  body.pulse-home-os .pulse-publisher-card:not(.is-expanded) .pulse-upload-progress-track,
+  body.pulse-home-os .pulse-publisher-card:not(.is-expanded) .composer-hint,
+  body.pulse-home-os .pulse-publisher-card:not(.is-expanded) .composer-publish-button {
+    display: none;
+  }
+
+  /* `pulse_composer_premium.css:286` sets `min-height: 132px !important` and
+     `padding: 16px 16px 34px !important` on this textarea -- the bottom padding
+     reserving room for the character counter that the rule below hides. Both are
+     important, so matching them is the only way to win; specificity cannot. */
+  body.pulse-home-os .pulse-publisher-card:not(.is-expanded) .pulse-smart-field > textarea {
+    min-height: 46px !important;
+    height: 46px !important;
+    padding-top: 12px !important;
+    padding-bottom: 12px !important;
+    resize: none !important;
+  }
+
+  /* "0/3000" before a character is typed is a limit, not information. */
+  body.pulse-home-os .pulse-publisher-card:not(.is-expanded) .pulse-composer-counter {
+    display: none;
+  }
+
+  /* --------------------------------------------------------------- feed cards
+     `pulse_desktop_feed.css:3970` renders every author name in uppercase at
+     weight 950. A name is not a label, and shouting it makes the loudest element
+     of the card a piece of typography the person it names did not choose --
+     "ALEX CARTER" is not how Alex wrote it. Sentence case, and the weight comes
+     down far enough that the post's own words can lead. */
+  body.pulse-home-os .feed > .pulse-feed-post-v3 .post-card-name,
+  body.pulse-home-os .feed > .post-card-modern .post-card-name {
+    text-transform: none !important;
+    font-weight: 800 !important;
+    letter-spacing: 0 !important;
+  }
+
+  /* Every card carried a counter strip reading "🙂 0 Reactions  0 Comments
+     0 Reposts  0 Shares  0 Saves" -- five chips whose entire content was that
+     nothing has happened yet. On a feed of new posts that is five pieces of
+     furniture per card reporting the absence of data.
+
+     `pulse_home_core.js` marks each chip `.is-zero` at every point it writes a
+     count (`updateSummary`, `renderEngagement`, `syncFeedReactionUi`), so the
+     class can never disagree with the number beside it. The chips stay in the
+     DOM: both writers locate them by dataset selector, so a chip removed at
+     render time is a chip that silently stops updating when the first comment
+     lands. Hidden, it reappears the moment the count leaves zero.
+
+     `!important` is required, not preferred: `pulse_reaction_system.css:1036`
+     and `:1054` set `display: flex`/`inline-flex !important` on these exact
+     nodes, and an important declaration wins over any specificity. */
+  body.pulse-home-os .post-engagement-summary-v3 .post-reaction-emojis.is-zero,
+  body.pulse-home-os .post-engagement-summary-v3 .post-summary-metric.is-zero {
+    display: none !important;
+  }
+
+  /* With every chip zero the strip itself is left as an empty bordered bar --
+     the separators between chips are whitespace-only text nodes, which generate
+     no boxes in a flex container, so nothing remains but padding. Collapse it.
+     `:not(:has(a, b))` reads "has neither", which is exactly "all chips zero";
+     one non-zero chip brings the whole strip back. Its `aria-label` carries the
+     full count sentence and goes with it, so no screen reader hears a row of
+     zeroes either. */
+  body.pulse-home-os .post-engagement-summary-v3:not(
+    :has(.post-reaction-emojis:not(.is-zero), .post-summary-metric:not(.is-zero))
+  ) {
+    display: none !important;
+  }
+
+  /* With four of the five chips gone the strip was a full-width bordered bar
+     holding one short chip and a lot of empty gradient. It is a line of text
+     about the post, not a panel; the chips carry their own pills. */
+  body.pulse-home-os .post-engagement-summary-v3 {
+    background: none !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 6px 2px 0 !important;
+  }
+
+  /* --------------------------------------------------------- comment composer
+     Hidden until the reader asks for it -- see `openCommentComposer` in
+     pulse_home_core.js for why this is a class on the card and not a lazy
+     render. `visibility: hidden` is deliberately not used: the composer must
+     leave the flow entirely, since the ~80px it occupied on every card is the
+     whole point. Focus follows the class, because the Comment button adds the
+     class before it calls `focus()`. */
+  body.pulse-home-os .feed > .pulse-feed-post-v3:not(.is-commenting) .pulse-comment-composer-v2,
+  body.pulse-home-os .feed > .post-card-modern:not(.is-commenting) .pulse-comment-composer-v2 {
+    display: none !important;
+  }
+
+  /* ------------------------------------------------------- rail membership
+     `pulse_home_os.css:1261` hides every direct child of the rail and then
+     re-shows five named classes at :1265-1269. That is a default-deny
+     allowlist, and it is worth being precise about what it was doing: the rail
+     shipped twenty server-rendered cards and this rule was displaying five of
+     them. The other fifteen were built on every Home request, sent over the
+     wire, and hydrated by `renderIntel` -- the dead `top_spaces` links, both
+     copies of the educators card, the promotion cards -- and then hidden by a
+     stylesheet. So the cost was real (markup, hydration, and a rail whose
+     source of truth disagreed with the page) even though the reader never saw
+     them.
+
+     Now that `pulse_desktop_right_rail_html` builds only modules that are real
+     or collapse on their own, the allowlist guards an empty set while blocking
+     everything added after it was written -- People, Communities and the
+     commerce shelf all rendered and all invisible, with no error anywhere to
+     say why. Membership is therefore stated positively here: the rail shows its
+     children, and a module's absence is decided in Python by the query that
+     could not fill it.
+
+     No `!important` needed -- the legacy rule does not use one, and
+     `body.pulse-home-os` (0,2,1) outranks `.pulse-home-os` (0,2,0). The
+     sponsored-zone rule below is `!important` and stays authoritative over
+     this one. */
+  body.pulse-home-os .pulse-desktop-right > * {
+    display: grid;
+  }
+
+  /* ---------------------------------------------------------- sponsored zones
+     An ad zone with no ad in it renders ~250px of our own ad infrastructure
+     described to the reader: a scanning animation, the heading "Premium signal
+     loading", the sentence "Approved sponsor projections appear here through
+     privacy-safe frequency caps and review gates", four placeholder bars and a
+     "Why this signal?" disclosure. There were two of these in the rail. No
+     sponsor is paying for that space and no reader asked what our review gates
+     are, so while the zone is empty it should not be a card at all.
+
+     Collapsed by default and revealed by `.has-live-sponsored-signal`, which
+     `loadPlacement` in pulse_ads_hooks.js toggles from the placement response
+     (`ads.length > 0`). That polarity matters: revealing on a class means the
+     placeholder never flashes before the fetch resolves, whereas hiding on an
+     "empty" class would show it on every page load for the length of a round
+     trip. The section element itself survives either way -- `data-ad-replace`
+     makes `loadPlacement` call `replaceChildren()` on this node and append the
+     real creative into it -- so the zone that reappears is the same zone the
+     hook already booted, and its impression and viewability beacons are
+     untouched.
+
+     Deliberately scoped to desktop and to `display`, not `content-visibility`:
+     a real ad must still be a normal block in the rail flow, and the mobile
+     placeholder is out of this refactor's scope.
+
+     `.pulse-sponsored-ad-zone--fallback` stays collapsed on purpose. The hook
+     adds it when the placements request rejects, and a network failure in the
+     ads service is not a thing to tell a reader about on Home. */
+  body.pulse-home-os .pulse-desktop-right .pulse-sponsored-ad-zone:not(.has-live-sponsored-signal) {
+    display: none !important;
+  }
+
+  /* ------------------------------------------------- composer, progressively
+     The collapsed composer offered eight equally-weighted 48px action cards --
+     Photo, Video, Music, Feeling, Location, Mention, Topic, Public -- to a
+     reader who has not yet decided to write anything. Eight choices presented
+     before the first keystroke is the composer asking the reader to configure a
+     post instead of start one, and it is 50px of the fold spent on options
+     rather than on people.
+
+     Collapsed now keeps three: Photo, Video and the audience control. Media is
+     the overwhelmingly common intent, and the audience chip stays because it is
+     the one control that answers "who will see this" -- a privacy affordance
+     should not be something you discover only after you have typed. The five
+     that fold away are metadata you attach to a post that already exists.
+
+     Selected by what the buttons mean, not where they sit: `data-composer-rail`
+     is the attribute the server already puts on exactly the four metadata chips
+     and `data-composer-music` on the fifth, so adding a ninth capability does
+     not silently reshuffle which ones hide, the way `:nth-child(n+3)` would.
+
+     No capability is removed. `:focus-within` restores the full set the instant
+     the reader touches the composer -- including via keyboard, since tabbing
+     into the textarea is focus-within too -- and `:has(textarea:not(:placeholder-shown))`
+     keeps it open while a draft exists, so clicking away from a half-written
+     post does not yank its tools.
+
+     The hiding is written as one negated rule rather than as hide-then-restore
+     on purpose. `pulse_composer_premium.css` declares
+     `.pulse-action-card { display: inline-flex !important }`, so a restore rule
+     would have to re-state a value this sheet does not own and would keep
+     re-stating it every time that file changed. Scoping the whole thing to the
+     collapsed state means the expanded composer carries no declaration from here
+     at all and renders exactly as it does today. (The chips compute to `flex`
+     rather than `inline-flex` because the grid container blockifies its items --
+     worth knowing before reading a devtools panel and concluding the two
+     buttons are styled differently. They are not.)
+
+     Beating that `!important` requires `!important`, which is the rule in this
+     file: every one of them names the declaration it is answering.
+
+     The negation also gives the right failure mode: `:has()` inside `:not()`
+     makes the entire selector invalid in a browser that lacks `:has()`, so
+     nothing is hidden and the composer is fully expanded -- today's behaviour.
+     Degrading towards "more visible" is the only acceptable direction for a
+     control surface. */
+  body.pulse-home-os
+    #pulseComposer:not(:focus-within):not(:has(textarea:not(:placeholder-shown)))
+    .composer-primary-actions
+    > [data-composer-rail],
+  body.pulse-home-os
+    #pulseComposer:not(:focus-within):not(:has(textarea:not(:placeholder-shown)))
+    .composer-primary-actions
+    > [data-composer-music] {
+    display: none !important;
+  }
+
+  /* ---- and the expanded state has to be legible too
+     Eight equal tracks across a 562px column is 65px each, and every one of the
+     eight labels ellipsized inside it -- at 1296px the expanded composer read
+     "P… Vi… Mu… Fe… Lo… Me… To… Pu…". That is not a regression from this
+     mission; `pulse_composer_premium.css` has set
+     `repeat(8, minmax(0, 1fr)) !important` all along, and its `!important`
+     overrides `pulse_desktop_feed.css`, which asks for `minmax(92px, 1fr)` at
+     this exact breakpoint and is plainly the desktop intent. But the expanded
+     composer is where all eight capabilities live, and this mission is the one
+     that decided a reader should only meet them on purpose -- so they have to be
+     readable when they arrive.
+
+     `auto-fit` rather than a fixed count because the honest constraint is the
+     label, not the column: 96px is what "Location" needs at 9px, and the row
+     takes as many of those as fit and wraps the rest. At 1296px that is five
+     across and two rows; on a wider centre column it becomes one row without a
+     second breakpoint. Wrapping is the right overflow behaviour for a set of
+     peer controls -- the alternative, a horizontal scroller, hides capabilities
+     behind a gesture, which is the problem this composer already had. */
+  body.pulse-home-os #pulseComposer .composer-primary-actions {
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)) !important;
+  }
+
+  /* The grid is eight equal tracks. Hiding five of them would otherwise leave
+     three chips huddled at the left of a row of empty columns, so the collapsed
+     state sizes its columns to what is actually in them.
+
+     `!important` for the same reason the rule above it needs one:
+     `pulse_composer_premium.css` declares
+     `.pulse-action-card-grid { grid-template-columns: repeat(8, minmax(0, 1fr)) !important }`,
+     and an `!important` declaration is only beaten by another one. Without it
+     the eight tracks survived, `minmax(0, 1fr)` cut the 562px row into 65px
+     columns, and the three surviving chips ellipsized to "P…", "Vi…" and "P…" --
+     two of which are the same string. A control truncated to its first letter is
+     worse than the eight-chip wall this rule exists to replace, because the wall
+     was at least readable. This was caught on screen and not in the numbers: the
+     chip count read 3-of-8 correctly throughout, which is exactly the kind of
+     green measurement that makes a screenshot non-optional.
+
+     `none` rather than a narrower `repeat()` so the track list follows the chips.
+     Add a ninth capability, or drop one of the three, and this rule does not have
+     to be found and edited to match. */
+  body.pulse-home-os
+    #pulseComposer:not(:focus-within):not(:has(textarea:not(:placeholder-shown)))
+    .composer-primary-actions {
+    grid-template-columns: none !important;
+    grid-auto-flow: column;
+    justify-content: start;
+  }
+}
+
+/* ------------------------------------------------------- laptop / 2-zone tier
+   The legacy sheet dropped the left rail below 1381px, which cost the primary
+   navigation on every 1280x800 laptop. Three zones now survive to 1280. */
+@media (min-width: 1181px) and (max-width: 1380px) {
+  body.pulse-home-os .pulse-desktop-layout {
+    width: min(100%, 1180px);
+    grid-template-columns: 216px minmax(0, 1fr) 296px;
+    gap: 18px;
+  }
+
+  body.pulse-home-os .pulse-desktop-left {
+    display: grid;
+  }
+
+  body.pulse-home-os .pulse-desktop-center {
+    max-width: none;
+  }
+}
+
+/* Tablet landscape: navigation plus content, discovery folds away. */
+@media (min-width: 1024px) and (max-width: 1180px) {
+  body.pulse-home-os .pulse-desktop-layout {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 216px minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  body.pulse-home-os .pulse-desktop-left {
+    display: grid;
+  }
+
+  body.pulse-home-os .pulse-desktop-right {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.pulse-home-os .pulse-environment-engine {
+    display: none;
+  }
+}

@@ -77,6 +77,22 @@
       "pulse.call.try_again": "Try Again"
     },
     es: {
+      // PulseDrop commerce attachment. The overlay ships these keys beside an
+      // English fallback and the native card already renders through them; the
+      // web card did not, so a reader here got an English badge and button on a
+      // post in their own language. Copied verbatim from the app's catalogue
+      // (mobile-native/src/i18n/catalogs/<lang>/extended.json) so the two
+      // surfaces say the same words, not two translations of the same idea.
+      "commerce:marketplace.outOfStock": "Sin existencias",
+      "commerce:marketplace.statusRemoved": "Retirado",
+      "commerce:productSignal.viewProduct": "Ver producto",
+      "commerce:pulsedrop.availability.notPriced": "Sin precio aún",
+      "commerce:pulsedrop.availability.unavailable": "Ya no está disponible",
+      "commerce:pulsedrop.label.discovery": "Descubre",
+      "commerce:pulsedrop.label.newDrop": "Novedad",
+      "commerce:pulsedrop.label.popular": "Popular",
+      "commerce:pulsedrop.label.topPick": "Nuestra selección",
+      "commerce:pulsedrop.label.trending": "Tendencias",
       "settings.saved": "Configuracion guardada.",
       "language.saved": "Idioma guardado.",
       "auth.login_required": "Inicia sesion.",
@@ -104,6 +120,22 @@
       "welcome.manual.cta": "Entrar a la galaxia"
     },
     fr: {
+      // PulseDrop commerce attachment. The overlay ships these keys beside an
+      // English fallback and the native card already renders through them; the
+      // web card did not, so a reader here got an English badge and button on a
+      // post in their own language. Copied verbatim from the app's catalogue
+      // (mobile-native/src/i18n/catalogs/<lang>/extended.json) so the two
+      // surfaces say the same words, not two translations of the same idea.
+      "commerce:marketplace.outOfStock": "Rupture de stock",
+      "commerce:marketplace.statusRemoved": "Retirée",
+      "commerce:productSignal.viewProduct": "Voir le produit",
+      "commerce:pulsedrop.availability.notPriced": "Prix non défini",
+      "commerce:pulsedrop.availability.unavailable": "Plus disponible",
+      "commerce:pulsedrop.label.discovery": "Découvrir",
+      "commerce:pulsedrop.label.newDrop": "Nouveauté",
+      "commerce:pulsedrop.label.popular": "Populaire",
+      "commerce:pulsedrop.label.topPick": "Notre sélection",
+      "commerce:pulsedrop.label.trending": "Tendances",
       "settings.saved": "Parametres enregistres.",
       "language.saved": "Langue enregistree.",
       "auth.login_required": "Connexion requise.",
@@ -131,6 +163,22 @@
       "welcome.manual.cta": "Entrer dans la galaxie"
     },
     ht: {
+      // PulseDrop commerce attachment. The overlay ships these keys beside an
+      // English fallback and the native card already renders through them; the
+      // web card did not, so a reader here got an English badge and button on a
+      // post in their own language. Copied verbatim from the app's catalogue
+      // (mobile-native/src/i18n/catalogs/<lang>/extended.json) so the two
+      // surfaces say the same words, not two translations of the same idea.
+      "commerce:marketplace.outOfStock": "Li fini",
+      "commerce:marketplace.statusRemoved": "Retire",
+      "commerce:productSignal.viewProduct": "Gade pwodwi a",
+      "commerce:pulsedrop.availability.notPriced": "Pa gen pri ankò",
+      "commerce:pulsedrop.availability.unavailable": "Li pa disponib ankò",
+      "commerce:pulsedrop.label.discovery": "Dekouvri",
+      "commerce:pulsedrop.label.newDrop": "Nouvo rive",
+      "commerce:pulsedrop.label.popular": "Popilè",
+      "commerce:pulsedrop.label.topPick": "Chwa nou",
+      "commerce:pulsedrop.label.trending": "Sa k cho",
       "settings.saved": "Paramet yo anrejistre.",
       "language.saved": "Lang lan anrejistre.",
       "auth.login_required": "Ou dwe konekte.",

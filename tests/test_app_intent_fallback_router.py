@@ -22,7 +22,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _HANDLE, _DB_PATH = tempfile.mkstemp(suffix=".db", prefix="app_intent_router_")
 os.close(_HANDLE)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
-# The hook runs before any view, so none of these assertions need a schema.
+# No schema is created here, and that is now a deliberate second thing this file
+# tests rather than merely a shortcut. The hook itself still runs before any view,
+# so the interstitial assertions genuinely do not need tables. But the paths that
+# fall *through* the hook now reach real views against an empty database, and how
+# a view answers that is part of the contract: `/pulse/marketplace/<id>` must
+# answer 503, not 500 and not 404 -- "we could not read it" and "it does not
+# exist" are opposite instructions to a crawler holding a canonical product URL.
+# An unguarded read there used to surface a stack trace as the product's contents,
+# and this file is where that regressed into view.
 os.environ["COINPILOTX_INIT_DB_ON_IMPORT"] = "0"
 
 from werkzeug.exceptions import MethodNotAllowed, NotFound  # noqa: E402
@@ -147,16 +155,58 @@ class AppIntentFallbackRouterTest(unittest.TestCase):
                 response = self.client.get("/pulse/post/5?pulse_app=1", headers=headers)
                 self.assertNotEqual(response.headers.get("Location"), APP_STORE)
 
+    def test_a_marketplace_url_the_hook_passes_through_survives_an_unreadable_db(self):
+        """The failure mode the storefront rebuild introduced, pinned here.
+
+        Once `marketplace`/`product` became `web_equivalent`, the hook stopped
+        interstitialling them and started handing the request to a real view --
+        and this file's fixture has no tables, so that view meets a read failure on
+        every request. It answered 500 with a stack-trace page as the product's
+        contents. This is the one status a canonical product URL must not return.
+
+        503 with `Retry-After` is the answer, and 404 would be a worse bug than the
+        500: a 404 on a canonical URL retires it from the search index, which is
+        right for a delisted product and permanently wrong for a database hiccup.
+        The two statuses mean opposite things and the route must not conflate them.
+
+        Asserted for the crawler as well as the visitor: no `Product` structured
+        data on a page that has no product, and `noindex` so a crawler ignoring the
+        status still cannot record the apology as the product.
+        """
+        for path in ("/pulse/marketplace/9", "/pulse/marketplace"):
+            with self.subTest(path=path):
+                response = self.client.get(f"{path}?pulse_app=1", headers=MAC)
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.headers.get("Retry-After"), "120")
+                # A shared cache must not pin the failure in front of everyone who
+                # follows the same link.
+                self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+                body = response.get_data(as_text=True)
+                self.assertNotIn("application/ld+json", body)
+                self.assertIn("noindex", body)
+                # The error state, not the empty one. "No products" is a claim about
+                # the catalogue that a failed read has not earned.
+                self.assertIn("could not load", body)
+                self.assertNotIn("No products are listed yet", body)
+
     def test_non_ios_gets_the_interstitial_where_no_web_page_exists(self):
         """A desktop visitor is told, not redirected.
 
         This used to 302 to the App Store. It is a dead end: nobody installs an
         iPhone app from the Mac they are sitting at, so the session ended on a
-        page the visitor could do nothing with. Since the Marketplace family
-        became app-first it would also have been the single most common desktop
-        outcome on the site.
+        page the visitor could do nothing with.
+
+        `/pulse/marketplace/9` was one of the two paths here and is deliberately
+        gone. It is no longer app-only: the web storefront serves that URL as a
+        real public product page, so `app_links` now marks it `web_equivalent` and
+        the hook correctly passes it through instead of interstitialling it. The
+        rule under test is unchanged; the example was retired because the
+        condition it depended on was met. `/pulse/purchases` replaces it so the
+        loop still proves this holds for more than one destination, and
+        `tests/test_app_links.py::test_the_storefront_is_reached_on_the_web_but_still_opens_the_app_on_ios`
+        now owns the marketplace half.
         """
-        for path in ("/pulse/marketplace/9", "/pulse/orders"):
+        for path in ("/pulse/purchases", "/pulse/orders"):
             with self.subTest(path=path):
                 response = self.client.get(f"{path}?pulse_app=1", headers=MAC)
                 self.assertEqual(response.status_code, 200)
@@ -175,14 +225,18 @@ class AppIntentFallbackRouterTest(unittest.TestCase):
 
         Two different destinations must produce two different headings, or the
         page is not carrying the member's intent through at all.
+
+        Both examples are app-only surfaces. The marketplace listing used to be
+        one of the pair; it is now a real web page, and asserting an interstitial
+        heading for it would assert the opposite of what the site does.
         """
-        listing = self.client.get(
-            "/pulse/marketplace/9?pulse_app=1", headers=MAC
+        purchases = self.client.get(
+            "/pulse/purchases?pulse_app=1", headers=MAC
         ).get_data(as_text=True)
         orders = self.client.get(
             "/pulse/orders?pulse_app=1", headers=MAC
         ).get_data(as_text=True)
-        self.assertIn("This listing is available in the PulseSoc iPhone app", listing)
+        self.assertIn("Purchase history is available in the PulseSoc iPhone app", purchases)
         self.assertIn("Order history is available in the PulseSoc iPhone app", orders)
 
     def test_the_interstitial_is_not_indexable(self):
