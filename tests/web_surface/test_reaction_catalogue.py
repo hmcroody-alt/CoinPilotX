@@ -45,9 +45,15 @@ BOT = os.path.join(REPO, "bot.py")
 #: digest here. Updating the digest *without* bumping the token puts the bug back
 #: -- the point of recording them together is that the diff shows you doing it.
 CACHE_PINNED_ASSETS = {
+    # Re-pinned for the commerce-attachment web render (6f6526e9d). That commit
+    # did the delivery-critical half right -- it changed this file and moved
+    # bot.py to ?v=commerce-attachment-20260928a in the same commit -- and only
+    # left the pairing below unrecorded. So the stale thing was this baseline,
+    # not the shipped asset, and the procedure above is satisfied: the token
+    # moved first, the digest follows.
     "static/js/pulse_home_core.js": (
-        "reaction-catalogue-20260927h",
-        "1aeeccee65767efcd3210bfab59b4ef827a01b42fb05abe6f50132e23fa38c24",
+        "commerce-attachment-20260928a",
+        "1b54ff0e9f348c7ff7a2a1e552a5a561a3dce95d618095e6c0d15ae1dfb5c94a",
     ),
     "static/css/pulse_desktop_shell.css": (
         "reaction-catalogue-20260927h",

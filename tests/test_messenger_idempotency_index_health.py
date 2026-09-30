@@ -176,9 +176,23 @@ class WrongShapeTest(_IndexCase):
         )
         self.assertEqual(
             service.MESSAGE_IDEMPOTENCY_PREDICATE,
-            "client_message_id IS NOT NULL AND client_message_id <> ''",
+            "client_message_id IS NOT NULL AND client_message_id <> '' "
+            "AND COALESCE(deleted_at, '') = ''",
         )
         self.assertIn(service.MESSAGE_IDEMPOTENCY_PREDICATE, service._MESSAGE_IDEMPOTENCY_INDEX_SQL)
+
+    def test_the_predicate_matches_the_lookup_it_backs(self):
+        """The index and `_message_for_client_id` must agree about deleted rows.
+
+        This is a source-level check because the consequence is invisible on a
+        database with no deleted duplicates in it -- which is every fixture here
+        except DeletedRowResendTest, and was every database anyone tested on.
+        """
+        import inspect
+
+        lookup = inspect.getsource(service._message_for_client_id)
+        self.assertIn("COALESCE(deleted_at,'')=''", lookup)
+        self.assertIn("COALESCE(deleted_at, '') = ''", service.MESSAGE_IDEMPOTENCY_PREDICATE)
 
     def test_predicates_are_compared_by_meaning_not_by_rendering(self):
         """PostgreSQL prints the predicate back through its own formatter, so a
@@ -186,7 +200,41 @@ class WrongShapeTest(_IndexCase):
         text would report it as malformed."""
         self.assertEqual(
             service._normalise_predicate("(client_message_id IS NOT NULL AND (client_message_id <> ''::text))"),
+            service._normalise_predicate("client_message_id IS NOT NULL AND client_message_id <> ''"),
+        )
+
+    def test_the_postgres_rendering_of_the_real_predicate_reads_back_as_correct(self):
+        """The exact string production's catalog returns for the shipped index.
+
+        Taken from PostgreSQL's printer rather than composed by hand: it puts a
+        space after the comma in COALESCE where this module's declaration has
+        none. Collapsing runs of whitespace does not close that gap, so without
+        comma normalisation the installer would create a correct index and then
+        reject it as IndexVerificationFailed -- leaving hard_uniqueness_active
+        false for a reason that has nothing to do with the data.
+        """
+        rendered = (
+            "((client_message_id IS NOT NULL) AND (client_message_id <> ''::text) "
+            "AND (COALESCE(deleted_at, ''::text) = ''::text))"
+        )
+        self.assertEqual(
+            service._normalise_predicate(rendered),
             service._normalise_predicate(service.MESSAGE_IDEMPOTENCY_PREDICATE),
+        )
+
+    def test_a_predicate_that_ignores_deleted_rows_is_not_healthy(self):
+        """The shape that shipped before, and could not be installed.
+
+        Uniqueness over every row -- deleted ones included -- is wider than the
+        lookup that backs it. Wider is not safer here; DeletedRowResendTest
+        below shows what it costs.
+        """
+        self._assert_not_healthy(
+            self._status_for(
+                f"CREATE UNIQUE INDEX {service.MESSAGE_IDEMPOTENCY_INDEX} "
+                "ON comm_v2_messages (conversation_id, sender_user_id, client_message_id) "
+                "WHERE client_message_id IS NOT NULL AND client_message_id <> ''"
+            )
         )
 
 
@@ -525,6 +573,98 @@ class TelemetryCarriesNoMessageDataTest(_IndexCase):
         self.assertNotIn("native-secret-client-id", records[0])
         self.assertIn("hard_uniqueness_active=false", records[0])
         self.assertIn("state=blocked_by_duplicates", records[0])
+
+
+class DeletedRowResendTest(_IndexCase):
+    """Send, delete, resend the same client id. The index must not break this.
+
+    The send path recovers from a uniqueness violation by re-running
+    `_message_for_client_id` and returning the row that won. That lookup skips
+    deleted rows. So an index that counts deleted rows refuses the insert and
+    then hands the recovery a lookup which finds nothing -- `winner` is None and
+    send_message re-raises, turning an ordinary resend into a 500.
+
+    Nothing in production has hit this yet only because the index has never been
+    installable. Installing the previous shape would have shipped the bug.
+    """
+
+    LOOKUP = (
+        "SELECT id FROM comm_v2_messages "
+        "WHERE conversation_id=? AND sender_user_id=? AND client_message_id=? "
+        "AND COALESCE(deleted_at,'')='' LIMIT 1"
+    )
+
+    def _install(self, predicate):
+        self.cur.execute(
+            f"CREATE UNIQUE INDEX {service.MESSAGE_IDEMPOTENCY_INDEX} "
+            "ON comm_v2_messages (conversation_id, sender_user_id, client_message_id) "
+            f"WHERE {predicate}"
+        )
+        self.conn.commit()
+
+    def _send_then_delete(self, client_id="native-resend"):
+        self._insert(client_id)
+        self.cur.execute(
+            "UPDATE comm_v2_messages SET deleted_at='2026-09-20T00:00:00+00:00' "
+            "WHERE client_message_id=?",
+            (client_id,),
+        )
+        self.conn.commit()
+
+    def _resend(self, client_id="native-resend"):
+        """The send path's insert, plus the recovery branch that follows it."""
+        self.assertIsNone(
+            self.cur.execute(self.LOOKUP, (10, 1, client_id)).fetchone(),
+            "the pre-insert lookup must miss, or this proves nothing",
+        )
+        try:
+            self._insert(client_id)
+            return "sent"
+        except sqlite3.IntegrityError:
+            winner = self.cur.execute(self.LOOKUP, (10, 1, client_id)).fetchone()
+            return "returned_winner" if winner else "raised"
+
+    def test_the_shipped_predicate_lets_the_resend_through(self):
+        self._install(service.MESSAGE_IDEMPOTENCY_PREDICATE)
+        self._send_then_delete()
+        self.assertEqual(self._resend(), "sent")
+
+    def test_counting_deleted_rows_would_turn_the_resend_into_an_error(self):
+        # The control for the test above: same scenario, previous predicate.
+        self._install("client_message_id IS NOT NULL AND client_message_id <> ''")
+        self._send_then_delete()
+        self.assertEqual(self._resend(), "raised")
+
+    def test_a_live_duplicate_is_still_blocked(self):
+        """The narrowing must not cost the guarantee the index exists for."""
+        self._install(service.MESSAGE_IDEMPOTENCY_PREDICATE)
+        self._insert("native-live")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self._insert("native-live")
+
+    def test_deleting_one_copy_unblocks_installation(self):
+        """The reconciliation this predicate makes available.
+
+        Soft-deleting the loser of a duplicate pair frees the index without
+        destroying the row, which is why the repair script can be reversible.
+        """
+        self._insert("native-dupe")
+        self._insert("native-dupe")
+        self.assertEqual(
+            service._ensure_message_idempotency_index(self.cur, self.conn)["state"],
+            service.IDEMPOTENCY_INDEX_BLOCKED_BY_DUPLICATES,
+        )
+        self.cur.execute(
+            "UPDATE comm_v2_messages SET deleted_at='2026-09-20T00:00:00+00:00' "
+            "WHERE client_message_id='native-dupe' "
+            "AND id > (SELECT MIN(id) FROM comm_v2_messages WHERE client_message_id='native-dupe')"
+        )
+        self.conn.commit()
+        self.assertEqual(
+            service._ensure_message_idempotency_index(self.cur, self.conn)["state"],
+            service.IDEMPOTENCY_INDEX_INSTALLED,
+        )
+        self.assertEqual(self._rows(), 2, "the loser must still be on disk")
 
 
 def test_messenger_idempotency_index_health():

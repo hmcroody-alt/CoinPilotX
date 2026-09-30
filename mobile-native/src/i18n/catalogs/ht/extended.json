@@ -1197,6 +1197,32 @@
         "from_sellers_you_follow": "Nan men vandè ou swiv",
         "new_to_marketplace": "Nouvo nan Marketplace",
         "popular": "Popilè"
+      },
+      "tagging": {
+        "open": "Take pwodwi",
+        "title": "Pwodwi ou yo",
+        "subtitle": "Chwazi sou kisa pòs sa a ye",
+        "cap": "Jiska {{max}} pou chak pòs",
+        "selected": "{{selected}} sou {{max}} chwazi",
+        "loading": "N ap chaje pwodwi ou yo…",
+        "empty": "Ou pa gen okenn pwodwi ankò",
+        "emptyHint": "Pwodwi ou mete sou Marketplace ap parèt isit la.",
+        "error": "Nou pa t kapab chaje pwodwi ou yo",
+        "errorHint": "Sa pa vle di ou pa gen youn. Tanpri eseye ankò.",
+        "retry": "Eseye ankò",
+        "wontShow": "Li pap parèt",
+        "wontShowHint": "Ou ka take l, men achtè yo pap wè l jiskaske sa ranje.",
+        "done": "Fini",
+        "blocked": {
+          "not_purchasable": "Pa disponib pou achte",
+          "no_cover_image": "Li bezwen yon foto kouvèti",
+          "no_resolvable_price": "Li bezwen yon pri",
+          "moderation_flagged": "Anba revizyon",
+          "listing_risk": "Pa kalifye pou parèt",
+          "seller_risk": "Magazen ou pa kalifye pou parèt",
+          "unknown_reason": "Nou pa ka montre l kounye a"
+        },
+        "cleared": "Etikèt pwodwi retire: se sèlman pòs nan fil la ki pote yo."
       }
     },
     "marketplace": {

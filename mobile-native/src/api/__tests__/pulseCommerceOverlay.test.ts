@@ -65,17 +65,18 @@ function overlay(patch: Partial<PulseCommerceOverlay> = {}): PulseCommerceOverla
       title: "Aurora Desk Lamp",
       price_label: "$49.00",
       currency: "USD",
-      image_url: "https://cdn.example/lamp.jpg",
+      cover_image_url: "https://cdn.example/lamp.jpg",
       buyer_visible: true,
       inventory_state: "in_stock",
       quantity: 4,
       product_type: "physical",
-      denial_code: "",
-      route: "/pulse/marketplace/77",
-      screen: "MarketplaceDetail"
+      denial_code: ""
+      // No `route`/`screen` on the product: `_product` in
+      // `services/pulsedrop/hydration.py` has never emitted either. The
+      // product's destination lives on `cta`, the merchant's on `seller`.
     },
     seller: {
-      seller_user_id: 10,
+      user_id: 10,
       store_name: "Northlight Studio",
       username: "northlight",
       route: "/pulse/merchant/10",
@@ -211,7 +212,7 @@ describe("commerceOverlayForCache", () => {
     expect(cached!.pulsedrop).toBe(true);
     expect(cached!.product.listing_id).toBe(77);
     expect(cached!.product.title).toBe("Aurora Desk Lamp");
-    expect(cached!.product.image_url).toBe("https://cdn.example/lamp.jpg");
+    expect(cached!.product.cover_image_url).toBe("https://cdn.example/lamp.jpg");
     expect(cached!.seller.store_name).toBe("Northlight Studio");
     expect(cached!.attribution.token).toBe("pd1.1.reel.77");
 

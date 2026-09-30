@@ -86,6 +86,13 @@ CONST_RE = re.compile(
 # The wrapper every client call goes through. The optional `<...>` is the
 # TypeScript generic for the response type.
 CALL_RE = re.compile(r"pulseApi\s*(?:<[^>]*>)?\s*\(\s*([`'\"])(.*?)\1", re.S)
+# `import { A, B as C } from "./module"` -- a prefix shared by two files rather
+# than duplicated into both. Only the named bindings are pulled in, only from
+# the module they name, and a local `const` of the same name still wins, so the
+# per-file scoping above is preserved: this borrows `API_PREFIX` from the one
+# file that exports it, it does not build a global table.
+IMPORT_RE = re.compile(
+    r"^\s*import\s*\{([^}]*)\}\s*from\s*[\"'](\.{1,2}/[^\"']+)[\"']", re.M)
 # `${...}` with one level of nested braces, which covers object literals passed
 # to a query-builder call: `${undxQuery({ org_id: x })}`.
 PLACEHOLDER_RE = re.compile(r"\$\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", re.S)
@@ -106,6 +113,39 @@ def resolve_consts(expr: str, consts: dict, depth: int = 0) -> str:
     out = IDENT_PLACEHOLDER_RE.sub(
         lambda m: consts.get(m.group(1), m.group(0)), expr)
     return resolve_consts(out, consts, depth + 1) if out != expr else out
+
+
+def module_file(base: pathlib.Path, spec: str):
+    """The file a relative import specifier points at, or None."""
+    candidate = base / spec
+    for cand in (candidate.parent / (candidate.name + ".ts"),
+                 candidate.parent / (candidate.name + ".tsx"),
+                 candidate / "index.ts"):
+        if cand.is_file():
+            return cand
+    return None
+
+
+def file_consts(path: pathlib.Path, depth: int = 0) -> dict:
+    """This file's string constants, including ones it imports by name."""
+    src = path.read_text(encoding="utf-8")
+    consts = {m.group(1): m.group(3) for m in CONST_RE.finditer(src)}
+    if depth < 3:
+        for names, spec in IMPORT_RE.findall(src):
+            target = module_file(path.parent, spec)
+            if target is None:
+                continue
+            exported = None
+            for binding in names.split(","):
+                parts = binding.split(" as ")
+                source_name, local_name = parts[0].strip(), parts[-1].strip()
+                if not source_name or local_name in consts:
+                    continue
+                if exported is None:
+                    exported = file_consts(target, depth + 1)
+                if source_name in exported:
+                    consts[local_name] = exported[source_name]
+    return {k: resolve_consts(v, consts) for k, v in consts.items()}
 
 
 def looks_like_query_suffix(name: str, src: str) -> bool:
@@ -156,8 +196,7 @@ def extract_call_sites():
             continue
         for path in sorted(root.glob(glob)):
             src = path.read_text(encoding="utf-8")
-            consts = {m.group(1): m.group(3) for m in CONST_RE.finditer(src)}
-            consts = {k: resolve_consts(v, consts) for k, v in consts.items()}
+            consts = file_consts(path)
             for m in CALL_RE.finditer(src):
                 raw = m.group(2)
                 resolved = resolve_consts(raw, consts).split("?", 1)[0]
@@ -165,8 +204,9 @@ def extract_call_sites():
                     unresolved.append({
                         "client": client, "file": path.name, "raw": raw,
                         "why": "path does not resolve to a leading slash; a "
-                               "constant is defined outside this file or by an "
-                               "expression this extractor does not read",
+                               "constant is built by an expression this "
+                               "extractor does not read, or comes from a "
+                               "module it cannot follow",
                     })
                     continue
                 # A leftover `${UPPER_CASE}` is an unresolved *constant*, not a

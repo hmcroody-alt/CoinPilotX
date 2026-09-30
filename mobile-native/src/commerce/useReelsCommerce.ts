@@ -66,6 +66,34 @@ export type UseReelsCommerceOptions = {
    * back to NEUTRAL relevance, which is exactly the pre-§8 behaviour.
    */
   resolveContext?: (reelId: string) => CommerceContext | null;
+  /**
+   * The `pulse_posts` id behind the reel that will carry the chip.
+   *
+   * Sent so the server can judge the reel rather than this client's summary of
+   * it. `reelCommerceContext` caps every field at 80 characters — correctly, it
+   * is a ranking signal on a wire — so a caption that opens with a paragraph of
+   * thanks puts the words the suitability rule exists to catch past the cut; and
+   * `moderation_status`, `risk_score` and `post_type` are not fields a client
+   * sends at all. Measured on `post_detail`: the full body reads
+   * SENSITIVE_CONTEXT and the 80 characters that reach the server read PERMITTED.
+   *
+   * A **second** resolver rather than a field on the context, for two reasons.
+   * The context may legitimately be null — a reel with no caption and no tags has
+   * nothing to say about itself — while the id must still be sent, because it is
+   * exactly that reel whose row the server needs to read. And the context is a
+   * *description*, judged as client-supplied text; this is a key, judged by
+   * reading our own database. Putting them in one object would invite the two to
+   * be trusted alike.
+   *
+   * It is the post id and not the reel id. `PulseReel` carries both — `id` is
+   * `pulse_reels.id` and `post_id` is `pulse_posts.id`, two id spaces whose
+   * numbers overlap — and the server keys on `post_id` so that one wire field
+   * cannot be made to read a stranger's post by sending the wrong kind of id.
+   *
+   * Optional, and 0 means "not known": with no id the request is what shipped
+   * before, and the server falls back to judging the context alone.
+   */
+  resolvePostId?: (reelId: string) => number;
 };
 
 const LOCAL_CADENCE: CommerceCadence = {
@@ -97,7 +125,8 @@ export function useReelsCommerce({
   reelIds,
   enabled: callerEnabled = true,
   refreshToken = 0,
-  resolveContext
+  resolveContext,
+  resolvePostId
 }: UseReelsCommerceOptions): ReelsCommerceState {
   // The master switch, read rather than passed — see `useFeedCommerce` for why
   // this is not left to the screen to remember.
@@ -154,6 +183,10 @@ export function useReelsCommerce({
   // normal case — it closes over the reel list) does not refire the fetch.
   const resolveContextRef = useRef(resolveContext);
   resolveContextRef.current = resolveContext;
+  // Same reason, same shape: the screen rebuilds this every render too, and the
+  // fetch must key off the target reel rather than off the resolver's identity.
+  const resolvePostIdRef = useRef(resolvePostId);
+  resolvePostIdRef.current = resolvePostId;
 
   useEffect(() => {
     // No target reel means the list is shorter than the lead-in, so no slot
@@ -169,11 +202,16 @@ export function useReelsCommerce({
     // reel with no topic should be ranked at NEUTRAL relevance, not scored
     // against an empty string.
     const context = resolveContextRef.current?.(targetReelId) || undefined;
+    // Omitted rather than sent as zero when the resolver cannot name a post: the
+    // wire contract treats a falsy id as absent, and `fetchCommercePlacements`
+    // drops it, so there is one spelling of "unknown" rather than two.
+    const postId = Number(resolvePostIdRef.current?.(targetReelId) || 0);
     fetchCommercePlacements("reels", {
       context,
       sessionId,
       limit: REELS_MAX_CHIPS,
-      cadence: LOCAL_CADENCE
+      cadence: LOCAL_CADENCE,
+      ...(postId > 0 ? { postId } : {})
     })
       .then((result) => {
         if (cancelled || snoozedRef.current) return;

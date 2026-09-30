@@ -154,9 +154,15 @@ function mapCadence(raw: RawCadence | undefined, fallback: CommerceCadence): Com
   };
 }
 
-const API_PREFIX = "/api/pulse/commerce/discovery";
+export const API_PREFIX = "/api/pulse/commerce/discovery";
 
-type RawProduct = {
+/**
+ * Exported so `taggableProducts.ts` maps the *same* wire shape instead of
+ * declaring a second one. Both endpoints live behind `API_PREFIX` and both
+ * serialize a listing through `bot.pulse_marketplace_listing_payload`, so a
+ * divergence between two client-side product types could only ever be a bug.
+ */
+export type RawProduct = {
   id?: number;
   listing_id?: number;
   title?: string;
@@ -193,7 +199,15 @@ type RawPlacement = {
   price_currency?: string;
 };
 
-function mapProduct(raw: RawProduct | undefined): CommerceProduct {
+/**
+ * Public for the same reason `engine.buyer_safe` is public server-side: a second
+ * caller appeared, and the choice was between exporting this or copying it. The
+ * copy is the worse option — `listing_id ?? id` and
+ * `cover_image_url || image_url` are compatibility fallbacks for a wire shape
+ * that varies by endpoint, and two copies drift silently because each one looks
+ * correct on the payload its author happened to test against.
+ */
+export function mapProduct(raw: RawProduct | undefined): CommerceProduct {
   const product = raw || {};
   return {
     listingId: Number(product.listing_id ?? product.id) || 0,
@@ -288,6 +302,21 @@ export async function fetchCommercePlacements(
      * operations, which is why sending an id is safe.
      */
     listingId?: number;
+    /**
+     * The post being read, on the surfaces that display exactly one.
+     *
+     * Sent *as well as* `context`, not instead of it. The context is what the
+     * ranker scores against and it is deliberately small — `postContext.ts` caps
+     * every field at 80 characters — whereas this id is what lets the server read
+     * the post's full text, `post_type`, `moderation_status` and `risk_score` and
+     * refuse commerce beside content it must stay away from. A bereavement that
+     * opens with a paragraph of thanks does not reach the wire as a bereavement;
+     * the row says so, and only the server can read the row.
+     *
+     * Narrowing in the only direction that matters: the sole effect of sending it
+     * is that the response may become empty.
+     */
+    postId?: number;
   } = {}
 ): Promise<CommerceServeResult> {
   const fallbackCadence = options.cadence || EMPTY_RESULT.cadence;
@@ -305,7 +334,8 @@ export async function fetchCommercePlacements(
         context: options.context || {},
         session_id: options.sessionId || "",
         ...(options.limit === undefined ? {} : { limit: options.limit }),
-        ...(options.listingId ? { listing_id: options.listingId } : {})
+        ...(options.listingId ? { listing_id: options.listingId } : {}),
+        ...(options.postId ? { post_id: options.postId } : {})
       })
     });
     if (!response?.ok || !Array.isArray(response.placements)) return empty;
@@ -388,10 +418,25 @@ export type CommerceEngagementAction =
   | "checkout_started"
   | "purchase";
 
+/**
+ * Report one post-impression outcome.
+ *
+ * Neither field states an amount, and that is the point. This function used to
+ * send `value_minor` and `currency`, computed on the device as `unitMinor * qty`,
+ * and the server stored them verbatim — so the money credited to a placement was
+ * a number asserted by the party that benefits from it, in a column an analyst
+ * would eventually sum.
+ *
+ * The server now prices every event itself: a purchase from the buyer's own paid
+ * order, a cart addition or checkout entry from the listing's price. What it
+ * cannot know is how many the buyer chose, because "Buy now" bypasses the cart —
+ * so `quantity` is sent, named as the claim it is, and clamped server-side to the
+ * listing's stock. `orderRef` identifies an order; it does not value it.
+ */
 export async function recordCommerceEngagement(
   placement: PlacementIdentity,
   action: CommerceEngagementAction,
-  extra: { valueMinor?: number; currency?: string; orderRef?: string } = {}
+  extra: { orderRef?: string; quantity?: number } = {}
 ): Promise<boolean> {
   if (!placement.placementId) return false;
   try {
@@ -399,9 +444,8 @@ export async function recordCommerceEngagement(
       method: "POST",
       body: identityBody(placement, {
         action,
-        value_minor: Math.max(0, Math.round(extra.valueMinor || 0)),
-        currency: extra.currency || "",
-        order_ref: extra.orderRef || ""
+        order_ref: extra.orderRef || "",
+        quantity: Math.max(1, Math.round(extra.quantity || 1))
       })
     });
     return Boolean(result?.ok);

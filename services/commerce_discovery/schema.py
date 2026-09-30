@@ -81,6 +81,11 @@ _DDL = (
         seller_user_id INTEGER,
         promotion_class TEXT NOT NULL DEFAULT 'organic',
         reason_code TEXT,
+        -- How the product got here (`relationship.py`), as opposed to who funded
+        -- it (`promotion_class`) or what the buyer is told (`reason_code`). Also
+        -- declared in `_ADDITIVE_COLUMNS`, which is what reaches a database that
+        -- already has this table -- see the comment there.
+        relationship TEXT,
         score REAL NOT NULL DEFAULT 0,
         score_breakdown_json TEXT,
         ranking_version TEXT NOT NULL,
@@ -223,6 +228,77 @@ _DDL = (
 )
 
 
+#: Columns added to tables that already exist in production.
+#:
+#: Why this list has to exist at all
+#: --------------------------------
+#:
+#: Everything in :data:`_DDL` is ``CREATE ... IF NOT EXISTS``, which means it is
+#: inert against a database where the table is already there. Adding a column to
+#: one of those ``CREATE TABLE`` bodies therefore applies on a fresh database and
+#: **silently does not apply** to the one in production — the most expensive shape
+#: a schema change can have, because every test passes and the feature is missing
+#: exactly where it matters. ``metrics.observe_sources`` declined to persist
+#: per-row provenance for precisely this reason, and said so in its docstring.
+#:
+#: So a new column is declared in *both* places: in the ``CREATE`` body above, for
+#: a database that does not exist yet, and here, for every database that already
+#: does. That is duplication, and it is the kind worth having — the alternative is
+#: a rule that a new column may only ever be added here, which drifts the
+#: ``CREATE`` statements into being a historical artifact nobody can read as the
+#: current shape.
+#:
+#: Why no ``IS_POSTGRES`` branch, and no ``information_schema`` probe
+#: ----------------------------------------------------------------
+#:
+#: ``services.db._translate_alter_table`` rewrites every ``ALTER TABLE ... ADD
+#: COLUMN`` into ``ADD COLUMN IF NOT EXISTS`` when the engine is PostgreSQL, so
+#: re-running one of these is a genuine no-op there: no error, and — the part that
+#: matters — no aborted transaction. SQLite has no such spelling and raises
+#: ``duplicate column name`` instead, which :func:`_add_columns` catches by
+#: message. It autocommits DDL, so a caught error there leaves nothing poisoned.
+#:
+#: This keeps the package free of engine conditionals, which is a property worth
+#: defending: every other statement in this file goes through the same dialect
+#: layer, and a hand-rolled ``PRAGMA``/``information_schema`` fork here would be
+#: the first place a reader has to know which database they are on.
+_ADDITIVE_COLUMNS = (
+    # §6's relationship axis. See `relationship.py` for what the values mean and
+    # why the column is not derivable from `reason_code` or `promotion_class`.
+    #
+    # No NOT NULL and no DEFAULT. Rows written before this column existed have no
+    # relationship, and NULL is the honest spelling of that — a DEFAULT would
+    # backfill several thousand historical placements with a provenance nobody
+    # measured, and `catalogue` is exactly the value that would raise no
+    # suspicion in a report. Readers treat NULL as "not recorded".
+    ("commerce_discovery_placements", "relationship", "TEXT"),
+)
+
+#: SQLite's message for re-adding a column. Matched as a substring because the
+#: full text names the column (``duplicate column name: relationship``).
+_DUPLICATE_COLUMN_MARKERS = ("duplicate column",)
+
+
+def _add_columns(cur) -> None:
+    """Apply :data:`_ADDITIVE_COLUMNS`, treating "already there" as success.
+
+    Each statement is attempted independently so that one failure cannot hide the
+    columns behind it in the tuple. A genuine failure — a typo in the type, a
+    table that does not exist — is re-raised, because the caller's ``except`` is
+    what decides whether the whole schema pass counts as having succeeded, and a
+    swallowed error here would let ``ensure_schema`` return True while the column
+    it promised is absent.
+    """
+    for table, column, definition in _ADDITIVE_COLUMNS:
+        try:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        except Exception as error:
+            text = str(error).lower()
+            if any(marker in text for marker in _DUPLICATE_COLUMN_MARKERS):
+                continue
+            raise
+
+
 @run_once_per_process
 def ensure_schema(conn) -> bool:
     """Create the discovery tables. Idempotent, once per worker process.
@@ -266,6 +342,10 @@ def ensure_schema(conn) -> bool:
         cur = conn.cursor()
         for statement in _DDL:
             cur.execute(statement)
+        # After the CREATEs, never before: an ALTER against a table this same pass
+        # is about to create would fail on a fresh database, and on PostgreSQL that
+        # failure aborts the transaction and takes the CREATEs down with it.
+        _add_columns(cur)
         conn.commit()
         return True
     except Exception:

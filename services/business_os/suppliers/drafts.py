@@ -1076,6 +1076,20 @@ def status_counts(business_id, store_id, actor_user_id, connection_id, *, contex
     everything looks shipped and nothing is selling. So the awaiting-review rows
     are counted under ``awaiting_review`` no matter what ``status`` says.
 
+    ## ``live`` is a different number, and the smaller one
+
+    Those two columns are necessary and not sufficient. Publication also needs
+    stock, an approved seller and a store name, so ``published`` means "the
+    merchant and a moderator have both said yes" while ``live`` means "a buyer
+    can actually reach it" -- precisely the gap :func:`lifecycle.live_blocker`
+    exists to name. Reporting ``published`` under the word *live* is how a
+    catalogue of 101 products, 62 of them at quantity 0, was shown to its own
+    merchant as 101 live while buyer discovery returned 39.
+
+    So ``live`` is counted from :func:`lifecycle.public_sql` -- the predicate
+    buyer discovery itself runs -- and not from a second copy of its rules.
+    Keeping a copy is the mistake that table already exists to prevent.
+
     ## Cost and stock attention are not a second sync clock
 
     There is one ``sync_state`` column, so this returns one sync rollup. A
@@ -1139,6 +1153,23 @@ def status_counts(business_id, store_id, actor_user_id, connection_id, *, contex
                 # draft", which is true without claiming to know which.
                 other += n
 
+        # Buyer reachability, asked of the buyer's own predicate. The seller row
+        # it gates on is joined here and nowhere else in this function, so this
+        # runs as its own statement rather than widening `source` -- which would
+        # put a second table under the three aggregates that do not need it, and
+        # make every count above depend on a join added for one of them.
+        #
+        # LEFT JOIN, matching every other caller of `public_sql`: a source row
+        # whose seller record is missing must count as not-live, and an inner
+        # join would drop it from the denominator instead of failing it.
+        cur.execute("SELECT COUNT(*) FROM marketplace_product_sources s "
+                    "JOIN marketplace_listings l ON l.id = s.listing_id "
+                    "LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id "
+                    "WHERE s.seller_user_id=? AND s.supplier_connection_id=? "
+                    "AND s.business_id=? AND s.store_id=? "
+                    f"AND {lifecycle.public_sql('l', 'ms')}", params)
+        live = int((cur.fetchone() or (0,))[0] or 0)
+
         cur.execute("SELECT UPPER(COALESCE(s.sync_state,'')) AS ss, COUNT(*) AS n "
                     + source + " GROUP BY 1", params)
         sync = {state: 0 for state in supplier_schema.SYNC_STATES}
@@ -1171,6 +1202,9 @@ def status_counts(business_id, store_id, actor_user_id, connection_id, *, contex
     return {
         "imported": imported,
         "published": published,
+        # Never greater than `published`: every rule `public_sql` adds is on top
+        # of the two `published` already checks.
+        "live": live,
         "awaiting_review": awaiting,
         "draft": draft,
         "blocked": blocked,

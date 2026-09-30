@@ -716,7 +716,20 @@ export type FulfillmentShopState = (typeof FULFILLMENT_SHOP_STATES)[number];
 
 export type SupplierProductCounts = {
   imported: number;
+  /** Published *and* approved. The decision, not the outcome — see `live`. */
   published: number;
+  /**
+   * How many a buyer can actually reach, counted server-side from the same
+   * predicate buyer discovery runs. Always `<= published`, because publication
+   * also needs stock, an approved seller and a store name.
+   *
+   * `null` when the server did not send it, which is not the same fact as zero
+   * and must not be rendered as one: an older server paired with this build
+   * would otherwise report a healthy catalogue as nothing live at all. Zero is
+   * the alarming answer here, so an absent number cannot be spelled that way —
+   * the mirror of the rule `orderCounts` follows for the reassuring one.
+   */
+  live: number | null;
   awaitingReview: number;
   draft: number;
   blocked: number;
@@ -785,6 +798,12 @@ function count(value: unknown): number {
   return parsed !== null && parsed >= 0 ? parsed : 0;
 }
 
+/** {@link count} for a number whose absence must not read as zero. */
+function countOrNull(value: unknown): number | null {
+  const parsed = centsOrNull(value);
+  return parsed !== null && parsed >= 0 ? parsed : null;
+}
+
 /**
  * Null unless the server sent an object. Every other normalizer here defaults a
  * missing number to zero, which is right for a count of products the merchant
@@ -839,6 +858,7 @@ function normalizeSupplierStatus(raw: Record<string, unknown>): SupplierStatus {
     products: {
       imported: count(products.imported),
       published: count(products.published),
+      live: countOrNull(products.live),
       awaitingReview: count(products.awaiting_review),
       draft: count(products.draft),
       blocked: count(products.blocked),

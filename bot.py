@@ -227,8 +227,10 @@ from telegram.ext import (
 )
 
 from services import (
+    account_email_uniqueness,
     app_links,
     app_promotion,
+    auth_subject_guard,
     brevo_contacts as brevo_contacts_service,
     client_address,
     command_center_client as command_center_client_service,
@@ -396,6 +398,7 @@ from services import (
     pulse_identity_engine,
     pulse_id_service,
     pro_access as pro_access_service,
+    pulse_commerce_card,
     pulse_feed_engine,
     pulse_feed_ranking_engine,
     pulse_reactions,
@@ -2933,11 +2936,11 @@ def add_pwa_headers(response):
             # below all query for server-rendered DOM at `defer` time -- when a
             # React app's body is still an empty <div id="root"> -- so they bind
             # to nothing and then never run again. They are not merely useless
-            # there: pulse_i18n.js rewrites text nodes, which is a race against
+            # there: pulse_i18n.js?v=cache-sweep-20260928a rewrites text nodes, which is a race against
             # React's first paint over nodes React owns.
             spa_isolated = bool(getattr(g, "pulse_spa_response", False))
             gateway_isolated = request.path == "/admin/login" or spa_isolated
-            if not gateway_isolated and "</body>" in html.lower() and "/static/js/pulse_pwa_install.js" not in html:
+            if not gateway_isolated and "</body>" in html.lower() and "/static/js/pulse_pwa_install.js?v=app-store-20260919" not in html:
                 # Bumped when the script's behaviour changes, not on a schedule.
                 # The file is served with a long cache lifetime, so a content
                 # change with the old query string reaches only first-time
@@ -2959,8 +2962,8 @@ def add_pwa_headers(response):
                 html = re.sub(r"</body>", pwa_install_script + "</body>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
-            if not gateway_isolated and "</head>" in html.lower() and "/static/js/pulse_i18n.js" not in html:
-                i18n_script = '<script src="/static/js/pulse_i18n.js?v=persistent-language-20260701" defer></script>'
+            if not gateway_isolated and "</head>" in html.lower() and "/static/js/pulse_i18n.js?v=cache-sweep-20260928a" not in html:
+                i18n_script = '<script src="/static/js/pulse_i18n.js?v=cache-sweep-20260928a" defer></script>'
                 html = re.sub(r"</head>", i18n_script + "</head>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
@@ -2972,7 +2975,7 @@ def add_pwa_headers(response):
             call_overlay_allowed = not spa_isolated and bool(session.get("account_user_id")) and (
                 request.path == "/pulse" or request.path.startswith(("/pulse/", "/dashboard"))
             )
-            if call_overlay_allowed and "</head>" in html.lower() and "/static/css/pulsesoc_global_call_overlay.css" not in html:
+            if call_overlay_allowed and "</head>" in html.lower() and "/static/css/pulsesoc_global_call_overlay.css?v=fullscreen-incoming-20260704" not in html:
                 call_overlay_css = '<link rel="stylesheet" href="/static/css/pulsesoc_global_call_overlay.css?v=fullscreen-incoming-20260704">'
                 html = re.sub(r"</head>", call_overlay_css + "</head>", html, count=1, flags=re.I)
                 response.set_data(html)
@@ -3127,6 +3130,130 @@ ABUSE_GUARD_PROTECTED = {
     "/api/create-checkout-session": (8, 300),
     "/api/ai-assistant": (30, 300),
 }
+
+
+# path -> (scope, json/form field names to read the subject from,
+# distinct-subject limit, window seconds). A companion to ABUSE_GUARD_PROTECTED
+# above, not a replacement: that table bounds requests per path, this one bounds
+# how many *different* accounts one client may ask about. The two answer
+# different questions and the account-identity endpoints need this one, because
+# the only shipped client of `/confirmation-status` polls it every 4 seconds
+# about a single address (VerifyEmailStep.tsx: POLL_INTERVAL_MS = 4000) --
+# roughly 75 requests per 300s that a request counter cannot distinguish from 75
+# probes. See services/auth_subject_guard.py for why variety rather than volume
+# is the quantity to bound.
+#
+# GET is included where the route accepts GET. `basic_abuse_guard` is POST/PUT
+# only, which is correct for a form post and is exactly how the enumeration
+# oracle stayed unbounded: `/confirmation-status` answers GET too, so a prober
+# never had to send a method either limiter was watching.
+#
+# WHY THE SCOPE IS AN EXPLICIT COLUMN AND NOT THE PATH
+# ---------------------------------------------------
+# Neither of the two obvious keys is right, in opposite ways.
+#
+# Keying by path alone would hand an enumerator a fresh budget per spelling:
+# `/api/mobile/auth/confirmation-status` and its `/api/pulse` twin are the same
+# handler mounted twice, so alternating the prefix would buy 2x, and adding a
+# third mount point later would silently buy 3x.
+#
+# Keying by actor alone -- which is what shipped first, and what the mutation
+# matrix caught -- conflates endpoints that have deliberately different limits.
+# A client that has legitimately named 8 addresses at `/confirmation-status`
+# (someone who mistyped their own address a few times) would arrive at
+# `/resend-confirmation`, whose limit is 5, already over it, and be refused a
+# resend it never asked for twice. The endpoints have separate limits precisely
+# because they carry separate risks; sharing one counter erases that.
+#
+# So aliases of one endpoint share a scope and distinct endpoints do not, and
+# the grouping is written down rather than inferred from the URL.
+ENUMERATION_GUARD_PROTECTED = {
+    "/api/mobile/auth/confirmation-status": ("confirmation-status", ("email",), 8, 900),
+    "/api/pulse/mobile/auth/confirmation-status": ("confirmation-status", ("email",), 8, 900),
+    "/api/mobile/auth/resend-confirmation": ("resend-confirmation", ("email",), 5, 900),
+    "/api/pulse/mobile/auth/resend-confirmation": ("resend-confirmation", ("email",), 5, 900),
+    "/resend-confirmation": ("resend-confirmation", ("email",), 5, 900),
+    "/api/mobile/auth/change-confirmation-email": ("change-confirmation-email", ("old_email", "email"), 5, 900),
+    "/api/pulse/mobile/auth/change-confirmation-email": ("change-confirmation-email", ("old_email", "email"), 5, 900),
+    "/change-confirmation-email": ("change-confirmation-email", ("old_email", "email"), 5, 900),
+}
+
+#: How much account-confirmation mail one address may receive in one window,
+#: counted across every caller. Per-subject rather than per-client because the
+#: mailbox being filled is the party at risk and the attacker is not it --
+#: rotating source addresses defeats a per-client cap while the mail still
+#: arrives. The client's own cooldown is 30s (VerifyEmailStep.tsx:
+#: RESEND_COOLDOWN_S = 30), so five in fifteen minutes is well clear of anyone
+#: legitimately retrying.
+CONFIRMATION_EMAIL_PER_ADDRESS = (5, 900)
+
+
+def enumeration_guard_subject(fields):
+    """The address this request is asking about, from body or query or form.
+
+    Reads the same shapes the routes themselves read. A request whose subject
+    cannot be found returns "" and is deliberately not counted: filing every
+    malformed request under one shared bucket would let a junk request refuse
+    the next honest one.
+    """
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+    for field in fields:
+        raw = payload.get(field) or request.args.get(field) or request.form.get(field) or ""
+        candidate = normalize_email(clean_html(str(raw)))
+        if candidate:
+            return candidate
+    return ""
+
+
+@webhook_app.before_request
+def account_enumeration_guard():
+    protected = ENUMERATION_GUARD_PROTECTED
+    if request.path not in protected:
+        return None
+    if request.method not in {"GET", "POST", "PUT"}:
+        return None
+    scope, fields, limit, window_seconds = protected[request.path]
+    actor = client_ip_hash()
+    subject = enumeration_guard_subject(fields)
+    # Compose only when there is an actor to compose with. `f"{scope}:{actor}"`
+    # with an empty actor is `"confirmation-status:"` -- non-empty, so it would
+    # sail past the guard's own `_absent(actor)` check and become exactly the
+    # shared bucket that check exists to prevent, with every actorless request in
+    # the fleet spending one budget.
+    refused = auth_subject_guard.distinct_subject_refused(
+        f"{scope}:{actor}" if actor else "", subject, limit, window_seconds)
+    if refused is None:
+        return None
+    # Log the count, never the subject. The point of the endpoint's refusal is
+    # that no observer learns which addresses were asked about, and a log line
+    # naming them would hand that to anyone with log access.
+    logging.warning(
+        "Account enumeration guard triggered path=%s ip_hash=%s subjects=%s limit=%s",
+        request.path, actor, refused.count, refused.limit)
+    # One security_events row per actor per window, not one per refused request.
+    # `security_monitor.record` opens a connection, and the pool is 8+8 with a 3s
+    # timeout -- a DB write on the refusal path would make this guard an
+    # amplifier for precisely the traffic it exists to refuse: hit the cap, and
+    # every further probe costs a connection instead of costing nothing. The
+    # alarm is itself expressed as a per-subject cap of one, reusing the same
+    # primitive rather than adding a second piece of window bookkeeping.
+    # Keyed by scope, not by path, for the same reason the budget is: otherwise
+    # each alias of one endpoint files its own alarm and the row count reads as
+    # more distinct incidents than happened.
+    first_refusal = auth_subject_guard.subject_event_refused(
+        f"enumeration-alarm:{actor}:{scope}", 1, refused.window_seconds)
+    if first_refusal is None:
+        security_monitor.record(
+            "account_enumeration_guard_refused",
+            "high",
+            account_user_id() or 0,
+            actor,
+            request.path,
+            {"distinct_subjects": refused.count, "limit": refused.limit,
+             "window_seconds": refused.window_seconds},
+        )
+    return rate_limit_refusal(request.path, retry_after=refused.retry_after)
 
 
 @webhook_app.before_request
@@ -6924,6 +7051,15 @@ def register_failed_login(email, user_id=0, reason="invalid_credentials"):
         conn.close()
 
 
+#: The one answer a caller gets when the address or phone is already spoken for.
+#: A single constant rather than two literals because the precheck below and the
+#: uniqueness-violation branch after the INSERT have to be *indistinguishable*:
+#: they are the same fact discovered a few milliseconds apart, and a caller who
+#: could tell which one fired would learn that their request raced somebody
+#: else's -- which is to say, that the address is being registered right now.
+ACCOUNT_ALREADY_EXISTS_MESSAGE = "An account already exists for that contact method."
+
+
 def create_account(full_name, email, password, phone="", country="", email_opt_in=False, sms_opt_in=False, username="", age_confirmed=False):
     email = normalize_email(email)
     logging.info("signup normalized email=%s db_engine=%s", mask_email(email), db_service.ENGINE_NAME)
@@ -6940,9 +7076,27 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
     conn = db()
     try:
         cur = conn.cursor()
+        # Before the precheck, because the precheck is only advisory: it is a
+        # SELECT followed by an INSERT, so two concurrent signups for one address
+        # both pass it and both insert. The index is what actually makes the
+        # invariant true; the check below just turns the common case into a civil
+        # answer instead of a caught exception.
+        account_email_uniqueness.ensure_email_identity_index(cur)
         logging.info("database insert precheck for signup email=%s engine=%s", mask_email(email), db_service.ENGINE_NAME)
         if email:
-            cur.execute("SELECT user_id FROM users WHERE lower(email)=lower(?) AND email!='' LIMIT 1", (email,))
+            # Asked with the index's own expression, not an approximation of it.
+            # `email` is already `normalize_email`d -- `.strip().lower()` -- so the
+            # parameter side needs no wrapping, but the *column* side does: a
+            # stored address with stray whitespace would slip past
+            # `lower(email)=lower(?)` and then be caught by the index, turning an
+            # ordinary duplicate into the race branch. Same expression, same
+            # answer.
+            cur.execute(
+                f"SELECT user_id FROM users "
+                f"WHERE {account_email_uniqueness.EMAIL_IDENTITY_EXPRESSION}=? "
+                f"AND {account_email_uniqueness.EMAIL_PRESENT_PREDICATE} LIMIT 1",
+                (email,),
+            )
             duplicate = cur.fetchone()
         else:
             cur.execute("SELECT user_id FROM users WHERE phone=? AND phone!='' LIMIT 1", (phone,))
@@ -6951,7 +7105,7 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
             conn.close()
             logging.info("duplicate email detection during signup email=%s", mask_email(email))
             log_auth_event("signup_duplicate", email, status="duplicate", details={"db_engine": db_service.ENGINE_NAME})
-            return None, "An account already exists for that contact method."
+            return None, ACCOUNT_ALREADY_EXISTS_MESSAGE
         if username:
             cur.execute("SELECT user_id FROM users WHERE lower(username)=lower(?) LIMIT 1", (username,))
             if cur.fetchone():
@@ -7038,6 +7192,18 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
             conn.rollback()
         except Exception:
             pass
+        if db_service.is_unique_violation(exc):
+            # The race the precheck cannot win: another request inserted this
+            # address between our SELECT and our INSERT. Answer exactly as the
+            # precheck would have, because it is the same fact -- and because the
+            # generic branch below says "try again shortly", which for a
+            # uniqueness violation is simply false. Retrying fails forever, and
+            # the user would keep doing it having been told to.
+            logging.info("signup lost the uniqueness race email=%s engine=%s",
+                         mask_email(email), db_service.ENGINE_NAME)
+            log_auth_event("signup_duplicate", email, status="duplicate",
+                           details={"race": True, "db_engine": db_service.ENGINE_NAME})
+            return None, ACCOUNT_ALREADY_EXISTS_MESSAGE
         logging.exception("database transaction rollback during signup email=%s engine=%s error=%s", mask_email(email), db_service.ENGINE_NAME, exc)
         log_auth_event("signup_failed", email, status="failed", details={"error": str(exc)[:500], "db_engine": db_service.ENGINE_NAME})
         return None, "Account creation is temporarily unavailable. Please try again shortly."
@@ -7463,17 +7629,72 @@ def send_account_confirmation_email(user, source="signup"):
     }
 
 
-def resend_account_confirmation_by_email(email, source="login"):
+#: The one thing an unauthenticated caller is told, whatever the truth is. It has
+#: to read naturally in all four cases it now covers -- no such account, already
+#: confirmed, confirmation re-sent, and send attempted but refused by the mail
+#: provider -- because a caller who can tell those apart can enumerate accounts.
+#: Both shipped consumers display it verbatim and neither branches on it
+#: (VerifyEmailStep.tsx and AccountRecoveryScreen.tsx read only `.message`).
+RESEND_CONFIRMATION_NEUTRAL_MESSAGE = (
+    "If that account still needs confirming, we've sent a fresh link. "
+    "Check your inbox, including spam."
+)
+
+
+def resend_account_confirmation_by_email(email, source="login", *, privileged=False):
+    """Re-send an account confirmation email without saying whether it exists.
+
+    This used to answer three distinguishable things -- "If that account exists
+    and still needs confirmation…" for an unknown address, "This email is
+    already confirmed. You can log in." for a verified one, and "Check your
+    email to confirm your account." for an unverified one -- on three different
+    statuses (200/202/502), with a ``trace_id`` present in only one of them.
+    Any one of those four signals answers "does this person have a PulseSoc
+    account", which is the question Open Commerce §16 turns on: a guest buying
+    with an address that already has an account must complete the purchase
+    without the checkout revealing that the account is there.
+
+    An invalid address still refuses with 400. That is a statement about the
+    syntax of the input, not about the contents of the user table, and
+    ``api_mobile_auth_recover`` already draws the line in the same place and
+    says why.
+
+    ``privileged`` is for the admin console, which reaches this through
+    ``admin_login_required`` and legitimately needs the real outcome and trace
+    id for support work -- an admin can already read the user list, so there is
+    nothing here to withhold from them. It also skips the per-address cap,
+    because "the operator deliberately pressed resend for this customer" is
+    precisely the case where refusing would be the bug.
+    """
     email = normalize_email(email)
     if not email or not is_valid_email(email):
         return {"ok": False, "message": "Enter the email address for your PulseSoc account.", "status": 400}
+    neutral = {"ok": True, "message": RESEND_CONFIRMATION_NEUTRAL_MESSAGE, "status": 200}
+    if not privileged:
+        limit, window_seconds = CONFIRMATION_EMAIL_PER_ADDRESS
+        capped = auth_subject_guard.subject_event_refused(email, limit, window_seconds)
+        if capped is not None:
+            # Same body as a success. A refusal that looked different would
+            # reintroduce the oracle by a side door: only an address with a real
+            # unverified account can accumulate sends, so "you are being
+            # throttled" would itself confirm the account.
+            logging.warning(
+                "Confirmation email per-address cap hit source=%s sends=%s limit=%s",
+                source, capped.count, capped.limit)
+            return dict(neutral)
     user = load_account_by_email(email)
-    if not user:
-        return {"ok": True, "message": "If that account exists and still needs confirmation, PulseSoc will send a confirmation email.", "status": 200}
-    if int(user.get("email_verified") or 0):
-        return {"ok": True, "message": "This email is already confirmed. You can log in.", "status": 200}
+    if not user or int(user.get("email_verified") or 0):
+        return dict(neutral)
     result = send_account_confirmation_email(user, source=source)
     delivery_blocked = "not authorized in brevo" in str(result.get("message") or "").lower()
+    if not privileged:
+        # The delivery failure is real and worth acting on, but the caller is not
+        # who acts on it: `send_account_confirmation_email` has already written
+        # the `verification_email_failed` auth event and the trace id to the
+        # server log, and the admin console reads both. Telling an anonymous
+        # caller would mean only existing unverified accounts can ever see a
+        # 502, which is the oracle again.
+        return dict(neutral)
     return {
         **result,
         "status": 200 if result.get("ok") else 202 if delivery_blocked else 502,
@@ -8039,7 +8260,15 @@ def api_mobile_auth_resend_confirmation():
     payload = request.get_json(silent=True) or {}
     email = normalize_email(clean_html(payload.get("email") or ""))
     result = resend_account_confirmation_by_email(email, source="mobile_resend")
-    return jsonify({"ok": bool(result.get("ok")), "message": result.get("message") or "Check your email to confirm your account.", "trace_id": result.get("trace_id")}), int(result.get("status") or (200 if result.get("ok") else 400))
+    # `trace_id` is coerced to "" rather than passed through. It used to be
+    # present only when a send was actually attempted, so its mere presence
+    # answered "does this address have an unverified account" -- the same oracle
+    # the message collapse closes, leaking through a field the client never reads.
+    return jsonify({
+        "ok": bool(result.get("ok")),
+        "message": result.get("message") or RESEND_CONFIRMATION_NEUTRAL_MESSAGE,
+        "trace_id": "",
+    }), int(result.get("status") or (200 if result.get("ok") else 400))
 
 
 @webhook_app.route("/api/mobile/auth/change-confirmation-email", methods=["POST"])
@@ -8068,12 +8297,18 @@ def api_mobile_auth_confirmation_status():
     if not email or not is_valid_email(email):
         return api_error("Enter the email address for your PulseSoc account.", 400)
     user = load_account_by_email(email)
+    confirmed = bool(user and int(user.get("email_verified") or 0))
+    # `exists` and `email_verified` are gone. `exists` was the larger leak of the
+    # two -- it answered "is there an account here" for *unconfirmed* accounts as
+    # well, which `confirmed` cannot -- and neither field had a reader: the only
+    # caller is VerifyEmailStep.tsx, which reads `result.confirmed` and nothing
+    # else (`email_verified` was a duplicate of `confirmed` computed from the same
+    # expression). `confirmed` itself stays, because the screen exists to wait for
+    # it; that residual signal is what account_enumeration_guard bounds instead.
     return jsonify({
         "ok": True,
-        "exists": bool(user),
-        "email_verified": bool(user and int(user.get("email_verified") or 0)),
-        "confirmed": bool(user and int(user.get("email_verified") or 0)),
-        "message": "Email confirmed." if user and int(user.get("email_verified") or 0) else "Check your email to confirm your account.",
+        "confirmed": confirmed,
+        "message": "Email confirmed." if confirmed else "Check your email to confirm your account.",
     })
 
 
@@ -19120,7 +19355,9 @@ def admin_emails_resend_confirmation():
     if not verify_csrf():
         return admin_page_html("Security Check Failed", "<h1>Security check failed.</h1>", admin), 400
     email = normalize_email(clean_html(request.form.get("email", "")))
-    result = resend_account_confirmation_by_email(email, source="admin_email_page")
+    # privileged: this caller passed admin_login_required and needs the real
+    # outcome for the audit row below. See resend_account_confirmation_by_email.
+    result = resend_account_confirmation_by_email(email, source="admin_email_page", privileged=True)
     log_admin_audit(admin.get("id"), "admin_resend_confirmation_email", "email", mask_email(email), {"ok": bool(result.get("ok")), "trace_id": result.get("trace_id")})
     return redirect("/admin/emails?filter=confirmation")
 
@@ -43361,8 +43598,9 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
 <link rel="stylesheet" href="/static/css/pulse_status_system.css?v=status-v4-20260703b">
 <link rel="stylesheet" href="/static/css/pulse_home_os.css?v=desktop-dock-20260927a">
 <link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=video-action-fit-20260927i">
+<link rel="stylesheet" href="/static/css/pulse-commerce-attachment.css?v=commerce-attachment-20260928a">
 __APP_PROMOTION_ASSETS__
-<script src="/static/js/pulse_reaction_system.js?v=feed-actions-v2-20260629b" defer></script>
+<script src="/static/js/pulse_reaction_system.js?v=cache-sweep-20260928a" defer></script>
 <script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g" defer></script>
 <script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b" defer></script>
 <script src="/static/js/pulse_radio.js?v=pulse-radio-20260623a" defer></script>
@@ -43444,7 +43682,7 @@ __DESKTOP_RIGHT_RAIL__
     if(statusViewerRuntimePromise)return statusViewerRuntimePromise;
     statusViewerRuntimePromise=new Promise((resolve,reject)=>{
       const ready=()=>window.PulseStatusViewer?.render?resolve(window.PulseStatusViewer):reject(new Error('Status viewer could not initialize.'));
-      const existing=document.querySelector('script[src*="/static/js/pulse_status_viewer.js"]');
+      const existing=document.querySelector('script[src*="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"]');
       if(existing){
         if(document.readyState!=='loading'&&!window.PulseStatusViewer?.render){
           existing.remove();
@@ -43848,7 +44086,7 @@ if(window.PulseStatusViewer?.render)return Promise.resolve(window.PulseStatusVie
 if(pulseStatusRuntimePromise)return pulseStatusRuntimePromise;
 pulseStatusRuntimePromise=new Promise((resolve,reject)=>{
 const ready=()=>window.PulseStatusViewer?.render?resolve(window.PulseStatusViewer):reject(new Error('Status viewer could not initialize.'));
-const existing=document.querySelector('script[data-pulse-status-runtime],script[src*="/static/js/pulse_status_viewer.js"]');
+const existing=document.querySelector('script[data-pulse-status-runtime],script[src*="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"]');
 if(existing){if(document.readyState!=='loading'&&!window.PulseStatusViewer?.render){existing.remove()}else{existing.addEventListener('load',ready,{once:true});existing.addEventListener('error',()=>reject(new Error('Status viewer could not load.')),{once:true});return}}
 const script=document.createElement('script');
 script.src='/static/js/pulse_status_viewer.js?v=status-v4-20260703b';
@@ -44121,17 +44359,23 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         rendered_html = rendered_html.replace('<script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script>', "")
     if boot_profile == "core":
         rendered_html = re.sub(r'<script data-pulse-shell-runtime>.*?</script>', "", rendered_html, count=1, flags=re.S)
-        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js" defer></script>', "")
+        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js?v=static-bg-20260806a" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace(
             "</body>",
-            '<script src="/static/js/pulse_home_core.js?v=reaction-catalogue-20260927h" defer></script></body>',
+            # `pulse_commerce_card.js` first: both are `defer`red, deferred
+            # scripts run in document order, and `renderPost` reads the global
+            # it installs. The token on `pulse_home_core.js` moves with it --
+            # `static/` is served immutable for a year, so a renderer change
+            # that keeps its old token reaches nobody who has the page cached.
+            '<script src="/static/js/pulse_commerce_card.js?v=commerce-attachment-20260928a" defer></script>'
+            '<script src="/static/js/pulse_home_core.js?v=commerce-attachment-20260928a" defer></script></body>',
             1,
         )
     if boot_profile == "shell_only":
         rendered_html = re.sub(r'<script data-pulse-shell-runtime>.*?</script>', "", rendered_html, count=1, flags=re.S)
         rendered_html = rendered_html.replace('<script src="/static/js/time.js"></script>', "")
-        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js" defer></script>', "")
+        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js?v=static-bg-20260806a" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_upload_manager.js?v=composer-premium-20260617a"></script>', "")
     body_class = 'pulse-home-os' if request.path == '/pulse' else ''
@@ -45753,6 +45997,101 @@ def pulse_attach_music_to_content(cur, *, content_type, content_id, track_id, us
     if event_type:
         pulse_music_event(cur, track_id=track.get("track_id") or track_id, user_id=user_id, event_type=event_type, surface=content_type, content_id=content_id, metadata={"title": track.get("title"), "artist": track.get("artist")})
     return {"ok": True, "music": track}
+
+
+#: How many listing references one composer request may even be *considered*.
+#: `tagging.MAX_TAGGED_PER_CONTENT` is the real cap and is enforced per row against
+#: what is already stored; this is only a bound on the loop, so a request carrying
+#: ten thousand ids costs ten reads and not ten thousand.
+PULSE_PRODUCT_TAG_REQUEST_LIMIT = 20
+
+
+def pulse_attach_products_to_content(cur, *, content_type, content_id, listing_ids, user_id):
+    """Attach the creator's own listings to one piece of content.
+
+    Deliberately shaped like :func:`pulse_attach_music_to_content` above, and
+    called from the same places for the same reason. The judgement — may this
+    person point at this product, and is this post already full — lives in
+    ``services.commerce_discovery.tagging``; this function is only the composer's
+    side of it: the loop, the request bound, and the decision about what a failure
+    does to the post.
+
+    That last part is why this wrapper exists at all rather than the call sites
+    invoking ``tagging.attach`` directly. ``attach`` returns refusals but lets
+    database errors propagate, on the grounds that a driver error is not a
+    judgement it can explain and the composer should decide. This is the composer.
+    The decision is: **the post survives.** A product tag that cannot be written is
+    logged and dropped, because a creator who attached a product and lost the whole
+    post has lost more than the tag.
+
+    Returns ``{"ok", "attached", "refused"}``. ``ok`` is true when *every*
+    requested id was attached, so a caller that wants to tell the creator "one of
+    your products could not be tagged" has the material to; none currently does,
+    and the log line is what an operator has in the meantime.
+    """
+    requested: list[int] = []
+    for value in (listing_ids or [])[:PULSE_PRODUCT_TAG_REQUEST_LIMIT]:
+        listing_ref = safe_int(value, 0)
+        if listing_ref > 0 and listing_ref not in requested:
+            requested.append(listing_ref)
+    if not requested:
+        return {"ok": True, "attached": [], "refused": []}
+
+    from services.commerce_discovery import tagging as _cd_tagging
+
+    attached: list[int] = []
+    refused: list[dict] = []
+    for listing_ref in requested:
+        try:
+            outcome = _cd_tagging.attach(
+                cur,
+                content_type=content_type,
+                content_id=content_id,
+                listing_id=listing_ref,
+                user_id=user_id,
+            )
+        except Exception:
+            logging.warning(
+                "PULSE_PRODUCT_TAG_WRITE_FAILED user_id=%s content_type=%s content_id=%s listing_id=%s",
+                user_id, content_type, content_id, listing_ref, exc_info=True,
+            )
+            refused.append({"listing_id": listing_ref, "reason": "write_failed"})
+            continue
+        if outcome.get("ok"):
+            attached.append(listing_ref)
+        else:
+            # Logged at info, not warning. "You can only tag your own products" is
+            # the system working; an operator reading warnings should not have to
+            # filter out every creator who tried.
+            logging.info(
+                "PULSE_PRODUCT_TAG_REFUSED user_id=%s content_type=%s content_id=%s listing_id=%s reason=%s",
+                user_id, content_type, content_id, listing_ref, outcome.get("reason"),
+            )
+            refused.append({"listing_id": listing_ref, "reason": outcome.get("reason")})
+    return {"ok": not refused, "attached": attached, "refused": refused}
+
+
+def pulse_product_tag_ids_from_payload(payload):
+    """Listing ids a composer request is asking to tag, under any of its names.
+
+    Three keys because three clients. ``product_listing_ids`` is what the native
+    composer will send, ``listing_ids`` is the shorter name the web composer's
+    existing marketplace forms already use, and ``product_ids`` is what a reader of
+    the API would guess. Accepting all three costs nothing — every id is checked
+    for ownership regardless of which key carried it — and the alternative is a
+    silently ignored field, which is the failure mode this repo has the most of.
+
+    A single scalar is accepted as a one-element list for the same reason.
+    """
+    payload = payload or {}
+    for key in ("product_listing_ids", "listing_ids", "product_ids"):
+        value = payload.get(key)
+        if value in (None, "", [], ()):
+            continue
+        if isinstance(value, (list, tuple)):
+            return list(value)
+        return [value]
+    return []
 
 
 @webhook_app.route("/api/pulse/music/attach", methods=["POST"])
@@ -50350,7 +50689,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
   </div>
 </section>
 """
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=apps-menu-width-20260927a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=desktop-dock-20260927a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=video-action-fit-20260927i">{app_promotion.assets_html()}<style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:var(--text-primary)}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}{app_promotion.marketplace_note_html()}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script><script data-pulse-reaction-catalog>window.PULSE_REACTION_CATALOG={json.dumps(pulse_reactions.catalog_payload())};window.PULSE_REACTION_TRAY_SIZE={pulse_reactions.TRAY_SIZE};</script><script src="/static/js/pulse_reaction_system.js?v=feed-actions-v2-20260629a"></script><script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=apps-menu-width-20260927a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=desktop-dock-20260927a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=video-action-fit-20260927i"><link rel="stylesheet" href="/static/css/pulse-commerce-attachment.css?v=commerce-attachment-20260928a">{app_promotion.assets_html()}<style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:var(--text-primary)}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}{app_promotion.marketplace_note_html()}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script><script data-pulse-reaction-catalog>window.PULSE_REACTION_CATALOG={json.dumps(pulse_reactions.catalog_payload())};window.PULSE_REACTION_TRAY_SIZE={pulse_reactions.TRAY_SIZE};</script><script src="/static/js/pulse_reaction_system.js?v=cache-sweep-20260928a"></script><script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script src="/static/js/pulse_commerce_card.js?v=commerce-attachment-20260928a"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -50892,7 +51231,7 @@ def pulse_reels_page():
       const mediaEl=src&&window.PulseMediaRenderer?window.PulseMediaRenderer.renderMedia({...media,media_url:media.media_url||src,valid_url:media.valid_url||src,playback_url:src,poster_url:poster,thumbnail_url:media.thumbnail_url||media.mux_thumbnail_url||poster,media_type:mt,mime_type:mime,playback_mime_type:mime,title:reel.title||'PulseSoc Reel',audio_id:media.audio_id||reel.audio_id||audio.track_id||audio.id||'',music_id:media.music_id||reel.music_id||audio.track_id||audio.id||'',attached_audio_url:attachedAudioUrl,audio_title:media.audio_title||reel.audio_title||audio.title||'',audio_artist:media.audio_artist||reel.audio_artist||audio.artist||'',audio_duration:media.audio_duration||reel.audio_duration||audio.audio_duration||audio.duration||0,audio_start_time:media.audio_start_time||reel.audio_start_time||audio.audio_start_time||0,audio_volume:media.audio_volume||reel.audio_volume||audio.audio_volume||1,original_audio_muted:!!attachedAudioUrl,is_available:media.is_available!==false},{surface:'reels',className:'reel-media pulse-reel-media-shell',controls:false,attrs:commonData}):'';
       const blurEl='';
       const ratio=Number(media.aspect_ratio||0),orientation=media.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'unknown');
-		      return `<article class="reel-card smart ${src&&!processing?'':'is-broken'}" data-reel-id="${id}" data-author-id="${author.user_id||reel.user_id||''}" data-orientation="${esc(orientation)}" data-reel-has-audio="${hasAudio?'true':'false'}" data-comments-disabled="${commentsDisabled?'1':'0'}" data-reactions-disabled="${reactionsDisabled?'1':'0'}" data-reel-preload-priority="${esc(preloadPriority)}"><div class="reels-media-stage" data-reels-media-stage>${blurEl}${mediaEl}<div class="reel-fallback"><span class="reel-chip">${processing?'Video is processing.':'Media could not load. Tap to retry.'}</span></div><div class="reel-scrim"></div><button class="reel-center-play" type="button" data-toggle-reel-play="${id}" aria-label="Play or pause"><span data-reel-play-label="${id}">Play</span></button><button class="reel-sound-float ${reelsSoundEnabled&&hasAudio?'active':''}" type="button" data-toggle-reel-sound="${id}" aria-label="Mute or unmute"><span data-reel-sound-label="${id}">${hasAudio?'Audio':'Silent'}</span></button><button class="reel-quality-pill" type="button" data-reel-quality="${id}" aria-label="Video quality">${esc(qualityLabel)}</button><aside class="reels-action-rail reel-actions pulse-reaction-bar" data-reels-action-rail><button class="reel-action ${reelReactActive?'active':''}" data-reel-react="${id}" aria-label="Like" aria-pressed="${reelReactActive?'true':'false'}" ${reactionsDisabled&&!canManage?'disabled':''}><span class="reel-action-icon" aria-hidden="true">❤️</span><span class="reel-action-label">Like</span><small data-fire-count="${id}">${reel.reactions_count||0}</small></button><button class="reel-action" data-open-comments="${id}" aria-label="Comment"><span class="reel-action-icon" aria-hidden="true">💬</span><span class="reel-action-label">Comment</span><small data-comment-count="${id}">${reel.comments_count||0}</small></button><button class="reel-action" data-share-reel="${id}" aria-label="Share"><span class="reel-action-icon" aria-hidden="true">↗️</span><span class="reel-action-label">Share</span><small>${reel.share_count||0}</small></button><button class="reel-action" data-reel-save="${id}" aria-label="Save"><span class="reel-action-icon" aria-hidden="true">🔖</span><span class="reel-action-label">Save</span><small>Save</small></button><button class="reel-action" data-reel-repost="${id}" aria-label="Repost"><span class="reel-action-icon" aria-hidden="true">🔁</span><span class="reel-action-label">Repost</span><small>Repost</small></button></aside><section class="reels-caption-overlay reel-caption" data-reels-caption-overlay><div class="reel-creator reel-caption-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'PulseSoc creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · ${esc(reel.human_time||'Recently')}</small></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></div><h2>${esc(reel.title||'PulseSoc Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}</div><div class="reel-music"><button class="button" data-open-sound-track="${audio.track_id||audio.id||''}">♪ ${esc(music)}</button></div></section><div class="reel-sound-badge is-hidden" data-reel-sound-badge aria-live="polite">${hasAudio?(reelsSoundEnabled?'Sound on':'Muted'):'No audio track'}</div><div class="reel-progress"><span data-reel-progress="${id}"></span></div></div><aside class="reel-details-panel reels-desktop-intel" data-reel-details-panel><div class="reel-details-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'PulseSoc creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · verified creator</small></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></div><div class="reel-details-copy"><span class="reel-ai-hint">AI trust score ${reel.safety_score||100} · ${esc(insight)}</span><h2>${esc(reel.title||'PulseSoc Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}<span>${Number(reel.replay_count||0)} views</span><span>Safety clear</span><span>${esc(qualityLabel)}</span>${commentsDisabled?'<span>Comments off</span>':''}${reactionsDisabled?'<span>Reactions off</span>':''}</div></div><div class="reel-details-stats"><span><strong>${reel.reactions_count||0}</strong> likes</span><span><strong>${reel.comments_count||0}</strong> comments</span><span><strong>${reel.share_count||0}</strong> shares</span><span><strong data-reel-view-count="${id}">${reel.replay_count||0}</strong> views</span></div>${ownerTools}<div class="reel-comments-preview" data-reel-comment-preview="${id}"><strong>Live comments</strong>${previewHtml}</div><form class="reel-inline-comment" data-inline-comment-form="${id}" ${commentsDisabled&&!canManage?'hidden':''}><span class="pulse-emoji-field" data-emoji-scope><input placeholder="Add a comment..." aria-label="Add a comment"><button class="pulse-emoji-trigger" type="button" data-emoji-for aria-haspopup="dialog" aria-expanded="false" aria-label="Add emoji">☺</button></span><button class="primary" type="submit">Send</button></form></aside></article>`;
+		      return `<article class="reel-card smart ${src&&!processing?'':'is-broken'}" data-reel-id="${id}" data-author-id="${author.user_id||reel.user_id||''}" data-orientation="${esc(orientation)}" data-reel-has-audio="${hasAudio?'true':'false'}" data-comments-disabled="${commentsDisabled?'1':'0'}" data-reactions-disabled="${reactionsDisabled?'1':'0'}" data-reel-preload-priority="${esc(preloadPriority)}"><div class="reels-media-stage" data-reels-media-stage>${blurEl}${mediaEl}<div class="reel-fallback"><span class="reel-chip">${processing?'Video is processing.':'Media could not load. Tap to retry.'}</span></div><div class="reel-scrim"></div><button class="reel-center-play" type="button" data-toggle-reel-play="${id}" aria-label="Play or pause"><span data-reel-play-label="${id}">Play</span></button><button class="reel-sound-float ${reelsSoundEnabled&&hasAudio?'active':''}" type="button" data-toggle-reel-sound="${id}" aria-label="Mute or unmute"><span data-reel-sound-label="${id}">${hasAudio?'Audio':'Silent'}</span></button><button class="reel-quality-pill" type="button" data-reel-quality="${id}" aria-label="Video quality">${esc(qualityLabel)}</button><aside class="reels-action-rail reel-actions pulse-reaction-bar" data-reels-action-rail><button class="reel-action ${reelReactActive?'active':''}" data-reel-react="${id}" aria-label="Like" aria-pressed="${reelReactActive?'true':'false'}" ${reactionsDisabled&&!canManage?'disabled':''}><span class="reel-action-icon" aria-hidden="true">❤️</span><span class="reel-action-label">Like</span><small data-fire-count="${id}">${reel.reactions_count||0}</small></button><button class="reel-action" data-open-comments="${id}" aria-label="Comment"><span class="reel-action-icon" aria-hidden="true">💬</span><span class="reel-action-label">Comment</span><small data-comment-count="${id}">${reel.comments_count||0}</small></button><button class="reel-action" data-share-reel="${id}" aria-label="Share"><span class="reel-action-icon" aria-hidden="true">↗️</span><span class="reel-action-label">Share</span><small>${reel.share_count||0}</small></button><button class="reel-action" data-reel-save="${id}" aria-label="Save"><span class="reel-action-icon" aria-hidden="true">🔖</span><span class="reel-action-label">Save</span><small>Save</small></button><button class="reel-action" data-reel-repost="${id}" aria-label="Repost"><span class="reel-action-icon" aria-hidden="true">🔁</span><span class="reel-action-label">Repost</span><small>Repost</small></button></aside><section class="reels-caption-overlay reel-caption" data-reels-caption-overlay><div class="reel-creator reel-caption-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'PulseSoc creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · ${esc(reel.human_time||'Recently')}</small></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></div><h2>${esc(reel.title||'PulseSoc Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}</div><div class="reel-music"><button class="button" data-open-sound-track="${audio.track_id||audio.id||''}">♪ ${esc(music)}</button></div>${window.PulseCommerceCard?.html?.(reel.commerce,{surface:'reel'})||''}</section><div class="reel-sound-badge is-hidden" data-reel-sound-badge aria-live="polite">${hasAudio?(reelsSoundEnabled?'Sound on':'Muted'):'No audio track'}</div><div class="reel-progress"><span data-reel-progress="${id}"></span></div></div><aside class="reel-details-panel reels-desktop-intel" data-reel-details-panel><div class="reel-details-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'PulseSoc creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · verified creator</small></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></div><div class="reel-details-copy"><span class="reel-ai-hint">AI trust score ${reel.safety_score||100} · ${esc(insight)}</span><h2>${esc(reel.title||'PulseSoc Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}<span>${Number(reel.replay_count||0)} views</span><span>Safety clear</span><span>${esc(qualityLabel)}</span>${commentsDisabled?'<span>Comments off</span>':''}${reactionsDisabled?'<span>Reactions off</span>':''}</div></div><div class="reel-details-stats"><span><strong>${reel.reactions_count||0}</strong> likes</span><span><strong>${reel.comments_count||0}</strong> comments</span><span><strong>${reel.share_count||0}</strong> shares</span><span><strong data-reel-view-count="${id}">${reel.replay_count||0}</strong> views</span></div>${ownerTools}<div class="reel-comments-preview" data-reel-comment-preview="${id}"><strong>Live comments</strong>${previewHtml}</div><form class="reel-inline-comment" data-inline-comment-form="${id}" ${commentsDisabled&&!canManage?'hidden':''}><span class="pulse-emoji-field" data-emoji-scope><input placeholder="Add a comment..." aria-label="Add a comment"><button class="pulse-emoji-trigger" type="button" data-emoji-for aria-haspopup="dialog" aria-expanded="false" aria-label="Add emoji">☺</button></span><button class="primary" type="submit">Send</button></form></aside></article>`;
     }
     function reelMediaWrap(video){return video?.closest?.('[data-reel-media]')||video}
     function reelDebugEnabled(){try{return localStorage.getItem('pulseDebugMedia')==='1'||['localhost','127.0.0.1'].includes(location.hostname)}catch(_){return false}}
@@ -51259,7 +51598,12 @@ def pulse_reel_detail_page(reel_id):
     video = clean_html(mux_video or media.get("mux_hls_url") or media.get("playback_url") or media.get("valid_url") or media.get("media_url") or reel.get("video_url") or "")
     video_type = "application/vnd.apple.mpegurl" if video.endswith(".m3u8") else clean_html(media.get("playback_mime_type") or media.get("mime_type") or "")
     video_html = f'<video autoplay playsinline webkit-playsinline loop preload="metadata" controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture style="width:100%;max-height:72dvh;border-radius:18px;background:#020712"><source src="{video}" type="{video_type}"></video>' if video else "<div class='card'><p class='muted'>This Reel is waiting for media processing.</p></div>"
-    main = f"<section class='card'>{video_html}<h1>{html_escape(clean_html(reel.get('title') or 'PulseSoc Reel'))}</h1><p>{html_escape(clean_html(reel.get('body') or reel.get('caption') or ''))}</p><p><span class='pill'>{html_escape(clean_html((reel.get('author') or {}).get('primary_label') or 'Member'))}</span> <span class='pill'>Score {safe_int(reel.get('reel_score'), 0)}</span></p><div class='actions'><button class='button' id='reelReact'>🔥 React</button><a class='button primary' href='/pulse/reels'>More Reels</a>{app_cta_html('reel', reel_id, source='web')}</div></section>"
+    # ``pulse_reel_payload`` builds on ``get_post``, which already ran
+    # ``_attach_commerce``, so a PulseDrop Reel arrives here with its live
+    # overlay. Rendered server-side for the same reason the single post page is:
+    # this URL is the reel's share target and its deep link.
+    reel_commerce_html = pulse_commerce_card.post_card_html(reel, surface="reel")
+    main = f"<section class='card'>{video_html}<h1>{html_escape(clean_html(reel.get('title') or 'PulseSoc Reel'))}</h1><p>{html_escape(clean_html(reel.get('body') or reel.get('caption') or ''))}</p>{reel_commerce_html}<p><span class='pill'>{html_escape(clean_html((reel.get('author') or {}).get('primary_label') or 'Member'))}</span> <span class='pill'>Score {safe_int(reel.get('reel_score'), 0)}</span></p><div class='actions'><button class='button' id='reelReact'>🔥 React</button><a class='button primary' href='/pulse/reels'>More Reels</a>{app_cta_html('reel', reel_id, source='web')}</div></section>"
     script = f"document.getElementById('reelReact')?.addEventListener('click',()=>pulseApi('/api/pulse/reels/react',{{method:'POST',body:JSON.stringify({{reel_id:{int(reel_id)},reaction_type:'fire'}})}}).then(()=>toast('Reaction added.')).catch(e=>toast(e.message)));"
     return pulse_social_shell("PulseSoc Reel", "Vertical PulseSoc clip with live social actions.", main, "", script)
 
@@ -52423,7 +52767,7 @@ def pulse_live_page():
         live_card = "<section class='card'><h2>Live Suspended</h2><p>Your Live access is paused. Review the safety reason and contact support to appeal.</p><a class='button' href='/support'>Appeal</a></section>"
     elif privileges["can_go_live"]:
         live_card = f"""
-        <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=live-studio-destination-20260702a'>
+        <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=cache-sweep-20260928a'>
         <section class='card live-ready'>
           <h2>Go Live Setup</h2>
           <input id='liveTitle' placeholder='Live title' value='{studio_title}'>
@@ -52713,7 +53057,7 @@ def pulse_live_studio_page(stream_id):
           </div>
         """
     main = f"""
-    <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=live-studio-owner-20260702d'>
+    <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=cache-sweep-20260928a'>
     <section class='pulse-live-surface live-command-shell studio-pro-shell' data-pulse-live-shell data-live-id='{stream_id}' data-live-poll-ms='3500' data-live-role='host' data-live-camera-owner='LiveStudioCameraOwner' data-studio-desktop-layout='command-center' data-studio-mobile-layout='vertical-cockpit'>
       <aside class='studio-sidebar' aria-label='Live Studio navigation'>
         <div class='studio-brand'><span class='studio-brand-mark'>P</span><strong>PulseSoc Studio</strong></div>
@@ -91534,7 +91878,14 @@ def pulse_post_page(post_id):
     # navigation, which stays: someone reading this page on a desktop wants the
     # rest of the site, not the App Store.
     post_app_cta = app_cta_html("post", post_id, source="web")
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name='description' content='{html_escape(clean_html(description))}'><meta name='robots' content='{robots_directive}'><link rel='canonical' href='{search_visibility.canonical_url(f"/pulse/post/{post_id}")}'><meta property='og:title' content='{html_escape(clean_html(title))}'><meta property='og:description' content='{html_escape(clean_html(description))}'><meta property='og:image' content='{html_escape(clean_html(image))}'><meta name='twitter:card' content='summary_large_image'><link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:max(20px,env(safe-area-inset-top)) 0 calc(98px + env(safe-area-inset-bottom))}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:14px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);position:relative;overflow:hidden}}a{{color:var(--cyan)}}p,.muted,small{{color:var(--muted);line-height:1.55}}.smart-time{{font-size:.82rem;color:rgba(217,247,255,.62);white-space:nowrap}}.time-dot{{opacity:.42;margin:0 4px}}h1{{font-size:clamp(30px,7vw,56px);line-height:1;margin:8px 0 12px}}img,video{{width:100%;max-height:min(74vh,760px);object-fit:contain;border-radius:12px;background:#020817;border:1px solid rgba(255,255,255,.08)}}.pulse-media-wrap{{position:relative;isolation:isolate;overflow:hidden;border-radius:14px;background:radial-gradient(circle at 50% 20%,rgba(110,223,246,.14),transparent 32%),#020817;border:1px solid rgba(110,223,246,.18);margin:12px 0;box-shadow:0 18px 70px rgba(0,0,0,.34),0 0 46px rgba(54,229,143,.08)}}.pulse-cinematic-media-shell:before,.pulse-cinematic-media-shell:after,.pulse-media-backdrop,.pulse-media-depth-layer,.pulse-media-aura{{position:absolute;inset:0;pointer-events:none}}.pulse-media-backdrop{{z-index:0;inset:-12%;background-image:var(--media-backdrop);background-size:cover;background-position:center;filter:blur(34px) saturate(1.32) brightness(.62);opacity:.86;transform:scale(1.08)}}.pulse-media-depth-layer{{z-index:1;background:radial-gradient(circle at var(--pulse-media-x,50%) var(--pulse-media-y,42%),rgba(var(--pulse-media-rgb,110,223,246),.3),transparent 35%),radial-gradient(circle at 12% 18%,rgba(54,229,143,.16),transparent 36%),radial-gradient(circle at 86% 80%,rgba(166,88,255,.15),transparent 38%),linear-gradient(180deg,rgba(2,8,17,.18),rgba(2,8,17,.58));mix-blend-mode:screen;opacity:.74}}.pulse-media-aura{{z-index:2;border-radius:inherit;box-shadow:inset 0 0 54px rgba(var(--pulse-media-rgb,110,223,246),.16),inset 0 -34px 72px rgba(0,0,0,.28),0 0 52px rgba(var(--pulse-media-rgb,110,223,246),.1);background:linear-gradient(115deg,transparent 10%,rgba(255,255,255,.06) 48%,transparent 62%);opacity:.8}}.pulse-cinematic-media-shell:before{{content:"";z-index:3;background:radial-gradient(1px 1px at 18% 22%,rgba(110,223,246,.55),transparent),radial-gradient(1px 1px at 77% 26%,rgba(54,229,143,.45),transparent),radial-gradient(1px 1px at 66% 72%,rgba(166,88,255,.42),transparent);background-size:150px 150px,190px 190px,230px 230px;opacity:.28}}.pulse-cinematic-media-shell:after{{content:"";z-index:4;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,.06),transparent 22%,transparent 76%,rgba(0,0,0,.18));box-shadow:inset 0 0 0 1px rgba(255,255,255,.045)}}.pulse-media-wrap img,.pulse-media-wrap video{{position:relative;z-index:5;display:block;border:0;width:100%;height:auto;object-fit:contain;object-position:center;background:transparent!important;filter:drop-shadow(0 18px 44px rgba(0,0,0,.42))}}.pulse-media-fallback{{position:absolute;z-index:7;inset:0;display:none;place-items:center;text-align:center;padding:18px;background:linear-gradient(145deg,rgba(8,19,35,.92),rgba(4,9,17,.96));color:#dffcff}}.pulse-media-fallback strong{{display:block;margin-bottom:5px}}.pulse-media-wrap.is-broken .pulse-media-fallback{{display:grid}}button,.button,input{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:9px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.actions,.tags{{display:flex;gap:8px;flex-wrap:wrap}}.pulse-post-actions-old,.pulse-action-wall,.reaction-stack{{display:none!important}}.tag{{font-size:12px;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:5px 9px;text-decoration:none}}.author{{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}.menu-btn{{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0;font-size:20px}}.post-sheet{{display:none;position:fixed;left:12px;right:12px;bottom:calc(110px + env(safe-area-inset-bottom));z-index:20;border:1px solid var(--line);border-radius:18px;background:#071321;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,.5)}}.post-sheet.open{{display:grid;gap:7px}}.post-sheet .button,.post-sheet button{{width:100%;justify-content:flex-start}}.reactions{{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}}.reaction-pill{{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px}}.reaction-pill.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.5);box-shadow:0 0 24px rgba(54,229,143,.15)}}.comment{{border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.04);margin:7px 0}}.comment p{{margin:3px 0}}.comment-box{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:7px;align-items:center}}.comment-box input{{border-radius:999px;min-height:40px}}.comment-box button{{width:42px;min-height:40px;border-radius:999px;padding:0}}@media(max-width:720px){{.wrap{{width:100%;padding:max(24px,env(safe-area-inset-top)) 10px calc(160px + env(safe-area-inset-bottom))}}.actions{{overflow-x:auto;flex-wrap:nowrap}}.actions .button,.actions button{{white-space:nowrap}}}}</style></head><body><main class='wrap'><nav class='actions'>{post_app_cta}<a class='button' href='/pulse'>Back to PulseSoc</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/pulse#create'>Create</a><button id='shareBtn' type='button'>Share</button></nav><article class='card'><div class='author'><p><strong>{html_escape(clean_html(author.get('display_name') or 'PulseSoc creator'))}{author_mark}</strong><br><span class='badge'>{html_escape(clean_html(author_label or 'Member'))}</span><br><small>{smart_time_html(post.get('created_at'))}</small></p><button class='menu-btn' id='moreBtn' type='button'>⋯</button></div><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(post.get('body') or ''))}</p>{media_html}<div class='tags'>{tags_html}</div><p class='muted'>Type: {html_escape(clean_html(post.get('post_type') or 'post'))} · Status: {html_escape(clean_html(post.get('moderation_status') or 'approved'))} · Risk score: {int(post.get('risk_score') or 0)}</p><div class='reactions'>{reaction_buttons}</div><p>{PULSE_DISCLAIMER}</p></article><section class='card'><h2>Comments</h2><div id='comments'>{comment_html or '<p>No comments yet.</p>'}</div><form class='comment-box' id='commentForm'><span class='pulse-emoji-field' data-emoji-scope><input name='body' placeholder='Write a comment...'><button class='pulse-emoji-trigger' type='button' data-emoji-for aria-haspopup='dialog' aria-expanded='false' aria-label='Add emoji'>☺</button></span><button class='primary'>➤</button></form></section><section class='post-sheet' id='postSheet'><a class='button primary' href='/pulse/post/{post_id}'>View post</a><a class='button' href='{author_profile_url}'>View profile</a><button id='sheetShare' type='button'>Share</button><a class='button' href='/pulse/my-posts'>My Posts</a></section></main><script src='/static/js/time.js'></script><script src='/static/js/pulse_emoji.js?v=emoji-primitive-20260927b' defer></script><script src='/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g'></script><script>async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false)throw new Error(d.error||d.message||'Request failed.');return d}}const share=async()=>{{const url=location.href;if(navigator.share){{await navigator.share({{title:document.title,url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});alert('Post link copied.')}}}};document.getElementById('shareBtn').addEventListener('click',share);document.getElementById('sheetShare').addEventListener('click',share);document.getElementById('moreBtn').addEventListener('click',()=>document.getElementById('postSheet').classList.toggle('open'));document.querySelectorAll('[data-react]').forEach(btn=>btn.addEventListener('click',async()=>{{try{{await api('/api/pulse/posts/{post_id}/react',{{method:'POST',body:JSON.stringify({{reaction_type:btn.dataset.react}})}});btn.classList.add('active')}}catch(e){{alert(e.message)}}}}));document.getElementById('commentForm').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.body;if(!input.value.trim())return;try{{await api('/api/pulse/posts/{post_id}/comments',{{method:'POST',body:JSON.stringify({{body:input.value}})}});location.reload()}}catch(err){{alert(err.message)}}}});window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);</script></body></html>""")
+    # The commerce attachment, when this post has one. ``get_post`` already ran
+    # ``_attach_commerce``, so the overlay is on the post here and is read fresh
+    # from ``marketplace_listings`` -- this page had been receiving it and
+    # dropping it since PulseDrop shipped. Server-rendered rather than hydrated
+    # in the browser because this page is the SEO and link-unfurl target: a card
+    # assembled by JavaScript is a card a crawler never sees.
+    commerce_html = pulse_commerce_card.post_card_html(post)
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name='description' content='{html_escape(clean_html(description))}'><meta name='robots' content='{robots_directive}'><link rel='canonical' href='{search_visibility.canonical_url(f"/pulse/post/{post_id}")}'><meta property='og:title' content='{html_escape(clean_html(title))}'><meta property='og:description' content='{html_escape(clean_html(description))}'><meta property='og:image' content='{html_escape(clean_html(image))}'><meta name='twitter:card' content='summary_large_image'><link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'><link rel='stylesheet' href='/static/css/pulse-commerce-attachment.css?v=commerce-attachment-20260928a'><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:max(20px,env(safe-area-inset-top)) 0 calc(98px + env(safe-area-inset-bottom))}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:14px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);position:relative;overflow:hidden}}a{{color:var(--cyan)}}p,.muted,small{{color:var(--muted);line-height:1.55}}.smart-time{{font-size:.82rem;color:rgba(217,247,255,.62);white-space:nowrap}}.time-dot{{opacity:.42;margin:0 4px}}h1{{font-size:clamp(30px,7vw,56px);line-height:1;margin:8px 0 12px}}img,video{{width:100%;max-height:min(74vh,760px);object-fit:contain;border-radius:12px;background:#020817;border:1px solid rgba(255,255,255,.08)}}.pulse-media-wrap{{position:relative;isolation:isolate;overflow:hidden;border-radius:14px;background:radial-gradient(circle at 50% 20%,rgba(110,223,246,.14),transparent 32%),#020817;border:1px solid rgba(110,223,246,.18);margin:12px 0;box-shadow:0 18px 70px rgba(0,0,0,.34),0 0 46px rgba(54,229,143,.08)}}.pulse-cinematic-media-shell:before,.pulse-cinematic-media-shell:after,.pulse-media-backdrop,.pulse-media-depth-layer,.pulse-media-aura{{position:absolute;inset:0;pointer-events:none}}.pulse-media-backdrop{{z-index:0;inset:-12%;background-image:var(--media-backdrop);background-size:cover;background-position:center;filter:blur(34px) saturate(1.32) brightness(.62);opacity:.86;transform:scale(1.08)}}.pulse-media-depth-layer{{z-index:1;background:radial-gradient(circle at var(--pulse-media-x,50%) var(--pulse-media-y,42%),rgba(var(--pulse-media-rgb,110,223,246),.3),transparent 35%),radial-gradient(circle at 12% 18%,rgba(54,229,143,.16),transparent 36%),radial-gradient(circle at 86% 80%,rgba(166,88,255,.15),transparent 38%),linear-gradient(180deg,rgba(2,8,17,.18),rgba(2,8,17,.58));mix-blend-mode:screen;opacity:.74}}.pulse-media-aura{{z-index:2;border-radius:inherit;box-shadow:inset 0 0 54px rgba(var(--pulse-media-rgb,110,223,246),.16),inset 0 -34px 72px rgba(0,0,0,.28),0 0 52px rgba(var(--pulse-media-rgb,110,223,246),.1);background:linear-gradient(115deg,transparent 10%,rgba(255,255,255,.06) 48%,transparent 62%);opacity:.8}}.pulse-cinematic-media-shell:before{{content:"";z-index:3;background:radial-gradient(1px 1px at 18% 22%,rgba(110,223,246,.55),transparent),radial-gradient(1px 1px at 77% 26%,rgba(54,229,143,.45),transparent),radial-gradient(1px 1px at 66% 72%,rgba(166,88,255,.42),transparent);background-size:150px 150px,190px 190px,230px 230px;opacity:.28}}.pulse-cinematic-media-shell:after{{content:"";z-index:4;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,.06),transparent 22%,transparent 76%,rgba(0,0,0,.18));box-shadow:inset 0 0 0 1px rgba(255,255,255,.045)}}.pulse-media-wrap img,.pulse-media-wrap video{{position:relative;z-index:5;display:block;border:0;width:100%;height:auto;object-fit:contain;object-position:center;background:transparent!important;filter:drop-shadow(0 18px 44px rgba(0,0,0,.42))}}.pulse-media-fallback{{position:absolute;z-index:7;inset:0;display:none;place-items:center;text-align:center;padding:18px;background:linear-gradient(145deg,rgba(8,19,35,.92),rgba(4,9,17,.96));color:#dffcff}}.pulse-media-fallback strong{{display:block;margin-bottom:5px}}.pulse-media-wrap.is-broken .pulse-media-fallback{{display:grid}}button,.button,input{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:9px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.actions,.tags{{display:flex;gap:8px;flex-wrap:wrap}}.pulse-post-actions-old,.pulse-action-wall,.reaction-stack{{display:none!important}}.tag{{font-size:12px;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:5px 9px;text-decoration:none}}.author{{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}.menu-btn{{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0;font-size:20px}}.post-sheet{{display:none;position:fixed;left:12px;right:12px;bottom:calc(110px + env(safe-area-inset-bottom));z-index:20;border:1px solid var(--line);border-radius:18px;background:#071321;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,.5)}}.post-sheet.open{{display:grid;gap:7px}}.post-sheet .button,.post-sheet button{{width:100%;justify-content:flex-start}}.reactions{{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}}.reaction-pill{{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px}}.reaction-pill.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.5);box-shadow:0 0 24px rgba(54,229,143,.15)}}.comment{{border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.04);margin:7px 0}}.comment p{{margin:3px 0}}.comment-box{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:7px;align-items:center}}.comment-box input{{border-radius:999px;min-height:40px}}.comment-box button{{width:42px;min-height:40px;border-radius:999px;padding:0}}@media(max-width:720px){{.wrap{{width:100%;padding:max(24px,env(safe-area-inset-top)) 10px calc(160px + env(safe-area-inset-bottom))}}.actions{{overflow-x:auto;flex-wrap:nowrap}}.actions .button,.actions button{{white-space:nowrap}}}}</style></head><body><main class='wrap'><nav class='actions'>{post_app_cta}<a class='button' href='/pulse'>Back to PulseSoc</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/pulse#create'>Create</a><button id='shareBtn' type='button'>Share</button></nav><article class='card'><div class='author'><p><strong>{html_escape(clean_html(author.get('display_name') or 'PulseSoc creator'))}{author_mark}</strong><br><span class='badge'>{html_escape(clean_html(author_label or 'Member'))}</span><br><small>{smart_time_html(post.get('created_at'))}</small></p><button class='menu-btn' id='moreBtn' type='button'>⋯</button></div><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(post.get('body') or ''))}</p>{media_html}{commerce_html}<div class='tags'>{tags_html}</div><p class='muted'>Type: {html_escape(clean_html(post.get('post_type') or 'post'))} · Status: {html_escape(clean_html(post.get('moderation_status') or 'approved'))} · Risk score: {int(post.get('risk_score') or 0)}</p><div class='reactions'>{reaction_buttons}</div><p>{PULSE_DISCLAIMER}</p></article><section class='card'><h2>Comments</h2><div id='comments'>{comment_html or '<p>No comments yet.</p>'}</div><form class='comment-box' id='commentForm'><span class='pulse-emoji-field' data-emoji-scope><input name='body' placeholder='Write a comment...'><button class='pulse-emoji-trigger' type='button' data-emoji-for aria-haspopup='dialog' aria-expanded='false' aria-label='Add emoji'>☺</button></span><button class='primary'>➤</button></form></section><section class='post-sheet' id='postSheet'><a class='button primary' href='/pulse/post/{post_id}'>View post</a><a class='button' href='{author_profile_url}'>View profile</a><button id='sheetShare' type='button'>Share</button><a class='button' href='/pulse/my-posts'>My Posts</a></section></main><script src='/static/js/time.js'></script><script src='/static/js/pulse_emoji.js?v=emoji-primitive-20260927b' defer></script><script src='/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g'></script><script>async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false)throw new Error(d.error||d.message||'Request failed.');return d}}const share=async()=>{{const url=location.href;if(navigator.share){{await navigator.share({{title:document.title,url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});alert('Post link copied.')}}}};document.getElementById('shareBtn').addEventListener('click',share);document.getElementById('sheetShare').addEventListener('click',share);document.getElementById('moreBtn').addEventListener('click',()=>document.getElementById('postSheet').classList.toggle('open'));document.querySelectorAll('[data-react]').forEach(btn=>btn.addEventListener('click',async()=>{{try{{await api('/api/pulse/posts/{post_id}/react',{{method:'POST',body:JSON.stringify({{reaction_type:btn.dataset.react}})}});btn.classList.add('active')}}catch(e){{alert(e.message)}}}}));document.getElementById('commentForm').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.body;if(!input.value.trim())return;try{{await api('/api/pulse/posts/{post_id}/comments',{{method:'POST',body:JSON.stringify({{body:input.value}})}});location.reload()}}catch(err){{alert(err.message)}}}});window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);</script></body></html>""")
 
 
 def pulse_attach_video_detail_links(posts):
@@ -91617,6 +91968,22 @@ def api_pulse_feed():
     try:
         result = pulse_feed_engine.list_feed(user["user_id"], feed, request.args.get("topic") or "", request.args.get("profile") or "", request.args.get("limit") or 20, request.args.get("offset") or 0)
         pulse_attach_video_detail_links(result.get("posts") or [])
+        # Per-post "may commerce sit beside this?", so `injectCommerceRows` can
+        # decline a position next to a bereavement. The feed's commerce row is a
+        # sibling row *between* posts, so the request that fetched the products
+        # never knew which posts it would land between — only this response does.
+        # Free: the payload already carries every field the check reads, so it is
+        # string work over a dict in memory, no query.
+        #
+        # Guarded separately from the handler's own `except`, which answers 503.
+        # A commerce annotation failing must leave the feed exactly as it was,
+        # not take it down: the post has to render even when every commerce layer
+        # is broken.
+        try:
+            from services.commerce_discovery import suitability as _cd_suitability
+            _cd_suitability.annotate(result.get("posts"))
+        except Exception:
+            logging.exception("PULSE_FEED_COMMERCE_SUITABILITY_FAILED user_id=%s", user["user_id"])
         result.setdefault("intelligence", {})
         if isinstance(result.get("intelligence"), dict):
             result["intelligence"]["status_activity"] = pulse_status_discovery_signal(user["user_id"])
@@ -93238,6 +93605,39 @@ def api_pulse_posts():
                 if not result.get("ok"):
                     raise ValueError(result.get("message") or "File upload failed.")
                 media_ids.append(result.get("media", {}).get("id"))
+            # Listing ids this form post is tagging.
+            #
+            # Parsed here because `payload` below is a literal whitelist, not a
+            # view of `request.form`: a key this dict does not name is gone before
+            # `pulse_product_tag_ids_from_payload` is ever called. That helper
+            # accepts three names, and its docstring says `listing_ids` is there
+            # for "the web composer's existing marketplace forms" — the one client
+            # that posts multipart, and so the one client whose tags this branch
+            # discarded with no error on either side.
+            #
+            # Two encodings, both real. A picker built from checkboxes submits the
+            # same field name repeatedly, where `form.get` returns the first value
+            # and silently loses the rest; a picker built from a hidden field
+            # submits one JSON or comma-joined string, where passing the raw value
+            # through would reach the attach path as a single unparseable id and be
+            # refused for the wrong reason. Ids are not validated here — ownership
+            # is re-checked per id at attach time regardless of which key or
+            # encoding carried them.
+            product_listing_ids = []
+            for key in ("product_listing_ids", "listing_ids", "product_ids"):
+                values = [value for value in form.getlist(key) if str(value).strip()]
+                if not values:
+                    continue
+                if len(values) > 1:
+                    product_listing_ids = [str(value).strip() for value in values]
+                    break
+                raw = str(values[0]).strip()
+                try:
+                    parsed = json.loads(raw)
+                    product_listing_ids = parsed if isinstance(parsed, list) else [parsed]
+                except Exception:
+                    product_listing_ids = [x.strip() for x in raw.split(",") if x.strip()]
+                break
             payload = {
                 "body": form.get("body") or form.get("message") or "",
                 "title": form.get("title") or "",
@@ -93245,6 +93645,7 @@ def api_pulse_posts():
                 "tags": tags,
                 "visibility": form.get("visibility") or "public",
                 "media_ids": media_ids,
+                "product_listing_ids": product_listing_ids,
             }
         else:
             payload = request.get_json(silent=True)
@@ -93280,6 +93681,33 @@ def api_pulse_posts():
                 else:
                     logging.warning("PULSE_POST_MUSIC_ATTACH_BLOCKED user_id=%s post_id=%s track_id=%s", user["user_id"], result.get("post_id"), music_track_id)
                 conn.close()
+            # Products the creator attached to their own post. Its own connection
+            # and its own `try`, both on purpose: the post is already created and
+            # committed by this line, so nothing here may be able to unmake it. A
+            # tag that fails is a missing carousel, not a lost post (§82).
+            product_tag_ids = pulse_product_tag_ids_from_payload(payload)
+            if product_tag_ids:
+                tag_conn = None
+                try:
+                    tag_conn = db()
+                    tag_cur = tag_conn.cursor()
+                    tag_result = pulse_attach_products_to_content(
+                        tag_cur, content_type="post", content_id=result.get("post_id"),
+                        listing_ids=product_tag_ids, user_id=user["user_id"],
+                    )
+                    if tag_result.get("attached"):
+                        tag_conn.commit()
+                except Exception:
+                    logging.warning(
+                        "PULSE_POST_PRODUCT_ATTACH_FAILED user_id=%s post_id=%s",
+                        user["user_id"], result.get("post_id"), exc_info=True,
+                    )
+                finally:
+                    if tag_conn is not None:
+                        try:
+                            tag_conn.close()
+                        except Exception:
+                            pass
             created_post = result.get("post") or {}
             video_media = next((m for m in (created_post.get("media") or []) if str((m or {}).get("media_type") or "").lower() == "video"), None)
             if video_media:
@@ -93717,6 +94145,36 @@ def api_pulse_reels_create():
                 # at.trend_score, 0)`, so a track with a trending row would be ranked on
                 # reel attachments alone while every other track was ranked on all
                 # surfaces: two scales in one ORDER BY. One writer, one counter.
+        # Products the creator attached to their own reel. Written twice when the
+        # reel is shared to the feed, exactly as the music above it is, and for a
+        # reason that is not symmetry: `commerce_discovery` resolves tags by
+        # *post* id on every surface including reels, because that is the id its
+        # route reads from the client. A reel-only row would be unreachable, so the
+        # mirror row is what makes a reel's products actually appear.
+        #
+        # Inside the reel's own transaction rather than on a second connection —
+        # unlike the post path, where the post was already committed by that point.
+        # Here `conn.commit()` is still ahead of us, so a tag written here rolls
+        # back with the reel if the reel fails, which is the correct outcome: there
+        # is no reel for the tag to be attached to. The `try` is still required so
+        # the reverse cannot happen.
+        reel_product_tag_ids = pulse_product_tag_ids_from_payload(payload)
+        if reel_product_tag_ids:
+            try:
+                pulse_attach_products_to_content(
+                    cur, content_type="reel", content_id=reel_id,
+                    listing_ids=reel_product_tag_ids, user_id=user["user_id"],
+                )
+                if share_to_feed and post_id:
+                    pulse_attach_products_to_content(
+                        cur, content_type="post", content_id=post_id,
+                        listing_ids=reel_product_tag_ids, user_id=user["user_id"],
+                    )
+            except Exception:
+                logging.warning(
+                    "PULSE_REEL_PRODUCT_ATTACH_FAILED trace_id=%s user_id=%s reel_id=%s post_id=%s",
+                    trace_id, user["user_id"], reel_id, post_id, exc_info=True,
+                )
         conn.commit()
         conn.close()
         try:
@@ -120135,6 +120593,14 @@ def _init_db_impl():
     except Exception as exc:
         logging.exception("PULSE_ID_SCHEMA_SKIPPED error=%s", exc)
 
+    # Here as well as in `create_account`, so the invariant exists from boot
+    # rather than from whenever somebody next signs up. Safe at this line for the
+    # reason the comment above cares about: `ensure_email_identity_index` catches
+    # everything and returns False, so it cannot truncate the schema the way a
+    # raise here would. `run_once_per_process` makes the signup-path call a no-op
+    # after this one.
+    account_email_uniqueness.ensure_email_identity_index(cur)
+
     ensure_user_presence_schema(cur, conn)
     ensure_mobile_security_session_schema(cur)
     cur.execute("""
@@ -121583,6 +122049,50 @@ def _init_db_impl():
         ("original_audio_muted", "INTEGER DEFAULT 1"),
         ("audio_start_time", "REAL DEFAULT 0"),
         ("audio_volume", "REAL DEFAULT 1"),
+    ], conn=conn)
+    # Products a creator attached to their own content. Deliberately shaped like
+    # `pulse_content_music` above it — same polymorphic (content_type, content_id)
+    # key, same UNIQUE, same `attached_by_user_id` — because it is the same kind of
+    # thing: an attachment the composer writes and a reader resolves. It is read by
+    # `services/commerce_discovery`, but it is not that package's table: the writer
+    # is the post composer, and making the composer depend on the discovery
+    # package's schema guard to save a post would be the wrong dependency.
+    #
+    # Two deliberate departures from the music shape:
+    #
+    # `seller_user_id` is denormalised, not for speed but for correctness. It is
+    # the seller at *attach* time, which is what the tag was authorised against.
+    # A listing that later changes hands carries an authorisation nobody granted,
+    # and the read path drops the tag when this column stops matching the live
+    # listing. This is the products analogue of `license_snapshot_json`: a snapshot
+    # of the permission, not of the goods.
+    #
+    # There is no price, title or availability snapshot, and that is the opposite
+    # choice to music on purpose. A stale song is still the song; a stale price is
+    # a lie to a buyer. Everything merchandising-related is read live from
+    # `marketplace_listings` on every serve so a sold-out or repriced product
+    # cannot be served from a cache nobody remembers writing.
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_content_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        content_type TEXT,
+        content_id INTEGER,
+        listing_id INTEGER,
+        attached_by_user_id INTEGER,
+        seller_user_id INTEGER,
+        authority TEXT DEFAULT 'owner',
+        created_at TEXT,
+        UNIQUE(content_type, content_id, listing_id)
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_content_products", [
+        ("content_type", "TEXT"),
+        ("content_id", "INTEGER"),
+        ("listing_id", "INTEGER"),
+        ("attached_by_user_id", "INTEGER"),
+        ("seller_user_id", "INTEGER"),
+        ("authority", "TEXT DEFAULT 'owner'"),
+        ("created_at", "TEXT"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_trending_sounds (
