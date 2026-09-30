@@ -1,4 +1,4 @@
-{% from "_app_link_cta.html" import app_cta, app_store_badge with context %}
+{% from "_app_link_cta.html" import app_open_cta, app_store_badge with context %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -794,10 +794,10 @@
         <div class="grid">
           <article class="card">
             <div>
-              <h3>Videos, Reels, and Live</h3>
-              <p>Watch creator videos, short Reels, live sessions, and replays with Mux-powered playback where available.</p>
+              <h3>Reels and Live</h3>
+              <p>Watch short Reels, live sessions, and replays with Mux-powered playback where available.</p>
             </div>
-            <a class="button card-link" href="/pulse/videos">Open Videos</a>
+            <a class="button card-link" href="/pulse/reels">Open Reels</a>
           </article>
           <article class="card">
             <div>
@@ -934,7 +934,7 @@
           redirect of a visitor who did not ask for one.
         #}
         <div class="section-actions" style="justify-content:center;margin-top:14px">
-          {{ app_cta("home", source="web", label="Open in the PulseSoc app", classes="button") }}
+          {{ app_open_cta("home", source="web", label="Open in the PulseSoc app", classes="button") }}
           {{ app_store_badge() }}
         </div>
       </div>

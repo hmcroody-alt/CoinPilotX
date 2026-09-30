@@ -110,17 +110,18 @@ function commerce(patch: Partial<PulseCommerceOverlay> = {}): PulseCommerceOverl
       title: "Aurora Desk Lamp",
       price_label: "$49.00",
       currency: "USD",
-      image_url: "https://cdn.example/lamp.jpg",
+      cover_image_url: "https://cdn.example/lamp.jpg",
       buyer_visible: true,
       inventory_state: "in_stock",
       quantity: 4,
       product_type: "physical",
-      denial_code: "",
-      route: "/pulse/marketplace/77",
-      screen: "MarketplaceDetail"
+      denial_code: ""
+      // No `route`/`screen` on the product: `_product` in
+      // `services/pulsedrop/hydration.py` has never emitted either. The
+      // product's destination lives on `cta`, the merchant's on `seller`.
     },
     seller: {
-      seller_user_id: 10,
+      user_id: 10,
       store_name: "Northlight Studio",
       username: "northlight",
       route: "/pulse/merchant/10",
@@ -407,6 +408,73 @@ describe("a PulseDrop Signal", () => {
  * pins the precedence: the container decides the treatment, the payload only
  * supplies the default for a caller that did not say.
  */
+/**
+ * The product photo, which this card did not show for its entire life.
+ *
+ * `_product` in `services/pulsedrop/hydration.py` emits `cover_image_url`. The
+ * type in `api/pulseCommerceOverlay.ts` declared `image_url`, the component read
+ * that name, and no remapping existed anywhere in `mobile-native/src` — so
+ * every PulseDrop product ever published rendered the grey placeholder beside
+ * its own price.
+ *
+ * Nothing caught it, and the reason is the thing to fix rather than the bug:
+ * the fixture above invented the field name *and* the value, so the suite was
+ * green against a payload shape the server does not send. These tests assert
+ * against a `testID`, and the Python side now checks every required field on
+ * that type against a real `hydration.overlay()` payload — see
+ * `tests/pulse_commerce/test_commerce_card_parity.py`.
+ */
+describe("the product photo", () => {
+  it("renders the server's cover_image_url", () => {
+    const { getByTestId, queryByTestId } = renderPost(
+      { commerce: commerce({ surface: "signal" }) } as Partial<PulsePost>,
+      { onOpenCommerceProduct: jest.fn() }
+    );
+    expect(getByTestId("commerce-overlay-thumb").props.source).toEqual({
+      uri: "https://cdn.example/lamp.jpg"
+    });
+    expect(queryByTestId("commerce-overlay-thumb-empty")).toBeNull();
+  });
+
+  it("falls back to the legacy image_url when the current key is empty", () => {
+    const payload = commerce({ surface: "signal" });
+    const { getByTestId } = renderPost(
+      {
+        commerce: {
+          ...payload,
+          product: { ...payload.product, cover_image_url: "", image_url: "https://cdn.example/old.jpg" }
+        }
+      } as Partial<PulsePost>,
+      { onOpenCommerceProduct: jest.fn() }
+    );
+    expect(getByTestId("commerce-overlay-thumb").props.source).toEqual({
+      uri: "https://cdn.example/old.jpg"
+    });
+  });
+
+  it("draws the placeholder and no broken image when the product has no photo", () => {
+    const payload = commerce({ surface: "signal" });
+    const { getByTestId, queryByTestId } = renderPost(
+      {
+        commerce: { ...payload, product: { ...payload.product, cover_image_url: "" } }
+      } as Partial<PulsePost>,
+      { onOpenCommerceProduct: jest.fn() }
+    );
+    expect(getByTestId("commerce-overlay-thumb-empty")).toBeTruthy();
+    expect(queryByTestId("commerce-overlay-thumb")).toBeNull();
+  });
+
+  it("shows the photo on a Reel too", () => {
+    const { getByTestId } = renderCard(
+      { commerce: commerce() } as any,
+      { onOpenCommerceProduct: jest.fn() }
+    );
+    expect(getByTestId("commerce-overlay-thumb").props.source).toEqual({
+      uri: "https://cdn.example/lamp.jpg"
+    });
+  });
+});
+
 describe("surface precedence", () => {
   it("honours the host's surface over the payload's", () => {
     const { getByText } = renderPost(

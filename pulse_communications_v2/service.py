@@ -239,7 +239,15 @@ MESSAGE_IDEMPOTENCY_INDEX = "idx_comm_v2_messages_client_idem"
 # protection at all.
 MESSAGE_IDEMPOTENCY_TABLE = "comm_v2_messages"
 MESSAGE_IDEMPOTENCY_COLUMNS = ("conversation_id", "sender_user_id", "client_message_id")
-MESSAGE_IDEMPOTENCY_PREDICATE = "client_message_id IS NOT NULL AND client_message_id <> ''"
+# The predicate must match `_message_for_client_id` exactly, including its
+# deleted_at filter. Uniqueness enforced over a wider set of rows than the
+# lookup consults is not a stricter guarantee, it is a broken one: the insert
+# would be refused for a row the recovery SELECT cannot see, `winner` would come
+# back None, and a resend after a delete would raise instead of sending.
+MESSAGE_IDEMPOTENCY_PREDICATE = (
+    "client_message_id IS NOT NULL AND client_message_id <> '' "
+    "AND COALESCE(deleted_at, '') = ''"
+)
 
 # The four states this installer can end in. They are determined by inspection,
 # never by reading a driver's error string: exception text is a presentation
@@ -259,7 +267,10 @@ IDEMPOTENCY_INDEX_INSTALL_ERROR = "install_error"
 # interleaving.
 #
 # The predicate excludes blank ids because legacy rows and server-authored
-# messages carry none, and NULLs must not collide with each other.
+# messages carry none, and NULLs must not collide with each other. It excludes
+# deleted rows for a different reason: a client id names a logical message, and
+# once the sender has deleted that message the id is free again -- which is the
+# rule `_message_for_client_id` already applies when it decides a resend is new.
 _MESSAGE_IDEMPOTENCY_INDEX_SQL = (
     f"CREATE UNIQUE INDEX IF NOT EXISTS {MESSAGE_IDEMPOTENCY_INDEX} "
     f"ON {MESSAGE_IDEMPOTENCY_TABLE} ({', '.join(MESSAGE_IDEMPOTENCY_COLUMNS)}) "
@@ -339,6 +350,14 @@ def _normalise_predicate(raw: str) -> str:
     as `client_message_id <> ''` comes back as
     `(client_message_id <> ''::text)`. Comparing the raw strings would report a
     correct index as malformed.
+
+    What it does NOT do is normalise spacing inside an expression: PostgreSQL
+    prints `COALESCE(deleted_at, ''::text)` with a space after the comma, and
+    collapsing runs of whitespace will not close that gap. So
+    MESSAGE_IDEMPOTENCY_PREDICATE is written in the server's own spelling, and
+    test_the_postgres_rendering_of_the_real_predicate_reads_back_as_correct
+    holds it there. Getting this wrong fails closed -- the index installs and
+    then fails its own read-back -- which is survivable, but silent.
     """
     text = (raw or "").lower()
     text = text.replace("::text", "").replace("::character varying", "")

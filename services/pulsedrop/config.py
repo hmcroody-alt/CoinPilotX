@@ -206,6 +206,16 @@ SETTINGS: dict[str, Setting] = {
         "Zero permits both formats in one tick, which is the outcome the "
         "distribution engine exists to avoid making automatic.",
     ),
+    "PULSEDROP_PAIR_EVERY_POST": Setting(
+        FLAG, "false", label="Pair every Signal with a Reel", group="Fairness",
+        help="Off, a Reel is earned: seller-shot footage on a top-scoring "
+             "product. On, any product worth publishing at all goes to both "
+             "surfaces, composed from stills when there is no video. A volume "
+             "decision, not a quality one -- it puts two posts in a tick "
+             "without widening the catalog, so read the daily cap as covering "
+             "half as many products. The cooldowns still apply: this decides "
+             "what a publishable product earns, not who is publishable.",
+    ),
     "PULSEDROP_MAX_SELLER_SHARE_PERCENT": Setting(
         INT, "40", 1, 100, "Max one seller's share (%)", "Fairness",
         "Only bites once the catalog can support it; today it is one seller.",
@@ -368,6 +378,25 @@ def cross_format_cooldown_hours() -> int:
     return resolve("PULSEDROP_CROSS_FORMAT_COOLDOWN_HOURS")
 
 
+def pair_every_post() -> bool:
+    """Whether a publishable product should get both formats rather than one.
+
+    This is the operator overriding the editorial default described in
+    ``distribution``: normally the Reel is the expensive format and has to be
+    earned, so ``_earns_both`` wants seller-shot footage on a top-scoring
+    product. Turning this on says the account wants reach more than it wants
+    that restraint.
+
+    It widens what a *publishable* product earns and nothing else. Every
+    cooldown, cap and pacing floor is evaluated exactly as before, so a Reel
+    that fairness would have blocked stays blocked and the tick publishes the
+    Signal alone -- with a reason naming the blocker, because "pairing is on
+    and this post has no Reel" is a question the run log should be able to
+    answer.
+    """
+    return resolve("PULSEDROP_PAIR_EVERY_POST")
+
+
 def candidate_limit() -> int:
     """Rows pulled from the catalog per tick, before ranking.
 
@@ -483,6 +512,7 @@ def snapshot() -> dict[str, Any]:
         "reel_product_cooldown_hours": reel_product_cooldown_hours(),
         "reel_seller_cooldown_hours": reel_seller_cooldown_hours(),
         "cross_format_cooldown_hours": cross_format_cooldown_hours(),
+        "pair_every_post": pair_every_post(),
         "candidate_limit": candidate_limit(),
         "max_seller_share_percent": max_per_seller_share_percent(),
         "seller_share_window": seller_share_window(),

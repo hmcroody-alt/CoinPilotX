@@ -28,6 +28,7 @@ os.close(_HANDLE)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
 
 import bot  # noqa: E402
+from services import db as db_service  # noqa: E402
 
 
 def _use_module_database():
@@ -160,18 +161,36 @@ class SellerListingEditTest(unittest.TestCase):
     # fixtures
     # ------------------------------------------------------------------
     def _make_seller(self, role):
+        """Created once per address and reused thereafter.
+
+        ``_use_module_database`` re-runs ``init_db`` per test but never empties the
+        tables, so this used to mint a *second* account at
+        ``mkedit_owner@example.com`` on every test after the first -- the
+        duplicate-account state ``ux_users_email_identity`` now forbids, produced
+        by a fixture rather than by the product. ``marketplace_sellers.user_id``
+        has always been unique and only survived because each duplicate account
+        came with a fresh id. Nothing here needs a fresh row, only a seller.
+        """
+        username = f"mkedit_{role}"
+        email = f"{username}@example.com"
         conn = bot.db()
         cur = conn.cursor()
-        username = f"mkedit_{role}"
-        cur.execute(
-            "INSERT INTO users (username, display_name, email, account_status, created_at) VALUES (?,?,?,?,?)",
-            (username, f"Edit {role}", f"{username}@example.com", "active", self.now),
-        )
-        user_id = int(cur.lastrowid)
-        cur.execute(
-            "INSERT INTO marketplace_sellers (user_id, business_name, display_name, status, created_at, updated_at) VALUES (?,?,?,?,?,?)",
-            (user_id, f"{role} store", f"{role} store", "approved", self.now, self.now),
-        )
+        cur.execute("SELECT user_id FROM users WHERE email = ? LIMIT 1", (email,))
+        existing = cur.fetchone()
+        if existing is not None:
+            user_id = int(db_service.row_values(existing)[0])
+        else:
+            cur.execute(
+                "INSERT INTO users (username, display_name, email, account_status, created_at) VALUES (?,?,?,?,?)",
+                (username, f"Edit {role}", email, "active", self.now),
+            )
+            user_id = int(cur.lastrowid)
+        cur.execute("SELECT 1 FROM marketplace_sellers WHERE user_id = ? LIMIT 1", (user_id,))
+        if cur.fetchone() is None:
+            cur.execute(
+                "INSERT INTO marketplace_sellers (user_id, business_name, display_name, status, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+                (user_id, f"{role} store", f"{role} store", "approved", self.now, self.now),
+            )
         conn.commit()
         conn.close()
         return {"user_id": user_id, "username": username}
@@ -706,19 +725,28 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
         bot.pulse_emit_event = self._real_emit
 
     def _make_seller(self):
+        """Created once and reused thereafter -- see the note on the class above."""
         conn = bot.db()
         cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO users (username, display_name, email, account_status, created_at) "
-            "VALUES (?,?,?,?,?)",
-            ("mkweb_owner", "Web owner", "mkweb_owner@example.com", "active", self.now),
-        )
-        user_id = int(cur.lastrowid)
-        cur.execute(
-            "INSERT INTO marketplace_sellers (user_id, business_name, display_name, status, "
-            "created_at, updated_at) VALUES (?,?,?,?,?,?)",
-            (user_id, "Web store", "Web store", "approved", self.now, self.now),
-        )
+        cur.execute("SELECT user_id FROM users WHERE email = ? LIMIT 1",
+                    ("mkweb_owner@example.com",))
+        existing = cur.fetchone()
+        if existing is not None:
+            user_id = int(db_service.row_values(existing)[0])
+        else:
+            cur.execute(
+                "INSERT INTO users (username, display_name, email, account_status, created_at) "
+                "VALUES (?,?,?,?,?)",
+                ("mkweb_owner", "Web owner", "mkweb_owner@example.com", "active", self.now),
+            )
+            user_id = int(cur.lastrowid)
+        cur.execute("SELECT 1 FROM marketplace_sellers WHERE user_id = ? LIMIT 1", (user_id,))
+        if cur.fetchone() is None:
+            cur.execute(
+                "INSERT INTO marketplace_sellers (user_id, business_name, display_name, status, "
+                "created_at, updated_at) VALUES (?,?,?,?,?,?)",
+                (user_id, "Web store", "Web store", "approved", self.now, self.now),
+            )
         conn.commit()
         conn.close()
         return {"user_id": user_id, "username": "mkweb_owner"}

@@ -1197,6 +1197,32 @@
         "from_sellers_you_follow": "フォロー中の出品者から",
         "new_to_marketplace": "マーケットプレイスの新規出品",
         "popular": "人気"
+      },
+      "tagging": {
+        "open": "商品をタグ付け",
+        "title": "あなたの商品",
+        "subtitle": "この投稿に関連する商品を選択",
+        "cap": "1投稿につき最大{{max}}件",
+        "selected": "{{max}}件中{{selected}}件を選択中",
+        "loading": "商品を読み込んでいます…",
+        "empty": "商品がまだありません",
+        "emptyHint": "マーケットプレイスに出品した商品がここに表示されます。",
+        "error": "商品を読み込めませんでした",
+        "errorHint": "商品がないという意味ではありません。もう一度お試しください。",
+        "retry": "再試行",
+        "wontShow": "表示されません",
+        "wontShowHint": "タグ付けはできますが、修正するまで購入者には表示されません。",
+        "done": "完了",
+        "blocked": {
+          "not_purchasable": "購入できません",
+          "no_cover_image": "カバー写真が必要です",
+          "no_resolvable_price": "価格が必要です",
+          "moderation_flagged": "審査中",
+          "listing_risk": "表示の対象外です",
+          "seller_risk": "あなたのストアは表示の対象外です",
+          "unknown_reason": "現在表示できません"
+        },
+        "cleared": "商品タグを削除しました。フィード投稿にのみ付けられます。"
       }
     },
     "marketplace": {
@@ -1354,7 +1380,9 @@
         "paused": "一時停止中",
         "draft": "下書き",
         "rejected": "却下"
-      }
+      },
+      "dropshipping": "インポートした商品",
+      "dropshippingCopy": "サプライヤーからインポートした商品です。審査待ちのものも含まれます。"
     },
     "orders": {
       "title": "注文",

@@ -114,6 +114,25 @@ CREATE TABLE IF NOT EXISTS marketplace_listings (
 )
 """
 
+# Verbatim from `bot.init_db()`. Here rather than in the suites that need it
+# because `marketplace_listings` alone cannot answer whether a listing is
+# reachable: `lifecycle.public_sql` gates on the seller's status and store name,
+# so every buyer-side predicate joins this table. A fixture with the listings and
+# not the seller is not a smaller production -- it is one where those queries
+# raise, and the suites that caught this were failing on a missing table rather
+# than on anything they were written to assert.
+_SELLERS_DDL = """
+CREATE TABLE IF NOT EXISTS marketplace_sellers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER UNIQUE,
+    display_name TEXT,
+    bio TEXT,
+    status TEXT DEFAULT 'pending',
+    created_at TEXT,
+    updated_at TEXT
+)
+"""
+
 _ORDERS_DDL = """
 CREATE TABLE IF NOT EXISTS marketplace_orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,6 +172,7 @@ def seed_production_listings(cur, *, owner=PRODUCTION_SELLER_ID, extra_owner=Non
     """
     owner = int(owner)
     cur.execute(_DDL)
+    _seed_seller(cur, owner)
     cur.execute("SELECT COUNT(*) FROM marketplace_listings")
     row = cur.fetchone()
     existing = int(row[0] if not isinstance(row, dict) else list(row.values())[0])
@@ -169,6 +189,7 @@ def seed_production_listings(cur, *, owner=PRODUCTION_SELLER_ID, extra_owner=Non
                  "2026-01-01T00:00:00", "2026-01-01T00:00:00"))
     if extra_owner is None:
         return None
+    _seed_seller(cur, int(extra_owner))
     foreign_id = 99
     cur.execute(
         "INSERT INTO marketplace_listings (id, seller_user_id, title, category, "
@@ -179,6 +200,28 @@ def seed_production_listings(cur, *, owner=PRODUCTION_SELLER_ID, extra_owner=Non
          "published", "approved", "physical", "physical", "shipping", "USD", 1,
          "2026-01-01T00:00:00", "2026-01-01T00:00:00"))
     return foreign_id
+
+
+def _seed_seller(cur, user_id):
+    """Give a listings owner the approved, named seller record production gives it.
+
+    Approved and named, not pending and blank. These six rows model a catalogue a
+    buyer can reach, and in production they are reachable *because* their owner is
+    an approved seller with a store name -- two of the four rules
+    :data:`lifecycle.PUBLICATION_RULES` checks. Seeding the table empty would make
+    every publication count answer zero for a reason that has nothing to do with
+    the listings, which is the failure mode where a test passes by asserting the
+    right number for the wrong reason.
+
+    A suite that wants the unhappy path updates this row; the six listings already
+    cover unpublished and unapproved on the listing side.
+    """
+    cur.execute(_SELLERS_DDL)
+    cur.execute(
+        "INSERT OR IGNORE INTO marketplace_sellers "
+        "(user_id, display_name, status, created_at, updated_at) VALUES (?,?,?,?,?)",
+        (int(user_id), "Production Test Store", "approved",
+         "2026-01-01T00:00:00", "2026-01-01T00:00:00"))
 
 
 def seed_orders_table(cur):

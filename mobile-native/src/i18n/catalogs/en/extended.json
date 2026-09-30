@@ -1211,6 +1211,32 @@
         "from_sellers_you_follow": "From sellers you follow",
         "new_to_marketplace": "New to Marketplace",
         "popular": "Popular"
+      },
+      "tagging": {
+        "open": "Tag products",
+        "title": "Your products",
+        "subtitle": "Choose what this post is about",
+        "cap": "Up to {{max}} per post",
+        "selected": "{{selected}} of {{max}} selected",
+        "loading": "Loading your products…",
+        "empty": "You don't have any products yet",
+        "emptyHint": "Products you list on Marketplace appear here.",
+        "error": "We couldn't load your products",
+        "errorHint": "That's not the same as having none. Please try again.",
+        "retry": "Try again",
+        "wontShow": "Won't be shown",
+        "wontShowHint": "You can tag it, but shoppers won't see it until this is fixed.",
+        "done": "Done",
+        "blocked": {
+          "not_purchasable": "Not available to buy",
+          "no_cover_image": "Needs a cover photo",
+          "no_resolvable_price": "Needs a price",
+          "moderation_flagged": "Under review",
+          "listing_risk": "Not eligible to be shown",
+          "seller_risk": "Your store is not eligible to be shown",
+          "unknown_reason": "Cannot be shown right now"
+        },
+        "cleared": "Product tags removed: only feed posts carry them."
       }
     },
     "marketplace": {
@@ -1369,7 +1395,9 @@
         "paused": "Paused",
         "draft": "Draft",
         "rejected": "Rejected"
-      }
+      },
+      "dropshipping": "Imported products",
+      "dropshippingCopy": "Products you imported from a supplier, including anything still waiting on review."
     },
     "orders": {
       "title": "Orders",

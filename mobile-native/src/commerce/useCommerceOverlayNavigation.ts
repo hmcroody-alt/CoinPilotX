@@ -61,12 +61,18 @@ export function useCommerceOverlayNavigation(navigation: NativeRouteNavigation):
   // PulseDrop ones.
   return useMemo(
     () => ({
-      // The CTA route is authoritative when present; the product route is the
-      // fallback for a payload whose CTA is a bare label. Both are server-side
-      // spellings of the same destination, so preferring either is safe — but
-      // preferring the CTA's means the button goes where the button says.
+      // `cta.route` is the only route to the product. There is no second one.
+      //
+      // This read `commerce.cta?.route || commerce.product?.route` until
+      // 2026-09-28, described as a fallback "for a payload whose CTA is a bare
+      // label". No such payload exists: `_product` in
+      // `services/pulsedrop/hydration.py` has never emitted a `route`, so the
+      // right-hand side was always `undefined` and the fallback never once
+      // fired. Removed rather than kept as insurance, because a safety net that
+      // cannot catch anything is worse than none — it tells the next reader
+      // that an empty `cta.route` still has somewhere to go, and it does not.
       onOpenCommerceProduct: (commerce: PulseCommerceOverlay) =>
-        openCommerceRoute(navigation, commerce.cta?.route || commerce.product?.route),
+        openCommerceRoute(navigation, commerce.cta?.route),
       // Deliberately a different destination. PulseDrop publishes, the seller
       // sells, and one tap that did both would make the two accounts look like
       // one — which is the attribution the whole payload exists to keep apart.

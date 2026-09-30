@@ -325,6 +325,18 @@ top: calc(100% + 10px);
 right: 0;
 z-index: 58;
 width: min(320px, calc(100vw - 28px));
+/* Both shells open their page CSS with `* { max-width: 100% }`, an overflow
+   guard aimed at images and embeds. This panel is absolutely positioned inside
+   the `position: relative` <details> that holds the word "Apps", so for it
+   `100%` means 82px: the 320px above was clamped to the width of the summary
+   and all twenty destinations rendered at 28px, one clipped letter each. The
+   links were in the DOM, focusable, and unreadable -- so the Apps menu, which
+   is where twenty of the top bar's twenty-six destinations live, was navigation
+   nobody could use. `max-width` is a different property from `width`, so the
+   selector's specificity never entered into it; nothing here declared one, and
+   the universal rule was the only declaration in play. */
+max-width: none;
+
 display: grid;
 grid-template-columns: repeat(2, minmax(0, 1fr));
 gap: 8px;

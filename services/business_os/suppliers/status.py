@@ -162,6 +162,10 @@ def _for_connection(connection, business_id, store_id, actor_user_id, *, context
         "products": {
             "imported": counts["imported"],
             "published": counts["published"],
+            # Both, because they answer different questions and the client shows
+            # the second one: `published` is the decision, `live` is whether a
+            # buyer can reach it. See `drafts.status_counts`.
+            "live": counts["live"],
             "awaiting_review": counts["awaiting_review"],
             "draft": counts["draft"],
             "blocked": counts["blocked"],

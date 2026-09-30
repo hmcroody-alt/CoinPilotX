@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#030914">
   <title>PulseSoc Messenger V3 | PulseSoc</title>
   <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a">
-  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=emoji-primitive-20260927a">
+  <link rel="stylesheet" href="/static/css/pulse_messages_v2.css?v=messenger-desktop-nav-20260927a">
   <link rel="stylesheet" href="/static/css/pulse_messenger_media_viewer.css?v=media-viewer-20260704a">
 </head>
 <body data-comm-v2-enabled="{{ 'true' if enabled else 'false' }}">
@@ -33,6 +33,30 @@
         </span>
         <button class="icon-btn icon-btn-primary" type="button" data-open-new-chat title="New chat" aria-label="Start a new chat">+</button>
       </header>
+
+      {#
+        The floating dock at the bottom of this file is the phone's primary
+        navigation, and it carries four destinations -- Home, Reels, Create,
+        Profile -- that appear nowhere else on this page. Measured on the
+        rendered page: outside that dock the whole messenger offers exactly one
+        app-level link, `/pulse`. So the dock could not simply be hidden at
+        desktop the way Home's was; hiding it alone would have deleted four
+        destinations, which is the dead-navigation failure this mission is
+        against.
+
+        This is the same five destinations in the shape a desktop already uses:
+        a row in the column the messenger owns, under the brand that is
+        conceptually the same link. It replaces the dock rather than duplicating
+        it -- the two never render together, which the stylesheet enforces at
+        one shared breakpoint and the guard test pins in both directions.
+      #}
+      <nav class="messenger-app-nav" aria-label="PulseSoc primary navigation">
+        <a href="/pulse"><span aria-hidden="true">&#8962;</span><small>Home</small></a>
+        <a href="/pulse/reels"><span aria-hidden="true">&#9654;</span><small>Reels</small></a>
+        <a href="/pulse#create"><span aria-hidden="true">+</span><small>Create</small></a>
+        <a class="is-active" href="/pulse/messages" aria-current="page"><span aria-hidden="true">&#9993;</span><small>Messages</small></a>
+        <a href="/pulse/profile"><span aria-hidden="true">&#9679;</span><small>Profile</small></a>
+      </nav>
 
       <div class="comm-search-row">
         <div class="comm-search">
@@ -369,11 +393,11 @@
   <script src="/static/js/pulse_messenger_media_viewer.js?v=media-viewer-20260704a" defer></script>
   <script src="/static/js/pulse_realtime.js?v=web-capacity-20260619a" defer></script>
   <script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script>
-  <script src="/static/js/pulse_i18n.js?v=call-language-v4-20260703" defer></script>
+  <script src="/static/js/pulse_i18n.js?v=cache-sweep-20260928a" defer></script>
   <!-- THE emoji picker, shared with the iOS app. The 514KB dataset it reads is
        fetched lazily on first open, so this tag costs the page nothing until
        someone actually reaches for an emoji. -->
-  <script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927a" defer></script>
+  <script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script>
   <script src="/static/js/pulse_messages_v2.js?v=emoji-primitive-20260927a" defer></script>
 </body>
 </html>

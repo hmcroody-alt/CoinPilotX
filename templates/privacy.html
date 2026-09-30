@@ -1,4 +1,4 @@
-{% from "_app_link_cta.html" import app_cta, app_store_badge with context %}
+{% from "_app_link_cta.html" import app_open_cta, app_store_badge with context %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -28,7 +28,7 @@
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='brand/pulsesoc-apple-touch-icon-20260913.png') }}" />
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a" />
-  <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
+  <link rel="stylesheet" href="/static/css/pulse_design_system.css?v=shell-nav-20260909a" />
   <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
   <link rel="stylesheet" href="/static/css/pulse_app_cta.css" />
   {% if ga_measurement_id %}
@@ -324,7 +324,7 @@
         <p class="app-cta-title">PulseSoc for iPhone</p>
         <p class="app-cta-note">Same account, same data, and the same policy above — the app is covered by this privacy policy exactly as the website is.</p>
         <div class="app-cta-actions">
-          {{ app_cta("home", source="web", classes="button primary") }}
+          {{ app_open_cta("home", source="web", classes="button primary") }}
           {{ app_store_badge() }}
         </div>
       </aside>

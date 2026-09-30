@@ -21,6 +21,7 @@ Runs against a temp sqlite file so nothing can touch coinpilotx.db.
 Run: python3 -m pytest tests/test_open_destination_interstitial.py
 """
 
+import dataclasses
 import logging
 import os
 import sys
@@ -242,6 +243,91 @@ class OpenDestinationInterstitialTest(unittest.TestCase):
             app_links.APP_SCHEME,
             self.get("/open/marketplace", headers=MAC).get_data(as_text=True),
         )
+
+    # -----------------------------------------------------------------
+    # The copy has to follow the destination
+    # -----------------------------------------------------------------
+
+    def test_a_web_first_destination_is_not_told_the_web_is_unfinished(self):
+        """The truthfulness defect, and the one a member actually hit.
+
+        This page is reached from the public product page by tapping
+        "Open in the PulseSoc app". The copy here was written when the only
+        callers were destinations with no web surface at all, so it read
+        "We are still building this experience for the web" -- said to someone
+        who is *currently reading* that experience on the web. A page that
+        denies the existence of the page you came from reads as a broken site,
+        not as an invitation to install.
+        """
+        body = self.get("/open/product/42").get_data(as_text=True)
+        self.assertNotIn("still building this experience for the web", body)
+        self.assertIn("also in the PulseSoc iPhone app", body)
+
+    def test_an_app_only_destination_keeps_the_unfinished_web_copy(self):
+        # The other half: where there really is no web page, the original
+        # sentence is true and must survive. Asserted so the fix above cannot
+        # be "delete the honest copy for everybody".
+        spec = next(
+            d
+            for d in app_links.DESTINATIONS.values()
+            if d.native_supported
+            and not d.web_equivalent
+            and not d.id_required
+        )
+        body = self.get(f"/open/{spec.key}").get_data(as_text=True)
+        self.assertIn("still building this experience for the web", body)
+
+    def test_declining_the_app_returns_to_the_resource_not_to_home(self):
+        # The back link was "/" for every destination, so a member who tapped
+        # the CTA, decided not to install, and went back lost the listing and
+        # landed on the homepage. A Home dead end on exactly the journey this
+        # surface exists to repair.
+        body = self.get("/open/product/42").get_data(as_text=True)
+        self.assertIn('class="back" href="/pulse/marketplace/42"', body)
+
+    def test_the_back_link_is_a_builder_path_never_request_input(self):
+        # It can only ever be `resolve_destination_path` output. Asserted on a
+        # hostile id, which must 404 rather than reflect.
+        self.assertEqual(self.get("/open/product/..%2f..%2fetc").status_code, 404)
+        for hostile in ("javascript:alert(1)", "//evil.example.com", "9 onload=x"):
+            response = self.get(f"/open/product/{hostile}")
+            # `//evil.example.com` is the interesting one. Werkzeug's slash
+            # merging answers it with a 308 before the view runs, so the
+            # assertion has to be about where that lands and not about the
+            # first status code. It normalises to a same-origin `/open/...`
+            # path which then 404s -- asserted explicitly, because a
+            # normaliser that preserved the leading `//` would turn this into
+            # a protocol-relative open redirect.
+            if response.status_code in (301, 302, 303, 307, 308):
+                location = response.headers["Location"]
+                self.assertRegex(location, r"^https?://localhost/open/", location)
+                response = self.get(location.split("localhost", 1)[1])
+            self.assertEqual(response.status_code, 404, hostile)
+
+    def test_an_app_only_destination_still_goes_home(self):
+        spec = next(
+            d
+            for d in app_links.DESTINATIONS.values()
+            if d.native_supported
+            and not d.web_equivalent
+            and not d.id_required
+        )
+        body = self.get(f"/open/{spec.key}").get_data(as_text=True)
+        self.assertIn('class="back" href="/"', body)
+
+    def test_mutation_the_copy_branch_reads_the_registry(self):
+        # If the branch were keyed off the destination name or the presence of
+        # an id instead of `web_equivalent`, flipping the flag would change
+        # nothing and the two assertions above would be pinning coincidences.
+        import unittest.mock as mock
+
+        spec = app_links.DESTINATIONS["product"]
+        with mock.patch.dict(
+            app_links.DESTINATIONS,
+            {"product": dataclasses.replace(spec, web_equivalent=False)},
+        ):
+            body = self.get("/open/product/42").get_data(as_text=True)
+        self.assertIn("still building this experience for the web", body)
 
     def test_the_route_is_actually_registered(self):
         rules = {

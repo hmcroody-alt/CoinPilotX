@@ -417,6 +417,95 @@ def test_the_gallery_is_capped():
     assert len(mw.gallery_items(payload, limit=8)) == 8
 
 
+def _css_block(css, selector):
+    """The body of the first rule whose selector list contains `selector`.
+
+    Brace-counted rather than matched with `[^}]*`, so a nested block inside a
+    media query cannot truncate the answer at the wrong `}`.
+    """
+    for match in re.finditer(re.escape(selector) + r"\s*\{", css):
+        depth, index = 1, match.end()
+        while depth and index < len(css):
+            depth += {"{": 1, "}": -1}.get(css[index], 0)
+            index += 1
+        return css[match.end():index - 1]
+    return None
+
+
+def test_a_gallery_arrow_is_not_widened_by_the_shells_phone_button_rule():
+    """The arrows sit in a row and must not obey a rule written for a stack.
+
+    `pulse_mobile_system.css` gives every `button` on the site `width: 100%`
+    below 768px. That is right for an action that stacks and wrong for a
+    control with siblings: on a 390px screen the two gallery arrows grew to
+    172px each, took the whole row between them, and left the counter 11px in
+    which to render "1 / 3" -- so it wrapped onto three lines.
+
+    The shell rule is deliberately not narrowed; pages outside the storefront
+    still lean on it. The storefront opts its own arrows out instead, and two
+    class names outrank a bare `button` with no need for `!important`.
+    """
+    with open(os.path.join(ROOT, "static/css/pulse_mobile_system.css"), encoding="utf-8") as handle:
+        shell = handle.read()
+    phone = _css_block(shell, "@media (max-width: 768px)")
+    assert phone, "the shell's phone breakpoint is gone; this override's premise needs rechecking"
+    # The premise, asserted rather than assumed. If the shell ever stops
+    # stretching bare buttons this override becomes dead weight, and whoever
+    # removes the shell rule should be the one told about it.
+    stretched = _css_block(phone, "button")
+    assert stretched and "width: 100%" in stretched, (
+        "the shell rule this override exists to beat is gone")
+
+    with open(os.path.join(ROOT, "static/css/pulse_marketplace.css"), encoding="utf-8") as handle:
+        css = handle.read()
+    override = _css_block(css, ".mkt-gallery-nav .mkt-ghost")
+    assert override, "the arrows are left to the shell's full-width rule"
+    assert "width:" in override and "100%" not in override
+    counter = _css_block(css, ".mkt-gallery-counter")
+    assert "nowrap" in counter, "the counter can still lose its line to a squeeze"
+
+
+def test_a_thumbnail_is_sized_by_a_rule_that_can_actually_apply_to_it():
+    """The rail's flex items are the `<li>`s, not the anchors inside them.
+
+    `.mkt-gallery-thumb` declared `flex: 0 0 auto; width: 64px` on an `<a>` that
+    was neither a flex child nor a block box, so both declarations were inert:
+    `flex` belonged to the wrapper and `width` does not apply to an inline
+    element at all. The thumbs took their size from the image instead, and the
+    anchor's border painted on the line box -- a stray vertical rule taller
+    than the picture, beside every thumbnail.
+
+    Asserted as the pair it has to be. Sizing the anchor without making it a
+    block, or making it a block while leaving the wrapper unsized, each puts
+    the rail back where it was.
+    """
+    with open(os.path.join(ROOT, "static/css/pulse_marketplace.css"), encoding="utf-8") as handle:
+        css = handle.read()
+    item = _css_block(css, ".mkt-gallery-rail > li")
+    assert item and "flex:" in item, "the rail's real flex item carries no sizing"
+    thumb = _css_block(css, ".mkt-gallery-thumb")
+    assert "width:" in thumb, "the thumbnail has no width of its own"
+    assert re.search(r"display:\s*(block|flex|grid|inline-block|inline-flex)", thumb), (
+        "an inline anchor ignores the width above it")
+
+
+def test_a_thumbnail_is_announced_as_a_tab_of_its_rail():
+    """A `tablist` has to own its `tab` children directly.
+
+    The `<li>` wrapper keeps the rail a real list in markup, but left unmarked
+    it lands between the two as a generic element and breaks the relationship,
+    so the thumbs are announced without their position in the set.
+    """
+    items = mw.gallery_items({"gallery_json": json.dumps(
+        ["https://cdn/a.jpg", "https://cdn/b.jpg"])})
+    html = sf.gallery_html(items, title="Sock")
+    assert html.count('<li role="presentation">') == 2
+    # Paired with the positive case, so a rail that stopped emitting tabs
+    # altogether could not pass the line above by having nothing to wrap.
+    assert html.count('role="tab"') == 2
+    assert 'role="tablist"' in html
+
+
 def test_a_card_emits_no_empty_element_for_a_field_it_has_no_data_for():
     """Omission has to be real omission, not an empty box.
 
@@ -558,27 +647,87 @@ def test_a_badge_variant_tints_the_scrim_instead_of_replacing_it():
 
     Variants now set only `--mkt-badge-tint`; the scrim lives on
     `background-color`, which a tint cannot reach.
+
+    What this asserts is the *invariant*, not the palette. The scrim's value
+    moved from a literal `rgba(6,16,27,.72)` to `--store-badge-scrim` when the
+    storefront went light, and pinning the old literal here would have failed
+    for a change that kept the badge exactly as legible. The property that
+    actually prevents the bug is structural: a variant may be tint-only (and
+    keep the scrim) or fully opaque (and supply its own plate), but it may
+    never be *translucent over no scrim*, which is the state that put badge
+    text at 1.03:1 over a white studio photograph.
     """
     with open(os.path.join(ROOT, "static/css/pulse_marketplace.css"), encoding="utf-8") as handle:
         css = handle.read()
-    base = re.search(r"\n\.mkt-badge\s*\{(.*?)\}", css, re.S)
+    base = re.search(r"\n\.mkt-badge\s*\{(.*?)\n\}", css, re.S)
     assert base, "the base badge rule vanished; this test is measuring nothing"
-    assert "background-color: rgba(6, 16, 27" in base.group(1), "the scrim is gone"
+    # The scrim is still a `background-color` (a tint sets `background-image`,
+    # so it structurally cannot reach this), and it is still near-opaque.
+    scrim = re.search(r"background-color:\s*var\((--[a-z-]*scrim)\)", base.group(1))
+    assert scrim, (
+        "the base badge no longer sets its scrim via `background-color`; a "
+        "variant's tint can now replace the plate")
+    scrim_value = re.search(
+        re.escape(scrim.group(1)) + r"\s*:\s*([^;]+);", css)
+    assert scrim_value, f"{scrim.group(1)} is referenced but never defined"
+    alpha = re.search(r"rgba\([^)]*,\s*([0-9.]+)\s*\)", scrim_value.group(1))
+    assert alpha and float(alpha.group(1)) >= 0.8, (
+        "the badge scrim is no longer opaque enough to carry near-white text "
+        f"over an arbitrary photograph: {scrim_value.group(1).strip()}")
+    assert "--mkt-badge-tint" in base.group(1), (
+        "the base rule no longer renders the per-variant tint layer")
 
-    for variant in ("is-new", "is-digital"):
-        rule = re.search(r"\.mkt-badge\.%s\s*\{(.*?)\}" % variant, css, re.S)
-        assert rule, f"{variant} vanished; this test is measuring nothing"
-        body = rule.group(1)
-        assert "--mkt-badge-tint" in body, f"{variant} no longer tints"
+    # Every variant, classified. `tint` keeps the scrim; `opaque` replaces it
+    # with a solid plate of its own. Nothing is allowed to be neither.
+    tint = {"is-digital"}
+    opaque = {"is-featured", "is-new"}
+    # `is-quiet` is the `_BADGE_CLASS` fallback and only recolours text, so it
+    # inherits the scrim untouched -- it sets no background at all.
+    text_only = {"is-quiet"}
+
+    found = set(re.findall(r"\.mkt-badge\.(is-[a-z-]+)\s*\{", css))
+    assert found == tint | opaque | text_only, (
+        "the badge variant set changed; classify the new one as tint-only, "
+        f"opaque or text-only before this test can guard it: {found}")
+
+    for variant in sorted(found):
+        body = re.search(
+            r"\.mkt-badge\.%s\s*\{(.*?)\n\}" % variant, css, re.S).group(1)
+        # The shorthand is the exact mechanism of the original bug: it resets
+        # `background-image` *and* `background-color` in one go.
         assert not re.search(r"(?<!-)\bbackground\s*:", body), (
-            f"{variant} sets the `background` shorthand again, which drops the "
-            "scrim and makes the badge illegible over a light photograph")
+            f"{variant} sets the `background` shorthand, which drops the scrim "
+            "and makes the badge illegible over a light photograph")
 
-    # `is-featured` is opaque and carries dark text, so it may replace both
-    # layers -- asserted so the loop above is not silently widened to include it.
-    featured = re.search(r"\.mkt-badge\.is-featured\s*\{(.*?)\}", css, re.S)
-    assert featured and "background: linear-gradient" in featured.group(1)
-    assert "--text-on-action" in featured.group(1)
+        if variant in tint:
+            assert "--mkt-badge-tint" in body, f"{variant} no longer tints"
+            assert "background-color" not in body, (
+                f"{variant} is tint-only but sets a background-color, so it is "
+                "painting over the scrim it is supposed to sit on")
+        elif variant in opaque:
+            # Opaque variants may drop the scrim, but only by being genuinely
+            # opaque -- a hex or a fully-opaque token, never an rgba() wash.
+            assert "background-image: none" in body, (
+                f"{variant} is opaque but leaves the tint layer live")
+            colour = re.search(r"background-color:\s*([^;]+);", body)
+            assert colour, f"{variant} is opaque but sets no plate"
+            ref = re.match(r"var\((--[a-z-]+)\)", colour.group(1).strip())
+            assert ref, (
+                f"{variant} should take its plate from a --store-* token, got "
+                f"{colour.group(1).strip()}")
+            resolved = re.search(re.escape(ref.group(1)) + r"\s*:\s*([^;]+);", css)
+            assert resolved, f"{ref.group(1)} is referenced but never defined"
+            assert "rgba" not in resolved.group(1), (
+                f"{variant} drops the scrim for a translucent plate "
+                f"({resolved.group(1).strip()}) -- that is the original bug")
+        else:
+            assert "background" not in body, (
+                f"{variant} is meant to recolour text only")
+            # And its text colour must be an on-dark one, because it is sitting
+            # on the scrim rather than on the light card.
+            assert "on-dark" in body, (
+                f"{variant} keeps the dark scrim, so a light-theme text token "
+                "here would be near-invisible; use an on-dark token")
 
 
 def test_a_video_does_not_autoplay_or_preload():
@@ -890,6 +1039,114 @@ def test_variant_option_values_are_escaped_where_they_are_rendered():
     html = sf.options_html(groups, {})
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;" in html
+
+
+# --- the vocabulary the picker and the payload have to share ----------------
+#
+# The server speaks two names for one option group and the page needs both.
+# `name` is the query-string parameter, slugified so it can survive a URL:
+# "Color" becomes `opt_color`. The variant payload keys `options` by the raw
+# group name the seller typed, because that is what a variant row contains.
+#
+# For a while the script compared one against the other, so `options["opt_color"]`
+# was undefined on every row, no combination was ever reachable, and every option
+# rendered disabled and struck through -- a product whose entire catalogue looked
+# sold out, on the one control the page exists to offer. The markup was right,
+# the payload was right, and the two never met.
+#
+# The fix carries the raw key on the element rather than re-implementing the
+# slug in JavaScript, so these tests pin the carrier and pin that the second
+# slugifier stayed unwritten.
+
+JS_PATH = os.path.join(ROOT, "static", "js", "pulse_marketplace.js")
+
+
+def _js():
+    """The script with its comments removed.
+
+    The same care `_literal_strings` takes with this module's Python. The fix
+    is documented in a block comment that *quotes* the parameter name it exists
+    to explain -- "Color" becomes `opt_color` -- so a raw text scan reads the
+    explanation as the thing it warns about and fails on the corrected file.
+
+    Strings are left alone: this file's JavaScript has no regex literal and no
+    `//` inside a string, so the crude pass below is safe here and would be
+    worth replacing the moment either appears.
+    """
+    with open(JS_PATH, encoding="utf-8") as fh:
+        source = fh.read()
+    source = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
+    return re.sub(r"(?m)^\s*//.*$", "", source)
+
+
+def test_every_option_input_carries_the_key_the_payload_is_keyed_by():
+    """Each radio names its group twice: slugified for the URL, raw for the
+    script. Both are asserted, because dropping either one is silent."""
+    variants = [
+        {"id": 1, "status": "active", "price_cents": 1200, "variant_key": "a",
+         "options_json": opts(("Color", "Snowflake Blue"), ("Size", "M"))},
+        {"id": 2, "status": "active", "price_cents": 1300, "variant_key": "b",
+         "options_json": opts(("Color", "Snowflake Blue"), ("Size", "L"))},
+    ]
+    groups = mw.build_option_groups(variants)
+    html = sf.options_html(groups, {})
+    inputs = re.findall(r"<input[^>]*>", html)
+    assert len(inputs) == 3, "one control per value, not per variant row"
+    for tag in inputs:
+        raw = re.search(r'data-mkt-option="([^"]*)"', tag)
+        slug = re.search(r'name="([^"]*)"', tag)
+        assert raw and slug, tag
+        assert raw.group(1) in ("Color", "Size")
+        assert slug.group(1) == f"opt_{raw.group(1).lower()}"
+
+
+def test_the_raw_key_matches_the_one_the_variant_payload_uses():
+    """The two are produced by different functions from the same rows. This is
+    the join that was broken, so it is asserted against both sides rather than
+    against a literal either side could drift from."""
+    variants = [{"id": 1, "status": "active", "price_cents": 1200, "variant_key": "a",
+                 "options_json": opts(("Shade / Colour", "Rose Gold"))}]
+    groups = mw.build_option_groups(variants)
+    payload_keys = set(mw.build_variant_views(variants)[0].as_client_dict()["options"])
+    rendered = set(re.findall(r'data-mkt-option="([^"]*)"', sf.options_html(groups, {})))
+    assert rendered == payload_keys == {"Shade / Colour"}
+
+
+def test_the_key_survives_a_name_that_does_not_survive_slugification():
+    """A group whose name slugifies to nothing still has to be matchable.
+
+    `option_name` falls back to `opt_option` for it, and two such groups would
+    share that parameter -- which is a URL problem, not a picker problem, and
+    only stays a URL problem while the script reads the raw key instead.
+    """
+    variants = [
+        {"id": 1, "status": "active", "price_cents": 1200, "variant_key": "a",
+         "options_json": opts(("///", "One"))},
+    ]
+    group = mw.build_option_groups(variants)[0]
+    assert sf.option_name(group) == "opt_option", "the slug collapsed, as expected"
+    assert f'data-mkt-option="{group.key}"' in sf.options_html([group], {})
+
+
+def test_the_script_reads_the_raw_key_and_does_not_slugify_a_second_copy():
+    """A slugifier in JavaScript would have to keep agreeing with
+    `marketplace_web.slugify` forever, and the first time it disagreed the
+    symptom would be this same silent everything-disabled page."""
+    js = _js()
+    assert 'getAttribute("data-mkt-option")' in js
+    assert "opt_" not in js, "the client must never construct the parameter name"
+
+
+def test_the_stylesheet_still_strikes_a_disabled_option_through():
+    """The half of this defect that was never wrong.
+
+    Showing an unreachable combination struck through beats hiding it -- but
+    only while `disabled` means unreachable. The rule is pinned here so that a
+    future reader who finds a page full of struck-through options looks at the
+    script, which was where the fault was, rather than deleting this.
+    """
+    assert any("line-through" in block
+               for block in _declarations_for(_css(), ".mkt-option input:disabled + label"))
 
 
 # ---------------------------------------------------------------------------
@@ -1210,3 +1467,166 @@ def test_storefront_headings_restate_their_size_against_the_shells_scale():
         "size !important under (max-width: 768px) in pulse_marketplace.css, "
         "or add it to SHELL_DISPLAY_SCALE_IS_WANTED_BY and say why."
     )
+
+
+# ---------------------------------------------------------------------------
+# 12. A column default is not a seller's answer
+#
+# `bot.py` declares `delivery_type TEXT DEFAULT 'digital'`. Almost every row in
+# the catalogue carries that default because nobody was ever asked, so the
+# column reads "digital" for aerosol tyre spray, denim jackets and duvet covers
+# alike -- and `fulfilment_html` printed it verbatim, directly under a "Product
+# type: physical" line the same table had just produced.
+#
+# That is the most dangerous class of fabrication this storefront can commit,
+# and the one hardest to see: unlike a star rating, it is a real column being
+# read faithfully. The value was true to the database and false about the
+# product. Section 1 above catches copy that no column can source; nothing
+# there could catch a column sourcing the wrong answer.
+#
+# So the rule is narrow. `delivery_type` is not corrected, inferred or
+# defaulted -- it is *omitted* where it contradicts the kind of thing being
+# sold, which is the honest rendering of a question the seller never answered.
+# Where the two agree, or where no kind was recorded at all, it prints
+# unchanged. The precedence -- `listing_type or product_type` first,
+# `delivery_type` last -- is the one `bot.py` already applies to this column.
+# ---------------------------------------------------------------------------
+
+DELIVERY_ROW = "<dt>Delivery</dt>"
+TYPE_ROW = "<dt>Product type</dt>"
+
+
+def test_a_physical_product_is_not_advertised_as_a_download():
+    """The defect, stated as its symptom. Both rows were rendered together."""
+    html = sf.fulfilment_html({"product_type": "physical", "delivery_type": "digital"})
+    assert TYPE_ROW in html, "the type is a real answer and still prints"
+    assert DELIVERY_ROW not in html
+
+
+@pytest.mark.parametrize("kind,delivery", [
+    ("Physical", "digital"),
+    ("shipped", "digital"),
+    ("pickup", "download"),
+    ("PHYSICAL", "DIGITAL"),
+])
+def test_the_contradiction_is_caught_however_either_side_is_spelled(kind, delivery):
+    """Both columns are free text written by importers, not an enum."""
+    assert DELIVERY_ROW not in sf.fulfilment_html(
+        {"product_type": kind, "delivery_type": delivery})
+
+
+@pytest.mark.parametrize("label,row", [
+    ("they agree", {"product_type": "digital", "delivery_type": "digital"}),
+    ("no kind was recorded", {"delivery_type": "digital"}),
+    ("a physical kind delivered physically", {"product_type": "physical",
+                                              "delivery_type": "shipped"}),
+    ("a real answer the column default cannot explain",
+     {"product_type": "physical", "delivery_type": "Ships in 3-5 days"}),
+    ("a digital kind delivered digitally", {"product_type": "course",
+                                            "delivery_type": "download"}),
+])
+def test_everything_that_does_not_contradict_still_prints(label, row):
+    """The paired positive cases.
+
+    An omission rule is easy to write in a way that omits everything and passes
+    the test above forever. The last case matters most: an answer the seller
+    really did type is not one the column default could have produced, and
+    suppressing it would lose the only delivery fact this catalogue has.
+    """
+    assert DELIVERY_ROW in sf.fulfilment_html(row)
+
+
+def test_listing_type_outranks_product_type_the_way_the_rest_of_the_code_says():
+    """`bot.py:20985` resolves a listing's kind as
+    `listing_type or product_type or delivery_type`. A second precedence here
+    would make one page disagree with the lifecycle about what a product is."""
+    contradicted = {"listing_type": "physical", "product_type": "digital",
+                    "delivery_type": "digital"}
+    assert DELIVERY_ROW not in sf.fulfilment_html(contradicted)
+    assert DELIVERY_ROW in sf.fulfilment_html({**contradicted, "listing_type": "digital"})
+
+
+def test_no_delivery_window_is_ever_invented():
+    """`estimated_delivery` is empty on every production row, and "3-7 business
+    days" is the reference mockup's single most quotable fabrication."""
+    assert "Estimated delivery" not in sf.fulfilment_html(
+        {"product_type": "physical", "delivery_type": "shipped"})
+    assert "Estimated delivery" in sf.fulfilment_html(
+        {"estimated_delivery": "Arrives by 12 October"}), (
+        "the row is suppressed by absence, not removed from the renderer")
+
+
+def test_the_panel_survives_a_row_that_answers_nothing():
+    """The platform's own payment policy is not a seller fact and still
+    prints, so the section is never an empty box."""
+    html = sf.fulfilment_html({})
+    assert "Delivery and payment" in html
+    assert "mkt-facts" not in html, "an empty definition list is still a visible gap"
+
+
+# --- asset cache tokens -----------------------------------------------------
+#
+# These two live here rather than in a protection suite because the thing they
+# guard is a constant in `marketplace_storefront`, and the cost of getting it
+# wrong is silent: the fix deploys, the origin serves the new bytes, and the
+# browsers that needed it never ask for them.
+
+#: sha256 prefixes of the two assets whose URLs carry a hand-bumped `?v=`.
+#: Update these *and* the token in the same commit. See the docstring on
+#: `CSS_HREF` for why the pair has to move together.
+ASSET_DIGESTS = {
+    "static/css/pulse_marketplace.css": "fd62405f07d9",
+    "static/js/pulse_marketplace.js": "d2d20c58cd87",
+}
+
+#: The token those digests were recorded against.
+ASSET_TOKEN = "storefront-20260928b"
+
+
+def test_editing_a_storefront_asset_forces_its_cache_token_to_move():
+    """The gate for a bug this branch actually shipped.
+
+    `pulse_marketplace.js` gained the variant resolver and `pulse_marketplace.css`
+    the option-group rules, and the token stayed at `storefront-20260927a` -- which
+    #84 had already deployed. Both files are served `max-age=31536000, immutable`,
+    so a returning visitor keeps the old script for a year and never revalidates.
+    The page then renders a picker whose radios do nothing and an add button that
+    nothing re-enables, which looks like a broken feature rather than a stale
+    cache.
+
+    A digest is the only honest trigger here. Comparing mtimes or asking git
+    would pass on a fresh clone, and asserting the token merely *exists* is what
+    let the reuse through. When this fails, do both halves: bump `CSS_HREF` and
+    `JS_SRC`, then record the new digests and token below.
+    """
+    import hashlib
+
+    stale = []
+    for relative, expected in ASSET_DIGESTS.items():
+        path = os.path.join(ROOT, relative)
+        actual = hashlib.sha256(
+            open(path, "rb").read()).hexdigest()[:len(expected)]
+        if actual != expected:
+            stale.append(f"{relative}: recorded {expected}, on disk {actual}")
+    assert not stale, (
+        "a versioned storefront asset changed without its cache token being "
+        "bumped:\n  " + "\n  ".join(stale) + "\n"
+        f"Bump CSS_HREF/JS_SRC off {ASSET_TOKEN!r} in "
+        "services/marketplace_storefront.py, then update ASSET_DIGESTS and "
+        "ASSET_TOKEN here to match."
+    )
+
+
+def test_both_asset_urls_carry_the_token_the_digests_were_recorded_against():
+    """Keeps the two halves of the test above from drifting apart.
+
+    Without this, someone could bump the token, forget the digests, and the
+    digest test would go on guarding a token that is no longer served -- or
+    update the digests without bumping the token, which is the original bug
+    wearing a green suite.
+    """
+    assert f"?v={ASSET_TOKEN}" in sf.CSS_HREF, sf.CSS_HREF
+    assert f"?v={ASSET_TOKEN}" in sf.JS_SRC, sf.JS_SRC
+    # Same token on both, because one page loads both and a half-bumped pair
+    # gives the new CSS to a browser still running the old JS.
+    assert sf.CSS_HREF.split("?v=")[1] == sf.JS_SRC.split("?v=")[1]

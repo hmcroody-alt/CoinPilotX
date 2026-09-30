@@ -529,7 +529,27 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("MarketplaceCreateGateway", { title: t("common:screens.createListing") })}>
             <Text style={styles.secondaryText}>{t("common:screens.createListing")}</Text>
           </Pressable>
+          {/* The only way into the dropshipping hub from a screen a merchant can
+              actually reach. The hub's other entry point is a tile on
+              `StoreDashboardScreen`, which is registered in no navigator, so
+              until this button existed an imported product could be created but
+              never opened — the products screen was reachable only by a route
+              name nothing called.
+
+              It belongs in this panel rather than beside the application or the
+              payout rows because importing is listing management: these products
+              become marketplace listings, and the rows below are where the
+              merchant already looks for them. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityHint="Opens the dropshipping hub, where you can import products from a supplier and open the ones waiting on review"
+            style={styles.secondaryButton}
+            onPress={() => navigation.navigate("Dropshipping", { title: t("commerce:marketplace.dropshipping") })}
+          >
+            <Text style={styles.secondaryText}>{t("commerce:marketplace.dropshipping")}</Text>
+          </Pressable>
         </View>
+        <Text style={styles.copy}>{t("commerce:marketplace.dropshippingCopy")}</Text>
         {listings.slice(0, 5).map((listing) => (
           <ListingRow key={listing.id} listing={listing} onOpen={() => navigation.navigate("MarketplaceDetail", { listingId: listing.id, title: listing.title || t("commerce:marketplace.title") })} />
         ))}

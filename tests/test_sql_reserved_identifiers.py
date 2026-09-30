@@ -69,6 +69,51 @@ _BARE_INDEX_COL_RE = re.compile(
     r'^\s*(")?([A-Za-z_]\w*)\1?\s*(?:ASC|DESC)?\s*(?:NULLS\s+(?:FIRST|LAST))?\s*$', re.I)
 
 
+def _strip_sql_comments(sql):
+    """Blank out ``--`` and ``/* */`` comments, preserving every offset.
+
+    The DDL in this repo is commented heavily *inside* the CREATE TABLE body, and a
+    comment is not a column definition. Reading it as one goes wrong in both
+    directions: prose containing a keyword ("..., as opposed to ...") was reported as a
+    column named ``as``, and -- much worse -- a genuinely reserved column on the line
+    *after* a comment was skipped entirely, because the segment then started with ``-``
+    and matched no identifier at all. So the scanner cried wolf and went blind on the
+    same input.
+
+    Replacing with spaces rather than deleting keeps the comma structure and every
+    index intact, so ``_balanced_body`` and ``_split_top_level`` are unaffected.
+    Single-quoted literals are stepped over, since ``DEFAULT '--'`` is data.
+    """
+    out = list(sql)
+    i, n = 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch == "'":
+            i += 1
+            while i < n:
+                if sql[i] == "'":
+                    if i + 1 < n and sql[i + 1] == "'":  # '' is an escaped quote
+                        i += 2
+                        continue
+                    break
+                i += 1
+            i += 1
+        elif sql.startswith("--", i):
+            while i < n and sql[i] != "\n":
+                out[i] = " "
+                i += 1
+        elif sql.startswith("/*", i):
+            end = sql.find("*/", i + 2)
+            end = n if end == -1 else end + 2
+            for j in range(i, end):
+                if sql[j] != "\n":
+                    out[j] = " "
+            i = end
+        else:
+            i += 1
+    return "".join(out)
+
+
 def _balanced_body(sql, open_paren_idx):
     """Text inside the parenthesis opening at ``open_paren_idx`` ("" if unbalanced)."""
     depth = 0
@@ -125,6 +170,7 @@ def _indexed_columns(sql, match):
 
 def scan_sql(sql, origin="<sql>"):
     """``[(origin, table, identifier), ...]`` for every reserved bare identifier."""
+    sql = _strip_sql_comments(sql)
     found = []
     for match in _CREATE_TABLE_RE.finditer(sql):
         table = match.group(1)
@@ -250,6 +296,62 @@ def test_quoted_identifier_is_an_explicit_opt_out():
     assert scan_sql(ddl) == []
 
 
+def test_prose_in_a_comment_is_not_a_column():
+    """The DDL here is commented inside the body, and comments contain English.
+
+    ``commerce_discovery_placements`` was reported as declaring a column named ``as``
+    on the strength of the phrase "as opposed to" in a ``--`` comment. A guard that
+    fails on correct schema is one somebody deletes.
+    """
+    ddl = """
+        CREATE TABLE t (
+            reason_code TEXT,
+            -- How the product got here (`relationship.py`), as opposed to who
+            -- funded it, or what the buyer is told. Also declared elsewhere.
+            relationship TEXT
+        )
+    """
+    assert scan_sql(ddl) == []
+
+
+def test_a_reserved_column_after_a_comment_is_still_caught():
+    """The half that made the same defect a *silent* one.
+
+    With comments left in place the segment for this column began with ``-``, matched
+    no identifier, and was dropped -- so commenting a column was enough to hide a
+    reserved name from the guard. That is the failure this file exists to prevent,
+    reachable by adding a line of documentation.
+    """
+    ddl = """
+        CREATE TABLE t (
+            a TEXT,
+            -- a note about the next column
+            window TEXT NOT NULL
+        )
+    """
+    assert [f[2] for f in scan_sql(ddl)] == ["window"]
+
+
+def test_a_comment_marker_inside_a_string_literal_is_not_a_comment():
+    """``DEFAULT '--'`` is data. Stripping from there would eat the rest of the body."""
+    ddl = """
+        CREATE TABLE t (
+            sep TEXT NOT NULL DEFAULT '--',
+            window TEXT NOT NULL
+        )
+    """
+    assert [f[2] for f in scan_sql(ddl)] == ["window"]
+
+
+def test_stripping_comments_preserves_every_offset():
+    """`_balanced_body` indexes into the same string, so lengths must not shift."""
+    sql = "CREATE TABLE t ( -- note\n  a TEXT /* x */, b TEXT)"
+    stripped = _strip_sql_comments(sql)
+    assert len(stripped) == len(sql)
+    assert "note" not in stripped and "/*" not in stripped
+    assert stripped.count("\n") == sql.count("\n")
+
+
 def _run_standalone():
     tests = [
         test_scanner_flags_a_reserved_column,
@@ -257,6 +359,10 @@ def _run_standalone():
         test_table_constraints_are_not_columns,
         test_expression_index_is_not_a_column_list,
         test_quoted_identifier_is_an_explicit_opt_out,
+        test_prose_in_a_comment_is_not_a_column,
+        test_a_reserved_column_after_a_comment_is_still_caught,
+        test_a_comment_marker_inside_a_string_literal_is_not_a_comment,
+        test_stripping_comments_preserves_every_offset,
         test_no_reserved_identifier_in_any_ddl,
     ]
     passed = 0

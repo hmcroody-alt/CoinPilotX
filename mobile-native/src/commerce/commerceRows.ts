@@ -66,6 +66,7 @@
  * question.
  */
 import type { CommercePlacement } from "../api/commerceDiscovery";
+import { isPulseCommerceOverlay } from "../api/pulseCommerceOverlay";
 import type { HomeRow } from "../discovery/discoveryRows";
 
 export type CommerceRow = {
@@ -102,9 +103,71 @@ export type CommercePlacementOptions = {
   dismissedPlacementIds?: ReadonlySet<string>;
   /** Seller ids the user has told us to stop recommending, same window. */
   dismissedSellerIds?: ReadonlySet<number>;
+  /**
+   * Override the "may commerce sit next to this post?" test.
+   *
+   * Only for tests and for a caller whose posts are not the feed's shape. The
+   * default reads the server's `commerce_suitable` flag, which is the answer
+   * that matters — the client cannot derive it, because the decision needs the
+   * post's moderation status and risk score and neither is on the wire.
+   */
+  isNeighbourSuitable?: (post: unknown) => boolean;
   /** Injected so placement stays a pure function of its arguments. */
   now?: number;
 };
+
+/**
+ * Whether a commerce row may sit next to this post.
+ *
+ * `!== false`, so only an explicit `false` suppresses. That is default-allow on
+ * a missing field, and it is a deliberate choice rather than an oversight: an
+ * app build reaching a deployment whose `/api/pulse/feed` does not annotate yet
+ * would otherwise show no feed commerce at all. Native releases ship on App
+ * Store review time and the server ships in minutes, so "client newer than
+ * server" is the normal state for days at a stretch.
+ *
+ * The cost of that choice is that a server path which forgets to annotate loses
+ * the protection silently, which is why the guarantee is pinned on the server
+ * side — `tests/commerce_discovery/test_feed_posts_are_annotated.py` asserts
+ * every post in a feed page carries the key — rather than being left to this
+ * function to notice.
+ */
+export function neighbourAllowsCommerce(post: unknown): boolean {
+  if (!post || typeof post !== "object") return true;
+  return (post as { commerce_suitable?: unknown }).commerce_suitable !== false;
+}
+
+/**
+ * Whether this post is already selling a product of its own.
+ *
+ * The feed's version of `reelChipEligibility.reelSellsItsOwnProduct`, and the
+ * same argument in a different geometry. A PulseDrop Signal carries a live
+ * commerce overlay — the current price and stock of the product the post was
+ * published to sell — rendered by `PostCard` under the media. A discovery strip
+ * beside it is two shopping surfaces in one scroll frame, and because this
+ * strip's products were chosen by a ranker that never saw the neighbour's
+ * product, it is almost always offering something *else* over the thing being
+ * demonstrated. Between the two, the overlay is the one the viewer chose to look
+ * at, so the strip yields.
+ *
+ * Measured before the check existed: with PulseDrop Signals at the lead-in
+ * position and the one after it, the first strip landed sandwiched between them
+ * — three products, three shopping surfaces, one frame.
+ *
+ * Distinct from the *frequency* overlap the two curators still have (PulseDrop
+ * counts publications per platform, `commerce_discovery` counts impressions per
+ * viewer, and nothing sums them — see
+ * `docs/commerce/PULSE_COMMERCE_INTELLIGENCE_REPORT.md`). This is adjacency
+ * only, which is the half that lives in this module.
+ *
+ * Uses the canonical guard rather than re-deriving the shape: a second, weaker
+ * test that disagrees with the first is the failure `postContext.ts` already
+ * demonstrates.
+ */
+export function neighbourSellsItsOwnProduct(post: unknown): boolean {
+  if (!post || typeof post !== "object") return false;
+  return isPulseCommerceOverlay((post as { commerce?: unknown }).commerce);
+}
 
 /**
  * Defaults mirror `services/commerce_discovery/config.py`.
@@ -260,6 +323,31 @@ export function injectCommerceRows<TPost>(
     // at the next eligible position instead of being silently dropped.
     const previous = out[out.length - 1];
     if (!previous || previous.type !== "post") continue;
+
+    // Both neighbours, not just the one above. A strip reads as belonging to the
+    // post above it, which is why invariant 3 requires that row to be a post —
+    // but a product shelf directly on top of a bereavement is the same harm
+    // seen a moment earlier, and the feed scrolls in one direction only by
+    // convention. `rows[index + 1]` is always a post here: the while loop above
+    // consumed every non-post row, and the bounds check has already run.
+    //
+    // Like adjacency and unlike a dismissal, an unsuitable neighbour does not
+    // spend a slot. The post is what commerce is being kept away from, not the
+    // viewer, so the strip is offered again at the next eligible position
+    // instead of the page losing it.
+    const suitable = options.isNeighbourSuitable ?? neighbourAllowsCommerce;
+    const next = rows[index + 1];
+    if (!suitable(previous.post)) continue;
+    if (next.type === "post" && !suitable(next.post)) continue;
+
+    // A neighbour that is already selling something. Checked separately from
+    // `suitable` and never overridable, because it is a different question with
+    // the same answer: that post is not unsuitable for commerce, it *is*
+    // commerce, and one more shopping surface in the frame is the harm.
+    // Composed rather than folded into the override so a caller supplying its
+    // own suitability test cannot switch this off by accident.
+    if (neighbourSellsItsOwnProduct(previous.post)) continue;
+    if (next.type === "post" && neighbourSellsItsOwnProduct(next.post)) continue;
 
     // This slot's window, cut before dismissals are considered so that a hidden
     // product can only ever shorten its own strip. Nothing from slot 1's window

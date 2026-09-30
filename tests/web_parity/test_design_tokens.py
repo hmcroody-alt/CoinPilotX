@@ -310,8 +310,28 @@ def test_conflicting_css_vars_do_not_increase():
     )
 
 
+def without_comments(text: str) -> str:
+    """CSS with `/* ... */` removed.
+
+    `root_declarations` reads prose as CSS without this, in both directions:
+
+    * A comment that merely mentions `:root` -- "the tokens are declared on
+      `.mkt`, not on `:root`" -- lets `:root[^{]*\\{` run forward from inside
+      the comment to the next real `{`, so the following block's declarations
+      are all attributed to `:root`. `pulse_marketplace.css` documents exactly
+      that distinction and was reported as 53 `:root` overrides it does not
+      have.
+    * A `}` inside a comment truncates `(.*?)\\}`, so declarations after it in
+      a genuine `:root` block are missed. That direction loses real offenders.
+
+    Stripping first removes both. It cannot make the caller more permissive:
+    a declaration inside a comment is not a declaration.
+    """
+    return re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+
+
 def root_declarations(text):
-    for block in re.finditer(r":root[^{]*\{(.*?)\}", text, re.S):
+    for block in re.finditer(r":root[^{]*\{(.*?)\}", without_comments(text), re.S):
         for d in re.finditer(r"(--[a-z0-9-]+)\s*:\s*([^;]+);", block.group(1)):
             yield d.group(1), d.group(2).strip()
 

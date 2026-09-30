@@ -39,12 +39,30 @@ import bot  # noqa: E402
 from services import payment_provider  # noqa: E402
 
 BASE = "https://pulsesoc.com"
-_BOT_PY = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bot.py")
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_BOT_PY = os.path.join(_REPO, "bot.py")
 
-#: Every ``create_onboarding_link`` call site in bot.py, and the test helper
-#: below that drives it. Asserted to be exhaustive by
+#: The files scanned for ``create_onboarding_link`` calls.
+#:
+#: `services/seller_payment_onboarding.py` joined this list when the seller
+#: onboarding logic moved out of bot.py into one service shared by the email
+#: link, the web card and the app. Scanning only bot.py would have left this
+#: guard asserting an empty truth about the seller lane the moment that happened
+#: — the scan would still have *found* something (the rewards route) so the
+#: `assert found` tripwire below would not have caught it.
+_SCANNED_SOURCES = (
+    _BOT_PY,
+    os.path.join(_REPO, "services", "seller_payment_onboarding.py"),
+)
+
+#: Every ``create_onboarding_link`` call site in the files above, and the test
+#: helper below that drives it. Asserted to be exhaustive by
 #: ``test_every_onboarding_call_site_in_bot_py_is_covered_here``.
-COVERED_CALL_SITES = {"api_pulse_rewards_claim", "api_pulse_payouts_connect"}
+#:
+#: `start_onboarding` is reached by the POST route the tests below drive, and now
+#: also by ``GET /seller/payments/setup`` — the durable email link. Both hand it
+#: the same ``base_url``, so resolving the URLs through one resolves them for both.
+COVERED_CALL_SITES = {"api_pulse_rewards_claim", "start_onboarding"}
 
 
 # --------------------------------------------------------------------------
@@ -261,21 +279,38 @@ def test_the_providers_own_default_urls_are_also_served():
 # --------------------------------------------------------------------------
 
 def _onboarding_call_sites():
-    """Enclosing function name of every ``create_onboarding_link`` call in bot.py."""
-    with open(_BOT_PY, encoding="utf-8") as fh:
-        tree = ast.parse(fh.read())
+    """Enclosing function name of every ``create_onboarding_link`` call.
+
+    Across `_SCANNED_SOURCES`, not just bot.py, because the seller lane's call
+    site lives in `services/seller_payment_onboarding.py` now.
+    """
     sites = set()
-    for fn in ast.walk(tree):
-        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        for node in ast.walk(fn):
-            if not isinstance(node, ast.Call):
+    for path in _SCANNED_SOURCES:
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            func = node.func
-            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
-            if name == "create_onboarding_link":
-                sites.add(fn.name)
+            for node in ast.walk(fn):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+                if name == "create_onboarding_link":
+                    sites.add(fn.name)
     return sites
+
+
+def test_every_scanned_source_exists_so_the_guard_cannot_pass_vacuously():
+    """A renamed file would make the scan above find less and still be green.
+
+    `test_every_onboarding_call_site_in_bot_py_is_covered_here` compares what it
+    found against a fixed set, so a *missing* file is caught there. A file that
+    exists but was never opened is not, which is why the paths are asserted
+    rather than assumed.
+    """
+    for path in _SCANNED_SOURCES:
+        assert os.path.isfile(path), f"scanned source is missing: {path}"
 
 
 def test_every_onboarding_call_site_in_bot_py_is_covered_here():

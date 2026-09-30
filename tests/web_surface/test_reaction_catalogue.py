@@ -45,9 +45,15 @@ BOT = os.path.join(REPO, "bot.py")
 #: digest here. Updating the digest *without* bumping the token puts the bug back
 #: -- the point of recording them together is that the diff shows you doing it.
 CACHE_PINNED_ASSETS = {
+    # Re-pinned for the commerce-attachment web render (6f6526e9d). That commit
+    # did the delivery-critical half right -- it changed this file and moved
+    # bot.py to ?v=commerce-attachment-20260928a in the same commit -- and only
+    # left the pairing below unrecorded. So the stale thing was this baseline,
+    # not the shipped asset, and the procedure above is satisfied: the token
+    # moved first, the digest follows.
     "static/js/pulse_home_core.js": (
-        "reaction-catalogue-20260927h",
-        "1aeeccee65767efcd3210bfab59b4ef827a01b42fb05abe6f50132e23fa38c24",
+        "commerce-attachment-20260928a",
+        "1b54ff0e9f348c7ff7a2a1e552a5a561a3dce95d618095e6c0d15ae1dfb5c94a",
     ),
     "static/css/pulse_desktop_shell.css": (
         "reaction-catalogue-20260927h",
@@ -56,6 +62,15 @@ CACHE_PINNED_ASSETS = {
     "static/css/pulse_reaction_system.css": (
         "video-action-fit-20260927i",
         "6ff68ca37cb663b328b315dbdfcd7e63614e2dee96f996946ab2800eb18db50b",
+    ),
+    # Joined the pin when the Apps-menu width fix went in. It had sat on
+    # `shell-nav-20260909a` for eighteen days, and the fix is invisible to every
+    # other check in this repo -- the markup was always correct, only the
+    # rendered width was wrong -- so a missed token bump here would be silent
+    # twice over.
+    "static/css/pulse_desktop_feed.css": (
+        "apps-menu-width-20260927a",
+        "94bcf4e6cc11fd9a490bf8c0f41be6fc8be7ea0540e58c40bcdb9eb35ba828db",
     ),
 }
 

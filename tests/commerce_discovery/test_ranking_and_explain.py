@@ -202,7 +202,7 @@ class TestChooseReasonIsAClaimNotACaption:
             {"category": "shoes"},
             {},
             viewed_categories=["shoes"],
-            stats={"clicks": 500},
+            stats={"recent_clicks": 500},
         )
         assert reason == ranking.REASON_BECAUSE_YOU_VIEWED
 
