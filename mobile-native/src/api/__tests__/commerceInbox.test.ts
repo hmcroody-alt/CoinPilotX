@@ -3,9 +3,14 @@
  * renders. The things worth pinning outright:
  *
  * 1. CONTEXT-CHIP CONTRACT. Every CommerceLink resolves to one line, one a11y
- *    label and a deep-link that targets the OBJECT (MarketplaceDetail /
+ *    label and a deep-link that targets the OBJECT (MarketplaceProduct /
  *    BuyerOrderDetail), never the thread. The offer chip reads the SAME expiry
  *    the Marketplace mission owns — there is no second clock here.
+ *
+ *    Every listing-carrying chip asserts its `target` screen by name: all five
+ *    sites once pointed at `MarketplaceDetail`, which renders the browse grid,
+ *    and #111 repointed them without pinning three of them (accepted offer,
+ *    closed offer, open question). A silent revert is what these guard.
  * 2. BATCHED, CACHED, HONEST RESOLUTION. `resolveContextChips` never fabricates a
  *    chip with the mock flag off, resolves real associations always, caches a
  *    resolved id, and returns only ids that resolved to a link.
@@ -90,6 +95,14 @@ describe("context-chip contract", () => {
     const chip = buildContextChip({ kind: "offer", offer: offer({ state: "accepted" }) }, NOW);
     expect(chip.kind).toBe("completed");
     expect(chip.line).toContain("Offer accepted");
+    expect(chip.target).toEqual({ screen: "MarketplaceProduct", params: { listingId: 555 } });
+  });
+
+  it("deep-links a closed offer to the listing it was made on", () => {
+    const chip = buildContextChip({ kind: "offer", offer: offer({ state: "declined" }) }, NOW);
+    expect(chip.kind).toBe("question");
+    expect(chip.line).toBe("Offer declined · Aeron chair");
+    expect(chip.target).toEqual({ screen: "MarketplaceProduct", params: { listingId: 555 } });
   });
 
   it("routes an order chip to the buyer order detail", () => {
@@ -105,6 +118,15 @@ describe("context-chip contract", () => {
     );
     expect(chip.line).toBe("Sold · Desk lamp");
     expect(chip.target).toEqual({ screen: "MarketplaceProduct", params: { listingId: 7 } });
+  });
+
+  it("deep-links an open question to the listing being asked about", () => {
+    const chip = buildContextChip(
+      { kind: "question", listingId: 9, listing: "Desk lamp", priceMinor: 4500, sold: false },
+      NOW
+    );
+    expect(chip.line).toBe("Asking about · Desk lamp · $45");
+    expect(chip.target).toEqual({ screen: "MarketplaceProduct", params: { listingId: 9 } });
   });
 
   it("gives no deep-link target when the object has no reachable screen", () => {
