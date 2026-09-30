@@ -483,4 +483,17 @@ data-export request promises an emailed archive that nothing assembles (D-P2). B
 are surfaces representing a state the backend does not hold, which is the same defect
 shape as D-L2 and D-L4 — but the fix for D-P1 is a job that irreversibly destroys
 accounts on a timer, so it needs the owner and it needs counsel to draw the deletion
-scope first.
+scope first. D-P3 and D-P4 are now closed on this branch: account deletion blanks
+seven further personal-data columns and clears all four push registries, not the one
+that existed when the routine was written.
+
+§5–6 — the feature map and the user-role map — are in
+`PULSE_PRODUCT_AND_ROLE_MAP.md`. It carries one register entry of its own, **D-A1**:
+the ads product accepts, stores and displays an age range to advertisers, estimates
+its reach against `users.date_of_birth` (a column with **no writer anywhere** for
+members), and ignores age completely at delivery. The estimate says nobody, delivery
+reaches everybody. It is not fixed here because the shipped iOS wizard always sends
+`min_age >= 13`, so a server-side refusal would break campaign creation, and because
+the honest remedy — withdraw the capability or start collecting dates of birth — is
+an owner decision that first requires PulseSoc to state a minimum age, which it
+currently never does anywhere.
