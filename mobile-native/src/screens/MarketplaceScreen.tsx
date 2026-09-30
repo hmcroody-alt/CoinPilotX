@@ -166,7 +166,20 @@ export function MarketplaceScreen({ route, navigation }: Props) {
   function openInitialListing(source: MarketplaceListing[]) {
     if (!initialListingId || !navigation) return;
     const target = source.find((item) => item.id === initialListingId);
-    if (!target) return;
+    // `source` is one page of 32 rows from this grid's own search, and the id
+    // being asked for is under no obligation to be in it -- prod publishes 196
+    // listings, so most ids are not. This used to `return` when the lookup
+    // missed, which left the caller staring at the browse grid with no error
+    // and no way to tell that a specific product had been requested at all.
+    //
+    // `MarketplaceProductScreen` reads `listingId` on its own and fetches the
+    // listing when no snapshot comes with it, so the miss costs a round trip,
+    // not the destination. Hand over the snapshot when the page happens to
+    // carry it, purely so the product opens without that fetch.
+    if (!target) {
+      navigation.navigate("MarketplaceProduct", { listingId: initialListingId });
+      return;
+    }
     navigation.navigate("MarketplaceProduct", { listingId: target.id, listing: target, title: target.title });
   }
 

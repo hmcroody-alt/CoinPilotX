@@ -551,7 +551,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         </View>
         <Text style={styles.copy}>{t("commerce:marketplace.dropshippingCopy")}</Text>
         {listings.slice(0, 5).map((listing) => (
-          <ListingRow key={listing.id} listing={listing} onOpen={() => navigation.navigate("MarketplaceDetail", { listingId: listing.id, title: listing.title || t("commerce:marketplace.title") })} />
+          <ListingRow key={listing.id} listing={listing} onOpen={() => navigation.navigate("MarketplaceProduct", { listingId: listing.id, listing, title: listing.title || t("commerce:marketplace.title") })} />
         ))}
         {!listings.length ? <Text style={styles.emptyText}>{t("commerce:marketplace.noListingsLoaded")}</Text> : null}
       </Panel>

@@ -253,7 +253,7 @@ def test_the_interstitial_hands_off_to_the_app_with_the_same_listing(interstitia
     url = scheme.group(1)
     assert url.endswith(f"/{listing_id}"), url
     # The path the app actually declares. `linking.ts` maps
-    # `pulse/marketplace/:listingId` to MarketplaceDetail, and that agreement is
+    # `pulse/marketplace/:listingId` to MarketplaceProduct, and that agreement is
     # pinned in tests/web_surface/test_scheme_urls_match_the_native_route_table.py
     # so a rename on either side breaks a test rather than a phone. This
     # assertion is the server half; that file is the join.

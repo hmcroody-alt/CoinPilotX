@@ -172,7 +172,7 @@ export function BuyerOrdersScreen({ route, navigation }: Props) {
 
   function openListing(order: BuyerOrder) {
     const listingId = Number(order.marketplace_listing_id || order.item_id || order.listing?.id || 0);
-    if (listingId) navigation.navigate("MarketplaceDetail", { listingId, title: order.item_title || t("commerce:marketplace.title") });
+    if (listingId) navigation.navigate("MarketplaceProduct", { listingId, title: order.item_title || t("commerce:marketplace.title") });
   }
 
   function openSeller(order: BuyerOrder) {

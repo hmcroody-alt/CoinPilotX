@@ -83,7 +83,7 @@ describe("context-chip contract", () => {
     // createdAt was NOW-68h and TTL is 72h → 4h remaining.
     expect(chip.line).toMatch(/^Offer \$95 · Aeron chair · expires 4h$/);
     expect(chip.a11yLabel).toContain("expires in 4h");
-    expect(chip.target).toEqual({ screen: "MarketplaceDetail", params: { listingId: 555 } });
+    expect(chip.target).toEqual({ screen: "MarketplaceProduct", params: { listingId: 555 } });
   });
 
   it("renders an accepted offer as a completed chip, not an open offer", () => {
@@ -104,7 +104,7 @@ describe("context-chip contract", () => {
       NOW
     );
     expect(chip.line).toBe("Sold · Desk lamp");
-    expect(chip.target).toEqual({ screen: "MarketplaceDetail", params: { listingId: 7 } });
+    expect(chip.target).toEqual({ screen: "MarketplaceProduct", params: { listingId: 7 } });
   });
 
   it("gives no deep-link target when the object has no reachable screen", () => {

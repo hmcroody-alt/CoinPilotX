@@ -520,7 +520,7 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
 
   const openItem = useCallback(
     (listingId: number, title: string) => {
-      navigation.navigate("MarketplaceDetail", { listingId, title });
+      navigation.navigate("MarketplaceProduct", { listingId, title });
     },
     [navigation]
   );
