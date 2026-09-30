@@ -307,6 +307,7 @@ from services import (
     realtime_sync_engine,
     realtime_service,
     telegram_text_router,
+    legal_acceptance,
     live_market_service,
     live_archive_service,
     live_archive_share_service,
@@ -2174,6 +2175,30 @@ def legal_seller_terms_page():
     return legal_money_page("Seller Terms", "<p>Sellers are responsible for taxes, truthful listings, safe fulfillment, accurate education claims, and compliance with marketplace and teacher rules. Scam promotion, guaranteed-profit claims, misleading financial advice, and unsafe content are prohibited.</p><p>Payouts require approval, provider onboarding, and ongoing trust review. CoinPlotXAI may hold, reverse, suspend, or review funds when fraud, disputes, safety risks, or policy violations are detected.</p>")
 
 
+# The shipped iPhone app tells members that these three URLs carry "the full
+# canonical version -- the one that is legally operative", so a 404 here is the
+# app pointing at nothing while claiming otherwise. They redirect rather than
+# render because the operative text has exactly one home: a second copy would be
+# a second document to keep current, and the one that drifted would still be the
+# one a user was shown.
+@webhook_app.route("/legal/terms", methods=["GET"])
+@public_route(reason="Canonical legal URL named by the iPhone app's in-app Terms screen. Redirects to /terms, which is itself public -- terms must be readable before there is an account to read them with.")
+def legal_terms_canonical_page():
+    return redirect("/terms", code=301)
+
+
+@webhook_app.route("/legal/privacy", methods=["GET"])
+@public_route(reason="Canonical legal URL named by the iPhone app's in-app Privacy screen. Redirects to /privacy, which is itself public -- a privacy notice that required an account would be unreadable by the people deciding whether to create one.")
+def legal_privacy_canonical_page():
+    return redirect("/privacy", code=301)
+
+
+@webhook_app.route("/legal/guidelines", methods=["GET"])
+@public_route(reason="Canonical legal URL named by the iPhone app's in-app Community Guidelines screen. Redirects to /community-rules, which is itself public.")
+def legal_guidelines_canonical_page():
+    return redirect("/community-rules", code=301)
+
+
 @webhook_app.route("/about", methods=["GET"])
 def about_page():
     # The canonical node, not a local copy of one. What was here named the
@@ -2978,7 +3003,7 @@ def add_pwa_headers(response):
             # below all query for server-rendered DOM at `defer` time -- when a
             # React app's body is still an empty <div id="root"> -- so they bind
             # to nothing and then never run again. They are not merely useless
-            # there: pulse_i18n.js?v=cache-sweep-20260928a rewrites text nodes, which is a race against
+            # there: pulse_i18n.js?v=commerce-i18n-20260929a rewrites text nodes, which is a race against
             # React's first paint over nodes React owns.
             spa_isolated = bool(getattr(g, "pulse_spa_response", False))
             gateway_isolated = request.path == "/admin/login" or spa_isolated
@@ -3004,8 +3029,8 @@ def add_pwa_headers(response):
                 html = re.sub(r"</body>", pwa_install_script + "</body>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
-            if not gateway_isolated and "</head>" in html.lower() and "/static/js/pulse_i18n.js?v=cache-sweep-20260928a" not in html:
-                i18n_script = '<script src="/static/js/pulse_i18n.js?v=cache-sweep-20260928a" defer></script>'
+            if not gateway_isolated and "</head>" in html.lower() and "/static/js/pulse_i18n.js?v=commerce-i18n-20260929a" not in html:
+                i18n_script = '<script src="/static/js/pulse_i18n.js?v=commerce-i18n-20260929a" defer></script>'
                 html = re.sub(r"</head>", i18n_script + "</head>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
@@ -7170,7 +7195,15 @@ def register_failed_login(email, user_id=0, reason="invalid_credentials"):
 ACCOUNT_ALREADY_EXISTS_MESSAGE = "An account already exists for that contact method."
 
 
-def create_account(full_name, email, password, phone="", country="", email_opt_in=False, sms_opt_in=False, username="", age_confirmed=False):
+def create_account(full_name, email, password, phone="", country="", email_opt_in=False, sms_opt_in=False, username="", age_confirmed=False, *, accepted_terms_source):
+    # Keyword-only, no default, and it carries the provenance rather than a bare
+    # boolean: `None` for no acceptance, otherwise which surface asked. One
+    # argument instead of two because there is no such thing as an acceptance
+    # without a place it came from, and no default because one of the three
+    # callers must answer `None` -- /admin/users/new creates an account on someone
+    # else's behalf, and that person has agreed to nothing. A default would let
+    # that path record a consent nobody gave, or let a fourth caller record none
+    # and be indistinguishable from the two that do.
     email = normalize_email(email)
     logging.info("signup normalized email=%s db_engine=%s", mask_email(email), db_service.ENGINE_NAME)
     log_auth_event("signup_started", email, status="started", details={"db_engine": db_service.ENGINE_NAME})
@@ -7270,6 +7303,12 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
         )
         user_id = cur.lastrowid
         pulse_id_service.ensure_user_pulse_id(cur, user_id)
+        if accepted_terms_source:
+            # On this cursor, so the acceptance commits with the account it is a
+            # precondition of. Written afterwards on a second connection there
+            # would be a window in which the account exists and the record of why
+            # it was allowed to does not -- which is the state this replaces.
+            legal_acceptance.record(cur, user_id, source=accepted_terms_source)
         logging.info("database insert generated user_id=%s email=%s", user_id, mask_email(email))
         pulsesoc_notification_system.ensure_user_notification_defaults(user_id, conn=conn)
         cur.execute(
@@ -7387,6 +7426,13 @@ def permanently_delete_account(user, password):
             "avatar_thumbnail_url": "",
             "banner_url": "",
             "cover_url": "",
+            "date_of_birth": "",
+            "recovery_email": "",
+            "recovery_phone": "",
+            "social_links_json": "",
+            "expertise_tags_json": "",
+            "roast_call_sign": "",
+            "roast_call_sign_slug": "",
             "telegram_user_id": None,
             "telegram_username": "",
             "telegram_chat_id": None,
@@ -7410,7 +7456,22 @@ def permanently_delete_account(user, password):
         values.append(user_id)
         cur.execute(f"UPDATE users SET {', '.join(assignments)} WHERE user_id=?", values)
 
-        for table in ("push_subscriptions", "password_reset_tokens", "email_verification_tokens", "telegram_link_codes"):
+        # Four push registries, not one. `push_subscriptions` was the only one
+        # here because it was the only one that existed when this was written;
+        # the other three were added later by their own services and each keeps
+        # a live token. `pulse_notification_devices` is the one that matters most
+        # -- it stores the whole web-push subscription in `subscription_json`,
+        # and its unsubscribe path only sets `active=0`, so a row left behind is
+        # an addressable device belonging to an account that no longer exists.
+        for table in (
+            "push_subscriptions",
+            "pulse_notification_devices",
+            "user_device_tokens",
+            "notification_device_tokens",
+            "password_reset_tokens",
+            "email_verification_tokens",
+            "telegram_link_codes",
+        ):
             columns = set(table_columns(cur, table))
             if "user_id" in columns:
                 cur.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
@@ -7907,7 +7968,7 @@ def signup_page():
             return render_account_page("signup", "Create Account", error="Agree to the Terms, Privacy Policy, and no-tolerance safety rules before creating your account.")
         if len(password) < 8:
             return render_account_page("signup", "Create Account", error="Use at least 8 characters for your password.")
-        user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in, username, age_confirmed)
+        user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in, username, age_confirmed, accepted_terms_source="web_signup")
         if error:
             existing_user = load_account_by_email(email) if email else None
             if existing_user and not int(existing_user.get("email_verified") or 0):
@@ -8023,6 +8084,13 @@ def login_page():
         if user_is_owner_account(user):
             ensure_owner_super_user(cur, conn)
         cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
+        # This form has always required the tick to sign in and always discarded
+        # it, so every existing member has re-agreed on every visit with nothing
+        # kept. Recording it is what makes the requirement mean something: a
+        # member who predates the acceptance table, or who last agreed to a
+        # superseded version, comes on file at the current one the next time they
+        # sign in. Already on file is a no-op, not a second row.
+        legal_acceptance.record(cur, user["user_id"], source="web_login")
         cancel_scheduled_account_deletion(cur, user["user_id"])
         notify_user(
             cur,
@@ -8333,7 +8401,17 @@ def api_mobile_auth_register():
         return api_error("Please enter a valid phone number or leave it blank.", 400)
     if sms_opt_in and not phone:
         return api_error("SMS opt-in requires a phone number.", 400)
-    user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in, username, age_confirmed)
+    # `age_confirmed` is the whole consent on iOS, not half of it: the app offers
+    # one checkbox reading "I'm 16+ and agree to the ..." over links to the Terms
+    # and Privacy Policy, and submits it in this single field. So a true value
+    # here is a member who was shown both and ticked both. Recording it under
+    # `mobile_register` keeps that provenance legible -- a reviewer can tell a
+    # combined tick from the web form's two separate ones.
+    #
+    # The app should send acceptance as its own field so the two can be refused
+    # independently. That is a client change and a release; it does not make the
+    # consent already given unrecordable in the meantime.
+    user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in, username, age_confirmed, accepted_terms_source="mobile_register" if age_confirmed else None)
     if error:
         existing_user = load_account_by_email(email) if email else None
         if existing_user and not int(existing_user.get("email_verified") or 0):
@@ -23806,7 +23884,11 @@ def admin_user_new_page():
             if not is_valid_email(email):
                 error = "Enter a valid email."
             else:
-                user, error = create_account(full_name, email, password, clean_html(request.form.get("phone", "")), clean_html(request.form.get("country", "")), False, False)
+                # None: an administrator cannot accept the Terms on a member's
+                # behalf, and this form never shows them. The account therefore
+                # starts with nothing on file and `legal_acceptance.outstanding()`
+                # reports both documents, which is the truth about it.
+                user, error = create_account(full_name, email, password, clean_html(request.form.get("phone", "")), clean_html(request.form.get("country", "")), False, False, accepted_terms_source=None)
                 if user:
                     log_admin_audit(admin["id"], "admin_created_user", "user", str(user["user_id"]), {"email": mask_email(email)})
                     message = f"User created. Temporary password was generated only for this admin session: {clean_html(password)}"
@@ -44484,7 +44566,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
             # it installs. The token on `pulse_home_core.js` moves with it --
             # `static/` is served immutable for a year, so a renderer change
             # that keeps its old token reaches nobody who has the page cached.
-            '<script src="/static/js/pulse_commerce_card.js?v=commerce-attachment-20260928a" defer></script>'
+            '<script src="/static/js/pulse_commerce_card.js?v=commerce-i18n-20260929a" defer></script>'
             '<script src="/static/js/pulse_home_core.js?v=commerce-attachment-20260928a" defer></script></body>',
             1,
         )
@@ -50805,7 +50887,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
   </div>
 </section>
 """
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=apps-menu-width-20260927a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css?v=reels-desktop-create-20260929a"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=desktop-dock-20260927a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=video-action-fit-20260927i"><link rel="stylesheet" href="/static/css/pulse-commerce-attachment.css?v=commerce-attachment-20260928a">{app_promotion.assets_html()}<style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:var(--text-primary)}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}{app_promotion.marketplace_note_html()}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script><script data-pulse-reaction-catalog>window.PULSE_REACTION_CATALOG={json.dumps(pulse_reactions.catalog_payload())};window.PULSE_REACTION_TRAY_SIZE={pulse_reactions.TRAY_SIZE};</script><script src="/static/js/pulse_reaction_system.js?v=cache-sweep-20260928a"></script><script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script src="/static/js/pulse_commerce_card.js?v=commerce-attachment-20260928a"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=apps-menu-width-20260927a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css?v=reels-desktop-create-20260929a"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=desktop-dock-20260927a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=video-action-fit-20260927i"><link rel="stylesheet" href="/static/css/pulse-commerce-attachment.css?v=commerce-attachment-20260928a">{app_promotion.assets_html()}<style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:var(--text-primary)}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}{app_promotion.marketplace_note_html()}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script><script data-pulse-reaction-catalog>window.PULSE_REACTION_CATALOG={json.dumps(pulse_reactions.catalog_payload())};window.PULSE_REACTION_TRAY_SIZE={pulse_reactions.TRAY_SIZE};</script><script src="/static/js/pulse_reaction_system.js?v=cache-sweep-20260928a"></script><script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script src="/static/js/pulse_commerce_card.js?v=commerce-i18n-20260929a"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -51526,7 +51608,7 @@ def pulse_reels_page():
     async function markReelViewed(card){const id=card?.dataset?.reelId;if(!id||card.dataset.viewRecorded==='1')return;if(card.dataset.contentType==='live'||card.dataset.liveReelId){card.dataset.viewRecorded='1';await recordLiveReelAudience(card);return}card.dataset.viewRecorded='1';try{const d=await pulseApi(`/api/pulse/reels/${id}/view`,{method:'POST',body:JSON.stringify({watch_ms:0,source:'autoplay'})});document.querySelectorAll(`[data-reel-view-count="${CSS.escape(String(id))}"]`).forEach(n=>n.textContent=Number(d.view_count||n.textContent||0))}catch(_){card.dataset.viewRecorded=''}}
     async function playReelVideo(video,withSound){if(!video)return;const card=video.closest('.reel-card');const wantsSound=withSound===true&&refreshReelsSoundPreference();const startedAt=performance.now();video.playsInline=true;video.autoplay=true;video.preload='auto';window.PulseMediaRenderer?.bindAttachedAudioPriority?.(video.closest('[data-reel-media]')||video.closest('.pulse-media-wrap'),video);if(video.readyState===0){logReelAudioState(card,video,'restore_state',{action:'load-empty'});video.load()}const muted=!wantsSound||!reelHasAudio(card);setReelVideoMuted(card,video,muted,'restore_state',false);if(wantsSound&&!window.PulseMediaRenderer?.hasAttachedAudio?.(video))video.volume=1;try{await video.play();if(window.PulseMediaRenderer?.hasAttachedAudio?.(video)){const attachedPlayed=wantsSound?await window.PulseMediaRenderer.playAttachedAudio(video,true):false;if(wantsSound&&!attachedPlayed&&card)card.dataset.reelAutoplayBlocked='1'}if(card&&!(wantsSound&&window.PulseMediaRenderer?.hasAttachedAudio?.(video)&&card.dataset.reelAutoplayBlocked==='1'))card.dataset.reelAutoplayBlocked='';updateReelMediaHealth(card,video,'playing');markReelViewed(card);if(!wantsSound)showReelSoundPrompt(card);updateReelControls(card);if(card)card.dataset.reelStartupMs=String(Math.round(performance.now()-startedAt));if(reelDebugEnabled())console.info('PulseSoc Reel startup',{reel_id:card?.dataset.reelId||'',ms:Math.round(performance.now()-startedAt),muted:video.muted,readyState:video.readyState,attachedAudio:!!window.PulseMediaRenderer?.hasAttachedAudio?.(video)});}catch(error){reelVideoDiagnostics(video,'play-blocked');if(updateReelMediaHealth(card,video,'play-blocked')&&!video.paused)return;if(withSound){if(card)card.dataset.reelAutoplayBlocked='1';const userUnlocked=card?.dataset?.reelUserSoundUnlocked==='1'||localStorage.getItem(REELS_SOUND_KEY)==='true'||localStorage.getItem(PULSE_MEDIA_SOUND_KEY)==='true';if(userUnlocked){showReelSoundPrompt(card,true);updateReelControls(card);return}setReelVideoMuted(card,video,true,'browser_policy_fallback',false);try{await video.play();updateReelMediaHealth(card,video,'playing');markReelViewed(card);showReelSoundPrompt(card,true);updateReelControls(card);if(card)card.dataset.reelStartupMs=String(Math.round(performance.now()-startedAt));return}catch(second){reelVideoDiagnostics(video,'browser_policy_fallback')}}}}
     function scheduleReelRetry(video){if(!video||video.dataset.reelRetryScheduled==='1')return;video.dataset.reelRetryScheduled='1';setTimeout(()=>{video.dataset.reelRetryScheduled='';if(video.readyState<2&&!video.paused)window.retryPulseReelMedia?.(video,video.closest('.reel-card')?.dataset.reelId||'')},900)}
-    function bindReelDiagnostics(scope=document){const root=scope||document;root.querySelectorAll('[data-reel-media]:not([data-reel-bound])').forEach(wrap=>{wrap.dataset.reelBound='1';const video=wrap.matches('video')?wrap:wrap.querySelector('video');if(!video)return;const card=video.closest('.reel-card');const priority=wrap.dataset.reelPreloadPriority||card?.dataset.reelPreloadPriority||'lazy';video.dataset.reelsManaged='1';video.dataset.reelBindAt=String(Math.round(performance.now()));if(card&&window.__pulseReelsLastApiMs)card.dataset.firstReelApiMs=String(Math.round(window.__pulseReelsLastApiMs));video.preload=priority==='current'?'auto':'metadata';window.PulseMediaRenderer?.bindAttachedAudioPriority?.(wrap,video);if(priority==='current'&&video.readyState===0){try{video.load()}catch(_){}}['loadedmetadata','canplay','canplaythrough','playing','pause','stalled','waiting','error'].forEach(eventName=>video.addEventListener(eventName,()=>{const card=video.closest('.reel-card');const elapsed=Math.max(0,Math.round(performance.now()-Number(video.dataset.reelBindAt||performance.now())));if(card){if(eventName==='loadedmetadata'&&!card.dataset.videoMetadataMs)card.dataset.videoMetadataMs=String(elapsed);if((eventName==='canplay'||eventName==='canplaythrough')&&!card.dataset.videoCanplayMs)card.dataset.videoCanplayMs=String(elapsed);if(eventName==='playing'&&!card.dataset.firstFrameMs)card.dataset.firstFrameMs=String(elapsed)}reelVideoDiagnostics(video,eventName);if(['loadedmetadata','canplay','canplaythrough','playing','timeupdate'].includes(eventName))updateReelMediaHealth(card,video,eventName);if(['stalled','waiting'].includes(eventName))scheduleReelRetry(video);if(eventName==='error')updateReelMediaHealth(card,video,'media_error');if(eventName==='canplay'||eventName==='canplaythrough')scheduleReelsPlayback('canplay');updateReelControls(card)}));video.addEventListener('timeupdate',()=>{updateReelProgress(video);updateReelMediaHealth(video.closest('.reel-card'),video,'timeupdate')});video.addEventListener('volumechange',()=>{if(video.dataset.pulseSoundChangeReason)return;const card=video.closest('.reel-card');if(window.PulseMediaRenderer?.hasAttachedAudio?.(video)){window.PulseMediaRenderer.forceOriginalAudioMuted?.(video,'reels-volumechange-attached');updateReelControls(card);return}const enabled=!(video.muted||Number(video.volume||0)===0);const userUnlocked=card?.dataset?.reelUserSoundUnlocked==='1'||localStorage.getItem(REELS_SOUND_KEY)==='true'||localStorage.getItem(PULSE_MEDIA_SOUND_KEY)==='true';if(!enabled&&userUnlocked&&reelHasAudio(card)){setReelVideoMuted(card,video,false,'restore_state',false);logReelAudioState(card,video,'restore_state',{source:'volumechange-auto-remute'});updateReelControls(card);return}reelsSoundEnabled=enabled;reelsMuted=!enabled;localStorage.setItem(REELS_SOUND_KEY,String(enabled));localStorage.setItem(PULSE_MEDIA_SOUND_KEY,String(enabled));logReelAudioState(card,video,enabled?'user_unmuted':'user_muted',{source:'volumechange'});if(enabled&&card){card.dataset.reelUserSoundUnlocked='1';card.dataset.reelSuppressMutedFallbackUntil=String(Date.now()+90000);clearTimeout(card._reelAutoplayFallbackTimer)}updateReelControls(card);});if((wrap.dataset.reelUrl||wrap.dataset.mediaUrl||'').match(/r2\\.cloudflarestorage\\.com/i))console.warn('PulseSoc Reel blocked private R2 render candidate',{reel_id:wrap.dataset.reelId,src:wrap.dataset.reelUrl||wrap.dataset.mediaUrl});});window.PulseMediaRenderer?.hydrate(root);document.querySelectorAll('.reel-card').forEach(card=>{updateReelMediaHealth(card,primaryReelVideo(card),'bind');updateReelControls(card)});}
+    function bindReelDiagnostics(scope=document){const root=scope||document;root.querySelectorAll('[data-reel-media]:not([data-reel-bound])').forEach(wrap=>{wrap.dataset.reelBound='1';const video=wrap.matches('video')?wrap:wrap.querySelector('video');if(!video)return;const card=video.closest('.reel-card');const priority=wrap.dataset.reelPreloadPriority||card?.dataset.reelPreloadPriority||'lazy';video.dataset.reelsManaged='1';video.dataset.reelBindAt=String(Math.round(performance.now()));if(card&&window.__pulseReelsLastApiMs)card.dataset.firstReelApiMs=String(Math.round(window.__pulseReelsLastApiMs));video.preload=priority==='current'?'auto':'metadata';window.PulseMediaRenderer?.bindAttachedAudioPriority?.(wrap,video);if(priority==='current'&&video.readyState===0){try{video.load()}catch(_){}}['loadedmetadata','canplay','canplaythrough','playing','pause','stalled','waiting','error'].forEach(eventName=>video.addEventListener(eventName,()=>{const card=video.closest('.reel-card');const elapsed=Math.max(0,Math.round(performance.now()-Number(video.dataset.reelBindAt||performance.now())));if(card){if(eventName==='loadedmetadata'&&!card.dataset.videoMetadataMs)card.dataset.videoMetadataMs=String(elapsed);if((eventName==='canplay'||eventName==='canplaythrough')&&!card.dataset.videoCanplayMs)card.dataset.videoCanplayMs=String(elapsed);if(eventName==='playing'&&!card.dataset.firstFrameMs)card.dataset.firstFrameMs=String(elapsed)}reelVideoDiagnostics(video,eventName);if(['loadedmetadata','canplay','canplaythrough','playing','timeupdate'].includes(eventName))updateReelMediaHealth(card,video,eventName);if(['stalled','waiting'].includes(eventName))scheduleReelRetry(video);if(eventName==='error')updateReelMediaHealth(card,video,'media_error');if(eventName==='canplay'||eventName==='canplaythrough')scheduleReelsPlayback('canplay');updateReelControls(card)}));video.addEventListener('timeupdate',()=>{updateReelProgress(video);updateReelMediaHealth(video.closest('.reel-card'),video,'timeupdate')});video.addEventListener('volumechange',()=>{if(video.dataset.pulseSoundChangeReason)return;const card=video.closest('.reel-card');if(window.PulseMediaRenderer?.hasAttachedAudio?.(video)){window.PulseMediaRenderer.forceOriginalAudioMuted?.(video,'reels-volumechange-attached');updateReelControls(card);return}const enabled=!(video.muted||Number(video.volume||0)===0);const userUnlocked=card?.dataset?.reelUserSoundUnlocked==='1'||localStorage.getItem(REELS_SOUND_KEY)==='true'||localStorage.getItem(PULSE_MEDIA_SOUND_KEY)==='true';if(!enabled&&userUnlocked&&reelHasAudio(card)){setReelVideoMuted(card,video,false,'restore_state',false);logReelAudioState(card,video,'restore_state',{source:'volumechange-auto-remute'});updateReelControls(card);return}reelsSoundEnabled=enabled;reelsMuted=!enabled;localStorage.setItem(REELS_SOUND_KEY,String(enabled));localStorage.setItem(PULSE_MEDIA_SOUND_KEY,String(enabled));logReelAudioState(card,video,enabled?'user_unmuted':'user_muted',{source:'volumechange'});if(enabled&&card){card.dataset.reelUserSoundUnlocked='1';card.dataset.reelSuppressMutedFallbackUntil=String(Date.now()+90000);clearTimeout(card._reelAutoplayFallbackTimer)}updateReelControls(card);});if((wrap.dataset.reelUrl||wrap.dataset.mediaUrl||'').match(/r2\\.cloudflarestorage\\.com/i))console.warn('PulseSoc Reel blocked private R2 render candidate',{reel_id:wrap.dataset.reelId,src:wrap.dataset.reelUrl||wrap.dataset.mediaUrl});});window.PulseMediaRenderer?.hydrate(root);window.PulseCommerceCard?.localize?.(root);document.querySelectorAll('.reel-card').forEach(card=>{updateReelMediaHealth(card,primaryReelVideo(card),'bind');updateReelControls(card)});}
     let reelsPlaybackBootTimer=0;function scheduleReelsPlayback(reason='render'){clearTimeout(reelsPlaybackBootTimer);const run=()=>{syncPlayback();setTimeout(syncPlayback,80);setTimeout(syncPlayback,260)};requestAnimationFrame(()=>requestAnimationFrame(run));reelsPlaybackBootTimer=setTimeout(run,420)}
     function reelCards(){return [...document.querySelectorAll('.reel-card')]}
     function warmReelPoster(card){const poster=card?.querySelector('[data-reel-media]')?.dataset.reelPoster||card?.querySelector('video')?.poster||card?.querySelector('img[loading="lazy"]')?.src||'';if(!poster||card.dataset.reelPosterWarmed==='1')return;card.dataset.reelPosterWarmed='1';try{const img=new Image();img.decoding='async';img.src=poster}catch(_){}}
@@ -105209,6 +105291,67 @@ def trust_public_page(title, headline, body_html, cta="/signup"):
     return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name="description" content="{html_escape(clean_html(headline))}"><meta name="robots" content="index,follow"><link rel="canonical" href="https://pulsesoc.com{html_escape(clean_html(request.path))}"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-favicon-32-20260913.png"><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 15% 0,rgba(110,223,246,.18),transparent 26rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:22px 0 80px}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px}}a{{color:inherit}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{padding:42px 0 18px}}h1{{font-size:clamp(38px,7vw,74px);line-height:.95;margin:8px 0}}p{{color:var(--muted);line-height:1.6}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.84));padding:16px}}.button{{min-height:46px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;text-decoration:none;font-weight:950;padding:12px 15px;display:inline-flex;align-items:center;justify-content:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}li{{margin:8px 0;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">CoinPlotXAI</a><a class="button" href="{html_escape(clean_html(cta))}">Get Started</a></nav><section class="hero"><span class="badge">Trust-first platform</span><h1>{html_escape(clean_html(headline))}</h1></section>{body_html}</main></body></html>""")
 
 
+#: The Privacy Center's four controls, and the value a member has before they have
+#: ever saved. Not a guess about what looks reasonable: the one control anything
+#: enforces is `personalized_ads_opt_out`, and
+#: `pulse_ads_service.user_personalized_ads_opt_out` reads a missing row as `1`
+#: (opted out). Rendering any other default would show a member a state the ad
+#: server does not agree with. The other three match the `privacy_preferences`
+#: column defaults, so a saved row and an unsaved member read identically.
+PRIVACY_CENTER_CONTROLS = (
+    ("analytics_opt_out", 0, "Opt out of optional analytics where legally required"),
+    ("personalized_ads_opt_out", 1, "Opt out of personalized ads"),
+    ("public_profile", 1, "Public profile visible"),
+    ("creator_visibility", 1, "Creator visibility enabled"),
+)
+
+
+def privacy_center_preferences(user_id):
+    """A member's saved privacy choices, or the defaults if they have none.
+
+    The page used to render these four boxes with literal `checked` attributes and
+    never query the table its own POST writes. Two consequences, the second worse
+    than the first:
+
+    A member who opted out of analytics came back to an unchecked box — and since
+    an HTML checkbox sends nothing when unchecked, the next save of *any* control
+    on the form silently wrote their opt-out back to 0. The form could not be used
+    without discarding a choice already made.
+
+    And a member who had consented to personalized ads — the one control that is
+    actually enforced — was shown "Opt out of personalized ads" ticked while the ad
+    server was personalizing for them. The page asserted the opposite of what was
+    in force, which is worse than asserting nothing.
+
+    Columns are selected in an explicit order and read with `row_values` rather
+    than by iterating the row, because iteration yields values on SQLite and column
+    names on Postgres.
+    """
+
+    names = [name for name, _default, _label in PRIVACY_CENTER_CONTROLS]
+    prefs = {name: default for name, default, _label in PRIVACY_CENTER_CONTROLS}
+    if not user_id:
+        return prefs
+    conn = db()
+    try:
+        row = conn.execute(
+            f"SELECT {', '.join(names)} FROM privacy_preferences WHERE user_id=?",
+            (int(user_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        return prefs
+    for name, value in zip(names, db_service.row_values(row)):
+        # A NULL column keeps the default rather than becoming 0. The table
+        # predates two of these columns, so an old row can hold NULL where a new
+        # one holds a choice, and reading that as "opted in" would revoke a
+        # preference on behalf of a member who never expressed one.
+        if value is not None:
+            prefs[name] = 1 if int(value) else 0
+    return prefs
+
+
 @webhook_app.route("/privacy-center", methods=["GET", "POST"])
 def privacy_center_page():
     init_db()
@@ -105248,7 +105391,18 @@ def privacy_center_page():
     controls = ""
     if user:
         retention = f"Raw analytics: {int(os.getenv('RAW_ANALYTICS_RETENTION_DAYS', '90') or 90)} days · Security logs: {int(os.getenv('SECURITY_LOG_RETENTION_DAYS', '180') or 180)} days · Aggregate analytics: {int(os.getenv('AGGREGATE_ANALYTICS_RETENTION_DAYS', '730') or 730)} days"
-        controls = f"<section class='card'><h2>Your Controls</h2><p>{html_escape(clean_html(message))}</p><form method='post'><label><input type='checkbox' name='analytics_opt_out'> Opt out of optional analytics where legally required</label><br><label><input type='checkbox' name='personalized_ads_opt_out' checked> Opt out of personalized ads</label><br><label><input type='checkbox' name='public_profile' checked> Public profile visible</label><br><label><input type='checkbox' name='creator_visibility' checked> Creator visibility enabled</label><br><button class='button'>Save Privacy Controls</button></form><p><strong>Account data controls:</strong> Download account data and delete account workflows are visible here for staged rollout and support-assisted processing.</p><p><strong>Retention:</strong> {html_escape(clean_html(retention))}</p><p><a href='/terms'>Terms</a> · <a href='/community-rules'>Community Rules</a> · <a href='/advertising-policy'>Advertising Policy</a> · <a href='/creator-monetization-policy'>Creator Monetization Policy</a></p></section>"
+        # Read back *after* the POST above has committed, so the boxes show what is
+        # stored rather than what was submitted. Those differ whenever a write is
+        # rejected, and a form that echoes the request confirms a save that may not
+        # have happened.
+        saved = privacy_center_preferences(user["user_id"])
+        boxes = "".join(
+            "<label><input type='checkbox' name='{}'{}> {}</label><br>".format(
+                name, " checked" if saved.get(name) else "", html_escape(clean_html(label))
+            )
+            for name, _default, label in PRIVACY_CENTER_CONTROLS
+        )
+        controls = f"<section class='card'><h2>Your Controls</h2><p>{html_escape(clean_html(message))}</p><form method='post'>{boxes}<button class='button'>Save Privacy Controls</button></form><p><strong>Account data controls:</strong> Download account data and delete account workflows are visible here for staged rollout and support-assisted processing.</p><p><strong>Retention:</strong> {html_escape(clean_html(retention))}</p><p><a href='/terms'>Terms</a> · <a href='/community-rules'>Community Rules</a> · <a href='/advertising-policy'>Advertising Policy</a> · <a href='/creator-monetization-policy'>Creator Monetization Policy</a></p></section>"
     return trust_public_page("Privacy Center", "Your data is not the product.", f"<p>{html_escape(clean_html(policy['principle']))}</p><section class='grid'>{cards}</section>{controls}", "/dashboard" if user else "/signup")
 
 
@@ -120894,6 +121048,15 @@ def _init_db_impl():
         pulse_id_service.ensure_schema(cur, is_postgres=db_service.IS_POSTGRES)
     except Exception as exc:
         logging.exception("PULSE_ID_SCHEMA_SKIPPED error=%s", exc)
+
+    # Here and nowhere else. `create_account` and `login_page` both write an
+    # acceptance from inside an open transaction on their own connection, so
+    # creating the table on demand would be a second connection asking for a write
+    # lock the caller still holds -- which fails the signup it was recording.
+    # Unguarded, unlike the line above: the point of the table is that an account
+    # cannot come into existence without a record of what it agreed to, and a
+    # swallowed failure here would quietly restore exactly the defect it replaces.
+    legal_acceptance.ensure_schema(conn)
 
     # Here as well as in `create_account`, so the invariant exists from boot
     # rather than from whenever somebody next signs up. Safe at this line for the

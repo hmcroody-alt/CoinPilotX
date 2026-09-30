@@ -38,15 +38,20 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 PY_REL = os.path.join("services", "pulse_commerce_card.py")
 JS_REL = os.path.join("static", "js", "pulse_commerce_card.js")
 CSS_REL = os.path.join("static", "css", "pulse-commerce-attachment.css")
-TEST_REL = os.path.join("tests", "pulse_commerce", "test_commerce_card_parity.py")
+I18N_REL = os.path.join("static", "js", "pulse_i18n.js")
+TEST_RELS = (
+    os.path.join("tests", "pulse_commerce", "test_commerce_card_parity.py"),
+    os.path.join("tests", "pulse_commerce", "test_commerce_i18n_delivery.py"),
+)
+HARNESS_REL = os.path.join("tests", "pulse_commerce", "commerce_i18n_harness.mjs")
 
 #: ``(name, file, find, replace, why it must be caught)``.
 MUTATIONS = [
     (
         "js-renames-a-class",
         JS_REL,
-        "pulse-commerce-price",
-        "pulse-commerce-cost",
+        "<span class='pulse-commerce-price'>",
+        "<span class='pulse-commerce-cost'>",
         "a class renamed in one renderer and not the other loses its styling",
     ),
     (
@@ -87,8 +92,8 @@ MUTATIONS = [
     (
         "py-leaks-the-price-into-the-aria-label",
         PY_REL,
-        "if not accessibility or not show_price:",
-        "if not accessibility:",
+        "composed = not accessibility or not show_price",
+        "composed = not accessibility",
         "the accessible surface disclosing what the visual one hides",
     ),
     (
@@ -126,12 +131,76 @@ MUTATIONS = [
         ".pulse-commerce-cta-renamed",
         "a class the renderers emit that the stylesheet never mentions",
     ),
+    # --- delivery: the card speaks the reader's language, or it does not -----
+    (
+        "i18n-loses-a-french-key",
+        I18N_REL,
+        '"commerce:pulsedrop.seller.visitStore": "Voir la boutique"',
+        '"commerce:pulsedrop.seller.visitStoreX": "Voir la boutique"',
+        "a key the renderer emits and the catalogue lacks renders in English",
+    ),
+    (
+        "i18n-drifts-from-the-app",
+        I18N_REL,
+        '"commerce:pulsedrop.label.trending": "Tendances"',
+        '"commerce:pulsedrop.label.trending": "Tendance"',
+        "one listing reading two ways across the app and the web",
+    ),
+    (
+        "py-fallback-drifts-from-the-english-catalogue",
+        PY_REL,
+        'SELLER_FALLBACK = "Visit store"',
+        'SELLER_FALLBACK = "Open store"',
+        "the text changing under a reader who never changed language",
+    ),
+    (
+        "js-never-localizes-an-inserted-card",
+        JS_REL,
+        "    localize(node);\n    return node;",
+        "    return node;",
+        "a feed or reels card staying English for the whole session",
+    ),
+    (
+        "js-stops-recomposing-the-accessible-sentence",
+        JS_REL,
+        'root.querySelectorAll(".pulse-commerce-main") : [];',
+        '[] : [];',
+        "a card that shows French and announces English",
+    ),
+    (
+        "js-recomposes-a-node-wider-than-the-card-announces",
+        JS_REL,
+        '    ".pulse-commerce-price",',
+        '    ".pulse-commerce-meta",',
+        "the sentence picking up the store name, and on a withdrawn card a "
+        "`.pulse-commerce-meta` that still exists when the price inside it does not",
+    ),
+    (
+        "i18n-announces-the-language-before-it-applies-it",
+        I18N_REL,
+        '    translateMarkedNodes();\n'
+        '    document.dispatchEvent(new CustomEvent("PulseLanguageChanged", { detail: { language: normalized } }));',
+        '    document.dispatchEvent(new CustomEvent("PulseLanguageChanged", { detail: { language: normalized } }));\n'
+        "    translateMarkedNodes();",
+        "a listener rebuilding text from nodes the sweep has not reached yet",
+    ),
+    (
+        "js-skips-the-sweep-that-happened-before-it-loaded",
+        JS_REL,
+        '    if (document.readyState === "loading") {\n'
+        '      document.addEventListener("DOMContentLoaded", function () { recompose(document); }, { once: true });\n'
+        "    } else {\n"
+        "      recompose(document);\n"
+        "    }",
+        "    void 0;",
+        "the served permalink announcing English chips it renders in French",
+    ),
 ]
 
 
 def run_suite(root: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, "-m", "pytest", TEST_REL, "-x", "-q"],
+        [sys.executable, "-m", "pytest", *TEST_RELS, "-x", "-q"],
         cwd=root,
         capture_output=True,
         text=True,
@@ -145,7 +214,7 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="commerce-card-mutation-") as scratch:
         pristine = os.path.join(scratch, "pristine")
-        for relative in (PY_REL, JS_REL, CSS_REL, TEST_REL):
+        for relative in (PY_REL, JS_REL, CSS_REL, I18N_REL, *TEST_RELS, HARNESS_REL):
             destination = os.path.join(pristine, relative)
             os.makedirs(os.path.dirname(destination), exist_ok=True)
             shutil.copy2(os.path.join(REPO, relative), destination)

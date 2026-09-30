@@ -332,7 +332,9 @@ class EndToEndSignupCase(unittest.TestCase):
         return bot.create_account(
             "E2E Buyer", email, "correct horse battery staple",
             username=kw.pop("username", f"e2e{os.urandom(4).hex()}"),
-            age_confirmed=True, **kw)
+            age_confirmed=True,
+            accepted_terms_source=kw.pop("accepted_terms_source", "web_signup"),
+            **kw)
 
     def test_the_index_actually_lands_on_the_real_users_table(self):
         user, error = self._signup(self.address)

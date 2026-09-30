@@ -65,48 +65,159 @@ JS_SOURCE = _read(JS_PATH)
 # ---------------------------------------------------------------------------
 
 
-def _js_strip_comments(source: str) -> str:
-    """Remove JS comments without being fooled by ``"//"`` inside a string.
+#: A ``/`` following one of these (ignoring whitespace) opens a regular
+#: expression rather than being a division sign. The renderer contains
+#: ``/[&<>"']/g``, whose character class holds both quote characters: read as
+#: division, the scanner below enters a string at that ``"`` and every quote
+#: for the rest of the file is parsed with inverted parity.
+_REGEX_PRECEDERS = set("(,=:[!&|?{};+-*%~^<>") | {""}
 
-    The renderer's own ``safeRoute`` compares against the literal ``"//"`` to
-    reject protocol-relative URLs, so a naive line-comment strip deletes the
-    second half of the anti-XSS gate and the test silently stops checking it.
+#: How a reassembled span is re-delimited, so the output is still parseable
+#: text rather than a run of bare bodies.
+_DELIMITED = {"string": '"%s"', "regex": "/%s/"}
+
+
+def _js_scan(source: str) -> list[tuple[str, str]]:
+    """``(kind, text)`` spans of ``code``, ``string``, ``regex`` and ``comment``.
+
+    One tokeniser for all three things this file needs to know about the JS,
+    because each of them was previously done with a regex and each regex was
+    wrong in a way that made an assertion weaker rather than louder.
+
+    Comment removal cannot be a regex: the renderer's ``safeRoute`` compares
+    against the literal ``"//"`` to reject protocol-relative URLs, so a naive
+    line-comment strip deletes the second half of the anti-XSS gate and the
+    test silently stops checking it. Finding string literals cannot be a regex
+    either: alternating ``"..."|'...'`` mis-pairs the moment an apostrophe
+    appears inside a double-quoted string, and the renderer is full of
+    single-quoted HTML attributes inside double-quoted JS. And a regular
+    expression literal has to be recognised as one, because the renderer holds
+    ``/[&<>"']/g`` — read as division, the scanner opens a string at that
+    ``"`` and every quote for the rest of the file is parsed with inverted
+    parity.
+
+    ``string`` and ``regex`` texts are the body, without the delimiters.
     """
-    out: list[str] = []
+    spans: list[tuple[str, str]] = []
     index = 0
     length = len(source)
-    quote = ""
+    previous = ""
+    code_start = 0
+
+    def flush(end: int) -> None:
+        if end > code_start:
+            spans.append(("code", source[code_start:end]))
+
     while index < length:
         char = source[index]
-        if quote:
-            out.append(char)
-            if char == "\\" and index + 1 < length:
-                out.append(source[index + 1])
-                index += 2
-                continue
-            if char == quote:
-                quote = ""
-            index += 1
-            continue
         if char in ("'", '"', "`"):
-            quote = char
-            out.append(char)
+            flush(index)
+            closing = char
             index += 1
+            body_start = index
+            while index < length:
+                if source[index] == "\\":
+                    index += 2
+                    continue
+                if source[index] == closing:
+                    break
+                index += 1
+            spans.append(("string", source[body_start:index]))
+            index += 1
+            code_start = index
+            previous = closing
             continue
         if char == "/" and index + 1 < length and source[index + 1] == "/":
+            flush(index)
             while index < length and source[index] != "\n":
                 index += 1
+            spans.append(("comment", ""))
+            code_start = index
             continue
         if char == "/" and index + 1 < length and source[index + 1] == "*":
+            flush(index)
             end = source.find("*/", index + 2)
             index = length if end == -1 else end + 2
+            spans.append(("comment", ""))
+            code_start = index
             continue
-        out.append(char)
+        if char == "/" and previous in _REGEX_PRECEDERS:
+            flush(index)
+            index += 1
+            body_start = index
+            in_class = False
+            while index < length:
+                inner = source[index]
+                if inner == "\\":
+                    index += 2
+                    continue
+                if inner == "[":
+                    in_class = True
+                elif inner == "]":
+                    in_class = False
+                elif inner == "/" and not in_class:
+                    break
+                index += 1
+            spans.append(("regex", source[body_start:index]))
+            index += 1
+            code_start = index
+            previous = "/"
+            continue
+        if not char.isspace():
+            previous = char
         index += 1
-    return "".join(out)
+    flush(length)
+    return spans
 
 
-JS_CODE = _js_strip_comments(JS_SOURCE)
+JS_SPANS = _js_scan(JS_SOURCE)
+
+#: Comments gone, literals intact. For the checks that read the emitted markup:
+#: class names, ``data-`` attributes, the availability vocabulary.
+JS_CODE = "".join(
+    text if kind == "code" else _DELIMITED.get(kind, "") % text
+    for kind, text in JS_SPANS
+    if kind != "comment"
+)
+
+#: Comments gone and literals emptied. For property-name extraction only. A
+#: property access never lives inside a string, but a string very much contains
+#: text that looks like one: ``".pulse-commerce-chip-label"`` and
+#: ``"commerce:pulsedrop.seller.visitStore"`` both read as ``.<name>`` to any
+#: regex, and the extractor is default-deny, so each fails the parity assertion
+#: as a field the Python twin does not read.
+JS_CODE_NO_LITERALS = "".join(
+    text if kind == "code" else _DELIMITED.get(kind, "") % ""
+    for kind, text in JS_SPANS
+    if kind != "comment"
+)
+
+#: Every string literal body in the renderer.
+JS_STRINGS = frozenset(text for kind, text in JS_SPANS if kind == "string")
+
+
+def test_the_javascript_scanner_sees_code_and_not_prose_or_literals():
+    """Guard the guard: every assertion below is only as good as this scanner.
+
+    Three ways it has been wrong or could be. It must not delete the ``"//"``
+    inside ``safeRoute``; it must not mistake the ``"`` inside a regex character
+    class for the start of a string; and the literal-blanking pass must actually
+    empty literals while leaving real property accesses alone.
+    """
+    assert '"//"' in JS_CODE, "the comment stripper ate the protocol-relative gate"
+    assert "Visit store" in JS_CODE, "a real string literal went missing"
+    # Comments are gone in both passes.
+    assert "the browser twin of" not in JS_CODE.lower()
+    # ...and only comments. The regex literal's own body survives the code pass.
+    assert "&amp;" in JS_CODE
+
+    # The blanking pass keeps code and drops literal contents.
+    assert "cover_image_url" in JS_CODE_NO_LITERALS, "a real property read was blanked"
+    for literal in ("Visit store", "visitStore", "pulse-commerce-chip-label", "&amp;"):
+        assert literal not in JS_CODE_NO_LITERALS, f"{literal!r} survived blanking"
+    # Quote parity held to the end of the file, which is what the regex-literal
+    # handling is for: a single missed one inverts everything after it.
+    assert JS_CODE_NO_LITERALS.rstrip().endswith("})();")
 
 
 def _python_payload_fields(source: str) -> set[str]:
@@ -136,6 +247,7 @@ def _python_payload_fields(source: str) -> set[str]:
 #: this list and not the inverse one.
 _JS_HOST_PROPERTIES = frozenset(
     {
+        "addEventListener",
         "appendChild",
         "charAt",
         "console",
@@ -146,9 +258,16 @@ _JS_HOST_PROPERTIES = frozenset(
         "innerHTML",
         "join",
         "length",
+        "push",
+        "querySelector",
+        "querySelectorAll",
+        "readyState",
         "replace",
+        "setAttribute",
         "slice",
+        "textContent",
         "toLowerCase",
+        "translateMarkedNodes",
         "trim",
         "warn",
     }
@@ -165,7 +284,7 @@ def _js_payload_fields(source: str) -> tuple[set[str], set[str]]:
 def test_both_renderers_read_the_same_payload_fields():
     """A field added to one renderer and not the other fails here."""
     python_fields = _python_payload_fields(PY_SOURCE)
-    js_fields, _ = _js_payload_fields(JS_CODE)
+    js_fields, _ = _js_payload_fields(JS_CODE_NO_LITERALS)
 
     missing_from_js = python_fields - js_fields
     missing_from_python = js_fields - python_fields
@@ -378,6 +497,11 @@ def test_the_app_type_declares_the_shape_the_server_actually_sends():
         "the app declares required fields the server does not send, which is "
         f"how the thumbnail went missing: {missing}"
     )
+
+
+#: A translation key the renderers are allowed to name: the overlay's own
+#: namespace, dotted, with a leaf. ``commerce:pulsedrop`` alone is not one.
+_I18N_NAMESPACE = re.compile(r"^commerce:pulsedrop(?:\.[A-Za-z][A-Za-z0-9]*){2,}$")
 
 
 def _class_names(source: str) -> set[str]:
@@ -758,9 +882,30 @@ def test_the_renderer_is_not_pulsedrop_specific():
     what section 47/48 rules out.
     """
     code_strings = _python_code_strings(PY_SOURCE)
-    # The single permitted occurrence is the payload's own discriminator key,
-    # which is a field name and not an identity test.
-    assert {value for value in code_strings if "pulsedrop" in value.lower()} == {"pulsedrop"}
+    # Two permitted occurrences, neither of which is an identity test.
+    #
+    # ``pulsedrop`` alone is the payload's own discriminator key -- a field
+    # name. ``commerce:pulsedrop.*`` is a translation-key namespace: the server
+    # chose it, ships those keys inside the overlay, and the native card renders
+    # through them, so the web renderer naming one is the renderer agreeing with
+    # the payload rather than branching on who wrote the post. The ban this test
+    # exists for -- ``if author == "PulseDrop"`` -- is unaffected, and any other
+    # mention still fails.
+    def permitted(value: str) -> bool:
+        return value == "pulsedrop" or _I18N_NAMESPACE.match(value) is not None
+
+    offenders = {
+        value
+        for value in code_strings
+        if "pulsedrop" in value.lower() and not permitted(value)
+    }
+    assert not offenders, f"the code names PulseDrop outside a payload key: {offenders}"
+    # Anti-vacuity: the exemption must not be so wide it permits an identity
+    # test that merely happens to sit in a string.
+    assert not permitted("PulseDrop")
+    assert not permitted("pulsedrop_publications")
+    assert not permitted("commerce:pulsedrop")
+    assert permitted("commerce:pulsedrop.seller.visitStore")
 
     fields = _python_payload_fields(PY_SOURCE)
     for identifying in ("author", "author_name", "username", "caption", "hashtags", "body"):
@@ -777,10 +922,21 @@ def test_the_renderer_is_not_pulsedrop_specific():
     assert "def card_html" in code_only
     assert "pulse-commerce-card" in code_only
 
-    # And the JS twin holds the same line.
-    js_strings = set(re.findall(r"\"([^\"\\]*)\"|'([^'\\]*)'", JS_CODE))
-    flat = {a or b for a, b in js_strings}
-    assert {value for value in flat if "pulsedrop" in value.lower()} <= {"pulsedrop"}
+    # And the JS twin holds the same line. ``pulsedrop`` itself is a property
+    # read there (``value.pulsedrop === true``) and so is not among the string
+    # literals at all; the anti-vacuity check is therefore on the scan finding
+    # literals, not on finding that one.
+    assert "Visit store" in JS_STRINGS, "the literal scan found nothing -- it has rotted"
+    js_offenders = {
+        value
+        for value in JS_STRINGS
+        if "pulsedrop" in value.lower() and not permitted(value)
+    }
+    assert not js_offenders, f"the JS twin names PulseDrop outside a payload key: {js_offenders}"
+    assert "pulsedrop" in _js_payload_fields(JS_CODE_NO_LITERALS)[1], (
+        "the discriminator is no longer read as a property -- if it moved into "
+        "a string, the exemption above stopped being about a field name"
+    )
 
 
 def test_the_renderer_invents_no_shipping_rating_or_discount():

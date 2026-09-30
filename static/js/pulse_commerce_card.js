@@ -35,6 +35,24 @@
   var GONE = [UNAVAILABLE, REMOVED];
   var STOCKLESS = ["digital", "course", "service", "event", "booking"];
 
+  // The store link's copy is the renderer's own -- the overlay ships a key
+  // beside every string it supplies, and it supplies no seller CTA -- so the
+  // key is named here, and it is the key `CommerceOverlay.tsx` already renders
+  // through rather than a second one meaning the same thing.
+  var SELLER_I18N_KEY = "commerce:pulsedrop.seller.visitStore";
+  var SELLER_FALLBACK = "Visit store";
+
+  // The accessible sentence, in visual order. Each part is read off the card
+  // itself rather than the payload, which is what keeps the sentence honest:
+  // the price span exists only where `showPrice` put it, so a card that
+  // withholds a price has no node here to announce.
+  var COMPOSED_PARTS = [
+    ".pulse-commerce-chip-label",
+    ".pulse-commerce-title",
+    ".pulse-commerce-price",
+    ".pulse-commerce-chip-state",
+  ];
+
   /**
    * Python's `html.escape(value, quote=True)`, character for character.
    *
@@ -137,9 +155,24 @@
     return value;
   }
 
-  function chip(value, extra) {
+  /**
+   * The `data-i18n` marker for an overlay block, or "".
+   *
+   * The overlay ships a translation key beside every string it supplies and the
+   * app renders through the key; this renderer read the fallback alone, so a
+   * French member scrolling a French post met an English badge and an English
+   * button on the one element meant to sell them something. The English
+   * fallback stays in the markup and `pulse_i18n.js` swaps the text, because
+   * the server does not know the reader's language on a cached response.
+   */
+  function i18n(block) {
+    var key = text(block && block.i18n_key);
+    return key ? " data-i18n='" + esc(key) + "'" : "";
+  }
+
+  function chip(value, extra, marker) {
     if (!value) return "";
-    return "<span class='pulse-commerce-chip" + (extra ? " " + extra : "") + "'>" + esc(value) + "</span>";
+    return "<span class='pulse-commerce-chip" + (extra ? " " + extra : "") + "'" + (marker || "") + ">" + esc(value) + "</span>";
   }
 
   /** The attachment card as an HTML string, or "" when there is nothing to show. */
@@ -180,7 +213,8 @@
     // is invisible, because a correct-looking card can still have an
     // `aria-label` announcing a price the card withholds.
     var accessibility = text(commerce.accessibility_text);
-    if (!accessibility || !showPrice) {
+    var composed = !accessibility || !showPrice;
+    if (composed) {
       accessibility = [labelText, title, showState ? stateText : ""].filter(Boolean).join(". ");
     }
 
@@ -188,9 +222,9 @@
       ? "<span class='pulse-commerce-thumb'><img src='" + esc(image) + "' alt='' loading='lazy' decoding='async'></span>"
       : "<span class='pulse-commerce-thumb is-empty' aria-hidden='true'></span>";
 
-    var chips = chip(labelText, "pulse-commerce-chip-label");
+    var chips = chip(labelText, "pulse-commerce-chip-label", i18n(label));
     if (showState) {
-      chips += chip(stateText, "pulse-commerce-chip-state" + (GONE.indexOf(block) !== -1 ? " is-gone" : ""));
+      chips += chip(stateText, "pulse-commerce-chip-state" + (GONE.indexOf(block) !== -1 ? " is-gone" : ""), i18n(availability));
     }
     var chipsHtml = chips ? "<span class='pulse-commerce-chips'>" + chips + "</span>" : "";
 
@@ -203,7 +237,7 @@
     if (store) meta += "<span class='pulse-commerce-store'>" + esc(store) + "</span>";
     var metaHtml = meta ? "<span class='pulse-commerce-meta'>" + meta + "</span>" : "";
 
-    var ctaHtml = routable && ctaText ? "<span class='pulse-commerce-cta'>" + esc(ctaText) + "</span>" : "";
+    var ctaHtml = routable && ctaText ? "<span class='pulse-commerce-cta'" + i18n(cta) + ">" + esc(ctaText) + "</span>" : "";
 
     var body = thumb + "<span class='pulse-commerce-copy'>" + chipsHtml + titleHtml + metaHtml + ctaHtml + "</span>";
 
@@ -215,7 +249,7 @@
 
     var storeRoute = safeRoute(seller.route);
     var storeHtml = storeRoute
-      ? "<a class='pulse-commerce-seller' href='" + esc(storeRoute) + "'>Visit store</a>"
+      ? "<a class='pulse-commerce-seller' href='" + esc(storeRoute) + "' data-i18n='" + esc(SELLER_I18N_KEY) + "'>" + esc(SELLER_FALLBACK) + "</a>"
       : "";
 
     var attribution = (commerce.attribution || {}).token || "";
@@ -233,6 +267,75 @@
   function postHtml(post, options) {
     if (!post || typeof post !== "object") return "";
     return html(post.commerce, options);
+  }
+
+  /**
+   * Translate a card that is already in the document. Idempotent.
+   *
+   * `pulse_i18n.js` sweeps `[data-i18n]` once, at DOMContentLoaded. Feed and
+   * reel cards arrive long after that — on scroll, on a new post, on a profile
+   * switch — so a card that is only ever caught by that pass is translated
+   * exactly when it happened to be in the first page of results. Every surface
+   * that inserts a card has to say so, which is what this is for.
+   *
+   * The accessible sentence is rebuilt afterwards, for every card. A translated
+   * chip over an English `aria-label` is a card that shows one thing and
+   * announces another, and that is the half of the bug a sighted reviewer
+   * cannot see.
+   *
+   * Every card, and not only the ones the renderer composed: the server's own
+   * prose sentence is built from `editorial.accessibility_text`, which says in
+   * its own docstring that it "cannot know the reader's language" and is
+   * English by construction. So the richer sentence is the right one for a
+   * reader who has no JavaScript -- their chips are English too -- and the
+   * wrong one the moment the sweep translates the card around it.
+   *
+   * Silent when `pulse_i18n.js` has not loaded: the markup already carries the
+   * server's English fallback, so an untranslated card is the previous
+   * behaviour rather than an empty one.
+   */
+  function recompose(root) {
+    var cards = root && root.querySelectorAll ? root.querySelectorAll(".pulse-commerce-main") : [];
+    for (var index = 0; index < cards.length; index += 1) {
+      var card = cards[index];
+      var parts = [];
+      for (var part = 0; part < COMPOSED_PARTS.length; part += 1) {
+        var node = card.querySelector(COMPOSED_PARTS[part]);
+        var value = node ? text(node.textContent) : "";
+        if (value) parts.push(value);
+      }
+      if (parts.length) card.setAttribute("aria-label", parts.join(". "));
+    }
+    return root;
+  }
+
+  function localize(root) {
+    var i18nApi = window.PulseI18n;
+    if (!root || !i18nApi || typeof i18nApi.translateMarkedNodes !== "function") return root;
+    i18nApi.translateMarkedNodes(root);
+    return recompose(root);
+  }
+
+  // `pulse_i18n.js` re-sweeps the whole document whenever the language settles
+  // -- on load, and again when `/api/account/language` answers with something
+  // other than the cached guess. That sweep translates the chips of cards it
+  // did not render, including the server-rendered permalink, and it knows
+  // nothing about the sentence composed from them. Without this the permalink
+  // shows French chips and announces an English sentence.
+  if (typeof document !== "undefined" && document.addEventListener) {
+    document.addEventListener("PulseLanguageChanged", function () {
+      recompose(document);
+    });
+    // And once for the sweep that already happened. On the permalink this file
+    // is deferred *after* `pulse_i18n.js`, so i18n has translated the served
+    // card's chips and announced it before the listener above exists. Without
+    // this the permalink's accessible sentence stays English until something
+    // else changes the language, which for a logged-out reader is never.
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", function () { recompose(document); }, { once: true });
+    } else {
+      recompose(document);
+    }
   }
 
   /**
@@ -257,6 +360,9 @@
     var node = host.firstElementChild;
     if (!node) return null;
     container.appendChild(node);
+    // After the append, so a reader on a translated page never sees the English
+    // fallback paint first.
+    localize(node);
     return node;
   }
 
@@ -264,6 +370,7 @@
     html: html,
     postHtml: postHtml,
     render: render,
+    localize: localize,
     isOverlay: isOverlay,
     availabilityBlock: availabilityBlock,
     ctaEnabled: ctaEnabled,
