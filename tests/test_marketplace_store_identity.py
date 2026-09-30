@@ -64,6 +64,11 @@ def test_publication_requires_a_store_name():
         "seller_status": "approved",
         "quantity": 4,
         "product_type": "physical",
+        # Carried so the store name is the only thing varying below. Publication
+        # also requires a price, and a row silent about one is refused by that
+        # rule -- which would satisfy the negative assertions for the wrong
+        # reason and contradict the positive one.
+        "price_label": "$12.00",
     }
     assert lifecycle.is_public({**live, "seller_store_name": "Roody's Shop"})
     assert lifecycle.public_denial_code({**live, "seller_store_name": "Roody's Shop"}) == ""
@@ -88,6 +93,10 @@ def test_a_row_without_identity_columns_is_not_treated_as_nameless():
         "seller_status": "approved",
         "quantity": 4,
         "product_type": "physical",
+        # The identity columns are the ones this test withholds. A price is not
+        # optional for publication, so leaving it out too would make the row fail
+        # for a reason this test is not about.
+        "price_label": "$12.00",
     }
     assert lifecycle.is_public(unprojected)
     assert lifecycle.public_denial_code(unprojected) == ""
