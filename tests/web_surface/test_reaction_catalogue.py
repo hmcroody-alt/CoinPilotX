@@ -94,6 +94,44 @@ def read(path: str) -> str:
         return handle.read()
 
 
+TEMPLATES = os.path.join(REPO, "templates")
+# Only an `src=`/`href=` attribute actually delivers a file. The same path also
+# appears in `"..." not in html` dedup guards and in `script[src*="..."]` selectors,
+# which are deliberately token-agnostic and must not be read as a bare-URL delivery.
+ASSET_REF = re.compile(
+    r"""(?:src|href)\s*=\s*['"]"""
+    r"/static/((?:css|js)/[A-Za-z0-9_.-]+\.(?:css|js))(?:\?v=([\w.-]+))?"
+)
+
+
+def _asset_reference_sources() -> "dict[str, dict[str, set[str]]]":
+    """Every `/static/...` css/js reference, mapped path -> token -> where it came from.
+
+    bot.py is not the only place that links these files: `templates/` links them
+    too, and the two drifted. `pulsesoc-tokens.css` was referenced 15 times from
+    templates under a token six weeks older than the one bot.py served, which
+    means two separately-cached copies of one file and no way to bump both at
+    once. A token audit that reads only bot.py cannot see that.
+    """
+    sources: dict[str, dict[str, set[str]]] = {}
+    files = [BOT]
+    for root, _dirs, names in os.walk(TEMPLATES):
+        files.extend(
+            os.path.join(root, n)
+            for n in names
+            if n.endswith((".html", ".jinja", ".j2"))
+        )
+    for path in files:
+        try:
+            text = read(path)
+        except (OSError, UnicodeDecodeError):
+            continue
+        where = os.path.relpath(path, REPO)
+        for rel, token in ASSET_REF.findall(text):
+            sources.setdefault("static/" + rel, {}).setdefault(token or "", set()).add(where)
+    return sources
+
+
 def test_no_two_reactions_share_a_glyph():
     """A shared glyph is indistinguishable to whoever reads the post.
 
@@ -322,12 +360,19 @@ def test_a_changed_asset_must_carry_a_new_cache_token(relpath):
     """
     expected_token, expected_digest = CACHE_PINNED_ASSETS[relpath]
 
-    filename = relpath.rsplit("/", 1)[-1]
-    tokens = set(re.findall(re.escape(filename) + r"\?v=([\w.-]+)", read(BOT)))
-    assert tokens, f"{relpath} is no longer served with a ?v= token by bot.py"
+    by_token = _asset_reference_sources().get(relpath, {})
+    assert by_token, f"{relpath} is no longer referenced by bot.py or templates/"
+    untokenized = by_token.get("")
+    assert not untokenized, (
+        f"{relpath} is referenced without any ?v= token from "
+        f"{sorted(untokenized)}. That copy is cached under a bare URL with a "
+        "year-long immutable header, so no token bump can ever replace it."
+    )
+    tokens = set(by_token)
     assert len(tokens) == 1, (
-        f"{relpath} is served under more than one token {sorted(tokens)}; the copies "
-        "would be cached separately and one of them would be stale"
+        f"{relpath} is served under more than one token "
+        + "; ".join(f"{t!r} from {sorted(w)}" for t, w in sorted(by_token.items()))
+        + " -- the copies are cached separately, so bumping one leaves the other stale"
     )
 
     with open(os.path.join(REPO, relpath), "rb") as handle:
@@ -338,12 +383,13 @@ def test_a_changed_asset_must_carry_a_new_cache_token(relpath):
         pytest.fail(
             f"{relpath} changed but still ships as ?v={token}. Every browser that "
             "has already loaded that token keeps its old copy for a year, so this "
-            "change would never reach a returning visitor. Bump the token in bot.py "
-            f"and record the new digest in CACHE_PINNED_ASSETS: {digest}"
+            "change would never reach a returning visitor. Bump the token wherever "
+            "it is referenced (bot.py *and* templates/), and record the new digest "
+            f"in CACHE_PINNED_ASSETS: {digest}"
         )
     assert (token, digest) == (expected_token, expected_digest), (
         f"{relpath} is pinned to ?v={expected_token} in CACHE_PINNED_ASSETS but "
-        f"bot.py now serves ?v={token}. Update the pin to "
+        f"is now served as ?v={token}. Update the pin to "
         f"({token!r}, {digest!r})."
     )
 
@@ -353,3 +399,30 @@ def test_catalog_payload_is_json_serialisable_and_complete():
     payload = json.loads(json.dumps(pulse_reactions.catalog_payload()))
     assert [entry["key"] for entry in payload] == [key for key, _e, _l in pulse_reactions.REACTION_CATALOG]
     assert all(entry["emoji"] and entry["label"] for entry in payload)
+
+
+def test_every_cache_busted_asset_is_pinned():
+    """The pin is only worth what it covers.
+
+    It used to list the handful of files someone had already been burned by, so
+    every other `?v=`-served asset could be edited under a stale token with CI
+    fully green -- which is exactly how a /pulse/videos fix shipped
+    undeliverable. Deriving the expected set from what bot.py and templates/
+    actually serve means a newly tokenized asset fails here until someone
+    records its digest.
+    """
+    sources = _asset_reference_sources()
+    served = {path for path, tokens in sources.items() if any(tokens)}
+    unpinned = sorted(served - set(CACHE_PINNED_ASSETS))
+    assert not unpinned, (
+        f"{len(unpinned)} asset(s) are served with a ?v= token but absent from "
+        f"CACHE_PINNED_ASSETS: {unpinned}. Until an asset is pinned, editing it "
+        "without bumping its token is invisible to CI and the change never "
+        "reaches a returning visitor. Add each with its token and sha256."
+    )
+
+    missing = sorted(set(CACHE_PINNED_ASSETS) - served)
+    assert not missing, (
+        f"CACHE_PINNED_ASSETS pins {missing}, which nothing serves with "
+        "a ?v= token. Drop the entry, or restore the token it is guarding."
+    )
