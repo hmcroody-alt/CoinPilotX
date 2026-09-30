@@ -2,6 +2,7 @@ import * as Notifications from "expo-notifications";
 import { createNavigationContainerRef } from "@react-navigation/native";
 import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
 import { dashboardModuleParamsForRoute } from "./dashboardRouting";
+import { nativeObjectDestination, type NativeRouteNavigation } from "./nativeRouteActions";
 import { RootStackParamList } from "./types";
 import { reconcileMessageNotifications } from "../core/messageNotificationReconciliation";
 
@@ -143,6 +144,15 @@ async function resolveNotificationTarget(target: string): Promise<NotificationRo
   if (!normalized) {
     navigateToNotifications();
     return { handled: true, target: "/pulse/notifications", reason: "missing_target" };
+  }
+
+  // The app's own front door. `linking.ts` and `openNativeRoute` both answer Home
+  // for this path; only this resolver did not, so the most generic "open the app"
+  // URL there is landed on the Activity Inbox. Exact match, so it shadows none of
+  // the `/pulse/...` branches below.
+  if (normalized === "/pulse" && navigationRef.isReady()) {
+    navigationRef.navigate("Tabs", { screen: "Home" });
+    return { handled: true, target: normalized };
   }
 
   if ((normalized === "/dashboard" || normalized === "/dashboard/home" || normalized === "/pulse/dashboard") && navigationRef.isReady()) {
@@ -515,6 +525,27 @@ async function resolveNotificationTarget(target: string): Promise<NotificationRo
   if (isIntentionalWebExceptionTarget(normalized)) {
     if (navigationRef.isReady()) navigationRef.navigate("Tabs", { screen: "Settings" });
     return { handled: true, target: normalized, reason: "native_legal_boundary" };
+  }
+
+  // Last stop before the fallback, and the reason the fallback is now honest: ask
+  // the resolver that cold start and in-app taps already share. Everything it
+  // knows that this function also knows has been answered above, so this cannot
+  // change an existing destination -- it can only rescue a path that was about to
+  // be rewritten into the Activity Inbox.
+  //
+  // That rewrite is the defect this branch exists for. A member who asked for
+  // their cart was not shown an error or left where they were; they were shown a
+  // different screen, as though that had been the request. Any destination the
+  // shared resolver can name must outrank a fallback that cannot.
+  const shared = nativeObjectDestination(normalized);
+  if (shared && navigationRef.isReady()) {
+    // `nativeObjectDestination` answers with a screen *name*, which is the point of
+    // it — one resolver serving many screens — and `navigate`'s overloads cannot
+    // express a name chosen at runtime. `NativeRouteNavigation` is the type
+    // `openNativeRoute` already dispatches these same destinations through, so the
+    // widening happens once here rather than loosening the resolver for everyone.
+    (navigationRef as unknown as NativeRouteNavigation).navigate(shared.screen, shared.params);
+    return { handled: true, target: normalized, reason: "shared_resolver" };
   }
 
   navigateToNotifications();

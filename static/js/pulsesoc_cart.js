@@ -144,16 +144,41 @@
     var confirm = moved
       ? "<button class='confirm' data-confirm-price='" + esc(line.line_id) + "'>Accept new price</button>"
       : "";
+    // What the buyer chose. The API has returned this since before there was a
+    // web cart and this file has never printed it, so two lines that differ
+    // only by size rendered as the same row twice. `_variant_label` returns ""
+    // when a variant names nothing it can stand behind -- its docstring says a
+    // caller should then render nothing rather than an empty separator -- so
+    // this is a presence test, not a truthiness convenience.
+    var variant = line.variant_label
+      ? "<p class='variant'>" + esc(line.variant_label) + "</p>"
+      : "";
+    var qty = line.qty || 1;
+    // `<b>` below is the extended amount, which is the number this line adds to
+    // the subtotal and therefore the one that has to be biggest. For a line of
+    // three that leaves the unit price nowhere on the page, so it is printed
+    // here -- and only when it differs from the extended amount, because
+    // "$14.99 each" under "$14.99" is noise.
+    var each = qty > 1
+      ? "<span class='each'>" + esc(money(price, line.currency)) + " each</span>"
+      : "";
     return "" +
       "<div class='line " + esc(st.tone) + "' data-line='" + esc(line.line_id) + "'>" +
         cover +
-        "<div>" +
-          "<h3><a href='" + esc(productHref(line.listing_id)) + "'>" + esc(line.title) + "</a></h3>" +
+        "<div class='ident'>" +
+          // `title` carries the whole name, because the heading is clamped to
+          // two lines in CSS. The clamp is visual only -- the anchor's text is
+          // still the full title for a screen reader -- and this gives a mouse
+          // the same recovery.
+          "<h3><a href='" + esc(productHref(line.listing_id)) + "' title='" + esc(line.title) + "'>" +
+            esc(line.title) + "</a></h3>" +
+          variant +
           was +
           "<span class='state'>" + esc(st.word) + "</span>" +
         "</div>" +
         "<div class='money'>" +
-          "<b>" + esc(money(price * (line.qty || 1), line.currency)) + "</b>" +
+          "<b>" + esc(money(price * qty, line.currency)) + "</b>" +
+          each +
           "<div class='controls'>" +
             confirm +
             "<input type='number' min='1' max='99' value='" + esc(line.qty) + "' " +

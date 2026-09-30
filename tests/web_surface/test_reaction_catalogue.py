@@ -45,46 +45,180 @@ BOT = os.path.join(REPO, "bot.py")
 #: digest here. Updating the digest *without* bumping the token puts the bug back
 #: -- the point of recording them together is that the diff shows you doing it.
 CACHE_PINNED_ASSETS = {
-    # Re-pinned for the commerce-attachment web render (6f6526e9d). That commit
-    # did the delivery-critical half right -- it changed this file and moved
-    # bot.py to ?v=commerce-attachment-20260928a in the same commit -- and only
-    # left the pairing below unrecorded. So the stale thing was this baseline,
-    # not the shipped asset, and the procedure above is satisfied: the token
-    # moved first, the digest follows.
-    "static/js/pulse_home_core.js": (
+    "static/css/admin_ops_center.css": (
+        "opsv2-20260914c",
+        "7f28cbd39f65dd2753229c00125b2854ca1b622a2ac2c248ff3f75df32e7024f",
+    ),
+    "static/css/pulse-commerce-attachment.css": (
         "commerce-attachment-20260928a",
-        "1b54ff0e9f348c7ff7a2a1e552a5a561a3dce95d618095e6c0d15ae1dfb5c94a",
+        "c06338609b3c3ed5cca95dc9a6afd6abebd0d12721fdc04d0f5e65927ac91c08",
+    ),
+    "static/css/pulse_cinematic_media.css": (
+        "static-bg-20260806a",
+        "98035d84a5d8d6f93044e2a55373bfa63ac2f5e0c915fddabd3f92bfff7ecc71",
+    ),
+    "static/css/pulse_composer_premium.css": (
+        "music-modal-20260621c",
+        "55bfe05a13cfe8f72f5cd5f188f239c369fa557eeeebe50497d171bcef15452b",
+    ),
+    "static/css/pulse_design_system.css": (
+        "cache-sweep-20260930a",
+        "e2ede95b4f8c395304bcfb42a36582c902a2894f3205804ffe61265e83b7b668",
+    ),
+    # Joined the pin when the Apps-menu width fix went in. The markup was always
+    # correct and only the rendered width was wrong, so a missed bump here is
+    # invisible to every other check in this repo -- silent twice over.
+    "static/css/pulse_desktop_feed.css": (
+        "apps-menu-width-20260927a",
+        "94bcf4e6cc11fd9a490bf8c0f41be6fc8be7ea0540e58c40bcdb9eb35ba828db",
     ),
     "static/css/pulse_desktop_shell.css": (
         "reaction-catalogue-20260927h",
         "401375580f970d043ded8b961b8bb9c583a300a5e63498f2300f46dd2a7c5c00",
     ),
+    "static/css/pulse_home_os.css": (
+        "desktop-dock-20260927a",
+        "96fb6cc7716175a17ebe2696f4b61d565c1208557796f371c067264a854b3ca3",
+    ),
+    "static/css/pulse_live_studio.css": (
+        "cache-sweep-20260928a",
+        "38a99e03d858dcebb0e5912b74df1cfd96134b75ae0f45a9f3b342b30413d961",
+    ),
+    "static/css/pulse_messages_v2.css": (
+        "messenger-desktop-nav-20260927a",
+        "5be3c7b030dfbdf70fc5af7b8dac948328ffeca9426692e5c83b67a74ea966fd",
+    ),
+    "static/css/pulse_messenger_media_viewer.css": (
+        "cache-sweep-20260930a",
+        "b1ad05102509b862897b01d31ad05ea9a76eeb6349b8f679405009f4f29af53d",
+    ),
     "static/css/pulse_reaction_system.css": (
         "video-action-fit-20260927i",
         "6ff68ca37cb663b328b315dbdfcd7e63614e2dee96f996946ab2800eb18db50b",
     ),
-    # Joined the pin when the Apps-menu width fix went in. It had sat on
-    # `shell-nav-20260909a` for eighteen days, and the fix is invisible to every
-    # other check in this repo -- the markup was always correct, only the
-    # rendered width was wrong -- so a missed token bump here would be silent
-    # twice over.
-    "static/css/pulse_desktop_feed.css": (
-        "apps-menu-width-20260927a",
-        "94bcf4e6cc11fd9a490bf8c0f41be6fc8be7ea0540e58c40bcdb9eb35ba828db",
+    "static/css/pulse_reels_experience.css": (
+        "reels-desktop-create-20260929a",
+        "c95ed00ffbf98d11f7e7a592c8da166c80211caafbc53dfb43c54f05ba0dab9c",
     ),
-    # Joined the pin with the commerce card's translation fix. These two are the
-    # worst possible pair to leave unpinned: `pulse_i18n.js` *is* the catalogue,
-    # so a returning browser holding last week's copy has last week's words and
-    # renders an English chip beside a French one from the same card. And the
-    # only symptom is text in the wrong language, which no other check in this
-    # repo can see.
-    "static/js/pulse_i18n.js": (
-        "commerce-i18n-20260929a",
-        "347e07cf3b5c6df9815d12fc26f40add5c9d4efcdceb7b6afe3b55bb418d9b45",
+    "static/css/pulse_sci_fi_system.css": (
+        "cache-sweep-20260930a",
+        "684f146c3b92f617ebc450763eaf201ff2d310d1eff8e55f1d57407a465663b5",
+    ),
+    "static/css/pulse_status_system.css": (
+        "cache-sweep-20260930a",
+        "63b2a0808303d6dc57a73c71f43146ce0c90262377e633bfe53f38e19c9d0921",
+    ),
+    "static/css/pulse_undx_action_center.css": (
+        "undx-actions-20260910a",
+        "99b422167935c3861e3e5e007777e6696c6945b4ea656f9a989517675c40e61d",
+    ),
+    # The worst of the thirteen: 126 insertions of drift, and it was referenced
+    # from fifteen templates under a token six weeks older than bot.py's, so
+    # browsers held two separately-cached copies and no single bump could reach
+    # both. Unified here.
+    "static/css/pulsesoc-tokens.css": (
+        "cache-sweep-20260930a",
+        "f01265e8f32a948729a463d51d1da7b730792541ca445ba574b3902d920d588a",
+    ),
+    "static/css/pulsesoc_global_call_overlay.css": (
+        "fullscreen-incoming-20260704",
+        "816191de56d96455e5e48c8fb25742ec46212c938d4b9fc3afb755d9919a82fc",
+    ),
+    "static/css/pulsesoc_intelligence_center.css": (
+        "cache-sweep-20260930a",
+        "d3613426dc60ab4cdb6f20857b704b271007b0f1134dff09c46d903757d2f79f",
+    ),
+    "static/js/admin_ops_center.js": (
+        "opsv2-20260722i",
+        "9c1dfbbef0332f46212a76565e1df6c60d9df078aac126982a8d6de7616e2de0",
+    ),
+    "static/js/pulse_ads_hooks.js": (
+        "pulse-sci-fi-ads-20260626b",
+        "edb876c680772f4296b970d31d82c70e17c9247110b261af9ff70e22644012df",
     ),
     "static/js/pulse_commerce_card.js": (
         "commerce-i18n-20260929a",
         "49170d75d69795fcdfdf93a8d81ebe837414a0472987f9d0a64e0aa19f0a68c7",
+    ),
+    "static/js/pulse_delivery.js": (
+        "1",
+        "41c3decd708304c0868f0b6f4f99d2d308e0562ff59de4c9f78ed77678b0ae64",
+    ),
+    "static/js/pulse_emoji.js": (
+        "emoji-primitive-20260927b",
+        "289f19e250bba16f1c5e64c7a55333f9252f4a8de87b0c96831856cac1ffd0c7",
+    ),
+    "static/js/pulse_environment_engine.js": (
+        "static-bg-20260806a",
+        "34016c93804f65bfa1f23c117757f2c049aaa117b1982f13f08af92f85be7f11",
+    ),
+    # The file the pin exists for: it shipped undeliverable twice. Re-pinned for
+    # the commerce-attachment web render (6f6526e9d), which did the
+    # delivery-critical half right -- it moved bot.py to
+    # ?v=commerce-attachment-20260928a in the same commit as the edit.
+    "static/js/pulse_home_core.js": (
+        "commerce-attachment-20260928a",
+        "1b54ff0e9f348c7ff7a2a1e552a5a561a3dce95d618095e6c0d15ae1dfb5c94a",
+    ),
+    # `pulse_i18n.js` *is* the catalogue, so a returning browser holding last
+    # week's copy has last week's words and renders an English chip beside a
+    # French one from the same card. The only symptom is text in the wrong
+    # language, which nothing else here can see.
+    "static/js/pulse_i18n.js": (
+        "commerce-i18n-20260929a",
+        "347e07cf3b5c6df9815d12fc26f40add5c9d4efcdceb7b6afe3b55bb418d9b45",
+    ),
+    "static/js/pulse_media_renderer.js": (
+        "cache-sweep-20260930a",
+        "2b8f78a12d5d938c110234ea9b96f3e0237489234bc4af1995ff3d8dcfca59e3",
+    ),
+    "static/js/pulse_messages_v2.js": (
+        "emoji-primitive-20260927a",
+        "ee9be24bd54cbea1ed20c18c09efa7fc6827c51ab90ec45b3076284a9faa94e0",
+    ),
+    "static/js/pulse_messenger_media_viewer.js": (
+        "media-viewer-20260704a",
+        "8773815b3881a23e7fc3a0fd8bdc807c988e0b3c1bd2a501ab6c19ad5a25488b",
+    ),
+    "static/js/pulse_pwa_install.js": (
+        "cache-sweep-20260930a",
+        "1075e13753e32b324ef746a0eb1ba1bf37716b188053bc1e9703a901b63b3a0a",
+    ),
+    "static/js/pulse_radio.js": (
+        "pulse-radio-20260623a",
+        "86cc0e5cdadfd0c6e082a4061ddc648d1aa34f2b1df8c3b22d814f2503c62f65",
+    ),
+    "static/js/pulse_reaction_system.js": (
+        "cache-sweep-20260928a",
+        "0ce98ae4b1ab16da5578e154253841dd2d7a4b348600a5f7d17701cff9b4ecbb",
+    ),
+    "static/js/pulse_realtime.js": (
+        "cache-sweep-20260930a",
+        "bbe5d8fcbfd94c90f299ebd91a17e2fec96aa831ea2945927d5f24d64d53b196",
+    ),
+    "static/js/pulse_search_bridge.js": (
+        "cache-sweep-20260930a",
+        "dd7d53183767b6e7f177a49032415aa7e74191d05442f01c69951b1c2b3d6d71",
+    ),
+    "static/js/pulse_status_viewer.js": (
+        "status-v4-20260703b",
+        "c1a109a8a7a7098e511ee97da03eafdc27ad37cf96a72445d24b8afd42419485",
+    ),
+    "static/js/pulse_upload_manager.js": (
+        "cache-sweep-20260930a",
+        "b711b0816cbdbadcdf1e51d78792e7156ba034c4203b01d01e261d5e6952f94c",
+    ),
+    "static/js/pulseshell_bridge.js": (
+        "cache-sweep-20260930a",
+        "d6dfa4bd27c573000815964c04e1adf076386c202912454582e4db8230c6b16b",
+    ),
+    "static/js/pulsesoc_cart.js": (
+        "web-cart-lines-20260930a",
+        "660271645f43d8f0711998d73e6df37064198e7d2783e2f9ec7664025df561fd",
+    ),
+    "static/js/pulsesoc_intelligence_center.js": (
+        "cache-sweep-20260930a",
+        "96f793669f3c28fd7f23469a1b00685d719750cef5ca1094a7fbd9a2db99f595",
     ),
 }
 
@@ -92,6 +226,44 @@ CACHE_PINNED_ASSETS = {
 def read(path: str) -> str:
     with open(path, encoding="utf-8") as handle:
         return handle.read()
+
+
+TEMPLATES = os.path.join(REPO, "templates")
+# Only an `src=`/`href=` attribute actually delivers a file. The same path also
+# appears in `"..." not in html` dedup guards and in `script[src*="..."]` selectors,
+# which are deliberately token-agnostic and must not be read as a bare-URL delivery.
+ASSET_REF = re.compile(
+    r"""(?:src|href)\s*=\s*['"]"""
+    r"/static/((?:css|js)/[A-Za-z0-9_.-]+\.(?:css|js))(?:\?v=([\w.-]+))?"
+)
+
+
+def _asset_reference_sources() -> "dict[str, dict[str, set[str]]]":
+    """Every `/static/...` css/js reference, mapped path -> token -> where it came from.
+
+    bot.py is not the only place that links these files: `templates/` links them
+    too, and the two drifted. `pulsesoc-tokens.css` was referenced 15 times from
+    templates under a token six weeks older than the one bot.py served, which
+    means two separately-cached copies of one file and no way to bump both at
+    once. A token audit that reads only bot.py cannot see that.
+    """
+    sources: dict[str, dict[str, set[str]]] = {}
+    files = [BOT]
+    for root, _dirs, names in os.walk(TEMPLATES):
+        files.extend(
+            os.path.join(root, n)
+            for n in names
+            if n.endswith((".html", ".jinja", ".j2"))
+        )
+    for path in files:
+        try:
+            text = read(path)
+        except (OSError, UnicodeDecodeError):
+            continue
+        where = os.path.relpath(path, REPO)
+        for rel, token in ASSET_REF.findall(text):
+            sources.setdefault("static/" + rel, {}).setdefault(token or "", set()).add(where)
+    return sources
 
 
 def test_no_two_reactions_share_a_glyph():
@@ -322,12 +494,19 @@ def test_a_changed_asset_must_carry_a_new_cache_token(relpath):
     """
     expected_token, expected_digest = CACHE_PINNED_ASSETS[relpath]
 
-    filename = relpath.rsplit("/", 1)[-1]
-    tokens = set(re.findall(re.escape(filename) + r"\?v=([\w.-]+)", read(BOT)))
-    assert tokens, f"{relpath} is no longer served with a ?v= token by bot.py"
+    by_token = _asset_reference_sources().get(relpath, {})
+    assert by_token, f"{relpath} is no longer referenced by bot.py or templates/"
+    untokenized = by_token.get("")
+    assert not untokenized, (
+        f"{relpath} is referenced without any ?v= token from "
+        f"{sorted(untokenized)}. That copy is cached under a bare URL with a "
+        "year-long immutable header, so no token bump can ever replace it."
+    )
+    tokens = set(by_token)
     assert len(tokens) == 1, (
-        f"{relpath} is served under more than one token {sorted(tokens)}; the copies "
-        "would be cached separately and one of them would be stale"
+        f"{relpath} is served under more than one token "
+        + "; ".join(f"{t!r} from {sorted(w)}" for t, w in sorted(by_token.items()))
+        + " -- the copies are cached separately, so bumping one leaves the other stale"
     )
 
     with open(os.path.join(REPO, relpath), "rb") as handle:
@@ -338,12 +517,13 @@ def test_a_changed_asset_must_carry_a_new_cache_token(relpath):
         pytest.fail(
             f"{relpath} changed but still ships as ?v={token}. Every browser that "
             "has already loaded that token keeps its old copy for a year, so this "
-            "change would never reach a returning visitor. Bump the token in bot.py "
-            f"and record the new digest in CACHE_PINNED_ASSETS: {digest}"
+            "change would never reach a returning visitor. Bump the token wherever "
+            "it is referenced (bot.py *and* templates/), and record the new digest "
+            f"in CACHE_PINNED_ASSETS: {digest}"
         )
     assert (token, digest) == (expected_token, expected_digest), (
         f"{relpath} is pinned to ?v={expected_token} in CACHE_PINNED_ASSETS but "
-        f"bot.py now serves ?v={token}. Update the pin to "
+        f"is now served as ?v={token}. Update the pin to "
         f"({token!r}, {digest!r})."
     )
 
@@ -353,3 +533,30 @@ def test_catalog_payload_is_json_serialisable_and_complete():
     payload = json.loads(json.dumps(pulse_reactions.catalog_payload()))
     assert [entry["key"] for entry in payload] == [key for key, _e, _l in pulse_reactions.REACTION_CATALOG]
     assert all(entry["emoji"] and entry["label"] for entry in payload)
+
+
+def test_every_cache_busted_asset_is_pinned():
+    """The pin is only worth what it covers.
+
+    It used to list the handful of files someone had already been burned by, so
+    every other `?v=`-served asset could be edited under a stale token with CI
+    fully green -- which is exactly how a /pulse/videos fix shipped
+    undeliverable. Deriving the expected set from what bot.py and templates/
+    actually serve means a newly tokenized asset fails here until someone
+    records its digest.
+    """
+    sources = _asset_reference_sources()
+    served = {path for path, tokens in sources.items() if any(tokens)}
+    unpinned = sorted(served - set(CACHE_PINNED_ASSETS))
+    assert not unpinned, (
+        f"{len(unpinned)} asset(s) are served with a ?v= token but absent from "
+        f"CACHE_PINNED_ASSETS: {unpinned}. Until an asset is pinned, editing it "
+        "without bumping its token is invisible to CI and the change never "
+        "reaches a returning visitor. Add each with its token and sha256."
+    )
+
+    missing = sorted(set(CACHE_PINNED_ASSETS) - served)
+    assert not missing, (
+        f"CACHE_PINNED_ASSETS pins {missing}, which nothing serves with "
+        "a ?v= token. Drop the entry, or restore the token it is guarding."
+    )
