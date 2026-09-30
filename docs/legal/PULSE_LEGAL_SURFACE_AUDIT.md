@@ -264,6 +264,38 @@ So four authorities agree the rate is 0% or 5%, and the single screen a seller
 reads says 10%. These two strings are also the only place any seller ever sees a
 rate: no template and no i18n catalog discloses a commission.
 
+**RESOLVED — technical fix only, no legal judgement.** Neither string names a rate
+any more. The screen already fetched `/api/pulse/marketplace/commercial/terms` in
+order to read `terms.acceptance`; the same response carries
+`terms.current.platform_fee_bps` from `policy.platform_fee_bps()` — the identical
+call `seller_fee_bps` makes to price a checkout — and the copy now renders that. So
+the rate a seller reads is the rate their settlement will use, by construction, and
+it follows the owner's three gates without another client release.
+
+Deleting the literal was not the hard part. Two decisions are:
+
+*A failed read names no rate at all.* `Number(null)` is `0`, so the obvious
+coercion turns a dropped request into a quoted 0% commission — and the guard below
+caught exactly that in the first version of this fix. The state is `number | null`
+and only a real `number` counts; when it is null the headline says the commission
+could not be loaded and the fee segment disappears from the terms summary
+altogether. A seller is being asked to press **Review and Accept** directly beneath
+that line, so a placeholder there would be a commission quote the platform never
+made.
+
+*The proposed 5% is no longer mentioned.* `commercial_operations.terms()` returns
+`future_notice.published: False`. Announcing an unpublished future rate was the
+other half of the old sentence and is not the client's call to make.
+
+The guard is `mobile-native/src/screens/__tests__/SellerStoreScreenFeeDisclosure.test.tsx`.
+It renders the same screen against three server answers — 0, 500 and 275 bps, the
+last a value that appears nowhere in this codebase and so cannot be produced by a
+client switching on rates it knows — and requires the rendered percentage to move
+with the response. It pins no literal: a test asserting "0.00%" would need
+rewriting on the day the owner activates the policy, which is the day it matters
+most, and would pass against a second hardcoded string just as happily. Mutation-
+proved in both directions — restoring either shipped line turns it red.
+
 ### D-L4 — The Privacy Center writes preferences it never reads back (HIGH)
 
 `/privacy-center` (`bot.py:104910`) persists four choices into
@@ -387,11 +419,23 @@ No legal text has been drafted, no policy published, and no attestation variable
 set. `MARKETPLACE_STANDARD_V1_OWNER_APPROVED`, `…_SELLER_DISCLOSURE_READY` and
 `…_EFFECTIVE_AT` are untouched, so the platform fee remains 0%.
 
-One repair has landed, and it is a routing fix rather than a legal one: the three
-canonical legal URLs that had a published page to point at now point at it (D-L1).
-It changes no sentence of any policy — it makes three URLs the shipped app already
-advertises resolve to the text that was always there.
+Three repairs have landed. None of them writes, edits or publishes a sentence of
+policy, which is the line §2 draws and the reason these three were in scope and the
+rest are not:
 
-Everything else in §3 is still open. D-L2 through D-L6 are the ones that change what
-a user is told or what the platform can prove, and each needs either an owner
-decision or text a lawyer has seen.
+* **D-L1** is routing. The three canonical legal URLs that had a published page to
+  point at now point at it. It makes URLs the shipped app already advertises resolve
+  to text that was always there.
+* **D-L2** is persistence. Signup demanded agreement and then discarded the answer;
+  it is now recorded against the version of each document the member actually read.
+  The consent requirement is unchanged — what changed is that the platform can now
+  show it was given, and can tell who has not yet seen a rewrite.
+* **D-L3** is disclosure plumbing. The one seller-facing fee statement read 10%, a
+  rate no code path yields and no seller was ever charged; it now renders whatever
+  the fee authority discloses, and states nothing when that read fails.
+
+D-L4 through D-L6 are still open, plus the owner decisions each landed fix left
+behind (listed in place above). D-L4 is the next technical one — the Privacy Center
+discarding a saved opt-out is a §106 defect, not a legal judgement. D-L5 and D-L6
+change what a user is told before their card is charged and need text a lawyer has
+seen.

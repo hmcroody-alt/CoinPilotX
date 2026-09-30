@@ -46,6 +46,13 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const [orders, setOrders] = useState<MarketplaceSellerOrder[]>([]);
   const [liability, setLiability] = useState<Record<string, number>>({});
   const [termsAccepted, setTermsAccepted] = useState(false);
+  // The commission rate as the server discloses it, or null when no live answer
+  // has arrived. Null, not 0: a seller who is told "0%" because a request failed
+  // has been told a rate, and a wrong rate is worse than no rate. Only the
+  // server may name this number -- this screen used to state a flat 10%, which
+  // no seller has ever been charged and which the fee authority does not even
+  // offer as a value.
+  const [disclosedFeeBps, setDisclosedFeeBps] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState("");
@@ -145,7 +152,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
       // Only a live answer moves an entitlement. A failed terms read leaves the
       // previous value alone; it never grants acceptance the server did not.
-      if (terms.status === "fulfilled") setTermsAccepted(Boolean(terms.value?.terms?.acceptance));
+      if (terms.status === "fulfilled") {
+        setTermsAccepted(Boolean(terms.value?.terms?.acceptance));
+        // Same response, same authority that prices checkout. Tested for
+        // `number` rather than coerced: `Number(null)` is 0, so a response
+        // carrying an explicit null rate would otherwise quote the seller a 0%
+        // commission the platform never offered.
+        const bps = terms.value?.terms?.current?.platform_fee_bps;
+        setDisclosedFeeBps(typeof bps === "number" && Number.isFinite(bps) ? bps : null);
+      }
 
       await hydration;
     })().finally(() => {
@@ -375,6 +390,12 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       setBusy("");
     }
   }
+
+  // "0.00%" rather than "0%": the same formatting the per-order fee line below
+  // uses, so a seller comparing the headline rate against an order is comparing
+  // two identically shaped numbers instead of wondering whether they differ.
+  const disclosedFeeLabel =
+    disclosedFeeBps === null ? "" : `${(disclosedFeeBps / 100).toFixed(2)}%`;
 
   const mediaItems = useMemo(
     () =>
@@ -706,7 +727,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       {shows("orders") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Orders and payouts</Text>
-        <Text style={styles.copy}>Your applied fee is shown per order. Current Marketplace terms remain 10%; the proposed 5% policy is not active.</Text>
+        <Text style={styles.copy}>{disclosedFeeLabel
+          ? `PulseSoc's commission is ${disclosedFeeLabel} of merchandise, and each order below shows the fee it was actually charged.`
+          : "PulseSoc's commission could not be loaded. Each order below shows the fee it was actually charged."}</Text>
         <View style={styles.actionRow}>
           {Object.entries(liability).map(([state, amount]) => <View key={state} style={styles.orderRow}><Text style={styles.orderTitle}>{state.replace(/_/g, " ")}</Text><Text style={styles.orderMeta}>{formatMoney(amount, "USD")}</Text></View>)}
         </View>
@@ -734,7 +757,11 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         )}
         <View style={styles.orderRow}>
           <Text style={styles.orderTitle}>Marketplace Fees &amp; Terms</Text>
-          <Text style={styles.orderMeta}>Seller Terms · 10% current platform fee · Returns · Payouts · Prohibited Goods · Appeals</Text>
+          {/* The fee segment drops out entirely when no rate arrived, rather
+              than degrading to a placeholder. A seller is being asked to accept
+              these terms here, so the one number in the list has to be the one
+              the server will settle against or not appear at all. */}
+          <Text style={styles.orderMeta}>Seller Terms{disclosedFeeLabel ? ` · ${disclosedFeeLabel} platform fee` : ""} · Returns · Payouts · Prohibited Goods · Appeals</Text>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: termsAccepted || busy === "terms" }} style={styles.secondaryButton} disabled={termsAccepted || busy === "terms"} onPress={acceptTerms}>
             <Text style={styles.secondaryText}>{termsAccepted ? "Accepted" : busy === "terms" ? "Saving..." : "Review and Accept"}</Text>
           </Pressable>
