@@ -117,6 +117,18 @@ describe("seller store publication pill", () => {
     view.unmount();
   });
 
+  it("names the missing price rather than putting the listing back in review", async () => {
+    // Every unpriced listing in production arrived by supplier import, so its
+    // merchant has never opened this listing's form. A bare "pending" chip would
+    // read as the review queue being slow — the one reading that prompts no
+    // action — when the listing is waiting on a single field only they can fill.
+    const view = await renderWith([listing({ price_label: "", publication_blocker: "priced" })]);
+    expect(view.queryAllByText(/^Live$/).length).toBe(0);
+    expect(view.queryAllByText(/Pending review/i).length).toBe(0);
+    expect(view.queryAllByText(/Price needed/i).length).toBeGreaterThan(0);
+    view.unmount();
+  });
+
   it("shows out of stock for an approved listing with an empty shelf", async () => {
     // This pill existed and was unreachable: the screen looked for "stock" in a
     // column that only ever holds a listing status, so no payload could produce

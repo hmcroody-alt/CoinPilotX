@@ -1207,7 +1207,10 @@
       "storeMediaViewerTitle": "Medya boutik",
       "statusApprovedLive": "Apwouve/ann dirèk",
       "statusPendingReview": "K ap tann revizyon",
-      "statusRemoved": "Retire"
+      "statusRemoved": "Retire",
+      "status": {
+        "price_needed": "Bezwen yon pri"
+      }
     },
     "orders": {
       "title": "Kòmann",
