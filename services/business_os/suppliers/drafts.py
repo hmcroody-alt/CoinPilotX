@@ -34,6 +34,7 @@ from decimal import Decimal
 
 from services import db, marketplace_variants as variants
 from services import marketplace_listing_lifecycle as lifecycle
+from services import marketplace_seller_identity as seller_identity
 from services import marketplace_supplier_schema as supplier_schema
 from services.business_os.suppliers import (connections, normalize, policy, pricing,
                                             store_policy)
@@ -970,6 +971,26 @@ def list_drafts(business_id, store_id, actor_user_id, connection_id, *,
     Joins from the supplier mapping rather than scanning listings, so a
     merchant's manually authored products can never appear in a dropshipping
     view — a manual listing has no ``marketplace_product_sources`` row.
+
+    ## Each row says whether a buyer can reach it, not just what it was set to
+
+    ``status`` and ``approval_status`` are the merchant's axis and the
+    moderator's, and a row can satisfy both and still be unreachable: no stock,
+    a suspended seller, a storefront with no name. Every one of those reads
+    ``active`` here, so a screen labelling the row from ``status`` calls it
+    published and green — which is how a merchant ends up with a catalogue that
+    looks complete, sells nothing, and offers no symptom to chase.
+
+    So each row carries ``live_blocker``: :func:`lifecycle.live_blocker`'s
+    verdict, the rule key or ``""``. It is deliberately the *key* and not prose.
+    The reason is derived once, on the server, from the same table buyer
+    discovery uses; the words belong to whichever screen is asking, exactly as
+    the rest of this payload works.
+
+    ``live_blocker`` answers ``""`` for anything not both published and
+    approved. Those rows already have an accurate label of their own, and
+    replacing "Not in your store yet" with "Out of stock" would bury the thing
+    the merchant actually has to act on.
     """
     policy.require_enabled()
     try:
@@ -986,8 +1007,15 @@ def list_drafts(business_id, store_id, actor_user_id, connection_id, *,
         # newest `limit` imports and reported every older match as absent, so a
         # merchant with more products than one page could open "Drafts" and be
         # told they had none.
+        # The seller row is joined for `live_blocker`, and `source` is shared
+        # with the COUNT below. Safe to widen rather than run a second statement:
+        # `marketplace_sellers.user_id` is UNIQUE, so a LEFT JOIN on it cannot
+        # multiply rows, and LEFT rather than inner so a listing whose seller
+        # record is missing stays on the page and is *described* as unreachable
+        # instead of vanishing from a list of the merchant's own imports.
         source = ("FROM marketplace_product_sources s "
                   "JOIN marketplace_listings l ON l.id = s.listing_id "
+                  "LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id "
                   "WHERE s.seller_user_id=? AND s.supplier_connection_id=? "
                   "AND s.business_id=? AND s.store_id=?")
         params = [int(seller_user_id), connection_id, business_id, store_id]
@@ -999,6 +1027,13 @@ def list_drafts(business_id, store_id, actor_user_id, connection_id, *,
         cur.execute(
             "SELECT l.id, l.title, l.status, l.approval_status, l.currency, "
             "l.cover_image_url, l.listing_metadata_json, l.updated_at, "
+            # Selected to answer `live_blocker` and dropped again below, like
+            # the metadata blob. Every one of them is a column the rules read:
+            # stock needs the quantity and the type that excuses it, and the
+            # seller's status and store name are two of the four rules.
+            "l.quantity, l.product_type, l.listing_type, "
+            "ms.status AS seller_status, "
+            + seller_identity.store_name_select("ms") + ", "
             "s.provider, s.sync_state, s.attention_json, "
             "s.supplier_cost_cents, s.provider_product_id " + source +
             " ORDER BY l.id DESC LIMIT ?", tuple(params) + (limit,))
@@ -1022,6 +1057,14 @@ def list_drafts(business_id, store_id, actor_user_id, connection_id, *,
             # internal store and nothing on this list needs it.
             row["cover_image_url"] = _cover_of(row)
             row.pop("listing_metadata_json", None)
+            # Asked before the inputs are dropped, and asked of the shared rule
+            # table rather than re-read from the columns here. A second reading
+            # of "published" living on this screen is exactly the drift
+            # `PUBLICATION_RULES` was written to end.
+            row["live_blocker"] = lifecycle.live_blocker(row)
+            for key in ("quantity", "product_type", "listing_type",
+                        "seller_status", "seller_store_name"):
+                row.pop(key, None)
             rows.append(row)
         # `count` is how many match, not how many were just returned. It used to
         # be len(rows) -- computed after the LIMIT -- which made it a restatement
