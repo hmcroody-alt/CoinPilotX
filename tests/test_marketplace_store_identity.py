@@ -46,6 +46,7 @@ def test_publication_requires_a_store_name():
         "seller_status": "approved",
         "quantity": 4,
         "product_type": "physical",
+        "price_label": "$24.00",
     }
     assert lifecycle.is_public({**live, "seller_store_name": "Roody's Shop"})
     assert lifecycle.public_denial_code({**live, "seller_store_name": "Roody's Shop"}) == ""
@@ -70,6 +71,10 @@ def test_a_row_without_identity_columns_is_not_treated_as_nameless():
         "seller_status": "approved",
         "quantity": 4,
         "product_type": "physical",
+        # Present so the only unprojected column is the store name this test is
+        # about. `priced` is a gate rule that fails closed when it cannot see the
+        # price, and leaving it out here would pass for the wrong reason.
+        "price_label": "$24.00",
     }
     assert lifecycle.is_public(unprojected)
     assert lifecycle.public_denial_code(unprojected) == ""

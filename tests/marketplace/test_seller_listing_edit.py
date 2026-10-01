@@ -771,17 +771,59 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
         return row
 
     def unpriced_listing(self):
+        """A listing whose merchant never named a price. Not buyer-reachable.
+
+        A blank label is now a publication blocker (``priced`` in
+        ``marketplace_listing_lifecycle.PUBLICATION_RULES``), so this row is
+        filtered out of every buyer surface by ``public_sql``. Kept for the
+        tests that are about the *row* rather than the page, and pinned as
+        unreachable by ``test_a_listing_with_no_price_is_not_offered_to_buyers``.
+        """
         return self._make_listing(self.owner, title="Unpriced web lamp", price_label="")
 
-    def test_the_marketplace_grid_renders_and_never_says_request_access(self):
+    def no_number_listing(self):
+        """A listing the merchant priced with a word instead of an amount.
+
+        "Free" is one of ``bot.PRICE_LABEL_UNPRICED`` -- a label a seller may
+        deliberately choose, which parses to zero cents and is *not* a blocker,
+        because the merchant did answer the question. This is what the rendering
+        tests below need: a listing that is genuinely on sale and genuinely has
+        no amount to print, which is the only state where the page could still
+        be tempted to invent one.
+        """
+        return self._make_listing(self.owner, title="Free web lamp", price_label="Free")
+
+    def test_a_listing_with_no_price_is_not_offered_to_buyers(self):
+        """A blank price keeps the listing off the grid and off its own page.
+
+        The five CJ supplier imports that prompted this rule were published,
+        approved and well stocked, so both moderation columns read healthy and
+        nothing downstream refused: the checkout parser maps a blank label to
+        zero cents and every surface simply drew an empty amount slot. The
+        listing is held back rather than rejected, so the merchant keeps their
+        approval and only has to add the price.
+        """
         listing_id = self.unpriced_listing()
+        with self.acting_as(self.owner):
+            grid = self.client.get("/pulse/marketplace")
+            product = self.client.get(f"/pulse/marketplace/{listing_id}")
+        self.assertEqual(grid.status_code, 200)
+        self.assertNotIn("Unpriced web lamp", grid.get_data(as_text=True),
+                         "an unpriced listing is still being offered on the buyer grid")
+        # 404 rather than a "this was removed" page, matching every other
+        # non-public listing: the route declines to confirm the row exists.
+        self.assertEqual(product.status_code, 404,
+                         "the product page still serves an unpriced listing")
+
+    def test_the_marketplace_grid_renders_and_never_says_request_access(self):
+        listing_id = self.no_number_listing()
         with self.acting_as(self.owner):
             response = self.client.get("/pulse/marketplace")
         # A 500 here means the %-format broke when the fallback was threaded
         # into the inline script -- the failure mode this test exists for.
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:400])
         html = response.get_data(as_text=True)
-        self.assertIn("Unpriced web lamp", html, "the unpriced listing never rendered")
+        self.assertIn("Free web lamp", html, "the listing never rendered")
         self.assertInventsNoPrice(html, "the marketplace grid")
         # The card must still be a card. Dropping the price pill must not take
         # the row's other pills with it, or "no invented price" would be
@@ -805,7 +847,7 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
         self.assertInventsNoPrice(script, "the inline JS card")
 
     def test_the_product_page_renders_and_never_says_request_access(self):
-        listing_id = self.unpriced_listing()
+        listing_id = self.no_number_listing()
         with self.acting_as(self.owner):
             response = self.client.get(f"/pulse/marketplace/{listing_id}")
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:400])

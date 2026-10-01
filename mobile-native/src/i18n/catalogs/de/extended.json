@@ -1222,7 +1222,10 @@
       "storeMediaViewerTitle": "Shop-Medien",
       "statusApprovedLive": "Freigegeben / live",
       "statusPendingReview": "Prüfung ausstehend",
-      "statusRemoved": "Entfernt"
+      "statusRemoved": "Entfernt",
+      "status": {
+        "price_needed": "Preis fehlt"
+      }
     },
     "orders": {
       "title": "Bestellungen",

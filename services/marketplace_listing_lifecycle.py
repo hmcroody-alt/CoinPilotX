@@ -1,12 +1,23 @@
 """Canonical publication and inventory policy for PulseSoc Marketplace listings.
 
-Publication has a fourth condition alongside listing status, moderation state and
-stock: the seller must have a public store name. A buyer has to know who they are
+Publication needs more than listing status, moderation state and stock, and the
+extra conditions are the ones nothing else checks.
+
+The seller must have a public store name. A buyer has to know who they are
 buying from, and "who" is the storefront — see
 ``services/marketplace_seller_identity``. Allowing a nameless seller to sell would
 force every buyer surface to invent an identity, and the only name lying around
 is the account holder's personal one. Better to hold the listing back and repair
 the seller record (``scripts/marketplace_store_identity_audit.py``).
+
+The listing must also name a price. Moderation never looks at the price — it
+judges safety and category — and the dropship importer writes a blank label on
+purpose, so approval and a blank price are not contradictory states and both
+axes read healthy. Nothing downstream fails loudly either: the checkout parser
+maps a blank label to zero cents, and every buyer surface renders an empty
+amount slot rather than refusing. So five approved, well-stocked, unpriced
+supplier imports sat in production discovery being offered to buyers with no
+price on them, and no query anywhere was wrong.
 """
 
 from __future__ import annotations
@@ -107,6 +118,22 @@ def _is_released(listing: Mapping[str, Any], quantity: int) -> Optional[bool]:
     )
 
 
+def _is_priced(listing: Mapping[str, Any], quantity: int) -> Optional[bool]:
+    """Whether the merchant has named a price at all.
+
+    Blank, not zero. ``PRICE_LABEL_UNPRICED`` in ``bot`` -- "Free", "Request
+    access", "Paid later", "Premium later" -- are labels a seller may
+    deliberately choose, and all four parse to zero cents, so a rule phrased as
+    "parses above zero" would take every free listing off sale. The defect is
+    the merchant never answering the question, and the only spelling of that is
+    an empty label. It is also the only phrasing :func:`public_sql` can state
+    identically, since SQL cannot run the label parser.
+    """
+    if "price_label" not in listing:
+        return None
+    return bool(str(listing.get("price_label") or "").strip())
+
+
 def _is_in_stock(listing: Mapping[str, Any], quantity: int) -> Optional[bool]:
     if normalized(listing.get("product_type") or listing.get("listing_type")) in STOCKLESS_TYPES:
         return True
@@ -190,6 +217,18 @@ PUBLICATION_RULES: tuple[PublicationRule, ...] = (
         seller_label="Not published",
         moderator_note="the listing is not both published and approved",
         satisfied=_is_released,
+        passes_when_unknown=False,
+    ),
+    PublicationRule(
+        key="priced",
+        # Not a new code. A buyer can do nothing about an unpriced listing and it
+        # may well come back once the merchant prices it, which is exactly what
+        # ``ITEM_UNAVAILABLE`` already means; native clients branch on these
+        # strings and a fourth would reach them as the default "unavailable".
+        denial_code="ITEM_UNAVAILABLE",
+        seller_label="Price needed",
+        moderator_note="the listing has no price",
+        satisfied=_is_priced,
         passes_when_unknown=False,
     ),
     PublicationRule(
@@ -287,6 +326,11 @@ def public_sql(alias: str = "l", seller_alias: str = "ms") -> str:
         # The store-name invariant. Every caller of this predicate already joins
         # the seller row for its status, so this costs no extra join.
         f"AND {seller_identity.store_name_sql(seller_alias)} IS NOT NULL "
+        # The price invariant, twin of `_is_priced`. A supplier import writes a
+        # blank label on purpose and moderation does not look at the price, so
+        # without this clause an approved, well-stocked, unpriced listing reached
+        # buyer discovery and every surface rendered the amount slot empty.
+        f"AND NULLIF(TRIM({alias}.price_label),'') IS NOT NULL "
         f"AND (LOWER(COALESCE({alias}.product_type,{alias}.listing_type,'')) "
         "IN ('digital','course','service','event','booking') "
         f"OR COALESCE({alias}.quantity,0)>0)"

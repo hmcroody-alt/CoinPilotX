@@ -1207,7 +1207,10 @@
       "storeMediaViewerTitle": "店铺媒体",
       "statusApprovedLive": "已通过 / 在售",
       "statusPendingReview": "审核中",
-      "statusRemoved": "已下架"
+      "statusRemoved": "已下架",
+      "status": {
+        "price_needed": "需填写价格"
+      }
     },
     "orders": {
       "title": "订单",

@@ -1306,7 +1306,10 @@
       "storeMediaViewerTitle": "وسائط المتجر",
       "statusApprovedLive": "معتمد/مباشر",
       "statusPendingReview": "قيد المراجعة",
-      "statusRemoved": "تمت الإزالة"
+      "statusRemoved": "تمت الإزالة",
+      "status": {
+        "price_needed": "مطلوب السعر"
+      }
     },
     "orders": {
       "title": "الطلبات",
