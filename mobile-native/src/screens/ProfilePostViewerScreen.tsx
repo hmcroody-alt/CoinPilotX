@@ -5,6 +5,7 @@ import { deletePost, getPostDetail, PulsePost, pulsePostUrl, reactToPost, repost
 import { listPublicProfilePosts } from "../api/profile";
 import { PostCard } from "../components/PostCard";
 import { invalidateNativeSync } from "../core/eventSync";
+import { useCommerceOverlayNavigation } from "../commerce/useCommerceOverlayNavigation";
 import { RootStackParamList } from "../navigation/types";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
@@ -16,6 +17,7 @@ import { createThemedStyles } from "../theme/themedStyles";
 type Props = NativeStackScreenProps<RootStackParamList, "ProfilePostViewer">;
 
 export function ProfilePostViewerScreen({ route, navigation }: Props) {
+  const commerceNavigation = useCommerceOverlayNavigation(navigation);
   const [postIds, setPostIds] = useState(() => dedupe(route.params.postIds));
   const [posts, setPosts] = useState<Record<number, PulsePost>>({});
   const [message, setMessage] = useState("");
@@ -185,6 +187,8 @@ export function ProfilePostViewerScreen({ route, navigation }: Props) {
           const post = posts[postId];
           return <View style={styles.post}>{post ? <PostCard
             post={post}
+            onOpenCommerceProduct={commerceNavigation.onOpenCommerceProduct}
+            onOpenCommerceSeller={commerceNavigation.onOpenCommerceSeller}
             active={postId === activePostId}
             busy={guard.isItemBusy(post.id)}
             onOpen={() => undefined}

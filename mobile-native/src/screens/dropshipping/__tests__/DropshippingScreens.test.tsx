@@ -1423,6 +1423,11 @@ describe("ImportCartScreen", () => {
       published: publishedCount === results.length,
       publishedCount,
       needsAttention: results.filter((item) => item.outcome === "NEEDS_ATTENTION").length,
+      // Derived from the rows for the same reason as the counts above: a test
+      // that could state "5 deferred" alongside no deferred row could make the
+      // summary line claim anything.
+      deferred: results.filter((item) => item.outcome === "DEFERRED").length,
+      maxPerImport: null,
       pricingRule: { type: "TARGET_MARGIN", value: 45 },
       pricingSource: "PLATFORM_DEFAULT",
       autoPublish: true,
@@ -1440,13 +1445,15 @@ describe("ImportCartScreen", () => {
   async function renderCart(
     items: ImportCartItem[],
     staleCount = 0,
-    policy: StoreImportPolicy | "unavailable" = storePolicy()
+    policy: StoreImportPolicy | "unavailable" = storePolicy(),
+    maxPerImport: number | null = null
   ) {
     mockGetCart.mockResolvedValue({
       items,
       count: items.length,
       staleCount,
-      maxItems: 200
+      maxItems: 200,
+      maxPerImport
     });
     if (policy === "unavailable") {
       mockGetStorePolicy.mockRejectedValue(new PulseApiError("down", 503, "provider_unavailable"));
@@ -1774,6 +1781,105 @@ describe("ImportCartScreen", () => {
     expect(view.queryByLabelText("Open your imported products")).toBeNull();
     expect(view.queryByText(/Published — live and ready to sell/)).toBeNull();
     expect(view.queryByText("This one couldn't be imported")).toBeNull();
+  });
+
+  /* ---------------------------------------------------------------- *
+   * A cart bigger than one import
+   *
+   * The reported production failure. A seller with 58 products in the
+   * cart pressed "Import & publish 58" and was told "That import didn't
+   * run." — the server refused the whole request with `batch_too_large`
+   * and `stateForError` has no mapping for that code, so it fell through
+   * to a bare ERROR. The server now defers the overflow instead, and
+   * these four assert the seller is told the truth before the tap, after
+   * the tap, and in neither case told something went wrong.
+   * ---------------------------------------------------------------- */
+
+  function manyItems(count: number): ImportCartItem[] {
+    return Array.from({ length: count }, (_, index) =>
+      cartItem({ itemId: `item-${index}`, externalProductId: `ext-${index}` })
+    );
+  }
+
+  it("does not offer to import more than one run can take", async () => {
+    // The button is the promise. "Import & publish 30" over a run that
+    // takes 25 is the sentence this incident was reported as.
+    const { view } = await renderCart(manyItems(30), 0, storePolicy(), 25);
+    await waitFor(() => expect(view.getAllByText("Ceramic Mug").length).toBeGreaterThan(0));
+
+    expect(view.getByText("Import & publish 25")).toBeTruthy();
+    expect(view.queryByText("Import & publish 30")).toBeNull();
+    expect(view.getByText(/25 products at a time. The other 5 stay in your cart/)).toBeTruthy();
+  });
+
+  it("counts the whole selection when one run can serve it", async () => {
+    // The note and the truncation are conditional, not permanent. A cart
+    // inside the cap must read exactly as it did before this change.
+    const { view } = await renderCart(manyItems(3), 0, storePolicy(), 25);
+    await waitFor(() => expect(view.getAllByText("Ceramic Mug").length).toBeGreaterThan(0));
+
+    expect(view.getByText("Import & publish 3")).toBeTruthy();
+    expect(view.queryByText(/stay in your cart/)).toBeNull();
+  });
+
+  it("does not call a deferred product a failure", async () => {
+    // The summary's arithmetic is the trap: `failed` was derived by
+    // subtracting the known-good outcomes from `requested`, so five
+    // perfectly good deferred rows read as "5 couldn't be imported" —
+    // sending the seller hunting a fault that does not exist.
+    const { view } = await renderCart(manyItems(3), 0, storePolicy(), 2);
+    await waitFor(() => expect(view.getAllByText("Ceramic Mug").length).toBeGreaterThan(0));
+
+    mockImportSelected.mockResolvedValue(
+      runResult(
+        [
+          itemResult({ itemId: "item-0", externalProductId: "ext-0" }),
+          itemResult({ itemId: "item-1", externalProductId: "ext-1" }),
+          itemResult({
+            itemId: "item-2",
+            externalProductId: "ext-2",
+            outcome: "DEFERRED",
+            listingId: null,
+            published: false,
+            variantCount: null,
+            priceLabel: null,
+            quantity: null
+          })
+        ],
+        { maxPerImport: 2 }
+      )
+    );
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Import and publish 2 products to your store"));
+    });
+    await settle();
+
+    await waitFor(() => expect(view.getByText(/1 still in your cart/)).toBeTruthy());
+    expect(view.queryByText(/couldn't be imported/)).toBeNull();
+    expect(view.getByText("Still in your cart — import again to continue")).toBeTruthy();
+    expect(view.getByText(/You can run this again/)).toBeTruthy();
+  });
+
+  it("says what to do when the server refuses the batch outright", async () => {
+    // The fallthrough itself, asserted directly. A `batch_too_large` is
+    // still reachable — a request naming more ids than a cart can hold —
+    // and it must never reach the generic sentence again.
+    const { view } = await renderCart(manyItems(3), 0, storePolicy(), 2);
+    await waitFor(() => expect(view.getAllByText("Ceramic Mug").length).toBeGreaterThan(0));
+
+    mockImportSelected.mockRejectedValue(new PulseApiError("too many", 400, "batch_too_large"));
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Import and publish 2 products to your store"));
+    });
+    await settle();
+
+    await waitFor(() =>
+      expect(view.getByText(/more products than one import can take/)).toBeTruthy()
+    );
+    expect(view.getByText(/importing 2 or fewer/)).toBeTruthy();
+    expect(view.queryByText("That import didn't run. Nothing was imported and your cart is unchanged.")).toBeNull();
   });
 
   it("says a cost is unknown rather than printing a zero", async () => {

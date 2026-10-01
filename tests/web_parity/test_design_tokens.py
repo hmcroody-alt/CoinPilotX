@@ -37,7 +37,14 @@ MAX_BOT_HEX_OCCURRENCES = 1008   # hardcoded #rrggbb inside bot.py
 # this walked 180 -> 183. 182 is where it sits after giving back #eafcff.
 MAX_BOT_DISTINCT_HEX = 182
 MAX_INLINE_STYLE_BLOCKS = 97
-MAX_CONFLICTING_CSS_VARS = 45
+# Recounted 45 -> 15. The old count pooled every declaration of a name across
+# every stylesheet into one set, so a file that redefines its own variable at a
+# narrower scope was counted as a load-order conflict. 30 of the 45 were that --
+# including `--control-accent`, which the test's own docstring cited as the
+# motivating example and which is in fact a per-theme variable declared once per
+# `.comm-shell[data-control-theme="..."]` selector inside a single file. That is
+# the feature, not the bug. See test_conflicting_css_vars_do_not_increase.
+MAX_CONFLICTING_CSS_VARS = 15
 
 
 def read(p: Path) -> str:
@@ -229,16 +236,33 @@ def test_aliases_resolve_to_tokens_not_raw_hex():
 
 def test_conflicting_css_vars_do_not_increase():
     """
-    45 variable names resolve to different values depending on which stylesheet
-    loaded last (e.g. --control-accent was green, blue and cyan at once).
+    15 variable names resolve to different values depending on which stylesheet
+    loaded last.
+
+    Load order can only decide the outcome when two *different* stylesheets
+    disagree, so what counts is each file's effective value — its last
+    declaration at equal specificity. A file that declares the same name several
+    times on its own selectors is scoping a variable, which is how custom
+    properties are meant to work: `--control-accent` has ten values in
+    pulse_messages_v2.css because the messenger has ten themes, and
+    `--mkt-price-line` has two in pulse_marketplace.css because the card's price
+    line box shrinks below the tablet breakpoint. Neither depends on load order.
+
+    Counting those made the budget 45, of which 30 were noise — enough room for a
+    real cross-file regression to land without moving the number.
     """
-    defs = {}
-    for f in CSS_DIR.glob("*.css"):
+    effective = {}
+    for f in sorted(CSS_DIR.glob("*.css")):
         if f.name == "pulsesoc-tokens.css":
             continue
         for m in re.finditer(r"(--[a-z0-9-]+)\s*:\s*([^;]+);", read(f)):
-            defs.setdefault(m.group(1), set()).add(m.group(2).strip())
-    conflicting = sorted(k for k, v in defs.items() if len(v) > 1)
+            # Last write per file wins, which is what a later stylesheet would
+            # have to beat.
+            effective.setdefault(m.group(1), {})[f.name] = m.group(2).strip()
+    conflicting = sorted(
+        name for name, per_file in effective.items()
+        if len(set(per_file.values())) > 1
+    )
     assert len(conflicting) <= MAX_CONFLICTING_CSS_VARS, (
         f"conflicting CSS vars rose to {len(conflicting)} "
         f"(budget {MAX_CONFLICTING_CSS_VARS}). New conflicts: {conflicting}"

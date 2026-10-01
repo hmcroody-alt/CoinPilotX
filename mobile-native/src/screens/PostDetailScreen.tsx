@@ -34,6 +34,7 @@ import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
+import { useCommerceOverlayNavigation } from "../commerce/useCommerceOverlayNavigation";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
@@ -48,6 +49,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "PostDetail">;
 
 export function PostDetailScreen({ route, navigation }: Props) {
   const postId = route.params.postId;
+  const commerceNavigation = useCommerceOverlayNavigation(navigation);
   const { authState } = useAuth();
   const currentUserId = Number(authState.user?.user_id || 0);
   const [post, setPost] = useState<PulsePost | null>(null);
@@ -334,6 +336,8 @@ export function PostDetailScreen({ route, navigation }: Props) {
             {error ? <Text style={styles.error}>{error}</Text> : null}
             <PostCard
               post={post}
+              onOpenCommerceProduct={commerceNavigation.onOpenCommerceProduct}
+              onOpenCommerceSeller={commerceNavigation.onOpenCommerceSeller}
               detail
               busy={busy}
               onReact={handleReact}

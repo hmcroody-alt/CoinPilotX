@@ -92,6 +92,15 @@ export function saveTargetFromUrl(url?: string | null): { type: SavableContentTy
     ["reel", /\/pulse\/reels?\/(\d+)/i],
     ["post", /\/pulse\/post\/(\d+)/i],
     ["status", /[?&]status(?:_id)?=(\d+)/i],
+    // Marketplace has two shapes, and both are live rather than one being legacy.
+    // `/pulse/marketplace/<id>` is the canonical product URL — what the web
+    // storefront serves, what the sitemap submits, and what the backend now writes
+    // into `pulse_saved_items.source_url` and its search payloads. `?listing=<id>`
+    // is what it wrote before that, so rows already in the database carry it and
+    // will for as long as they are saved. Matching only the new shape would make
+    // Save disappear from every older row; matching only the old one is what this
+    // list did, which made it disappear from every new one.
+    ["marketplace", /\/pulse\/marketplace\/(\d+)/i],
     ["marketplace", /[?&]listing(?:_id)?=(\d+)/i]
   ];
   for (const [type, pattern] of patterns) {

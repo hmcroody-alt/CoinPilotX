@@ -20,6 +20,9 @@ import { ReelLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
 import { colors } from "../theme/colors";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { ContentTranslation } from "./ContentTranslation";
+import { CommerceOverlay } from "./commerce/CommerceOverlay";
+import type { PulseCommerceOverlay } from "../api/pulseCommerceOverlay";
+import { isPulseCommerceOverlay } from "../api/pulseCommerceOverlay";
 import { createThemedStyles } from "../theme/themedStyles";
 
 type ReelPlayerCardProps = {
@@ -74,6 +77,16 @@ type ReelPlayerCardProps = {
   onOpenMore: (reel: PulseReel) => void;
   onJoinLive: (reel: PulseReel) => void;
   onViewable?: (reel: PulseReel, watchMs: number) => void;
+  /**
+   * Open the product a PulseDrop Reel is about.
+   *
+   * Optional, and the overlay renders only when it is supplied, because a
+   * surface that cannot navigate must not show a call to action it cannot
+   * honour. A Reel with no `commerce` field ignores both of these entirely.
+   */
+  onOpenCommerceProduct?: (commerce: PulseCommerceOverlay) => void;
+  /** Open the merchant's store. A different destination from the product. */
+  onOpenCommerceSeller?: (commerce: PulseCommerceOverlay) => void;
 };
 
 export function ReelPlayerCard({
@@ -102,7 +115,9 @@ export function ReelPlayerCard({
   onOpenMusic,
   onOpenMore,
   onJoinLive,
-  onViewable
+  onViewable,
+  onOpenCommerceProduct,
+  onOpenCommerceSeller
 }: ReelPlayerCardProps) {
   const videoRef = useRef<Video>(null);
   const attachedSoundRef = useRef<Audio.Sound | null>(null);
@@ -568,6 +583,21 @@ export function ReelPlayerCard({
       </View>
 
       <View style={[styles.caption, fullBleed ? { bottom: contentBottom } : null]}>
+        {/*
+          Above the caption and inside this block, so it inherits the offsets
+          that already clear the action rail, the navigator and the home
+          indicator. Rendered only when the caller can actually navigate: a
+          screen that cannot open the product must not show a button promising
+          it can. An ordinary Reel has no `commerce` field and renders nothing.
+        */}
+        {isPulseCommerceOverlay(reel.commerce) && onOpenCommerceProduct ? (
+          <CommerceOverlay
+            commerce={reel.commerce}
+            surface="reel"
+            onOpenProduct={onOpenCommerceProduct}
+            onOpenSeller={onOpenCommerceSeller || onOpenCommerceProduct}
+          />
+        ) : null}
         <Text style={styles.title} numberOfLines={1}>{author.username ? `@${author.username}` : reel.title || "PulseSoc Reel"}</Text>
         {reel.caption || reel.body ? (
           <ContentTranslation

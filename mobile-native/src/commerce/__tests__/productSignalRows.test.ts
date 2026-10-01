@@ -19,6 +19,7 @@ import {
   PRODUCT_SIGNAL_INTERVAL,
   PRODUCT_SIGNAL_LEAD_IN,
   PRODUCT_SIGNAL_MAX_ROWS,
+  commerceListingIdsInPosts,
   injectProductSignalRows,
   productSignalRowKey,
   type CommerceFeedRow
@@ -231,5 +232,61 @@ describe("the three injectors composed, as Home composes them", () => {
     const out = homeRows(40, ads, modules, signals(2)) as (HomeRow<Post> | { key: string })[];
     const keys = out.map((row) => (row as { key?: string }).key).filter(Boolean);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+/**
+ * A PulseDrop publication is an ordinary post that happens to carry a commerce
+ * overlay, so the feed can show the same listing twice: once as the editorial
+ * Signal PulseDrop published, and once as a bare injected card a few rows later.
+ * The two sources cannot see each other — `useFeedProductSignals` asks the
+ * marketplace directly — and both select from the most interesting end of the
+ * same catalogue, so the collision is the expected case on a small catalogue
+ * rather than an unlucky one.
+ */
+describe("a listing already on the page", () => {
+  const withCommerce = (postId: number, listingId: number) => ({
+    id: postId,
+    commerce: { pulsedrop: true, product: { listing_id: listingId } }
+  });
+
+  it("finds the listings that posts already show", () => {
+    const ids = commerceListingIdsInPosts([withCommerce(1, 42), { id: 2 }, withCommerce(3, 7)]);
+    expect([...ids].sort((a, b) => a - b)).toEqual([7, 42]);
+  });
+
+  it("treats a post with no overlay, and a deleted listing, as nothing to exclude", () => {
+    // listing_id 0 is the server's "the listing is gone" sentinel. Letting it
+    // become a real exclusion would silently suppress a legitimate product.
+    const ids = commerceListingIdsInPosts([{ id: 1 }, withCommerce(2, 0), null, undefined, "nonsense"]);
+    expect(ids.size).toBe(0);
+  });
+
+  it("does not inject a product the feed is already showing as a post", () => {
+    const out = injectProductSignalRows(postRows(30), signals(3), { excludeProductIds: [1] });
+    const shown = out.flatMap((row) => (row.type === "product" ? [row.signal.productId] : []));
+    expect(shown).not.toContain(1);
+  });
+
+  it("still fills every slot the cadence allows", () => {
+    // The excluded signal is dropped before placement rather than skipped during
+    // it, so excluding one product costs the page nothing.
+    const clean = injectProductSignalRows(postRows(30), signals(3));
+    const filtered = injectProductSignalRows(postRows(30), signals(3), { excludeProductIds: [1] });
+    expect(productIndices(filtered)).toEqual(productIndices(clean));
+    expect(organicBefore(filtered)).toEqual(organicBefore(clean));
+  });
+
+  it("injects nothing when every candidate is already on the page", () => {
+    const base = postRows(30);
+    const out = injectProductSignalRows(base, signals(2), { excludeProductIds: [1, 2] });
+    expect(productIndices(out)).toEqual([]);
+    base.forEach((row, index) => expect(out[index]).toBe(row));
+  });
+
+  it("is unchanged when nothing is excluded", () => {
+    const clean = injectProductSignalRows(postRows(30), signals(2));
+    const empty = injectProductSignalRows(postRows(30), signals(2), { excludeProductIds: [] });
+    expect(productIndices(empty)).toEqual(productIndices(clean));
   });
 });

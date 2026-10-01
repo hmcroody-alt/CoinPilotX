@@ -3301,3 +3301,25 @@ body.pulse-home-os .pulse-live-gateway .button {
     grid-template-columns: 1fr;
   }
 }
+
+/* The floating dock is the mobile primary navigation. At desktop widths every
+   shell page already renders the topbar, so the dock was a third copy of the
+   same destinations parked over the content column. Kept last in the file so it
+   outranks the `display:grid !important` above and the `min-width:901px` block
+   that used to position it at desktop.
+
+   1024px is not a taste call: `pulse_desktop_feed.css` hides the topbar and both
+   rails with `!important` below 1024px, so the dock is the only navigation that
+   exists down there. Raising this floor would strand 901-1023px with no nav. */
+@media (min-width: 1024px) {
+  body.pulse-home-os .mobile-bottom-nav,
+  body.pulse-home-os .mobile-bottom-nav.pulse-universal-dock,
+  body.pulse-home-os .mobile-bottom-nav.pulse-universal-dock.is-pinned {
+    display: none !important;
+  }
+
+  body.pulse-home-os .pulse-shell,
+  body.pulse-home-os .wrap {
+    padding-bottom: 48px !important;
+  }
+}
