@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from services import db
+from services import marketplace_listing_lifecycle
+from services import marketplace_seller_identity
 
 
 MAX_TEXT_CHARS = 4000
@@ -293,16 +295,37 @@ def resolve_authorized_content(user_id: int, content_type: Any, content_ref: Any
     elif kind in {"marketplace", "product"}:
         conn = db.connect()
         try:
+            # `is_public`, the Python form, rather than `public_sql` in this WHERE:
+            # the row has to be fetched whether or not it is published, because a
+            # seller may translate their own draft. Filtering in SQL would make
+            # the owner's case unreachable.
+            #
+            # That is why the extra columns are selected. `is_public` fails closed
+            # on a condition the row cannot answer, so a projection missing
+            # `seller_status` or `quantity` would deny every listing -- the same
+            # outcome as the bug below, reached a different way. Nothing here
+            # reads them; they exist so the gate can.
             row = conn.execute(
-                """SELECT id,seller_user_id,title,description,short_description,status,
-                          approval_status,updated_at,created_at
-                   FROM marketplace_listings WHERE id=? LIMIT 1""",
+                f"""SELECT l.id,l.seller_user_id,l.title,l.description,l.short_description,
+                          l.status,l.approval_status,l.quantity,l.product_type,l.listing_type,
+                          l.updated_at,l.created_at,
+                          LOWER(COALESCE(ms.status,'')) AS seller_status,
+                          {marketplace_seller_identity.store_name_select('ms')}
+                   FROM marketplace_listings l
+                   LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id
+                   WHERE l.id=? LIMIT 1""",
                 (int(resource_id),),
             ).fetchone()
             raw = dict(row) if row else {}
         finally:
             conn.close()
-        public = str(raw.get("status") or "") in {"active", "approved"} and str(raw.get("approval_status") or "approved") in {"approved", "review_ready", ""}
+        # Was a hand-written mirror of the publication predicate, accepting
+        # `status in {"active","approved"}`. No row in production has ever held
+        # either value -- publication statuses are `published`/`live`/`active` and
+        # every writer sets `published` -- so this was always False and only a
+        # listing's own seller could translate it. Every other member reading a
+        # shop in another language got a refusal.
+        public = marketplace_listing_lifecycle.is_public(raw) if raw else False
         record = raw if raw and (public or int(raw.get("seller_user_id") or 0) == int(user_id)) else None
         text = "\n\n".join(filter(None, [str((record or {}).get("title") or ""), str((record or {}).get("short_description") or ""), str((record or {}).get("description") or "")]))
         version = str((record or {}).get("updated_at") or (record or {}).get("created_at") or "")

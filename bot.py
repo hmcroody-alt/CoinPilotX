@@ -43303,12 +43303,20 @@ def pulse_rail_shop_html(cur, limit=3):
     rail a different number than the product page shows. One extra query for the
     whole shelf, not one per row.
 
-    Eligibility mirrors the marketplace search predicate: a listing the shopper
-    could not reach from Marketplace must not be advertised on Home.
+    Eligibility is ``marketplace_listing_lifecycle.public_sql`` itself, not a
+    copy of it: a listing the shopper could not reach from Marketplace must not
+    be advertised on Home. The copy this replaced accepted ``status IN
+    ('active','approved')``, and no row in production has ever held either value
+    -- the publication statuses are ``published``, ``live`` and ``active``, and
+    every writer uses ``published``. So the shelf matched nothing and returned
+    ``""`` on every render since it shipped. That is the specific way a second
+    copy of a predicate fails: not loudly, but by quietly ceasing to agree, and
+    an empty commerce card is indistinguishable from a card that was switched
+    off on purpose.
 
-    The store name comes from ``marketplace_seller_identity`` rather than from a
-    COALESCE written here, and a listing whose seller has no store name is
-    excluded outright. This card had its own chain that fell back to
+    The store name is read through ``marketplace_seller_identity`` rather than a
+    COALESCE written here, and ``public_sql`` is what excludes a listing whose
+    seller has no store name. This card had its own chain that fell back to
     ``ms.business_name``, which reads as defensive coding and is a privacy leak:
     ``business_name`` is the registered legal name, and for a sole trader that is
     usually their own name -- so the "safe" fallback published exactly what the
@@ -43343,9 +43351,7 @@ def pulse_rail_shop_html(cur, limit=3):
                    {seller_identity.store_name_select('ms')}
             FROM marketplace_listings l
             LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id
-            WHERE l.status IN ('active','approved')
-              AND COALESCE(l.approval_status,'approved') IN ('approved','review_ready','')
-              AND {seller_identity.store_name_sql('ms')} IS NOT NULL
+            WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
             ORDER BY l.featured DESC, l.id DESC
             LIMIT ?
             """,
@@ -44973,13 +44979,21 @@ def api_pulse_search():
     )
     add_results(
         "marketplace",
-        """
+        # Reachability is `marketplace_listing_lifecycle.public_sql`, not a copy of
+        # it. The copy this replaced accepted `status IN ('active','approved')`,
+        # and no row in production has ever held either value -- the publication
+        # statuses are `published`/`live`/`active` and every writer uses
+        # `published`. So this bucket returned zero marketplace results for every
+        # query ever typed, while `api_pulse_marketplace_search` -- which does use
+        # the shared predicate -- answered the same question correctly. A search
+        # bucket that is always empty reads as "nothing matched", so there was
+        # nothing to notice.
+        f"""
         SELECT l.id, l.title, l.description, l.short_description, l.category, l.price_label,
                NULLIF(TRIM(ms.display_name),'') AS seller_store_name
         FROM marketplace_listings l
         LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-        WHERE l.status IN ('active','approved')
-          AND COALESCE(l.approval_status,'approved') IN ('approved','review_ready','')
+        WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
           AND (
             COALESCE(l.title,'') LIKE ?
             OR COALESCE(l.description,'') LIKE ?
@@ -92484,7 +92498,19 @@ def pulse_profile_page_for_user(target_user_id):
     following_count = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute("SELECT COUNT(*) AS total FROM pulse_group_members WHERE user_id=?", (target_user_id,))
     group_count = int(dict(cur.fetchone() or {}).get("total") or 0)
-    cur.execute("SELECT * FROM marketplace_listings WHERE seller_user_id=? AND status='active' ORDER BY id DESC LIMIT 6", (target_user_id,))
+    # Reachability is `marketplace_listing_lifecycle.public_sql`: a profile is a
+    # buyer surface, so it must not advertise a listing the visitor could not
+    # reach from Marketplace. The `status='active'` this replaced matched no row
+    # in production -- the publication statuses are `published`/`live`/`active`
+    # and every writer sets `published` -- so this strip was empty on every
+    # profile, including a seller's with hundreds of live listings.
+    cur.execute(
+        "SELECT l.* FROM marketplace_listings l "
+        "LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id "
+        f"WHERE l.seller_user_id=? AND {marketplace_listing_lifecycle.public_sql('l', 'ms')} "
+        "ORDER BY l.id DESC LIMIT 6",
+        (target_user_id,),
+    )
     listings = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM teacher_profiles WHERE user_id=? LIMIT 1", (target_user_id,))
     teacher = dict(cur.fetchone() or {})

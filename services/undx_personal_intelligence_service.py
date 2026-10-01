@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from services import db as db_service
+from services import marketplace_listing_lifecycle
 
 
 SELF_SCOPE = "self_account_only"
@@ -471,9 +472,21 @@ def marketplace_search(user_id: int, query: str, *, limit: int = 20) -> list[dic
         # "Request access"), not a numeric amount and currency.  Reading the
         # label keeps the price exactly as the seller wrote it rather than
         # implying a machine-comparable figure the table never held.
-        """SELECT id, seller_user_id, title, description, category, price_label, updated_at
-           FROM marketplace_listings WHERE status='active'
-             AND (title LIKE ? OR description LIKE ?) ORDER BY updated_at DESC LIMIT ?""",
+        #
+        # Reachability is ``marketplace_listing_lifecycle.public_sql``, which is
+        # why ``marketplace_sellers`` is joined for a query that selects nothing
+        # from it. The ``status='active'`` this replaced matched no row in
+        # production -- publication statuses are ``published``/``live``/``active``
+        # and every writer sets ``published`` -- so this tool answered "no
+        # listings" for every query, which an agent reports as an empty
+        # marketplace rather than as a failed read.
+        f"""SELECT l.id, l.seller_user_id, l.title, l.description, l.category,
+                  l.price_label, l.updated_at
+           FROM marketplace_listings l
+           LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id
+           WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+             AND (l.title LIKE ? OR l.description LIKE ?)
+           ORDER BY l.updated_at DESC LIMIT ?""",
         (term, term, max(1, min(int(limit), 40))),
         "marketplace_listings", "marketplace_listing", "/pulse/marketplace", ("title",),
     )
@@ -481,8 +494,16 @@ def marketplace_search(user_id: int, query: str, *, limit: int = 20) -> list[dic
 
 def marketplace_listing_summary(user_id: int, listing_id: int) -> dict[str, Any] | None:
     rows = _read(
-        """SELECT id, seller_user_id, title, description, category, price_label, status, updated_at
-           FROM marketplace_listings WHERE id=? AND status='active' LIMIT 1""", (int(listing_id),),
+        # Same predicate as :func:`marketplace_search`, for the same reason. This
+        # one failed louder: ``status='active'`` matched nothing, so the tool
+        # returned ``None`` and the agent told the asker that a listing with
+        # hundreds of live siblings does not exist.
+        f"""SELECT l.id, l.seller_user_id, l.title, l.description, l.category,
+                  l.price_label, l.status, l.updated_at
+           FROM marketplace_listings l
+           LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id
+           WHERE l.id=? AND {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+           LIMIT 1""", (int(listing_id),),
         source="marketplace_listings",
     )
     if not rows:
