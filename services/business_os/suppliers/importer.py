@@ -96,6 +96,21 @@ NEEDS_REVIEW = "NEEDS_REVIEW"
 #: normal outcome of "Import to Store" for an ordinary product, and the one this
 #: module previously had no way to report because it always stopped at a draft.
 PUBLISHED = "PUBLISHED"
+#: Named in the request but not attempted this run, because the run was already
+#: full. The cart holds :data:`import_cart.MAX_ITEMS` rows and one run imports at
+#: most :data:`MAX_BATCH`, so a legal cart can exceed a legal run by design.
+#:
+#: This outcome is what that overflow looks like. It used to be a
+#: ``batch_too_large`` 400 raised before the loop, which discarded the whole
+#: request -- 58 selected, 0 imported, and a merchant told only "that import
+#: didn't run". Nothing was wrong with the 25 the run could have served. The cap
+#: is a real bound on provider quota and request duration and is unchanged; what
+#: changed is that exceeding it is now reported per item, like every other thing
+#: that can happen to one row, instead of destroying its neighbours.
+#:
+#: Nothing was created and nothing was read, so these rows stay in the cart and
+#: write no audit entry. Importing again picks them up.
+DEFERRED = "DEFERRED"
 #: Imported and left as a draft because publishing it would not have been safe.
 #: Carries ``problems`` -- :mod:`drafts`' own validation codes, unmodified -- so
 #: the merchant is told the actual reason rather than "needs attention".
@@ -107,7 +122,7 @@ NEEDS_ATTENTION = "NEEDS_ATTENTION"
 
 OUTCOMES = (IMPORTED, ALREADY_EXISTS, PROVIDER_UNAVAILABLE, INVALID_PRODUCT,
             NO_VARIANTS, NO_MEDIA, RESTRICTED, NEEDS_REVIEW, PUBLISHED,
-            NEEDS_ATTENTION)
+            NEEDS_ATTENTION, DEFERRED)
 
 #: Outcomes after which the cart row is cleared. ``ALREADY_EXISTS`` clears too:
 #: the merchant's intent — "this product should be in my store" — is satisfied,
@@ -138,7 +153,13 @@ REVIEW_TERMS = (
 )
 
 #: One import may create at most this many listings. Bounds provider quota use
-#: and the transaction count of a single request.
+#: and the transaction count of a single request. Each item costs one to three
+#: provider reads and may wait on the inventory lease, so this is a duration
+#: bound as much as a quota one -- raising it to swallow a full cart would trade
+#: a refusal the merchant can read for an edge timeout they cannot.
+#:
+#: A request naming more rows than this is *not* refused. The surplus comes back
+#: as :data:`DEFERRED` and stays in the cart. See that constant.
 MAX_BATCH = 25
 
 
@@ -673,7 +694,12 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
     if item_ids is not None:
         if not isinstance(item_ids, (list, tuple)):
             raise SupplierError("invalid_input", http_status=400)
-        if len(item_ids) > MAX_BATCH:
+        # Deliberately the cart's ceiling and not MAX_BATCH. Selecting every row
+        # of a legal cart is a legal thing to ask for, and answering it with a
+        # 400 was this route's production failure: the run's capacity is now
+        # applied per item below. What stays refused here is a request that
+        # describes no cart that could exist, which bounds the read that follows.
+        if len(item_ids) > import_cart.MAX_ITEMS:
             raise SupplierError("batch_too_large", http_status=400)
         item_ids = [str(i) for i in item_ids if isinstance(i, str) and i.strip()]
 
@@ -698,7 +724,12 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
 
     if not rows:
         raise SupplierError("import_cart_empty", http_status=409)
-    rows = rows[:MAX_BATCH]
+    # The same split serves both entry points, and the whole-cart one is why it
+    # is a split rather than a slice. `rows[:MAX_BATCH]` silently dropped the
+    # tail and then reported `requested` as 25, so a merchant who imported a
+    # 58-row cart was told 58 rows had been considered when 33 had not been read
+    # at all. The tail is now named.
+    rows, deferred_rows = rows[:MAX_BATCH], rows[MAX_BATCH:]
 
     try:
         seller_user_id = int(str(merchant_id).strip())
@@ -799,6 +830,17 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
             **payload,
         })
 
+    # Appended after the loop, so a deferred row cannot be mistaken for one that
+    # was reached and refused. No provider read, no transaction, no audit row --
+    # the only true statement about these is that the run was full.
+    for row in deferred_rows:
+        results.append({
+            "item_id": row["item_id"],
+            "external_product_id": row["external_product_id"],
+            "provider": str(row["provider"] or "cj").strip().lower(),
+            "outcome": DEFERRED,
+        })
+
     if imported_item_ids:
         conn = db.connect()
         try:
@@ -811,7 +853,15 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
               for outcome in OUTCOMES}
     return {
         "results": results,
-        "requested": len(rows),
+        # Everything the merchant asked for, including what this run did not
+        # reach. Reporting only the attempted rows here is what let the tail
+        # disappear without anybody being told.
+        "requested": len(rows) + len(deferred_rows),
+        # Named separately from `counts` because it is the one number the cart
+        # screen needs to say what happens next: these are still in the cart and
+        # one more tap imports them.
+        "deferred": len(deferred_rows),
+        "max_per_import": MAX_BATCH,
         # Every item that produced a listing, not only the ones that stopped at a
         # draft. Reporting `counts[IMPORTED]` here after auto-publish arrived would
         # have told a merchant who published twenty products that none imported.
@@ -821,7 +871,10 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
         # applies to the summary as much as to the rows: a batch of twenty with one
         # needs-attention is not a published batch, and `any()` here would let one
         # success speak for nineteen drafts.
-        "published": counts[PUBLISHED] > 0 and counts[PUBLISHED] == sum(
+        # `not deferred_rows` for the same reason: a run that left 33 products in
+        # the cart has not finished the merchant's request, whatever happened to
+        # the 25 it did reach, and a caller reading this as "done" would stop.
+        "published": counts[PUBLISHED] > 0 and not deferred_rows and counts[PUBLISHED] == sum(
             counts[o] for o in CREATED_LISTING),
         "published_count": counts[PUBLISHED],
         "needs_attention": counts[NEEDS_ATTENTION],

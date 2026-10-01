@@ -166,6 +166,21 @@ export type Theme = {
   reduceMotion: boolean;
   /** True when blur/translucency should be replaced with opaque fills. */
   reduceTransparency: boolean;
+  /**
+   * True when the high-contrast palette is in effect.
+   *
+   * Exposed separately because `reduceTransparency` above is the OR of the
+   * appearance preference and this one, and the two ask for different things.
+   * Reduce Transparency says "stop layering" and leaves the palette alone, so a
+   * surface that is already opaque is entitled to keep its own colour. High
+   * contrast *substitutes* the palette (`HIGH_CONTRAST_DARK`), so a surface
+   * tuned against the normal ramp has to stand down and defer to `colors`.
+   *
+   * A consumer that can only see the OR cannot tell those two apart, and so
+   * applies the palette substitution to someone who merely switched off blur.
+   * That is precisely the defect this field exists to let callers avoid.
+   */
+  highContrast: boolean;
   hapticFeedback: boolean;
   /** Multiply any explicit fontSize by this. */
   scaleFont: (size: number) => number;
@@ -244,6 +259,7 @@ export function buildTheme(
     },
     reduceMotion: accessibility.reduceMotion,
     reduceTransparency: appearance.reduceTransparency || accessibility.highContrast,
+    highContrast: accessibility.highContrast,
     hapticFeedback: accessibility.hapticFeedback,
     scaleFont: (size: number) => Math.round(size * fontScale),
     duration: (ms: number) => (accessibility.reduceMotion ? 0 : ms)

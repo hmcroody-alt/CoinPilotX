@@ -579,6 +579,53 @@ def _is_environment_mismatch(attempt: dict[str, Any]) -> bool:
     return False
 
 
+#: APNs ``reason`` strings that fault the *provider credential*, not the device.
+#:
+#: Every one of these is a statement about our ``.p8`` key, team id or topic. None
+#: carries any information about whether the device token is alive, so a replay
+#: that ends in one of them has not tested the token at all.
+#:
+#: ``BadEnvironmentKeyInToken`` is the one that cost this deployment its only
+#: handset. The signing key is restricted to a single APNs environment, so the
+#: sandbox host refuses the *request* before it ever looks at the token.
+#: Production answers ``BadDeviceToken`` because a development-signed build holds
+#: a sandbox token, the replay goes to sandbox, sandbox answers 403 — and reading
+#: that as "the other host refused the token too" revokes a live token on every
+#: single call. Measured against the physical device on 2026-09-17: token suffix
+#: ``cee6d835``, still live in iOS (re-registered with the identical hash after
+#: each revocation since 2026-09-15), revoked anyway.
+PROVIDER_FAULT_REASONS = frozenset(
+    {
+        "BadEnvironmentKeyInToken",
+        "InvalidProviderToken",
+        "ExpiredProviderToken",
+        "MissingProviderToken",
+        "TooManyProviderTokenUpdates",
+        "BadCertificateEnvironment",
+        "BadCertificate",
+        "Forbidden",
+    }
+)
+
+
+def _is_provider_fault(attempt: dict[str, Any]) -> bool:
+    """Whether this answer faults our credentials rather than the device token.
+
+    Checked by status first and by ``reason`` second, because the status alone is
+    ambiguous in the safe direction only: every 403 APNs defines today is a
+    provider fault, and a future one would otherwise be misread as a verdict on
+    the device. The expensive mistake here is always the one that revokes.
+
+    ``BadTopic`` and ``TopicDisallowed`` are deliberately *not* here. Those are
+    400s that do fault our configuration, but ``topic_for_bundle`` derives the
+    topic per device, so they indict one device's ``app_bundle`` rather than the
+    deployment — and they are already handled where the topic is chosen.
+    """
+    if int(attempt.get("http_status") or 0) == 403:
+        return True
+    return _apns_reason(str(attempt.get("body") or "")) in PROVIDER_FAULT_REASONS
+
+
 def _apns_reason(body: str) -> str:
     """The APNs ``reason`` string, which is the only field that names the fault.
 
@@ -653,11 +700,16 @@ def send_voip_push(
     # are different faults that produce an identical rejection. Carried into the
     # event so the distinction survives past the request.
     replay_outcome = "not_attempted"
+    replay_reason = ""
+    # A replay that never got an answer *about the token* — our credentials were
+    # refused, or the host was unreachable — leaves the first rejection exactly as
+    # ambiguous as it was. Revoking on it destroys live tokens.
+    replay_inconclusive = False
 
     if _is_environment_mismatch(attempt):
         replay_env = other_environment(env)
         replay = _post_voip(token, payload, replay_env, topic)
-        replay_outcome = "rejected"
+        replay_reason = _apns_reason(str(replay.get("body") or ""))
         if 200 <= int(replay.get("http_status") or 0) < 300:
             replay_outcome = "accepted"
             _event(
@@ -667,6 +719,15 @@ def send_voip_push(
                 now=replay_env,
             )
             env, attempt, corrected = replay_env, replay, True
+        elif str(replay.get("transport") or "") != "responded":
+            replay_outcome = "unreachable"
+            replay_reason = str(replay.get("error_type") or replay.get("transport") or "")
+            replay_inconclusive = True
+        elif _is_provider_fault(replay):
+            replay_outcome = "provider_fault"
+            replay_inconclusive = True
+        else:
+            replay_outcome = "rejected"
 
     transport = str(attempt.get("transport") or "")
     if transport == "config_missing":
@@ -695,8 +756,14 @@ def send_voip_push(
     # dead rather than merely misrouted. DeviceTokenNotForTopic is not replayed:
     # it means an alert token reached the VoIP topic, a registration bug rather
     # than an uninstalled app, and is worth surfacing distinctly.
-    invalid = http_status == 410 or (
-        http_status == 400 and ("BadDeviceToken" in body or "DeviceTokenNotForTopic" in body)
+    #
+    # ...unless the replay never reached a verdict on the token. A 403 about our
+    # signing key, or a host we could not talk to, says nothing about the handset,
+    # and counting it as the second of two refusals is how a live token gets
+    # revoked on every call.
+    invalid = (not replay_inconclusive) and (
+        http_status == 410
+        or (http_status == 400 and ("BadDeviceToken" in body or "DeviceTokenNotForTopic" in body))
     )
     status = "invalid_device" if invalid else "failed"
     _event(
@@ -707,6 +774,7 @@ def send_voip_push(
         apns_status=status,
         apns_reason=_apns_reason(body),
         replay=replay_outcome,
+        replay_reason=replay_reason,
     )
     return {"ok": False, "status": status, "http_status": http_status, "message": body[:200], "apns_id": apns_id}
 
