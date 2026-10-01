@@ -1222,7 +1222,10 @@
       "storeMediaViewerTitle": "स्टोर मीडिया",
       "statusApprovedLive": "मंज़ूर/लाइव",
       "statusPendingReview": "रिव्यू बाकी",
-      "statusRemoved": "हटा दिया गया"
+      "statusRemoved": "हटा दिया गया",
+      "status": {
+        "price_needed": "कीमत जरूरी"
+      }
     },
     "orders": {
       "title": "ऑर्डर",

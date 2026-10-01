@@ -26,7 +26,12 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PY = ROOT / ".venv/bin/python"
+#: A git worktree has no `.venv` of its own -- it lives in the main checkout --
+#: and the battery has to mutate the tree it was launched from, not that one. So
+#: fall back to whichever interpreter is running this, which is the venv's own
+#: when invoked the documented way.
+_VENV = ROOT / ".venv/bin/python"
+PY = _VENV if _VENV.exists() else Path(sys.executable)
 
 NATIVE = ROOT / "mobile-native"
 
@@ -36,12 +41,25 @@ SELLER_STORE = NATIVE / "src/screens/SellerStoreScreen.tsx"
 
 VISIBILITY = "tests/marketplace/test_marketplace_approval_visibility.py"
 REACHABILITY = "tests/marketplace/test_marketplace_moderation_reachability.py"
+POLICY = "tests/test_marketplace_listing_lifecycle.py"
 PILL = "src/screens/__tests__/SellerStorePublicationPill.test.tsx"
+
+
+class SuiteUnavailable(RuntimeError):
+    """The suite could not be executed, so it proved nothing either way."""
 
 
 def run_suite(suite: str) -> subprocess.CompletedProcess:
     """Dispatch on the suite's own path; the battery spans both runtimes."""
     if suite.endswith(".tsx"):
+        # A mutation is "caught" when the suite exits non-zero, and a missing
+        # toolchain exits non-zero too. `mobile-native/node_modules` is not
+        # installed in a fresh worktree, which silently turned all three pill
+        # mutations into passes -- the battery reporting a clean sweep while
+        # running no JavaScript at all. Checked rather than inferred from the
+        # output, because that is the one failure this script cannot self-detect.
+        if not (NATIVE / "node_modules/.bin/jest").exists():
+            raise SuiteUnavailable("mobile-native/node_modules is not installed")
         return subprocess.run(["npx", "jest", "--runTestsByPath", suite, "--silent"],
                               cwd=NATIVE, capture_output=True, text=True)
     # One file per process: importing `bot` binds DATABASE_URL process-wide.
@@ -154,6 +172,62 @@ MUTATIONS = [
         "a nameless storefront is approved into a marketplace that then has to "
         "invent an identity for it, and the only name lying around is the "
         "account holder's personal one",
+    ),
+    (
+        "the price rule is removed from the table",
+        LIFECYCLE,
+        '    PublicationRule(\n'
+        '        key="priced",\n'
+        '        # Not a new code. A buyer can do nothing about an unpriced listing and it\n'
+        '        # may well come back once the merchant prices it, which is exactly what\n'
+        '        # ``ITEM_UNAVAILABLE`` already means; native clients branch on these\n'
+        '        # strings and a fourth would reach them as the default "unavailable".\n'
+        '        denial_code="ITEM_UNAVAILABLE",\n'
+        '        seller_label="Price needed",\n'
+        '        moderator_note="the listing has no price",\n'
+        '        satisfied=_is_priced,\n'
+        '        passes_when_unknown=False,\n'
+        '    ),\n',
+        '',
+        POLICY,
+        "the state production was found in: approved, well-stocked listings "
+        "offered to buyers with no price on them, and no query anywhere wrong",
+    ),
+    (
+        "the price rule is stated in Python but not in SQL",
+        LIFECYCLE,
+        '        # The price invariant, twin of `_is_priced`. A supplier import writes a\n'
+        '        # blank label on purpose and moderation does not look at the price, so\n'
+        '        # without this clause an approved, well-stocked, unpriced listing reached\n'
+        '        # buyer discovery and every surface rendered the amount slot empty.\n'
+        '        f"AND NULLIF(TRIM({alias}.price_label),\'\') IS NOT NULL "\n',
+        '',
+        POLICY,
+        "the whole failure mode of this module in one line: no buyer surface "
+        "calls is_public, they run this string, so a rule that lives only in "
+        "Python leaves the bug live under a green unit suite",
+    ),
+    (
+        "a deliberate zero-price label is read as no price",
+        LIFECYCLE,
+        '    return bool(str(listing.get("price_label") or "").strip())',
+        '    return str(listing.get("price_label") or "").strip().lower() not in {\n'
+        '        "", "free", "request access", "paid later", "premium later"}',
+        POLICY,
+        "every free and request-access listing on the platform goes off sale -- "
+        "a far larger outage than the bug, and why the rule is blank-vs-named "
+        "rather than the parser's cents",
+    ),
+    (
+        "an unprojected price column is read as no price",
+        LIFECYCLE,
+        '    if "price_label" not in listing:\n'
+        '        return None\n'
+        '    return bool(str(listing.get("price_label") or "").strip())',
+        '    return bool(str(listing.get("price_label") or "").strip())',
+        POLICY,
+        "the merchant is told to fix a price nobody looked at; the gate may fail "
+        "closed on silence but the description must never accuse from it",
     ),
     (
         "approve refuses the shapes it cannot make public",
@@ -277,6 +351,10 @@ def main() -> int:
         path.write_text(original.replace(old, new, 1))
         try:
             result = run_suite(suite)
+        except SuiteUnavailable as exc:
+            print(f"{index:2}. ERROR    {name}\n        {suite} could not run: {exc}")
+            survivors.append((name, f"suite could not run: {exc}"))
+            continue
         finally:
             path.write_text(original)
 
