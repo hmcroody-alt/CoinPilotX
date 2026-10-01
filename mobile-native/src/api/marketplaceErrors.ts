@@ -32,6 +32,8 @@ export type MarketplaceErrorCode =
   | "PAYMENT_FAILED"
   | "ORDER_TOTAL_BELOW_MINIMUM"
   | "PRICE_CHANGED"
+  | "NO_AUTHORITATIVE_PRICE"
+  | "VARIANT_SELECTION_REQUIRED"
   | "CART_FULL"
   | "OWN_LISTING"
   | "LOGIN_REQUIRED"
@@ -57,6 +59,12 @@ const COPY: Record<MarketplaceErrorCode, string> = {
   ORDER_TOTAL_BELOW_MINIMUM:
     "This order total is below the minimum amount card payments accept. No card was charged.",
   PRICE_CHANGED: "The price changed. Review the new price before you continue.",
+  // The seller has not priced this listing. Nothing the buyer can do clears it,
+  // so the copy does not suggest retrying.
+  NO_AUTHORITATIVE_PRICE: "This item does not have a price yet, so it cannot be bought.",
+  // The listing is for sale at more than one price and no option was chosen.
+  // Distinct from "unavailable": the buyer's next move exists.
+  VARIANT_SELECTION_REQUIRED: "Choose an option before you check out.",
   CART_FULL: "Your cart is full. Remove an item to add another.",
   OWN_LISTING: "This is your own listing.",
   LOGIN_REQUIRED: "Sign in to continue.",

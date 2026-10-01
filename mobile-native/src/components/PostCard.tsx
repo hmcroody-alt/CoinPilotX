@@ -4,6 +4,8 @@ import { Audio, ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
 import { feedRenderableMedia, getPostDetail, mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl, savablePostId } from "../api/feed";
+import { isPulseCommerceOverlay, PulseCommerceOverlay } from "../api/pulseCommerceOverlay";
+import { CommerceOverlay } from "./commerce/CommerceOverlay";
 import { getLiveState } from "../api/live";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
@@ -88,6 +90,18 @@ type PostCardProps = {
   onDelete?: (post: PulsePost) => void;
   onAuthorPress?: (post: PulsePost) => void;
   onOpenLive?: (post: PulsePost) => void;
+  /**
+   * Open the product a PulseDrop Signal is about.
+   *
+   * The commerce block renders only when this is supplied, which is deliberate
+   * and not defensive: the block's whole purpose is a call to action, and a
+   * surface with no way to reach the product would be drawing a button that
+   * promises a destination it cannot deliver. Ordinary posts carry no
+   * `commerce` payload and are unaffected either way.
+   */
+  onOpenCommerceProduct?: (commerce: PulseCommerceOverlay) => void;
+  /** Open the merchant's store. A distinct destination from the product. */
+  onOpenCommerceSeller?: (commerce: PulseCommerceOverlay) => void;
 };
 
 /**
@@ -122,7 +136,9 @@ function PostCardBody({
   onMute,
   onDelete,
   onAuthorPress,
-  onOpenLive
+  onOpenLive,
+  onOpenCommerceProduct,
+  onOpenCommerceSeller
 }: PostCardProps) {
   const [refreshedPost, setRefreshedPost] = useState<PulsePost | null>(null);
   const [replayMessage, setReplayMessage] = useState("Replay processing");
@@ -462,6 +478,22 @@ function PostCardBody({
       ) : null}
 
       <View style={styles.cardInset}>
+      {/*
+        A PulseDrop Signal's price, stock state and call to action, read live
+        from the payload rather than baked into the post body — the post is
+        written once and the listing keeps changing. It sits between the media
+        and the social row because that is where the commercial claim belongs:
+        after the thing being sold, before the conversation about it. An
+        ordinary post has no `commerce` field and this is nothing.
+      */}
+      {isPulseCommerceOverlay(post.commerce) && onOpenCommerceProduct ? (
+        <CommerceOverlay
+          commerce={post.commerce}
+          surface="signal"
+          onOpenProduct={onOpenCommerceProduct}
+          onOpenSeller={onOpenCommerceSeller || onOpenCommerceProduct}
+        />
+      ) : null}
       <View style={styles.socialContextRow}>
         <Text style={styles.reactionSummary} accessibilityLabel={`${reactionTotal} reactions`}>{reactionSummary(post.reaction_counts || {})}</Text>
         <Text style={styles.socialContextText} numberOfLines={1}>

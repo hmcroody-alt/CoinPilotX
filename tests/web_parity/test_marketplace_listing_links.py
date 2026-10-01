@@ -42,11 +42,22 @@ over whatever the grid emitted, not as a fixed id list.
 
 ## Why responses, not routes
 
-A rule existing proves nothing here: `require_account()` runs before the lookup,
-so an anonymous client sees `302 /login` for a real listing, a hidden one and a
-nonexistent one alike. Every assertion below is therefore made against a real
-response from a signed-in client, which is the only vantage point that can tell
-the three outcomes apart.
+A rule existing proves nothing about what it serves, so every assertion below is
+made against a real response rather than against the url map. Most are made from
+a signed-in client, because a member is the viewer who gets the full page:
+Contact, Save and Report are offered to a signed-in non-owner and to nobody
+else, so a signed-out probe cannot tell "the page dropped its actions" from "the
+page correctly withheld them".
+
+The two anonymous tests at the end are the exception, and they cover the one
+thing that changed underneath this file. `require_account()` used to run before
+the lookup, which meant a signed-out visitor saw `302 /login` for a real
+listing, a hidden one and a nonexistent one alike — the catalogue was hidden
+from the open web, and the login wall incidentally guaranteed that a refusal
+revealed nothing. The storefront is public now (a product page that answers 302
+to a crawler cannot be indexed), so that guarantee had to be re-derived from the
+route instead of inherited: a public listing is a 200, and a hidden listing and
+an id that never existed are byte-identical 404s.
 """
 
 from __future__ import annotations
@@ -94,7 +105,7 @@ REFUSED = {
 STATIC_SIBLING = "/pulse/marketplace/create"
 
 _PROBE = r"""
-import json, re, sys, sqlite3
+import hashlib, json, re, sys, sqlite3
 sys.path.insert(0, %(repo)r)
 import bot
 
@@ -135,22 +146,36 @@ client = app.test_client()
 with client.session_transaction() as session:
     session["account_user_id"] = viewer_id
 
+# The rendered controls, matched as elements that carry an id -- never as bare
+# attribute names. The page ships a script that selects on each of these hooks,
+# so searching the body for `data-mkt-save` alone matches the script and passes
+# with no buttons at all, which is exactly how this check was vacuous when it
+# was first written. Save and Report carry *this listing's* id, so each is
+# matched against the id under test. Contact carries the *seller's* id, and
+# renders as an anchor to a real `/pulse/messages/new` page when the seller has
+# a username and as a script-enabled button when it does not; either element is
+# the action being offered, so both shapes count.
+CONTACT = r'<(?:a|button)\b[^>]*\bdata-mkt-contact="\d+"'
+
 pages = {}
 for path in %(paths)r:
     response = client.get(path)
     body = response.get_data(as_text=True)
+    id_match = re.search(r"/pulse/marketplace/(\d+)$", path)
+    lid = id_match.group(1) if id_match else ""
     pages[path] = {
         "status": response.status_code,
         "location": response.headers.get("Location", ""),
         "title": ("Listing %(public)d" in body),
         "body": ("Body of listing %(public)d" in body),
         "seller": ("Seller9001 Store" in body),
-        # The rendered buttons, not the attribute names. The page ships a click
-        # handler that selects on `[data-contact-seller]`, so searching for the
-        # bare attribute matches the script and passes even with no buttons at
-        # all -- which is exactly how this check was vacuous when first written.
-        "actions": all("<button %%s=" %% m in body for m in
-                       ("data-contact-seller", "data-save-listing", "data-report-listing")),
+        "actions": {
+            "contact seller": bool(re.search(CONTACT, body)),
+            "save": bool(lid) and bool(re.search(
+                r'<button\b[^>]*\bdata-mkt-save="%%s"' %% lid, body)),
+            "report": bool(lid) and bool(re.search(
+                r'<button\b[^>]*\bdata-mkt-report="%%s"' %% lid, body)),
+        },
     }
 report["pages"] = pages
 
@@ -158,24 +183,40 @@ grid = client.get("/pulse/marketplace").get_data(as_text=True)
 report["grid"] = {
     "status": 200,
     "shows": {str(l): ("Listing %%d" %% l) in grid for l in %(seeded_ids)r},
-    # Every listing id the served grid links to, server-rendered. The card's
-    # href is the app-first interstitial, not the canonical path -- see
-    # tests/test_marketplace_web_ctas_are_app_first.py -- but it still names a
-    # listing id, and that id is what this file is about.
-    "links": sorted({int(m) for m in re.findall(r"/open/product/(\d+)", grid)}),
-    # The client-rendered card builds the same link from its own row, by
-    # substituting an id into a shape the server built.
-    "js_link": "/open/product/__RESOURCE_ID__" in grid,
+    # Every listing id the served grid links to, server-rendered. The card links
+    # to the canonical product path -- the same URL this whole file is about --
+    # so the ids read out of the grid are exactly the products it offered.
+    # Nothing else on the page carries an id in that shape: navigation, the
+    # breadcrumb, the search form and pagination all address the bare
+    # /pulse/marketplace with a query string.
+    "links": sorted({int(m) for m in re.findall(r"/pulse/marketplace/(\d+)", grid)}),
+    # Search is a server-rendered GET form back into this same route, so a
+    # member who searches gets cards built by the code above rather than by a
+    # separate client-side renderer that has to be kept in step with it.
+    "search_form": '<form class="mkt-search" role="search" method="get"' in grid,
 }
 
-# The signed-out view of all three outcomes, to show they are indistinguishable
-# without a session -- which is why nothing above is asserted anonymously.
+# The signed-out view of the three outcomes. A public listing is now a public
+# page, so what has to be indistinguishable is the pair of refusals: a listing
+# the catalogue hides and an id that never existed.
 anon = app.test_client()
-report["anonymous"] = {
-    str(l): [anon.get("/pulse/marketplace/%%d" %% l).status_code,
-             anon.get("/pulse/marketplace/%%d" %% l).headers.get("Location", "")]
-    for l in (%(public)d, %(hidden)d, %(missing)d)
-}
+report["anonymous"] = {}
+for l in (%(public)d, %(hidden)d, %(missing)d):
+    anon_response = anon.get("/pulse/marketplace/%%d" %% l)
+    text = anon_response.get_data(as_text=True)
+    report["anonymous"][str(l)] = {
+        "status": anon_response.status_code,
+        "location": anon_response.headers.get("Location", ""),
+        # Digest of the body with this id substituted out, so two answers that
+        # differ only by echoing their own URL compare equal while anything
+        # drawn from the row behind the URL does not. Digested rather than
+        # carried whole because a themed error page is tens of kilobytes and
+        # this report travels over a pipe.
+        "digest": hashlib.sha256(
+            text.replace(str(l), "<id>").encode("utf-8")).hexdigest(),
+        "length": len(text),
+        "title": ("Listing %%d" %% l) in text,
+    }
 
 report["rules"] = sorted({r.rule for r in app.url_map.iter_rules()
                           if r.rule.startswith("/pulse/marketplace")})
@@ -254,8 +295,11 @@ def test_the_shared_page_offers_the_same_actions_as_a_grid_card(marketplace_prob
     A detail page that rendered the product but dropped Contact/Save/Report
     would still pass every routing check while being a dead end.
     """
-    assert _page(marketplace_probe, PUBLIC)["actions"], (
-        "the listing page is missing one of contact seller, save, or report")
+    actions = _page(marketplace_probe, PUBLIC)["actions"]
+    missing = sorted(name for name, present in actions.items() if not present)
+    assert not missing, (
+        "the listing page rendered without %s, so arriving by a shared link is "
+        "a lesser page than arriving by browsing" % ", ".join(missing))
 
 
 @pytest.mark.parametrize("listing_id", sorted(REFUSED))
@@ -279,11 +323,11 @@ def test_the_grid_only_links_to_listings_it_can_serve(marketplace_probe):
     Written over whatever the grid emitted rather than a fixed list, so a
     future card that links somewhere new is covered without editing this test.
 
-    The card now points at `/open/product/<id>`, the app-first interstitial, so
-    the id is read from there. The listing it names still has to be one this
-    server will serve: that is what the interstitial's App Store fallback and
-    its native destination both resolve to, and it is what a desktop visitor
-    reaches. Moving the button did not make a dead id acceptable.
+    The card points at the canonical `/pulse/marketplace/<id>` — the same URL
+    the app shares and the one the rest of this file is about — so the ids are
+    read straight from the grid's own hrefs. Whichever surface the card links
+    to, the listing it names has to be one this server will serve: a dead id is
+    a 404 the page produced for itself.
     """
     grid = marketplace_probe["grid"]
     assert grid["links"], "the grid links to no listings at all"
@@ -311,15 +355,27 @@ def test_the_grid_and_the_listing_page_agree_on_who_is_public(marketplace_probe)
         % sorted(grid_shows))
 
 
-def test_the_client_rendered_card_links_to_the_same_place(marketplace_probe):
-    """Search results replace the grid in the DOM, and must keep the link.
+def test_searching_returns_cards_from_this_same_route(marketplace_probe):
+    """A member who searches must not lose the ability to open a product.
 
-    Without this, a member who searched would lose the ability to open a
-    product that browsing offered — the same page, two behaviours.
+    This used to be a check on a client-side card renderer: search replaced the
+    grid in the DOM with rows it drew itself, from a link shape the server had
+    interpolated an `__RESOURCE_ID__` placeholder into. Two renderers for one
+    card is two places for the link to be wrong, and the failure mode was
+    precisely the one this test was written to catch — browsing opened a
+    product, searching did not.
+
+    The storefront removed the second renderer rather than guarding it: search
+    is a plain GET form back into `/pulse/marketplace`, so a search result *is*
+    a server-rendered card and `test_the_grid_only_links_to_listings_it_can_serve`
+    already covers its link. What is worth pinning is that the form is still
+    there and still a real form — the moment it becomes a JavaScript-only box
+    posting to an API, the two-renderer problem is back and this test should be
+    restored to its original shape rather than deleted.
     """
-    assert marketplace_probe["grid"]["js_link"], (
-        "the client-side marketplace card ships no product link shape, so "
-        "search results are not openable")
+    assert marketplace_probe["grid"]["search_form"], (
+        "the grid ships no server-rendered search form, so search has moved "
+        "back into a client-side renderer whose card links are unguarded")
 
 
 def test_the_create_page_still_wins_over_the_id_route(marketplace_probe):
@@ -338,24 +394,62 @@ def test_the_route_is_registered_for_an_integer_id(marketplace_probe):
         % marketplace_probe["rules"])
 
 
-def test_signed_out_visitors_cannot_tell_the_outcomes_apart(marketplace_probe):
-    """The login redirect happens before the lookup, and must keep doing so.
+def test_a_signed_out_visitor_reads_a_public_product(marketplace_probe):
+    """The public half of the storefront, asserted anonymously on purpose.
 
-    If the row were read first, a 404 for the missing id — or a different
-    destination for the hidden one — would tell an anonymous visitor which ids
-    exist, turning the login wall into an enumeration oracle.
+    This is the one outcome that deliberately changed. It used to be a `302
+    /login`, and the login wall was doing double duty: it hid the catalogue from
+    the open web, and — as the test below depended on — it made all three
+    outcomes identical, since `require_account()` ran before the row was ever
+    looked up.
 
-    The redirect target necessarily echoes the requested path, so the assertion
-    is that it echoes *only* that: each answer must be exactly the same function
-    of the URL, carrying nothing drawn from the row behind it.
+    A product page that answers 302 to Google cannot be indexed, which made the
+    wall incompatible with the storefront being a real public page. So the wall
+    came off this route, and the property the test below pins had to be
+    re-established from the route's own behaviour rather than inherited from the
+    wall. Both halves are asserted, because "public" and "no enumeration oracle"
+    are in tension and only checking one of them is how a regression in the
+    other gets through.
     """
-    answers = marketplace_probe["anonymous"]
-    assert {status for status, _ in answers.values()} == {302}, (
-        "a signed-out visitor gets more than one status across a real, a hidden "
-        "and a nonexistent listing: %s" % answers)
-    for listing_id, (_, location) in answers.items():
-        expected = "/login?next=/pulse/marketplace/%s" % listing_id
-        assert location == expected, (
-            "the signed-out redirect for %s carries something other than the "
-            "requested path (%r), so it can reveal whether the listing exists"
-            % (listing_id, location))
+    public = marketplace_probe["anonymous"][str(PUBLIC)]
+    assert public["status"] == 200, (
+        "a signed-out visitor cannot read the public product page (%s %s); a "
+        "crawler sees the same thing, so the page is unindexable"
+        % (public["status"], public["location"]))
+    assert public["title"], (
+        "the signed-out product page rendered without the listing's title")
+
+
+def test_signed_out_visitors_cannot_tell_a_hidden_listing_from_a_missing_one(
+        marketplace_probe):
+    """A refusal must not reveal that there was something to refuse.
+
+    The original form of this test got the property for free: everything
+    redirected to `/login` before the lookup, so a hidden listing and a
+    nonexistent id were necessarily identical. Now that a real product is
+    served anonymously, the route itself decides, and the risk is live — a
+    `403`, a "this listing was removed" notice, or a body that differs in
+    length for the id that has a row behind it would each tell someone walking
+    the id space which products exist and are merely hidden.
+
+    The invariant is unchanged from the original, only its subject is: each
+    refusal must be exactly the same function of the URL, carrying nothing
+    drawn from the row behind it. Compared as a digest of the body with the id
+    substituted out, so a page that legitimately echoes the path it was asked
+    for still compares equal.
+    """
+    hidden = marketplace_probe["anonymous"][str(HIDDEN_SELLER)]
+    missing = marketplace_probe["anonymous"][str(MISSING)]
+    assert hidden["status"] == missing["status"] == 404, (
+        "a hidden listing and a nonexistent one answer differently to a "
+        "signed-out visitor: hidden=%s missing=%s"
+        % (hidden["status"], missing["status"]))
+    assert hidden["location"] == missing["location"] == "", (
+        "one of the refusals redirects and the other does not, which names the "
+        "one with a row behind it: hidden=%r missing=%r"
+        % (hidden["location"], missing["location"]))
+    assert hidden["digest"] == missing["digest"], (
+        "the two refusals differ by more than the id in the URL (%d bytes vs "
+        "%d), so the response reveals whether the listing exists"
+        % (hidden["length"], missing["length"]))
+    assert not hidden["title"], "the refused page leaked the listing's title"

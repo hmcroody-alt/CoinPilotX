@@ -91,6 +91,46 @@ describe("galactic background profile", () => {
   });
 });
 
+describe("reduce transparency vs high contrast", () => {
+  /**
+   * These two must stay distinguishable on the theme.
+   *
+   * `reduceTransparency` is deliberately the OR of the appearance preference
+   * and high contrast, because almost every consumer wants "stop layering" and
+   * both modes imply it. But high contrast additionally *substitutes* the
+   * palette, and a consumer that can only see the OR cannot tell the two
+   * apart. `ChatWallpaper` was doing exactly that: it read the OR and replaced
+   * the whole graphite canvas with `colors.background`, so a phone with only
+   * Reduce Transparency on painted near-black while every other device painted
+   * graphite. Keeping `highContrast` separately readable is what lets that
+   * component drop the alpha layers without also dropping the palette.
+   */
+  const build = (reduceTransparency: boolean, highContrast: boolean) =>
+    buildTheme(
+      { theme: "dark", fontScale: 1, reduceTransparency, compactDensity: false },
+      { ...ACCESSIBILITY, highContrast },
+      "dark"
+    );
+
+  it("reports the appearance preference without claiming high contrast", () => {
+    const theme = build(true, false);
+    expect(theme.reduceTransparency).toBe(true);
+    expect(theme.highContrast).toBe(false);
+  });
+
+  it("implies reduced transparency when high contrast is on", () => {
+    const theme = build(false, true);
+    expect(theme.reduceTransparency).toBe(true);
+    expect(theme.highContrast).toBe(true);
+  });
+
+  it("leaves both off by default", () => {
+    const theme = build(false, false);
+    expect(theme.reduceTransparency).toBe(false);
+    expect(theme.highContrast).toBe(false);
+  });
+});
+
 describe("stored-value migration", () => {
   it('accepts every current mode and maps legacy "light" to light_futuristic', () => {
     THEME_MODES.forEach((mode) => {
