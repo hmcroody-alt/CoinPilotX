@@ -3768,6 +3768,10 @@ describe("DropshippingProductsScreen", () => {
       attention: [] as string[],
       supplierCostCents: 450,
       providerProductId: "ext-1",
+      // `null` is the common case and the only honest default: the server sets
+      // this only on a row it has *proved* a buyer cannot reach, so defaulting
+      // it to a blocker would put a warning on every unrelated test here.
+      liveBlocker: null as string | null,
       ...over
     };
   }
@@ -4343,6 +4347,10 @@ describe("DropshippingSyncScreen", () => {
       attention: [] as string[],
       supplierCostCents: 450,
       providerProductId: "ext-1",
+      // `null` is the common case and the only honest default: the server sets
+      // this only on a row it has *proved* a buyer cannot reach, so defaulting
+      // it to a blocker would put a warning on every unrelated test here.
+      liveBlocker: null as string | null,
       ...over
     };
   }
