@@ -43279,12 +43279,20 @@ def pulse_rail_shop_html(cur, limit=3):
     rail a different number than the product page shows. One extra query for the
     whole shelf, not one per row.
 
-    Eligibility mirrors the marketplace search predicate: a listing the shopper
-    could not reach from Marketplace must not be advertised on Home.
+    Eligibility is ``marketplace_listing_lifecycle.public_sql`` itself, not a
+    copy of it: a listing the shopper could not reach from Marketplace must not
+    be advertised on Home. The copy this replaced accepted ``status IN
+    ('active','approved')``, and no row in production has ever held either value
+    -- the publication statuses are ``published``, ``live`` and ``active``, and
+    every writer uses ``published``. So the shelf matched nothing and returned
+    ``""`` on every render since it shipped. That is the specific way a second
+    copy of a predicate fails: not loudly, but by quietly ceasing to agree, and
+    an empty commerce card is indistinguishable from a card that was switched
+    off on purpose.
 
-    The store name comes from ``marketplace_seller_identity`` rather than from a
-    COALESCE written here, and a listing whose seller has no store name is
-    excluded outright. This card had its own chain that fell back to
+    The store name is read through ``marketplace_seller_identity`` rather than a
+    COALESCE written here, and ``public_sql`` is what excludes a listing whose
+    seller has no store name. This card had its own chain that fell back to
     ``ms.business_name``, which reads as defensive coding and is a privacy leak:
     ``business_name`` is the registered legal name, and for a sole trader that is
     usually their own name -- so the "safe" fallback published exactly what the
@@ -43319,9 +43327,7 @@ def pulse_rail_shop_html(cur, limit=3):
                    {seller_identity.store_name_select('ms')}
             FROM marketplace_listings l
             LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id
-            WHERE l.status IN ('active','approved')
-              AND COALESCE(l.approval_status,'approved') IN ('approved','review_ready','')
-              AND {seller_identity.store_name_sql('ms')} IS NOT NULL
+            WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
             ORDER BY l.featured DESC, l.id DESC
             LIMIT ?
             """,

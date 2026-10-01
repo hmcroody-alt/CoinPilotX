@@ -476,6 +476,7 @@
     "tests/test_emoji_unicode_roundtrip.py",
     "tests/test_failed_login_alert_dispatch.py",
     "tests/test_feature_pages.py",
+    "tests/test_home_rail_commerce_shelf.py",
     "tests/test_https_redirect_host_header.py",
     "tests/test_init_db_survives_unmintable_user_id.py",
     "tests/test_legal_acceptance.py",
