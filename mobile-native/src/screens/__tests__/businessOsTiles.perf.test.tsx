@@ -24,7 +24,6 @@
  */
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { activateLocale } from "../../i18n/engine";
 
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 })
@@ -162,14 +161,6 @@ function listing(id: number) {
 async function sellerControlsLoaded(view: ReturnType<typeof render>) {
   await waitFor(() => expect(view.getByText("Listings loaded")).toBeTruthy());
 }
-
-// The seller store reads its copy from the `extended` catalog tier, which the
-// provider preloads after first frame rather than as part of boot. Nothing
-// mounts the provider here, so without this the screen renders humanized key
-// names ("Metric Listings Loaded") and every text assertion below misses.
-beforeAll(async () => {
-  await activateLocale("en");
-});
 
 beforeEach(() => {
   jest.clearAllMocks();

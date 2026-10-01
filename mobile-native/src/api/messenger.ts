@@ -1,4 +1,3 @@
-import { reconcileMessageNotifications } from "../core/messageNotificationReconciliation";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File } from "expo-file-system";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "./config";
@@ -14,8 +13,8 @@ import {
 // messengerOrdering imports only TYPES from this module, so the cycle is erased
 // at runtime and this value import is safe.
 import { mintClientMessageId } from "./messengerOrdering";
-import { drainOutbox, enqueueMutation, registerOutboxHandler, outboxScope } from "../core/mutations/outbox";
-import { PARALLEL_PARTS, openPartSource, uploadBlob, withRetry } from "../media/resumableUploadTransport";
+import { drainOutbox, enqueueMutation, registerOutboxHandler } from "../core/mutations/outbox";
+import { PARALLEL_PARTS, nativeBlobFromUri, uploadBlob, withRetry } from "../media/resumableUploadTransport";
 
 const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.v2.conversations";
 /**
@@ -844,58 +843,10 @@ export async function reactToMessage(messageId: number, reactionType = "pulse") 
 }
 
 export async function deleteMessage(messageId: number, scope: "self" | "everyone" = "self") {
-  const result = await pulseApi<{ ok?: boolean; deleted?: boolean; message?: string }>(`${MESSENGER_API}/messages/${messageId}`, {
+  return pulseApi<{ ok?: boolean; deleted?: boolean; message?: string }>(`${MESSENGER_API}/messages/${messageId}`, {
     method: "DELETE",
     body: JSON.stringify({ delete_for: scope })
   });
-  if (result.ok) void reconcileMessageNotifications();
-  return result;
-}
-
-/**
- * Amend a message you already sent.
- *
- * The server owns the rules and refuses anything else: not your message is a
- * 403 `forbidden`, past its window a 403 `edit_window_expired`, empty a 400
- * `empty_message`. Nothing is checked twice here -- the menu hides Edit when
- * it can tell the answer in advance, but the answer itself comes from there.
- *
- * Deliberately does not send `edit_window_minutes`. The endpoint reads that
- * key from the request body, which means a client can pick its own time
- * limit; honouring the server's default is the only correct thing for a
- * client to do with a parameter like that.
- */
-export async function editMessage(messageId: number, body: string) {
-  const result = await pulseApi<{ ok?: boolean; message?: MessengerMessage; error?: string }>(
-    `${MESSENGER_API}/messages/${messageId}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ body })
-    }
-  );
-  return {
-    ...result,
-    message: result.message ? normalizeMessages([result.message], 0)[0] : undefined
-  };
-}
-
-/**
- * Copy a message into other conversations.
- *
- * The server caps this at ten targets and silently skips any conversation the
- * sender cannot post to, so `count` is what actually happened and may be
- * smaller than the list asked for. Callers should report `count`, not the
- * length of their own selection.
- */
-export async function forwardMessage(messageId: number, conversationIds: number[]) {
-  const targets = Array.from(new Set(conversationIds.map((id) => Number(id) || 0).filter(Boolean))).slice(0, 10);
-  return pulseApi<{ ok?: boolean; forwarded_message_ids?: number[]; count?: number; message?: string }>(
-    `${MESSENGER_API}/messages/${messageId}/forward`,
-    {
-      method: "POST",
-      body: JSON.stringify({ conversation_ids: targets })
-    }
-  );
 }
 
 export async function reportMessage(messageId: number, reason = "Needs review") {
@@ -912,28 +863,8 @@ export async function pinConversation(conversationId: number, pinned = true) {
   });
 }
 
-type MessageReadOperation = { conversationId: number; messageIds: number[]; accountScope: string };
-registerOutboxHandler("messenger.read", async operation => {
-  const payload = operation.payload as MessageReadOperation;
-  if (payload.accountScope !== outboxScope()) throw new Error("Read account changed");
-  const result = await pulseApi<{ ok: boolean }>(`${MESSENGER_API}/conversations/${payload.conversationId}/read`, {
-    method: "POST", body: JSON.stringify({ through_message_id: Math.max(...payload.messageIds) })
-  });
-  if (!result.ok) throw new Error("Read acknowledgement failed");
-  void reconcileMessageNotifications();
-});
-
-export async function markConversationSeen(conversationId: number, displayed?: MessengerMessage[]) {
-  const messages = displayed ?? await loadCachedMessages(conversationId);
-  const messageIds = [...new Set(messages.map(m => Number(m.id)).filter(n => Number.isSafeInteger(n) && n > 0))];
-  const accountScope = outboxScope();
-  if (!messageIds.length || accountScope === "anon") return { ok: false };
-  await enqueueMutation({ type: "messenger.read", stream: `read:${conversationId}`,
-    idempotencyKey: `read:${accountScope}:${conversationId}:${messageIds.join(",")}`,
-    payload: { conversationId, messageIds, accountScope } });
-  void reconcileMessageNotifications();
-  void drainOutbox().then(() => reconcileMessageNotifications()).catch(() => undefined);
-  return { ok: true };
+export async function markConversationSeen(conversationId: number) {
+  return pulseApi<{ ok: boolean; last_read_message_id?: number }>(`${MESSENGER_API}/conversations/${conversationId}/read`, { method: "POST" });
 }
 
 export async function sendTyping(conversationId: number, typing: boolean) {
@@ -1311,11 +1242,7 @@ async function uploadMessengerMediaInParts(input: {
     });
   };
 
-  // One part at a time off disk rather than the whole attachment as a single native Blob.
-  // `nativeBlobFromUri` costs the full file size in dirty native memory before any byte is
-  // sent, which a long video does not survive -- and a multipart send is by definition
-  // already past the size where that starts to matter.
-  const source = await openPartSource(input.uri, mimeType);
+  const body = await nativeBlobFromUri(input.uri);
   let cursor = 0;
   const worker = async () => {
     while (cursor < pending.length) {
@@ -1337,7 +1264,7 @@ async function uploadMessengerMediaInParts(input: {
         const end = Math.min(sizeBytes, start + partSize);
         await withRetry(
           async () => {
-            await uploadBlob(part.upload_url, source.read(start, end), mimeType, (loaded) => {
+            await uploadBlob(part.upload_url, body.slice(start, end, mimeType), mimeType, (loaded) => {
               sentByPart.set(number, loaded);
               report();
             }, () => undefined);
@@ -1350,11 +1277,7 @@ async function uploadMessengerMediaInParts(input: {
       }
     }
   };
-  try {
-    await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, pending.length) }, worker));
-  } finally {
-    source.close();
-  }
+  await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, pending.length) }, worker));
 
   return pulseApi<MediaUploadResult>("/api/messages/media/upload/finish", {
     method: "POST",

@@ -6,7 +6,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BOT = (ROOT / "bot.py").read_text(encoding="utf-8")
 SERVICE = (ROOT / "services" / "premium_entitlement_service.py").read_text(encoding="utf-8")
-WEBHOOK_VERIFIER = (ROOT / "services" / "stripe_webhook_verification.py").read_text(encoding="utf-8")
 
 
 def expect(condition, label):
@@ -26,6 +25,7 @@ def main():
         '@webhook_app.route("/api/premium/billing-portal", methods=["POST"])',
         '@webhook_app.route("/api/premium/status", methods=["GET"])',
         '@webhook_app.route("/api/stripe/webhook", methods=["POST"])',
+        'stripe.Webhook.construct_event',
         'request.data',
         'stripe.checkout.Session.create',
         '"mode": "subscription"',
@@ -47,15 +47,6 @@ def main():
     ]
     for token in required_bot_tokens:
         expect(token in BOT, f"bot.py contains {token}")
-
-    # Signature verification lives in services/stripe_webhook_verification.py so
-    # one verifier can serve several Stripe destinations, each of which signs
-    # with its own secret. Looking for construct_event in bot.py reports a false
-    # failure, so follow the call path instead.
-    expect('stripe_webhook_verification.verify(' in BOT,
-           "bot.py delegates webhook verification to the shared verifier")
-    expect('stripe.Webhook.construct_event' in WEBHOOK_VERIFIER,
-           "the verifier uses Stripe's own construct_event")
 
     required_service_tokens = [
         'stripe_customer_id',

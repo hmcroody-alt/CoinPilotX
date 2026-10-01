@@ -28,9 +28,14 @@ jest.mock("expo-file-system", () => ({ File: class {} }));
 jest.mock("expo-document-picker", () => ({ getDocumentAsync: jest.fn() }));
 jest.mock("expo-image-picker", () => ({ launchImageLibraryAsync: jest.fn(), requestMediaLibraryPermissionsAsync: jest.fn() }));
 jest.mock("../../session/auth", () => ({ useAuth: () => ({ authState: { user: { user_id: 7 } } }) }));
-jest.mock("../../components/ContentTranslation", () =>
-  require("../../testing/contentTranslationStub").contentTranslationStub()
-);
+jest.mock("../../components/ContentTranslation", () => {
+  const { Text } = jest.requireActual("react-native");
+  const ReactActual = jest.requireActual("react");
+  return {
+    ContentTranslation: ({ text, textStyle }: { text?: string; textStyle?: unknown }) =>
+      ReactActual.createElement(Text, { style: textStyle }, text)
+  };
+});
 
 const CONVERSATION_ID = 6105;
 const MESSAGE_ID = 512;

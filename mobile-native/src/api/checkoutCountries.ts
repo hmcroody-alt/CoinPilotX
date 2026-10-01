@@ -1,7 +1,5 @@
 /**
- * `GET /api/pulse/marketplace/cart/checkout-options` — the deployment facts the
- * checkout form cannot invent for itself: the delivery-country allowlist, and
- * whether the Marketplace card rail is switched on.
+ * Delivery countries for the checkout's country picker.
  *
  * The address country used to be a two-character text box: the buyer typed
  * `US`, and anything else — `USA`, `United States`, a lowercase `gb` — was
@@ -24,13 +22,6 @@
  * `services/marketplace_fulfillment._COUNTRY_NAMES`, and
  * `test_country_names_match_the_picker` pins the two together. Adding a country
  * here alone is a checkout that completes into an order no supplier can fill.
- *
- * The card verdict is here for the same reason as the countries: it is
- * deployment configuration. The screen used to hold its own
- * `MARKETPLACE_CARD_PAYMENTS_PAUSED = true`, which was harmless only while the
- * server's pause was also a hard-coded `true`. Now that the server reads
- * `MARKETPLACE_CARD_PAYMENTS_ENABLED`, a second copy in a shipped binary is a
- * copy that cannot be corrected without an App Store release.
  */
 
 import { pulseApi } from "./pulseApi";
@@ -81,71 +72,22 @@ export function toCountryOptions(codes: readonly string[]): CheckoutCountry[] {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export type CheckoutOptions = {
-  countries: CheckoutCountry[];
-  cardPaymentsAvailable: boolean;
-  cardBadge: string;
-  cardUnavailableMessage: string;
-};
-
-/** What the checkout assumes when the server could not be asked.
+/**
+ * Countries this deployment will deliver to.
  *
- * The two halves fail in opposite directions on purpose. The country list fails
- * *soft* to the configured default, because an empty picker blocks an order the
- * deployment would have accepted. The card rail fails *closed*, because the
- * cost of guessing wrong is a buyer sent into a card checkout the server is
- * about to refuse — and cash, which is the lane that actually works, stays open
- * either way.
+ * Fails soft to the default: a checkout that cannot read its options should
+ * still be completable by the US buyers who are the configured default, rather
+ * than presenting an empty picker and blocking the order entirely.
  */
-export const CHECKOUT_OPTIONS_FALLBACK: CheckoutOptions = {
-  countries: toCountryOptions(DEFAULT_SHIPPING_COUNTRIES),
-  cardPaymentsAvailable: false,
-  cardBadge: "Temporarily Unavailable",
-  cardUnavailableMessage:
-    "Marketplace card payments are temporarily unavailable. Choose cash, local pickup, or in-person payment."
-};
-
-/** Ask the server what this checkout may offer. Never throws.
- *
- * `sellerUserId` is optional but should be passed by any caller that knows who
- * it is buying from. Without it the answer is only whether the *platform* card
- * rail is on, which stopped being enough the moment that rail was switched on:
- * a seller who has never finished Connect onboarding still cannot take a card,
- * and a form built from the platform answer alone offers a card row the
- * checkout lane then refuses — after the buyer has committed to paying.
- *
- * Omitting it is not a silent downgrade to "available": the server's per-seller
- * verdict is an AND, so a caller that cannot name a seller gets the platform
- * answer and the charge-time gate still holds. It just holds later, and later
- * is a worse place for the buyer to find out.
- */
-export async function fetchCheckoutOptions(sellerUserId?: number | string): Promise<CheckoutOptions> {
+export async function fetchShippingCountries(): Promise<CheckoutCountry[]> {
   try {
-    const seller = Number(sellerUserId || 0);
-    const path =
-      seller > 0
-        ? `/api/pulse/marketplace/cart/checkout-options?seller_id=${encodeURIComponent(String(seller))}`
-        : "/api/pulse/marketplace/cart/checkout-options";
-    const data = (await pulseApi(path)) as {
+    const data = (await pulseApi("/api/pulse/marketplace/cart/checkout-options")) as {
       shipping_countries?: string[];
-      card_payments_available?: boolean;
-      payment_badge?: string;
-      payment_unavailable_message?: string;
     };
     const codes = Array.isArray(data.shipping_countries) ? data.shipping_countries : [];
     const options = toCountryOptions(codes);
-    // `=== true` rather than a truthiness test: a response that omits the field
-    // is an older server, or one that answered something else entirely, and
-    // neither of those said yes.
-    const available = data.card_payments_available === true;
-    return {
-      countries: options.length ? options : CHECKOUT_OPTIONS_FALLBACK.countries,
-      cardPaymentsAvailable: available,
-      cardBadge: data.payment_badge || CHECKOUT_OPTIONS_FALLBACK.cardBadge,
-      cardUnavailableMessage:
-        data.payment_unavailable_message || CHECKOUT_OPTIONS_FALLBACK.cardUnavailableMessage
-    };
+    return options.length ? options : toCountryOptions(DEFAULT_SHIPPING_COUNTRIES);
   } catch {
-    return CHECKOUT_OPTIONS_FALLBACK;
+    return toCountryOptions(DEFAULT_SHIPPING_COUNTRIES);
   }
 }

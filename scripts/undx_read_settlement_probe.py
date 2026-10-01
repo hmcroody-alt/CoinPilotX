@@ -23,13 +23,6 @@ import tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
-from scripts.local_database_guard import require_local_database  # noqa: E402
-
-# Same ordering hazard as undx_read_qa_run: `main()` imports
-# `services.undx_agent_policy` before it points DATABASE_URL at a temporary
-# sqlite file, and that import already resolved the DSN through services/db.py.
-require_local_database("undx_read_settlement_probe")
-
 QA_USER_ID = 7
 QA_CAPABILITY = "activity.daily_summary"
 

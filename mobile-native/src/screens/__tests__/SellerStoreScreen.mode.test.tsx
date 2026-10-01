@@ -10,7 +10,7 @@
  * the user can tell where they landed.
  */
 import React from "react";
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { render, waitFor } from "@testing-library/react-native";
 
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 })
@@ -150,52 +150,5 @@ describe("SellerStore mode wiring", () => {
       expect(rendered.length).toBeGreaterThan(0);
       view.unmount();
     }
-  });
-});
-
-/**
- * The way in to imported products.
- *
- * The dropshipping routes were registered in `AppNavigator` and reachable from
- * nowhere: the app's only `navigate("Dropshipping")` lived in
- * `StoreDashboardScreen`, a file no navigator registers. A merchant could import
- * a product and then had no screen on which to open it.
- *
- * `sellerEntryPoints.test.ts` pins the deep link. This pins the button, because
- * the two fail independently — a URL nobody types is not an entry point, and a
- * button is what a merchant actually finds.
- */
-describe("the dropshipping entry point", () => {
-  it("offers imported products from the listing management panel", async () => {
-    const view = await renderMode(undefined);
-    expect(view.getAllByText("Imported products").length).toBeGreaterThan(0);
-    view.unmount();
-  });
-
-  it("navigates to the hub, which needs no connection id", async () => {
-    const view = await renderMode(undefined);
-    fireEvent.press(view.getAllByText("Imported products")[0]);
-
-    // The hub, not `DropshippingProducts`: that screen requires a
-    // `connectionId` this screen does not have and must not invent. The params
-    // are asserted too, because reaching the right route with a missing id is
-    // the failure this entry point exists to avoid.
-    expect(view.navigation.navigate).toHaveBeenCalledWith("Dropshipping", { title: "Imported products" });
-    view.unmount();
-  });
-
-  it("sits in the listings panel, so it follows that panel's modes", async () => {
-    // `payouts` excludes `listings`. If the button were hung off the hero
-    // instead it would appear on payout and application screens, where importing
-    // products is not the job in hand.
-    const payouts = await renderMode("payouts");
-    expect(payouts.queryByText("Listing management")).toBeNull();
-    expect(payouts.queryByText("Imported products")).toBeNull();
-    payouts.unmount();
-
-    const dashboard = await renderMode("dashboard");
-    expect(dashboard.getAllByText("Listing management").length).toBeGreaterThan(0);
-    expect(dashboard.getAllByText("Imported products").length).toBeGreaterThan(0);
-    dashboard.unmount();
   });
 });

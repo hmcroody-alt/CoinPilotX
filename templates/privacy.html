@@ -1,23 +1,23 @@
-{% from "_app_link_cta.html" import app_open_cta, app_store_badge with context %}
+{% from "_app_link_cta.html" import app_cta, app_store_badge with context %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Privacy Policy | PulseSoc</title>
-  <meta name="description" content="Privacy Policy for PulseSoc, the social platform operated by CoinPlotXAI Inc." />
+  <title>Privacy Policy | CoinPlotXAI Inc.</title>
+  <meta name="description" content="Privacy Policy for PulseSoc, operated by CoinPlotXAI Inc." />
   <meta name="robots" content="index, follow, max-image-preview:large" />
   {% if google_site_verification %}<meta name="google-site-verification" content="{{ google_site_verification }}" />{% endif %}
   {% if bing_site_verification %}<meta name="msvalidate.01" content="{{ bing_site_verification }}" />{% endif %}
   <link rel="canonical" href="https://pulsesoc.com/privacy" />
-  <meta property="og:title" content="Privacy Policy | PulseSoc" />
+  <meta property="og:title" content="Privacy Policy | CoinPlotXAI Inc." />
   <meta property="og:description" content="How CoinPlotXAI Inc. handles PulseSoc user, website, optional Telegram, payment, analytics, and public blockchain data." />
   <meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-og-20260913.png" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://pulsesoc.com/privacy" />
-  <meta property="og:site_name" content="PulseSoc" />
+  <meta property="og:site_name" content="CoinPlotXAI Inc." />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Privacy Policy | PulseSoc" />
+  <meta name="twitter:title" content="Privacy Policy | CoinPlotXAI Inc." />
   <meta name="twitter:description" content="Privacy details for PulseSoc platform AI tools, optional Telegram, payments, analytics, and public blockchain intelligence." />
   <meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-og-20260913.png" />
   <meta name="theme-color" content="#00e5ff" />
@@ -27,10 +27,10 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-favicon-32-20260913.png') }}" />
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='brand/pulsesoc-apple-touch-icon-20260913.png') }}" />
   <link rel="manifest" href="/manifest.json" />
-  <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=cache-sweep-20260930a" />
-  <link rel="stylesheet" href="/static/css/pulse_design_system.css?v=cache-sweep-20260930a" />
-  <link rel="stylesheet" href="/static/css/pulse_mobile_system.css?v=bare-asset-tokens-20260930a" />
-  <link rel="stylesheet" href="/static/css/pulse_app_cta.css?v=bare-asset-tokens-20260930a" />
+  <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a" />
+  <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
+  <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
+  <link rel="stylesheet" href="/static/css/pulse_app_cta.css" />
   {% if ga_measurement_id %}
   <script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_measurement_id }}"></script>
   <script>
@@ -44,7 +44,15 @@
   {
     "@context": "https://schema.org",
     "@graph": [
-      {{ organization_ld | safe }},
+      {
+        "@type": "Organization",
+        "@id": "https://pulsesoc.com/#organization",
+        "name": "CoinPlotXAI Inc.",
+        "legalName": "CoinPlotXAI Inc.",
+        "url": "https://pulsesoc.com/",
+        "logo": "https://pulsesoc.com/static/brand/pulsesoc-logo-20260913.png",
+        "email": "support@pulsesoc.com"
+      },
       {
         "@type": "WebPage",
         "name": "Privacy Policy",
@@ -324,7 +332,7 @@
         <p class="app-cta-title">PulseSoc for iPhone</p>
         <p class="app-cta-note">Same account, same data, and the same policy above — the app is covered by this privacy policy exactly as the website is.</p>
         <div class="app-cta-actions">
-          {{ app_open_cta("home", source="web", classes="button primary") }}
+          {{ app_cta("home", source="web", classes="button primary") }}
           {{ app_store_badge() }}
         </div>
       </aside>

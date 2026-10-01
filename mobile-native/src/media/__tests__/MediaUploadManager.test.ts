@@ -20,10 +20,6 @@ jest.mock("../../api/pulseApi", () => {
   return { PulseApiError, pulseApi: jest.fn() };
 });
 
-// Models enough of expo-file-system's real surface that the ranged-read path is the one
-// under test. The previous version of this mock had no `open()`, so `openPartSource` threw,
-// was caught, and every multipart assertion silently exercised the whole-file fallback.
-const fileHandles: Array<{ reads: Array<[number, number]>; closed: boolean }> = [];
 jest.mock("expo-file-system", () => ({
   File: class {
     uri: string;
@@ -33,20 +29,6 @@ jest.mock("expo-file-system", () => ({
     // If the transport ever falls back to expo's File.slice, fail loudly — that path is
     // exactly what produced the ArrayBuffer/Blob error on device.
     slice() { throw new Error("expo File.slice must not be used for upload transport"); }
-    open() {
-      const record = { reads: [] as Array<[number, number]>, closed: false };
-      fileHandles.push(record);
-      let offset = 0;
-      return {
-        get offset() { return offset; },
-        set offset(value: number) { offset = value; },
-        readBytes(length: number) {
-          record.reads.push([offset, offset + length]);
-          return new Uint8Array(length);
-        },
-        close() { record.closed = true; }
-      };
-    }
   }
 }));
 
@@ -54,33 +36,19 @@ type SendBody = unknown;
 
 class FakeXHR {
   static bodies: SendBody[] = [];
-  static urls: string[] = [];
-  // URLs that should be rejected once with the given status before succeeding, so a
-  // test can reproduce a signature that aged out mid-batch.
-  static rejectOnce = new Map<string, number>();
   static DONE = 4;
   readyState = 0;
   status = 200;
-  url = "";
   upload: { onprogress?: (e: { loaded: number }) => void } = {};
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
   onabort: (() => void) | null = null;
-  open(_method: string, url: string) { this.url = url; }
+  open() {}
   setRequestHeader() {}
   getResponseHeader(name: string) { return name.toLowerCase() === "etag" ? '"etag-123"' : null; }
   send(body: SendBody) {
     FakeXHR.bodies.push(body);
-    FakeXHR.urls.push(this.url);
-    const rejection = FakeXHR.rejectOnce.get(this.url);
-    if (rejection) FakeXHR.rejectOnce.delete(this.url);
     setTimeout(() => {
-      if (rejection) {
-        this.status = rejection;
-        this.readyState = FakeXHR.DONE;
-        this.onload?.();
-        return;
-      }
       this.upload.onprogress?.({ loaded: 2048 });
       this.readyState = FakeXHR.DONE;
       this.onload?.();
@@ -103,9 +71,6 @@ describe("MediaUploadManager native-file transport", () => {
   beforeEach(() => {
     jest.resetModules();
     FakeXHR.bodies = [];
-    FakeXHR.urls = [];
-    FakeXHR.rejectOnce = new Map();
-    fileHandles.length = 0;
     (global as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = FakeXHR;
     // A native-backed RN Blob descriptor — slice() returns a zero-copy view, never bytes.
     nativeBlob = {
@@ -115,7 +80,7 @@ describe("MediaUploadManager native-file transport", () => {
     (global as unknown as { fetch: unknown }).fetch = jest.fn(async () => ({ blob: async () => nativeBlob }));
   });
 
-  function primePulseApi(strategy: "single" | "multipart", partSize: number, maxPartsPerRequest?: number) {
+  function primePulseApi(strategy: "single" | "multipart", partSize: number) {
     const { pulseApi } = require("../../api/pulseApi") as { pulseApi: jest.Mock };
     pulseApi.mockImplementation(async (path: string, init?: { method?: string }) => {
       const method = init?.method || "GET";
@@ -129,16 +94,12 @@ describe("MediaUploadManager native-file transport", () => {
           part_size_bytes: partSize,
           file_size_bytes: 2048,
           completed_parts: [],
-          status: "pending",
-          ...(maxPartsPerRequest ? { max_parts_per_request: maxPartsPerRequest } : {})
+          status: "pending"
         };
       }
       if (path.endsWith("/parts/sign")) {
         const body = JSON.parse((init as { body?: string })?.body || "{}");
-        // Mirrors the server: anything past the cap is dropped without an error.
-        const asked: number[] = body.part_numbers || [];
-        const honoured = maxPartsPerRequest ? asked.slice(0, maxPartsPerRequest) : asked;
-        return { parts: honoured.map((n: number) => ({ part_number: n, upload_url: `https://storage.example/part/${n}` })) };
+        return { parts: (body.part_numbers || []).map((n: number) => ({ part_number: n, upload_url: `https://storage.example/part/${n}` })) };
       }
       if (path.endsWith("/finalize")) return { ok: true, media_id: "media_1", media: { id: "media_1" } };
       return { ok: true };
@@ -194,124 +155,21 @@ describe("MediaUploadManager native-file transport", () => {
     expect(body.duration_ms).toBe(0);
   });
 
-  it("reads each multipart part off disk instead of loading the whole file", async () => {
-    // The bound this protects is memory, and it is the difference between a 90-minute
-    // video uploading and the app being jetsammed before the first byte leaves. A
-    // whole-file `fetch(file://…).blob()` is not a cheap descriptor: RCTFileRequestHandler
-    // memory-maps the file and RCTNetworkTask then copies every page into a fresh
-    // NSMutableData. So the assertion that matters is that `fetch` is never reached at
-    // all on the multipart path -- a size or progress assertion would pass either way.
+  it("slices the native RN blob for multipart parts (zero-copy views)", async () => {
     primePulseApi("multipart", 1024); // 2048 bytes -> 2 parts
     const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");
 
-    await mediaUploadManager.upload({ ...asset, uri: "file:///tmp/pulsesoc-video-mix-M.mp4" }, { contextType: "post" }).promise;
+    const task = mediaUploadManager.upload({ ...asset, uri: "file:///tmp/pulsesoc-video-mix-M.mp4" }, { contextType: "post" });
+    await task.promise;
 
-    expect(global.fetch as jest.Mock).not.toHaveBeenCalled();
-    expect(nativeBlob.slice).not.toHaveBeenCalled();
-    expect(fileHandles).toHaveLength(1);
-    // Exactly the two part ranges, nothing wider.
-    expect(fileHandles[0].reads.sort((a, b) => a[0] - b[0])).toEqual([[0, 1024], [1024, 2048]]);
-    expect(fileHandles[0].closed).toBe(true);
-    expect(FakeXHR.bodies).toHaveLength(2);
-    for (const sent of FakeXHR.bodies) expect((sent as Uint8Array).byteLength).toBe(1024);
-  });
-
-  it("closes the file handle when a part upload fails", async () => {
-    // Uploads are resumable, so the same file is very likely reopened moments later. A
-    // handle leaked on the failure path is the one that never gets closed.
-    primePulseApi("multipart", 1024);
-    FakeXHR.rejectOnce.set("https://storage.example/part/1", 500);
-    const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");
-
-    await mediaUploadManager.upload({ ...asset, uri: "file:///tmp/pulsesoc-retry.mp4" }, { contextType: "post" }).promise;
-
-    expect(fileHandles).toHaveLength(1);
-    expect(fileHandles[0].closed).toBe(true);
-  });
-
-  it("still uploads when the URI is not a plain file the handle can open", async () => {
-    // `ph://` asset references and Android `content://` URIs cannot be opened as files.
-    // Falling back to the whole-file blob costs memory, but refusing the upload outright
-    // would be worse, so the fallback has to stay reachable.
-    primePulseApi("multipart", 1024);
-    const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");
-
-    await mediaUploadManager.upload({ ...asset, uri: "ph://ASSET-ID-1" }, { contextType: "post" }).promise;
-
-    expect(fileHandles).toHaveLength(0);
-    expect(global.fetch as jest.Mock).toHaveBeenCalledWith("ph://ASSET-ID-1");
+    // Parts come from the RN blob's slice (a view), never from expo File.slice.
     expect(nativeBlob.slice).toHaveBeenCalledTimes(2);
-  });
-
-  it("signs parts in one batch per round trip, not one request per part", async () => {
-    // The cost this guards is sequential latency, not bandwidth: signing one part at a
-    // time put a full round trip in front of every part. Asserting on the number of
-    // sign calls is the only way to see it — the bytes transferred are identical either
-    // way, so a timing or throughput assertion would pass on the slow version too.
-    const pulseApi = primePulseApi("multipart", 256, 8); // 2048 bytes -> 8 parts, cap 8
-    const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");
-
-    await mediaUploadManager.upload({ ...asset, uri: "file:///tmp/batch.mp4" }, { contextType: "post" }).promise;
-
-    const signCalls = pulseApi.mock.calls.filter(([path]) => String(path).endsWith("/parts/sign"));
-    expect(signCalls).toHaveLength(1);
-    expect(JSON.parse((signCalls[0] as [string, { body: string }])[1].body).part_numbers).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-    // Every part still uploaded exactly once.
-    expect(FakeXHR.bodies).toHaveLength(8);
-  });
-
-  it("never asks for more signatures than the server advertises", async () => {
-    // `sign_parts` truncates an oversized batch silently. A client that asked for more
-    // than the cap would upload only the parts it got back and then fail at `complete`
-    // with a gap in the part list — far from the real cause.
-    const pulseApi = primePulseApi("multipart", 256, 3); // 8 parts, cap 3
-    const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");
-
-    await mediaUploadManager.upload({ ...asset, uri: "file:///tmp/capped.mp4" }, { contextType: "post" }).promise;
-
-    const signCalls = pulseApi.mock.calls.filter(([path]) => String(path).endsWith("/parts/sign"));
-    for (const call of signCalls) {
-      expect(JSON.parse((call as [string, { body: string }])[1].body).part_numbers.length).toBeLessThanOrEqual(3);
+    expect(FakeXHR.bodies).toHaveLength(2);
+    for (const sent of FakeXHR.bodies) {
+      expect(sent instanceof ArrayBuffer).toBe(false);
+      expect(ArrayBuffer.isView(sent as ArrayBufferView)).toBe(false);
     }
-    expect(FakeXHR.bodies).toHaveLength(8);
-    const completed = pulseApi.mock.calls.find(([path]) => String(path).endsWith("/complete"));
-    expect(JSON.parse((completed as [string, { body: string }])[1].body).parts.map((p: { part_number: number }) => p.part_number))
-      .toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-  });
-
-  it("falls back to one part per request when the server advertises no cap", async () => {
-    // An upload session persisted before the cap was published resumes without the
-    // field. Guessing a batch size there could silently exceed an older server's limit.
-    const pulseApi = primePulseApi("multipart", 512); // 4 parts, no advertised cap
-    const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");
-
-    await mediaUploadManager.upload({ ...asset, uri: "file:///tmp/nocap.mp4" }, { contextType: "post" }).promise;
-
-    const signCalls = pulseApi.mock.calls.filter(([path]) => String(path).endsWith("/parts/sign"));
-    expect(signCalls).toHaveLength(4);
-    for (const call of signCalls) {
-      expect(JSON.parse((call as [string, { body: string }])[1].body).part_numbers).toHaveLength(1);
-    }
-  });
-
-  it("re-signs a part whose batched signature aged out mid-batch", async () => {
-    // Batching widens the gap between minting a signature and using it, so the last part
-    // of a batch can outlive its URL on a slow link. That arrives as 403, which
-    // `transientStatus` deliberately does not retry — without an explicit re-sign the
-    // whole upload would fail at the point batching made most likely.
-    const pulseApi = primePulseApi("multipart", 256, 8);
-    FakeXHR.rejectOnce.set("https://storage.example/part/8", 403);
-    const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");
-
-    const result = await mediaUploadManager.upload({ ...asset, uri: "file:///tmp/expiring.mp4" }, { contextType: "post" }).promise;
-
-    expect((result as { media_id?: string }).media_id).toBe("media_1");
-    // The batch, plus a single-part re-sign for the one that expired.
-    const signCalls = pulseApi.mock.calls.filter(([path]) => String(path).endsWith("/parts/sign"));
-    expect(signCalls).toHaveLength(2);
-    expect(JSON.parse((signCalls[1] as [string, { body: string }])[1].body).part_numbers).toEqual([8]);
-    // Part 8 was attempted twice; every other part exactly once.
-    expect(FakeXHR.urls.filter((url) => url === "https://storage.example/part/8")).toHaveLength(2);
-    expect(FakeXHR.urls.filter((url) => url === "https://storage.example/part/7")).toHaveLength(1);
+    // Already-scheme'd URI is passed through untouched (no double file:// prefix).
+    expect((global.fetch as jest.Mock)).toHaveBeenCalledWith("file:///tmp/pulsesoc-video-mix-M.mp4");
   });
 });

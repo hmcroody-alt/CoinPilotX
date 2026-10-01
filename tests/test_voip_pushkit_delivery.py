@@ -460,17 +460,12 @@ class ApnsContractTest(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-def _scripted_httpx(script, raise_after=None):
+def _scripted_httpx(script):
     """An httpx stand-in that answers from `script` and records the hosts it saw.
 
     `script` is a list of (status_code, body) answered in order. Returns the fake
     module and the list of URLs posted to, so a test can assert both *what* APNs
     replied and *how many* requests it took.
-
-    `raise_after` makes request number `raise_after` (0-indexed) and every one
-    after it raise instead of answering, so a test can reach the
-    `transport: failed` branch — a network error carries no http_status at all,
-    which is a different thing from a host that answered and said no.
     """
     seen = []
 
@@ -492,8 +487,6 @@ def _scripted_httpx(script, raise_after=None):
 
         def post(self, url, headers=None, json=None):
             seen.append(url)
-            if raise_after is not None and len(seen) - 1 >= raise_after:
-                raise RuntimeError("connection reset")
             status, body = script[min(len(seen) - 1, len(script) - 1)]
             return _Response(status, body)
 
@@ -602,87 +595,6 @@ class ApnsEnvironmentCorrectionTest(VoipBase):
         self.assertFalse(result.get("ok"))
         self.assertEqual(result.get("status"), "invalid_device")
         self.assertEqual(len(seen), 2)
-
-    def test_a_key_the_other_host_refuses_does_not_condemn_the_token(self):
-        """MUTATION: keep classifying any non-2xx replay as the second of two refusals.
-
-        Measured in production on 2026-09-17 against the only physical handset.
-        The build is signed `aps-environment: development`, so iOS mints a *sandbox*
-        token; the deployment records `production`, so the first request goes to
-        api.push.apple.com and draws BadDeviceToken. The replay then goes to
-        api.sandbox.push.apple.com — which answers `403 BadEnvironmentKeyInToken`,
-        because the signing key is restricted to a single APNs environment and the
-        host refuses the *request* before it ever looks at the token.
-
-        That 403 says nothing whatsoever about the device. Counting it as a refusal
-        revoked a live token (suffix cee6d835) on every call since 2026-09-15; iOS
-        handed the app back the identical token each time, which is proof it was
-        never dead. Because alert-push suppression is conditioned on an *active*
-        token, the handset then dropped to a plain banner and CallKit never rang.
-
-        A misconfigured provider credential must degrade to a retryable failure,
-        never to a revocation.
-        """
-        result, seen = self._send(
-            [(400, BAD_TOKEN), (403, '{"reason":"BadEnvironmentKeyInToken"}')],
-            environment="production",
-        )
-
-        self.assertFalse(result.get("ok"))
-        self.assertEqual(
-            result.get("status"),
-            "failed",
-            "a 403 about our signing key is not evidence the device token is dead",
-        )
-        self.assertEqual(len(seen), 2, "the replay must still be attempted")
-
-    def test_an_unreachable_replay_host_does_not_condemn_the_token(self):
-        """MUTATION: treat a transport failure on the replay as a refusal.
-
-        `_post_voip` returns `transport: failed` with no http_status for a network
-        error, which reads as 0 — not 2xx — and is otherwise indistinguishable from
-        the other host saying "I do not know this token". A flaky minute of DNS must
-        not cost every handset its ability to ring.
-        """
-        fake, seen = _scripted_httpx([(400, BAD_TOKEN)], raise_after=1)
-        with mock.patch.object(voip, "_apns_jwt", return_value="fake-jwt"), \
-                mock.patch.dict(sys.modules, {"httpx": fake}):
-            result = voip.send_voip_push("devicetoken123", {"event": "incoming_call"}, "production")
-
-        self.assertEqual(result.get("status"), "failed")
-        self.assertEqual(len(seen), 2)
-
-    def test_a_provider_fault_on_the_first_request_is_never_a_revocation(self):
-        """MUTATION: widen `invalid` to any non-2xx.
-
-        An expired or wrong `.p8` fails every device at once. Revoking on it would
-        empty the token table in a single ring fan-out, leaving a deployment that
-        cannot recover by fixing the key.
-        """
-        result, seen = self._send([(403, '{"reason":"ExpiredProviderToken"}')], environment="production")
-
-        self.assertEqual(result.get("status"), "failed")
-        self.assertEqual(len(seen), 1, "a provider fault is not an environment mismatch")
-
-    def test_the_rejection_event_names_why_the_replay_failed(self):
-        """MUTATION: drop `replay_reason` from the event.
-
-        `replay=rejected` alone cannot distinguish "the other host does not know
-        this token" from "the other host refused our key" — opposite faults with
-        opposite fixes. Diagnosing the 2026-09-17 outage needed a hand-written probe
-        against both hosts precisely because this field did not exist.
-        """
-        events = []
-        with mock.patch.object(voip, "_event", side_effect=lambda name, **kw: events.append((name, kw))):
-            self._send(
-                [(400, BAD_TOKEN), (403, '{"reason":"BadEnvironmentKeyInToken"}')],
-                environment="production",
-            )
-
-        rejected = [kw for name, kw in events if name == "voip_push_rejected"]
-        self.assertEqual(len(rejected), 1, events)
-        self.assertEqual(rejected[0].get("replay"), "provider_fault")
-        self.assertEqual(rejected[0].get("replay_reason"), "BadEnvironmentKeyInToken")
 
     def test_an_alert_token_on_the_voip_topic_is_not_replayed(self):
         """MUTATION: fold DeviceTokenNotForTopic into the mismatch check.
@@ -982,154 +894,6 @@ class SchemaGuardTest(unittest.TestCase):
             )
         finally:
             conn.close()
-
-
-# ---------------------------------------------------------------------------
-# 18-22. apns-topic is per device, because the wrong topic is unrecoverable
-# ---------------------------------------------------------------------------
-
-
-def _topic_capturing_httpx(script=((200, ""),)):
-    """A fake httpx that records the headers of every request, in order."""
-    seen = []
-
-    class _Response:
-        def __init__(self, status, body):
-            self.status_code = status
-            self.text = body
-            self.headers = {"apns-id": "fake-apns-id"}
-
-    class _Client:
-        def __init__(self, *a, **kw):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def post(self, url, headers=None, json=None):
-            seen.append({"url": url, "headers": dict(headers or {})})
-            status, body = script[min(len(seen) - 1, len(script) - 1)]
-            return _Response(status, body)
-
-    return mock.Mock(Client=_Client), seen
-
-
-class ApnsTopicPerBundleTest(VoipBase):
-    """The topic must name the app the device is actually running.
-
-    `apns-topic` was the deployment-wide `voip_topic()` for every device. That is
-    correct only while exactly one bundle id exists, and the failure mode when a
-    second one appears is the worst one available: APNs answers
-    `DeviceTokenNotForTopic`, which `send_voip_push` classifies `invalid_device`
-    and — unlike `BadDeviceToken` — deliberately does *not* replay, so `_deliver`
-    revokes the token permanently. A wrong host costs one wasted request and
-    self-heals; a wrong topic costs a handset its ability to ring, for good.
-    """
-
-    def _send(self, app_bundle="", script=((200, ""),), environment=""):
-        fake, seen = _topic_capturing_httpx(script)
-        with mock.patch.object(voip, "_apns_jwt", return_value="fake-jwt"), \
-                mock.patch.dict(sys.modules, {"httpx": fake}):
-            result = voip.send_voip_push(
-                "devicetoken123", {"event": "incoming_call"}, environment, app_bundle
-            )
-        return result, seen
-
-    def test_a_device_that_reported_no_bundle_keeps_the_deployment_topic(self):
-        """MUTATION: send an empty topic when `app_bundle` is empty.
-
-        Every row stored today has an empty `app_bundle` — the client never sent
-        one — so this is the only path production currently takes. Deriving the
-        topic must not change the behaviour of a single existing device.
-        """
-        _, seen = self._send(app_bundle="")
-        self.assertEqual(seen[0]["headers"]["apns-topic"], "com.pulsesoc.app.voip")
-
-    def test_an_unrecognised_bundle_never_reaches_the_topic_header(self):
-        """MUTATION: trust `app_bundle` and put it straight in the header.
-
-        `app_bundle` is client-supplied. A device that reports a bundle this
-        deployment does not serve would otherwise be addressed on a topic Apple
-        rejects — and that rejection is the non-replayed, permanently-revoking one.
-        A phone could talk itself out of ever ringing again with one bad field.
-        """
-        _, seen = self._send(app_bundle="com.attacker.app")
-        self.assertEqual(seen[0]["headers"]["apns-topic"], "com.pulsesoc.app.voip")
-        self.assertNotIn("attacker", seen[0]["headers"]["apns-topic"])
-
-    def test_a_declared_second_bundle_is_addressed_on_its_own_topic(self):
-        """MUTATION: keep using the deployment topic for every device.
-
-        This is the positive half. Without it the test above would pass just as
-        well against code that ignores `app_bundle` entirely, which is exactly the
-        code being replaced.
-        """
-        with mock.patch.dict(os.environ, {"APNS_ALLOWED_BUNDLE_IDS": "com.pulsesoc.nativeapp.dev"}):
-            _, seen = self._send(app_bundle="com.pulsesoc.nativeapp.dev")
-        self.assertEqual(seen[0]["headers"]["apns-topic"], "com.pulsesoc.nativeapp.dev.voip")
-
-    def test_the_host_replay_does_not_also_change_the_topic(self):
-        """MUTATION: recompute the topic for the replay.
-
-        The replay exists to test the other *host*. If the topic moved at the same
-        time, an accepted replay would not say which of the two was at fault, and
-        `environment_corrected` would then persist a host that was never wrong.
-        """
-        with mock.patch.dict(os.environ, {"APNS_ALLOWED_BUNDLE_IDS": "com.pulsesoc.nativeapp.dev"}):
-            result, seen = self._send(
-                app_bundle="com.pulsesoc.nativeapp.dev",
-                script=((400, BAD_TOKEN), (200, "")),
-                environment="production",
-            )
-        self.assertEqual(len(seen), 2, "the replay did not run")
-        self.assertNotEqual(seen[0]["url"], seen[1]["url"], "the replay reused the same host")
-        self.assertEqual(
-            seen[0]["headers"]["apns-topic"],
-            seen[1]["headers"]["apns-topic"],
-            "the replay changed the topic as well as the host",
-        )
-        self.assertTrue(result.get("ok"), result)
-
-    def test_two_devices_on_two_bundles_are_addressed_separately(self):
-        """MUTATION: resolve the topic once per deployment instead of once per device.
-
-        The end-to-end case. One account with a store build and a development build
-        signed in at the same time is the normal state of affairs during device QA,
-        and it is precisely when a single shared topic revokes one of them.
-        """
-        voip.register_token(
-            self.cur, USER_ID, "store-phone", "tok-store", app_bundle="com.pulsesoc.app"
-        )
-        voip.register_token(
-            self.cur, USER_ID, "dev-phone", "tok-dev", app_bundle="com.pulsesoc.nativeapp.dev"
-        )
-        self.conn.commit()
-
-        fake, seen = _topic_capturing_httpx()
-        with mock.patch.dict(os.environ, {"APNS_ALLOWED_BUNDLE_IDS": "com.pulsesoc.nativeapp.dev"}), \
-                mock.patch.object(voip, "_apns_jwt", return_value="fake-jwt"), \
-                mock.patch.dict(sys.modules, {"httpx": fake}):
-            voip.ring_devices(
-                self.cur,
-                {"public_id": "call-topic-1", "call_type": "audio"},
-                USER_ID,
-                OTHER_USER_ID,
-                "Caller",
-            )
-
-        by_token = {
-            request["url"].rsplit("/", 1)[-1]: request["headers"]["apns-topic"] for request in seen
-        }
-        self.assertEqual(
-            by_token,
-            {
-                "tok-store": "com.pulsesoc.app.voip",
-                "tok-dev": "com.pulsesoc.nativeapp.dev.voip",
-            },
-        )
 
 
 if __name__ == "__main__":

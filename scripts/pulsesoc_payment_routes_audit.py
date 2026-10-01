@@ -9,7 +9,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BOT_SOURCE = (ROOT / "bot.py").read_text(encoding="utf-8")
-WEBHOOK_VERIFIER = (ROOT / "services/stripe_webhook_verification.py").read_text(encoding="utf-8")
 
 
 def expect(condition: bool, label: str, detail: str = "") -> None:
@@ -26,6 +25,7 @@ def static_checks() -> None:
         '@webhook_app.route("/pulse/premium/success", methods=["GET"])',
         '@webhook_app.route("/pulse/premium/cancel", methods=["GET"])',
         '@webhook_app.route("/billing/portal", methods=["GET"])',
+        'stripe.Webhook.construct_event',
         'stripe_event_processed(event_id)',
         'notify_payment_status',
         'CoinPlotXAI Inc.',
@@ -39,19 +39,6 @@ def static_checks() -> None:
     ]
     for token in required:
         expect(token in BOT_SOURCE, f"payment wiring token present {token}")
-
-    # Signature verification lives in services/stripe_webhook_verification.py so
-    # one verifier can serve several Stripe destinations, each of which signs
-    # with its own secret. Looking for construct_event in bot.py reports a false
-    # failure, so follow the call path instead.
-    expect(
-        "stripe_webhook_verification.verify(" in BOT_SOURCE,
-        "Stripe webhook handler delegates to the shared signature verifier",
-    )
-    expect(
-        "stripe.Webhook.construct_event" in WEBHOOK_VERIFIER,
-        "Stripe signature verification uses Stripe's own construct_event",
-    )
 
 
 def table_columns(cur: sqlite3.Cursor, table: str) -> set[str]:
@@ -82,12 +69,6 @@ def dynamic_checks() -> None:
     import sys
 
     sys.path.insert(0, str(ROOT))
-
-    from scripts.local_database_guard import require_local_database  # noqa: WPS433,E402
-
-    # Importing bot runs init_db() against DATABASE_URL, so this has to come first.
-    require_local_database("pulsesoc_payment_routes_audit")
-
     import bot  # noqa: WPS433,E402
 
     user_id = 9926072401

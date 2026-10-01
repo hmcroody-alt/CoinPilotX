@@ -3,8 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  {# See templates/index.html for why the app-argument is the site root. #}
-  {{ smart_app_banner_meta|safe }}
   <title>Search PulseSoc</title>
   <meta name="description" content="Search PulseSoc educational AI crypto intelligence, wallet safety, scam protection, Sports Edge, and Telegram companion pages." />
   <meta name="robots" content="noindex, follow" />
@@ -24,9 +22,9 @@
   <meta name="theme-color" content="#00e5ff" />
   <link rel="icon" href="{{ url_for('static', filename='brand/pulsesoc-favicon-32-20260913.png') }}" />
   <link rel="manifest" href="/manifest.json" />
-  <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=cache-sweep-20260930a" />
-  <link rel="stylesheet" href="/static/css/pulse_design_system.css?v=cache-sweep-20260930a" />
-  <link rel="stylesheet" href="/static/css/pulse_mobile_system.css?v=bare-asset-tokens-20260930a" />
+  <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a" />
+  <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
+  <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
   {% if ga_measurement_id %}
   <script async src="https://www.googletagmanager.com/gtag/js?id={{ ga_measurement_id }}"></script>
   <script>

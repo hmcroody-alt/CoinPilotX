@@ -33,8 +33,7 @@ from services import db
 from services.business_os_commerce_routes import _bot, _csrf_ok, _json
 from services.business_os.commerce_gateway import context_from_user
 from services.business_os.suppliers import (discovery, drafts, import_cart, importer,
-                                            merchant_scope, policy, pricing, resync,
-                                            status, store_policy)
+                                            merchant_scope, policy, pricing, store_policy)
 from services.business_os.suppliers.errors import SupplierError
 from services.route_auth import auth_required
 
@@ -163,69 +162,6 @@ def merchant_scope_route():
         return _error(exc)
 
 
-@dropshipping_blueprint.route(PREFIX + "/supplier-status", methods=["GET"])
-@auth_required
-def supplier_status_route():
-    """The canonical state of every supplier connection for this store.
-
-    One call, one answer, for every screen that shows supplier health. Before
-    this, each screen assembled its own: the hub inferred health from the
-    connections list crossed with the imported-products list, the suppliers
-    screen rendered a status string, and the sync screen read ``sync_state``
-    alone. Three rules for one question, which is three chances to show a green
-    badge over a connection that cannot fulfil an order -- and no way to make
-    them agree, because the fact being displayed existed in none of them.
-
-    Everything here is observed or delegated. ``environment`` and
-    ``real_order_submission_enabled`` come from ``policy``, which probes the
-    real gate; the counts come from the merchant's own rows. Nothing is
-    defaulted to a cheerful value when a lookup fails -- an error is an error,
-    and a client that receives one must not draw a healthy supplier.
-
-    Provider-neutral like the rest of this pack: ``provider`` is a value in the
-    response, never a segment in the path, so a second supplier is a row here
-    rather than a second endpoint and a second screen.
-    """
-    try:
-        actor, context = _request_context()
-        business_id, store_id = _scope(request.args)
-        result = status.supplier_status(business_id, store_id, actor, context=context)
-        return _respond({"ok": True, **result})
-    except Exception as exc:
-        return _error(exc)
-
-
-@dropshipping_blueprint.route(PREFIX + "/connections/<connection_id>/sync", methods=["POST"])
-@auth_required
-def supplier_resync_route(connection_id):
-    """Ask for this supplier's data to be re-read now.
-
-    The button beside "Last sync failed". Without it that screen reports a
-    problem and offers nothing, so the merchant's only move is to wait out a
-    cadence the UI never shows them -- and a control that merely *looks* like a
-    retry would be worse, because they would stop watching a sync that never
-    restarted.
-
-    A POST because it changes when work happens, and behind ``write=True`` so it
-    carries CSRF like every other state change here. It reads nothing from the
-    provider itself: it moves the merchant's own queued jobs to the front, and
-    every quota, lease and network gate the worker enforces is still between
-    this request and the supplier.
-
-    The response says how much was queued, including when the catalogue was
-    larger than one request may enqueue. A merchant told "syncing" about half
-    their products would go looking for a failure that is really a cap.
-    """
-    try:
-        actor, context = _request_context(write=True)
-        business_id, store_id = _scope(_body())
-        result = resync.request_resync(business_id, store_id, actor, connection_id,
-                                       context=context)
-        return _respond({"ok": True, **result})
-    except Exception as exc:
-        return _error(exc)
-
-
 # ---------------------------------------------------------------------------
 # Layer 1 — how this store imports
 # ---------------------------------------------------------------------------
@@ -343,14 +279,8 @@ def get_cart(connection_id):
     try:
         actor, context = _request_context()
         business_id, store_id = _scope(request.args)
-        cart = import_cart.get_cart(business_id, store_id, actor, connection_id,
-                                    context=context)
-        # The cart holds more rows than one import can consume, so the screen
-        # that draws the Import button has to know both numbers or it will offer
-        # something the server will only half-serve. Composed here rather than in
-        # `import_cart` because the limit belongs to the importer, and having the
-        # cart module import it back would close a cycle.
-        return _respond({"ok": True, "max_per_import": importer.MAX_BATCH, **cart})
+        return _respond({"ok": True, **import_cart.get_cart(business_id, store_id, actor,
+                                                            connection_id, context=context)})
     except Exception as exc:
         return _error(exc)
 

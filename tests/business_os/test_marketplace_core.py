@@ -30,8 +30,6 @@ os.environ["BUSINESS_OS_MARKETPLACE"] = "on"
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-from _fee_expectations import platform_fee, seller_net  # noqa: E402
-
 from services import db  # noqa: E402
 from services.business_os.marketplace import schema as mkt_schema  # noqa: E402
 from services.business_os.marketplace import service as svc  # noqa: E402
@@ -166,8 +164,8 @@ def test_order_lifecycle_and_settlement():
     orders_mod.complete_order(oid, BUYER, context=_ctx())
     # Existing seller economics remain unchanged until the proposed policy is activated.
     assert ledger.get_balance(orders_mod.escrow_account(oid)) == 0
-    assert ledger.get_balance(orders_mod.seller_payable_account(SELLER)) == seller_net(4000)
-    assert ledger.get_balance(orders_mod.PLATFORM_REVENUE_ACCOUNT) == platform_fee(4000)
+    assert ledger.get_balance(orders_mod.seller_payable_account(SELLER)) == 3600
+    assert ledger.get_balance(orders_mod.PLATFORM_REVENUE_ACCOUNT) == 400
     # completed is terminal
     assert orders_mod.get_order(oid)["status"] == "completed"
 
@@ -227,9 +225,9 @@ def test_settlement_nets_prior_partial_refund():
     refunds_mod.refund_order(oid, amount_cents=1000, reason="partial", actor=ADMIN)
     orders_mod.fulfill_order(oid, S2, tracking_ref="T")
     orders_mod.complete_order(oid, BUYER, context=_ctx())
-    # settled from the CURRENT escrow of 3000, at the policy rate; escrow zeroes
+    # settled from the CURRENT escrow of 3000: fee 300, net 2700, escrow zeroes
     assert ledger.get_balance(orders_mod.escrow_account(oid)) == 0
-    assert ledger.get_balance(orders_mod.seller_payable_account(S2)) == seller_net(3000)
+    assert ledger.get_balance(orders_mod.seller_payable_account(S2)) == 2700
 
 
 # --- (e) dispute refund + verified review + payout read ---------------------
@@ -286,7 +284,7 @@ def test_verified_review_and_payout_balance():
 
     # payout balance reads the accrual (net of the 10% fee on $40)
     bal = refunds_mod.seller_payout_balance(S4)
-    assert bal["payable_cents"] == seller_net(4000)
+    assert bal["payable_cents"] == 3600
     assert bal["disbursement"] == "provider_side_out_of_scope"
 
 

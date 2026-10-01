@@ -45,9 +45,11 @@ jest.mock("../../media/MediaGestureFeedback", () => {
   return { LikeBurst: ReactActual.forwardRef(() => null) };
 });
 jest.mock("../../sharing/nativeShare", () => ({ sharePulseObject: jest.fn().mockResolvedValue({ ok: true }) }));
-jest.mock("../ContentTranslation", () =>
-  require("../../testing/contentTranslationStub").contentTranslationStub()
-);
+jest.mock("../ContentTranslation", () => {
+  const { Text } = jest.requireActual("react-native");
+  const ReactActual = jest.requireActual("react");
+  return { ContentTranslation: ({ text }: any) => ReactActual.createElement(Text, null, text) };
+});
 
 import type { PulseStatus } from "../../api/status";
 import { StatusViewerCard } from "../StatusViewerCard";

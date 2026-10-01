@@ -36,7 +36,6 @@ deliberately does not attempt; it is surfaced honestly in the completion report.
 from __future__ import annotations
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -46,32 +45,15 @@ from services.business_os.marketplace import service as _svc
 from services.business_os.marketplace.service import MarketplaceError
 from services.business_os.marketplace import policy as _policy
 from services.business_os.ledger import ledger as _ledger
-from services import marketplace_seller_identity as _identity
 
 try:
     from services.business_os.marketplace import notifications as _notify
 except Exception:  # pragma: no cover
     _notify = None
 
-# The payments notification engine — the one that renders and sends *email*.
-# It is a different thing from ``_notify`` above, which writes the in-app alert
-# row and nothing else. Imported under a guard for the same reason ``_notify``
-# is: a Business OS order must still be fulfillable in an environment where the
-# notification layer failed to load.
-try:
-    from services import payments_notifications as _payments_notify
-except Exception:  # pragma: no cover
-    _payments_notify = None
 
-LOGGER = logging.getLogger(__name__)
-
-
-# The events/ticketing take rate, which imports this from here and is a separate
-# product with its own pricing. It is NOT a marketplace fee default: marketplace
-# commission comes from `services.business_os.marketplace.policy` and nothing
-# else. It sat here as a "keep existing economics" fallback long enough to be
-# mistaken for one, and production has never charged it — zero orders, zero
-# products, zero settlements in either marketplace lane.
+# Existing commercial behavior remains authoritative until the gated V1 policy
+# is activated. This avoids silently changing live seller economics.
 DEFAULT_FEE_BPS = 1000
 
 
@@ -229,18 +211,23 @@ def create_order(buyer_user_id: Any, product_id: Any, *, quantity: int = 1,
         if inv is not None and inv < quantity:
             raise MarketplaceError("Not enough inventory.", 409, "insufficient_inventory")
         unit = int(product["price_cents"])
-        # One fee authority for both marketplace lanes. This lane used to fall
-        # back to a 10% "legacy" rate whenever the policy gates were shut, so the
-        # same product cost a seller 10% here and something else on the other
-        # lane — and the snapshot then relabelled itself to hide the divergence.
+        proposed_active = _policy.fee_policy_active()
         commercial = _policy.quote(
             unit_price_cents=unit, quantity=quantity,
             currency=product.get("currency", "usd"),
+            activate_proposed_policy=proposed_active,
         )
         subtotal = commercial.merchandise_net_cents
-        fee_bps = commercial.platform_fee_bps
+        fee_bps = commercial.platform_fee_bps if proposed_active else DEFAULT_FEE_BPS
         fee, net = _fee_split(subtotal, fee_bps)
         snapshot = commercial.as_dict()
+        if not proposed_active:
+            snapshot.update({
+                "fee_policy_version": "MARKETPLACE_LEGACY_10_PERCENT",
+                "platform_fee_bps": fee_bps,
+                "platform_fee_cents": fee,
+                "seller_earnings_cents": net,
+            })
         oid = "mkto_" + uuid.uuid4().hex
         now = _now_iso()
         conn.execute(
@@ -410,13 +397,7 @@ def pay_order(order_id: Any, buyer_user_id: Any, *, context: Optional[dict] = No
 def fulfill_order(order_id: Any, seller_user_id: Any, *, tracking_ref: Optional[str] = None,
                   context: Optional[dict] = None, conn=None) -> dict:
     """paid ─▶ fulfilled. Seller-only. Physical orders may carry a tracking ref;
-    digital orders are considered delivered immediately.
-
-    The buyer's shipping email is sent from here rather than from either route
-    that reaches this point: ``services.business_os.orders.service`` is a facade
-    over this function and ``marketplace.api`` calls it directly, so this is the
-    single door into ``fulfilled`` and one emit site covers both.
-    """
+    digital orders are considered delivered immediately."""
     _svc._require_enabled()
     owned = conn is None
     if owned:
@@ -426,33 +407,16 @@ def fulfill_order(order_id: Any, seller_user_id: Any, *, tracking_ref: Optional[
         if order is None or order.get("seller_user_id") != _svc._sid(seller_user_id):
             raise MarketplaceError("Order not found.", 404, "not_found")
         _assert_transition(order.get("status"), "fulfilled")
-        # `delivered_at` is written once, here, and anchors the buyer's return
-        # window. It is kept distinct from `updated_at`, which any later status
-        # change rewrites — anchoring a deadline on a mutable column would let an
-        # unrelated edit silently extend or shorten a buyer's rights.
-        now = _now_iso()
         conn.execute(
             "UPDATE business_os_mkt_orders SET status = 'fulfilled', tracking_ref = ?, "
-            "delivered_at = COALESCE(delivered_at, ?), "
             "updated_at = ? WHERE order_id = ?",
-            (tracking_ref, now, now, str(order_id)))
+            (tracking_ref, _now_iso(), str(order_id)))
         _record_event(conn, order_id, "paid", "fulfilled", seller_user_id,
                       meta={"tracking_ref": tracking_ref} if tracking_ref else None)
         if owned:
             conn.commit()
         _emit(order.get("buyer_user_id"), "order_fulfilled", order_id)
-        fulfilled = get_order(order_id, conn=conn)
-        if owned:
-            # Only when this call owns the commit. A caller that passed its own
-            # connection has not committed yet and may still roll back, and a
-            # buyer told "your order shipped" cannot be untold. (The in-app
-            # `_emit` above does not make that distinction; leaving its
-            # placement alone is deliberate — it predates this and changing when
-            # an existing alert fires is a separate decision from adding a new
-            # one.) Reads `fulfilled`, not `order`: `order` is the pre-UPDATE
-            # row and still carries the old, empty tracking reference.
-            _email_buyer_shipped(conn, fulfilled)
-        return fulfilled
+        return get_order(order_id, conn=conn)
     finally:
         if owned:
             conn.close()
@@ -483,10 +447,7 @@ def complete_order(order_id: Any, buyer_user_id: Any, *, context: Optional[dict]
         _assert_transition(order.get("status"), "completed")
 
         remaining = _ledger.get_balance(escrow_account(order_id), order.get("currency", "usd"))
-        # The rate this order was quoted at, not a default. An order with no
-        # recorded rate was never quoted a commission, so taking one at
-        # settlement would be charging a fee the seller never saw.
-        fee, net = _fee_split(remaining, order.get("platform_fee_bps") or 0)
+        fee, net = _fee_split(remaining, order.get("platform_fee_bps", DEFAULT_FEE_BPS))
 
         conn.execute(
             "UPDATE business_os_mkt_orders SET status = 'completed', updated_at = ? "
@@ -695,105 +656,3 @@ def _emit(user_id, kind, order_id):
         _notify.emit_order_event(user_id, kind, order_id)
     except Exception:
         pass
-
-
-def _item_summary(items: list) -> str:
-    """One line naming what shipped: the first item, plus a count of the rest.
-
-    An order carries one item row today, but the table is keyed to allow more,
-    and an email that silently named only the first of four would be worse than
-    one that says so.
-    """
-    titles = [str((item or {}).get("title") or "").strip() for item in (items or [])]
-    titles = [t for t in titles if t]
-    if not titles:
-        return ""
-    if len(titles) == 1:
-        return titles[0][:160]
-    return f"{titles[0][:120]} and {len(titles) - 1} more"
-
-
-def _email_buyer_shipped(conn, order: Optional[dict]) -> None:
-    """Send the buyer the ``order_shipped`` payment email for a fulfilled order.
-
-    The in-app alert raised beside this one is server-derived text with no
-    tracking reference, no item, no store and no name — it reads "Your order has
-    been fulfilled." and stops. This is the same ``order_shipped`` email Pulse
-    Marketplace sends, so a buyer gets the same facts whichever of the two
-    marketplaces the order was placed in.
-
-    **Physical orders only.** ``fulfill_order`` treats a digital order as
-    delivered the moment it is placed; mailing that buyer a "Track order" button
-    beside an empty tracking field describes a shipment that never happened.
-    This is the Business OS spelling of the shipping-lane guard the Pulse side
-    gets from ``SHIPPING_KINDS``.
-
-    Runs on the caller's connection, after the commit. It never raises and never
-    rolls anything back: the fulfilment is already durable by the time this is
-    called, so a lookup that fails must cost the buyer a line of the email
-    rather than the email itself — every key the template reads is optional.
-    """
-    order = dict(order or {})
-    if str(order.get("fulfillment_type") or "physical") != "physical":
-        return
-    order_id = str(order.get("order_id") or "")
-    if _payments_notify is None:
-        # Logged rather than swallowed: "nobody was emailed" and "everything is
-        # fine" are indistinguishable from the outside, which is precisely how
-        # this event went unproduced on the other marketplace for so long.
-        LOGGER.warning("BUSOS_MKT_SHIPPED_NO_NOTIFIER order=%s", order_id)
-        return
-    try:
-        # Business OS keys users as TEXT; the notification engine addresses them
-        # by integer id. A buyer this module cannot name in the engine's terms
-        # is a buyer it cannot mail.
-        buyer_id = int(str(order.get("buyer_user_id") or "").strip())
-    except (TypeError, ValueError):
-        LOGGER.warning("BUSOS_MKT_SHIPPED_BAD_RECIPIENT order=%s buyer=%s",
-                       order_id, order.get("buyer_user_id"))
-        return
-    if buyer_id <= 0:
-        return
-
-    context = {
-        "order_id": order_id,
-        # The order id is already the reference a buyer would quote to support,
-        # so it is not decorated into something support cannot search for.
-        "order_reference": order_id,
-        "tracking_reference": str(order.get("tracking_ref") or ""),
-        # No carrier key: ``business_os_mkt_orders`` records a tracking
-        # reference but not who is carrying it, and the template omits a fact
-        # whose value is empty rather than printing a blank row.
-    }
-    try:
-        context["buyer_first_name"] = _payments_notify.greeting_first_name(_row(conn.execute(
-            "SELECT full_name, display_name, username FROM users WHERE user_id = ? LIMIT 1",
-            (buyer_id,)).fetchone()))
-        seller = _row(conn.execute(
-            "SELECT display_name FROM business_os_mkt_sellers WHERE seller_user_id = ? LIMIT 1",
-            (_svc._sid(order.get("seller_user_id")),)).fetchone()) or {}
-        # Through the canonical accessor rather than off the column, so this
-        # buyer-facing name is resolved the same way every other buyer-facing
-        # surface resolves it. Reading the column raw differs in one case that
-        # matters here: a ``display_name`` of "   " is not empty, so it would
-        # survive the template's omit-when-empty rule and print exactly the
-        # blank row that rule exists to prevent. ``store_name`` strips, so an
-        # all-whitespace name becomes "" and the store line is dropped.
-        #
-        # ``store_name`` and not ``display_store_name``: the latter substitutes
-        # "PulseSoc Store" for an absent name, and this template would rather
-        # say nothing about the store than attribute the shipment to a shop the
-        # buyer never bought from. Omission is this email's existing choice and
-        # is preserved.
-        context["store_name"] = _identity.store_name(seller)
-        context["item_summary"] = _item_summary(get_order_items(order_id, conn=conn))
-    except Exception as exc:  # noqa: BLE001 - see docstring
-        LOGGER.warning("BUSOS_MKT_SHIPPED_CONTEXT_FAILED order=%s error=%s", order_id, exc)
-
-    # ``email_only``, unlike the Pulse Marketplace emit site. There the buyer is
-    # told nothing else, so the in-app row is the only one there is. Here
-    # ``_emit(..., "order_fulfilled", ...)`` has already sent this same buyer an
-    # alert titled "Order shipped" through the orchestrator; the full fan-out
-    # would put a second one beside it. Email is the channel that was missing.
-    _payments_notify.emit(_payments_notify.ORDER_SHIPPED, buyer_id, context,
-                          email_only=True)

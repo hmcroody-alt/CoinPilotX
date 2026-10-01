@@ -2,9 +2,8 @@ import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { AccessibilityInfo, Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogiNexusBadge, LogiNexusSignalIndicator } from "../components/LogiNexus";
 import { LivingPulseSocWordmark } from "../components/home/LivingPulseSocWordmark";
@@ -12,10 +11,8 @@ import { getPulseRadioState, playNextTrack, playPreviousTrack, PulseRadioState, 
 // The scope wording lives with the counts, in the unread store — not here, where
 // it could drift from the number it describes.
 import { badgeSpokenLabel, scopedBadgesEnabled } from "../core/unreadCounts";
-import { BLUE_GRAPHITE_NAV } from "../theme/blueGraphite";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
-import { useTheme } from "../theme/ThemeContext";
 import { useBottomNavVisibility } from "./BottomNavVisibility";
 import {
   BOTTOM_NAV_CREATE_MARGIN_TOP,
@@ -27,7 +24,6 @@ import {
   BOTTOM_NAV_MINI_PLAYER_HEIGHT
 } from "./bottomNavMetrics";
 import { resolveBottomNavPolicy } from "./bottomNavPolicy";
-import { homeHeaderActionMetrics } from "./headerActionMetrics";
 import {
   cancelRefreshTapWindow,
   RefreshDestination,
@@ -63,12 +59,6 @@ type HeaderProps = {
   showDrawer?: boolean;
   onBack?: () => void;
   onOpenDrawer?: () => void;
-  /**
-   * Opens consumer Marketplace discovery. Rendered before Search, and only on
-   * the surfaces that pass it — Home today. Profile OS keeps its own Marketplace
-   * tile, which is the *management* entry and is a different destination.
-   */
-  onOpenMarketplace?: () => void;
   onOpenSearch?: () => void;
   onOpenActivity?: () => void;
   onOpenMessages?: () => void;
@@ -101,7 +91,6 @@ export function LogiNexusGlobalHeader({
   showDrawer = true,
   onBack,
   onOpenDrawer,
-  onOpenMarketplace,
   onOpenSearch,
   onOpenActivity,
   onOpenMessages,
@@ -111,53 +100,24 @@ export function LogiNexusGlobalHeader({
   testID = "global-command-strip"
 }: HeaderProps) {
   const insets = useSafeAreaInsets();
-  const { width: windowWidth } = useWindowDimensions();
   const activityCount = normalizeBadgeCount(badges?.activity);
   const messageCount = normalizeBadgeCount(badges?.messages);
   const initials = initialsFor(identity?.displayName || identity?.username || "PulseSoc");
   const intelligenceMode = mode === "intelligence";
   const homeMode = mode === "home";
-  /**
-   * Home's buttons are sized against the width rather than fixed, because a
-   * fourth action does not fit beside the wordmark at 46pt on anything narrower
-   * than a Pro Max. See `headerActionMetrics.ts` for the arithmetic; standard
-   * mode is untouched and keeps its stylesheet size.
-   */
-  const homeActionCount =
-    [onOpenMarketplace, onOpenSearch, onOpenMessages, onOpenActivity, onOpenProfile].filter(Boolean)
-      .length;
-  const homeMetrics = useMemo(
-    () => (homeMode ? homeHeaderActionMetrics(windowWidth, homeActionCount) : null),
-    [homeMode, windowWidth, homeActionCount]
-  );
-  const homeButtonStyle = homeMetrics
-    ? { width: homeMetrics.size, height: homeMetrics.size, borderRadius: homeMetrics.radius }
-    : null;
 
   return (
     <View style={[styles.headerShell, homeMode && styles.headerShellHome, { paddingTop: Math.max(insets.top, 10) }]} testID={testID}>
       <View style={styles.headerRow}>
         {canGoBack ? (
-          <IconButton label="Back" icon="chevron-back" home={homeMode} metrics={homeMetrics} testID="global-header-back" onPress={onBack} />
+          <IconButton label="Back" icon="chevron-back" home={homeMode} testID="global-header-back" onPress={onBack} />
         ) : showDrawer ? (
-          <IconButton label="Open PulseSoc navigation drawer" icon="menu" home={homeMode} metrics={homeMetrics} testID="global-header-drawer" onPress={onOpenDrawer} />
+          <IconButton label="Open PulseSoc navigation drawer" icon="menu" home={homeMode} testID="global-header-drawer" onPress={onOpenDrawer} />
         ) : (
-          <View style={[styles.iconButtonSpacer, homeMode && styles.iconButtonSpacerHome, homeButtonStyle]} />
+          <View style={[styles.iconButtonSpacer, homeMode && styles.iconButtonSpacerHome]} />
         )}
 
-        {/* The clip is applied only when the metrics say the wordmark did not
-            fit, which is 320pt-class hardware and nothing else. RN's default
-            overflow is visible, so without it the letters draw over the
-            Marketplace button — and that button still takes the tap. Applying it
-            unconditionally would risk clipping the wordmark's own glow on widths
-            that have room to spare. */}
-        <View
-          style={[
-            styles.titleBlock,
-            homeMode && styles.titleBlockHome,
-            homeMetrics && !homeMetrics.brandFits && styles.titleBlockClipped
-          ]}
-        >
+        <View style={[styles.titleBlock, homeMode && styles.titleBlockHome]}>
           <View style={styles.brandRow}>
             {homeMode ? null : <LogiNexusSignalIndicator active tone={intelligenceMode ? "intelligence" : "default"} />}
             {homeMode && title === "PulseSoc" ? (
@@ -193,17 +153,7 @@ export function LogiNexusGlobalHeader({
         </View>
 
         <View style={styles.headerActions}>
-          {onOpenMarketplace ? (
-            <IconButton
-              label="Marketplace"
-              icon="storefront-outline"
-              home={homeMode}
-              metrics={homeMetrics}
-              testID="global-header-marketplace"
-              onPress={onOpenMarketplace}
-            />
-          ) : null}
-          {onOpenSearch ? <IconButton label="Search PulseSoc" icon="search" home={homeMode} metrics={homeMetrics} testID="global-header-search" onPress={onOpenSearch} /> : null}
+          {onOpenSearch ? <IconButton label="Search PulseSoc" icon="search" home={homeMode} testID="global-header-search" onPress={onOpenSearch} /> : null}
           {/* Each badge names its own scope. A bare number beside an icon is
               ambiguous sighted and meaningless spoken, and it was the reason
               nobody noticed the bell was counting messages too. The scope text
@@ -215,7 +165,6 @@ export function LogiNexusGlobalHeader({
               scopeLabel={badgeSpokenLabel("messages", messageCount)}
               icon="chatbubble-ellipses-outline"
               home={homeMode}
-              metrics={homeMetrics}
               badge={messageCount}
               testID="global-header-messages"
               onPress={onOpenMessages}
@@ -230,7 +179,6 @@ export function LogiNexusGlobalHeader({
               )}
               icon="notifications-outline"
               home={homeMode}
-              metrics={homeMetrics}
               badge={activityCount}
               testID="global-header-activity"
               onPress={onOpenActivity}
@@ -241,12 +189,7 @@ export function LogiNexusGlobalHeader({
               accessibilityRole="button"
               accessibilityLabel="Open Profile"
               testID="global-header-profile"
-              style={({ pressed }) => [
-                styles.avatarButton,
-                homeMode && styles.avatarButtonHome,
-                homeButtonStyle,
-                pressed && styles.pressed
-              ]}
+              style={({ pressed }) => [styles.avatarButton, homeMode && styles.avatarButtonHome, pressed && styles.pressed]}
               onPress={onOpenProfile}
             >
               {identity?.avatarUrl ? <Image source={{ uri: identity.avatarUrl }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{initials}</Text>}
@@ -277,14 +220,6 @@ export function LogiNexusGlobalHeader({
 
 export function LogiNexusBottomNavigation({ state, descriptors, navigation, badges }: BottomTabBarProps & { badges?: GlobalNavigationBadges }) {
   const insets = useSafeAreaInsets();
-  const theme = useTheme();
-  /**
-   * Same gate as the Pulse Network card's: the released blue/futuristic
-   * appearance only, and never under high contrast, which substitutes the
-   * palette. Off that gate the dock keeps `bottomPanel`'s legacy fill exactly,
-   * so Black, White, Light Futuristic and high contrast are byte-unchanged.
-   */
-  const blueGraphite = theme.mode === "dark" && !theme.highContrast;
   const activeRoute = state.routes[state.index]?.name as keyof AppTabParamList | undefined;
   const { hidden: requestedHidden, showBottomNav } = useBottomNavVisibility();
   const hidden = resolveBottomNavPolicy(activeRoute) === "always-visible" ? false : requestedHidden;
@@ -345,60 +280,7 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
       testID="global-bottom-navigation"
     >
       <PulseMiniPlayerBar navigation={navigation} />
-      <View pointerEvents="auto" style={[styles.bottomPanel, blueGraphite && styles.bottomPanelBlueGraphite]}>
-        {/*
-          The material, as a clipped sibling rather than a fill on the panel.
-
-          Two constraints rule out the obvious alternatives. A gradient needs a
-          `LinearGradient`, which cannot be a `backgroundColor`; and giving the
-          panel `overflow: "hidden"` so a plain absolute-fill child would respect
-          the 38pt radius would clip the Create circle, which overhangs the panel
-          by `BOTTOM_NAV_CREATE_MARGIN_TOP`. So this layer carries its own radius
-          and clips itself. It is first in document order, so it paints under
-          every tab without any `zIndex`, and `pointerEvents="none"` keeps it out
-          of the hit path — geometry, hit targets and routing are untouched.
-
-          `bottomPanelBlueGraphite` still sets an opaque `backgroundColor`
-          underneath: the gradient is the material, the fill is what guarantees
-          the panel is never translucent even for the frame before it paints.
-        */}
-        {blueGraphite ? (
-          <LinearGradient
-            colors={[...BLUE_GRAPHITE_NAV.base.colors]}
-            locations={[...BLUE_GRAPHITE_NAV.base.locations]}
-            start={BLUE_GRAPHITE_NAV.base.start}
-            end={BLUE_GRAPHITE_NAV.base.end}
-            pointerEvents="none"
-            style={styles.bottomPanelMaterial}
-            testID="global-bottom-navigation-material"
-          />
-        ) : null}
-        {/*
-          The perimeter deepening, as a second layer rather than more stops on
-          the first.
-
-          It has to be separate because it is translucent. Folding its stops
-          into the base ramp would *replace* the graphite rather than deepen it,
-          and the base has to stay fully opaque — it is the layer that
-          guarantees the dock is never see-through.
-
-          It deliberately carries no axis, so it runs top-to-bottom while the
-          base runs mostly left-to-right. That is the point: a single ramp can
-          only put navy at the ends of its own axis, so without this the dock
-          deepened across its width and its top and bottom sat flat at core
-          graphite. The card has had this layer from the start, via
-          `GalacticAtmosphere`, which is why the two read as different materials
-          until the dock has one too.
-        */}
-        {blueGraphite ? (
-          <LinearGradient
-            colors={[...BLUE_GRAPHITE_NAV.edge.colors]}
-            locations={[...BLUE_GRAPHITE_NAV.edge.locations]}
-            pointerEvents="none"
-            style={styles.bottomPanelMaterial}
-            testID="global-bottom-navigation-material-edge"
-          />
-        ) : null}
+      <View pointerEvents="auto" style={styles.bottomPanel}>
         {PRIMARY_TABS.map((item) => {
           const route = state.routes.find((candidate) => candidate.name === item.routeName);
           const active = activeRoute === item.routeName || (item.name === "Create" && activeRoute === "Create");
@@ -611,7 +493,6 @@ function IconButton({
   badge,
   testID,
   home,
-  metrics,
   onPress
 }: {
   label: string;
@@ -621,11 +502,6 @@ function IconButton({
   badge?: number;
   testID?: string;
   home?: boolean;
-  /**
-   * Width-derived size for Home's cluster, from `headerActionMetrics`. Absent in
-   * standard mode, where the stylesheet's fixed size is the whole story.
-   */
-  metrics?: { size: number; radius: number; glyphSize: number } | null;
   onPress?: () => void;
 }) {
   return (
@@ -634,23 +510,13 @@ function IconButton({
       accessibilityLabel={scopeLabel ? `${label}, ${scopeLabel}` : label}
       disabled={!onPress}
       testID={testID}
-      style={({ pressed }) => [
-        styles.iconButton,
-        home && styles.iconButtonHome,
-        metrics ? { width: metrics.size, height: metrics.size, borderRadius: metrics.radius } : null,
-        pressed && styles.pressed,
-        !onPress && styles.disabled
-      ]}
+      style={({ pressed }) => [styles.iconButton, home && styles.iconButtonHome, pressed && styles.pressed, !onPress && styles.disabled]}
       onPress={() => {
         Haptics.selectionAsync().catch(() => undefined);
         onPress?.();
       }}
     >
-      <Ionicons
-        name={icon}
-        size={metrics ? metrics.glyphSize : home ? 29 : 25}
-        style={[styles.iconText, home && styles.iconTextHome]}
-      />
+      <Ionicons name={icon} size={home ? 29 : 25} style={[styles.iconText, home && styles.iconTextHome]} />
       {badge ? (
         <View style={styles.iconBadge}>
           <Text style={styles.iconBadgeText}>{formatBadge(badge)}</Text>
@@ -776,29 +642,6 @@ const styles = createThemedStyles(() => ({
     shadowColor: colors.accent,
     shadowOpacity: 0.2,
     shadowRadius: 24
-  },
-  /**
-   * The dock's half of the blue-graphite system. Colour only — every metric
-   * above (radius, padding, `minHeight`, border, shadow) is deliberately left
-   * in `bottomPanel`, because `bottomNavMetrics.ts` mirrors two of them and the
-   * geometry is an invariant of this change.
-   *
-   * Opaque, and one step darker than the card: the dock has to read as anchored
-   * chrome, and a floating panel that out-brightens the content it floats over
-   * reads as the subject instead.
-   */
-  bottomPanelBlueGraphite: {
-    backgroundColor: BLUE_GRAPHITE_NAV.fallback
-  },
-  /**
-   * Inset by the 1pt border (RN positions absolute children against the padding
-   * box), so the existing blue edge stays visible on top of the material. The
-   * radius is the panel's less that border, which is what keeps the corners from
-   * showing a hairline of fill outside the curve.
-   */
-  bottomPanelMaterial: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 37
   },
   bottomShell: {
     backgroundColor: "transparent",
@@ -1084,9 +927,6 @@ const styles = createThemedStyles(() => ({
   },
   titleBlockHome: {
     alignItems: "center"
-  },
-  titleBlockClipped: {
-    overflow: "hidden"
   },
   brandRow: {
     alignItems: "center",

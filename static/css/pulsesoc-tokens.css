@@ -40,16 +40,16 @@
      Source: mobile-native/src/theme/colors.ts
      --------------------------------------------------------------------- */
   --pulse-palette-background:     #050910;
-  --pulse-palette-surface:        #303843;
-  --pulse-palette-surface-raised: #363D46;
+  --pulse-palette-surface:        #0b141c;
+  --pulse-palette-surface-raised: #111f2a;
   --pulse-palette-text:           #f4f7fb;
   --pulse-palette-muted:          #9aa8b7;
   --pulse-palette-accent:         #32e6b3;
   --pulse-palette-accent-strong:  #61d8ff;
   --pulse-palette-warning:        #f3c461;
-  --pulse-palette-danger:         #ff7f97;
-  --pulse-palette-border:         #425065;
-  --pulse-palette-intelligence:   #b297ff;
+  --pulse-palette-danger:         #ff5f7e;
+  --pulse-palette-border:         #203746;
+  --pulse-palette-intelligence:   #9f7cff;
   --pulse-palette-creator:        #42e7d4;
   --pulse-palette-economy:        #f6c85d;
   --pulse-palette-safety:         #3ff0a0;
@@ -57,8 +57,8 @@
   --pulse-palette-disabled:       #51606c;
   --pulse-palette-focus:          #8df7ff;
 
-  --pulse-palette-glass:          rgba(48, 56, 67, 0.82);
-  --pulse-palette-glass-strong:   rgba(54, 61, 70, 0.94);
+  --pulse-palette-glass:          rgba(11, 24, 34, 0.82);
+  --pulse-palette-glass-strong:   rgba(15, 36, 50, 0.94);
   --pulse-palette-signal-dim:     rgba(50, 230, 179, 0.12);
   --pulse-palette-signal-soft:    rgba(97, 216, 255, 0.12);
   --pulse-palette-danger-soft:    rgba(255, 95, 126, 0.14);
@@ -76,13 +76,7 @@
   --surface-elevated:    var(--pulse-palette-surface-raised);
   --surface-overlay:     var(--pulse-palette-glass);
   --surface-overlay-strong: var(--pulse-palette-glass-strong);
-  /* A well *inside* a panel: search fields, code blocks, empty states. It is
-     the one surface level that did not move to graphite, because it was the
-     one written as an alpha rather than as a palette reference — 0.6 of the
-     page colour over a graphite panel composites to ~#161C24, a near-black
-     recess in a graphite card. Opaque now, and darker than `--surface-raised`
-     by the same step the native ladder uses (BLUE_GRAPHITE_LEVELS.inset). */
-  --surface-inset:       #2A3340;
+  --surface-inset:       rgba(5, 9, 16, 0.6);
 
   /* text */
   --text-primary:        var(--pulse-palette-text);
@@ -344,12 +338,7 @@
   /* semantic strays found by scripts/web_parity/verify_tokens.py */
   --line-strong: var(--border-strong);
   --warn:        var(--status-warning);
-  /* Its one consumer is `color:` on the marketing nav links, so a surface
-     level was the wrong side of the dictionary — the alias only ever resolved
-     to a background. Nothing rendered wrong because index.html declares its
-     own `--soft`; that override is what kept a text token pointed at a panel
-     colour from being noticed. */
-  --soft:        var(--text-secondary);
+  --soft:        var(--surface-inset);
   --media-backdrop: var(--surface-overlay-strong);
 
   /* safe-area insets — mobile web parity with native notch handling.

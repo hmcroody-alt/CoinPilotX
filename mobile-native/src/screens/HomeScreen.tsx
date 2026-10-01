@@ -37,9 +37,6 @@ import { injectAds } from "../feed/injectAds";
 import { HomeRow, injectDiscoveryRows } from "../discovery/discoveryRows";
 import { DiscoveryRowView } from "../discovery/DiscoveryRowView";
 import { useHomeDiscovery } from "../discovery/useHomeDiscovery";
-import { HomeRowWithCommerce, injectCommerceRows } from "../commerce/commerceRows";
-import { CommerceFeedCard } from "../commerce/CommerceFeedCard";
-import { useFeedCommerce } from "../commerce/useFeedCommerce";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { withCachedAge } from "../core/sync/ageLabel";
 import { primaryMediaOf } from "../core/media/mediaDescriptors";
@@ -53,12 +50,10 @@ import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
-import { useCommerceOverlayNavigation } from "../commerce/useCommerceOverlayNavigation";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { sharePulseObject } from "../sharing/nativeShare";
-import { buildPostShareMetadata } from "../sharing/postShare";
 import { createThemedStyles } from "../theme/themedStyles";
 import { spatialHomeFeedEnabled } from "../spatial/flags";
 import { SpatialPager } from "../spatial/SpatialPager";
@@ -66,18 +61,14 @@ import { SpatialPager } from "../spatial/SpatialPager";
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
 /**
- * Posts, ads, suggestion rows, and Marketplace recommendations.
+ * Posts, ads and — once the discovery flags are on — suggestion rows.
  *
- * Each widening is inert by default. `HomeRow` is `FeedRow` plus one
- * `discovery` member; `HomeRowWithCommerce` is that plus one `commerce` member.
- * With the discovery flags off `injectDiscoveryRows` returns its input
- * unchanged, and with the commerce engine off the serve endpoint answers with
- * an empty placement list, which makes `injectCommerceRows` return *its* input
- * unchanged. So the union describes more shapes than before while the list
- * still contains exactly the rows it contained before, and no value of either
- * new shape is ever constructed.
+ * `HomeRow` is `FeedRow` plus one `discovery` member, so with every flag off
+ * this alias describes exactly the same set of rows it described before: the
+ * union widens, but `injectDiscoveryRows` returns its input unchanged and no
+ * value of the new shape is ever constructed.
  */
-type HomeFeedRow = HomeRowWithCommerce<PulsePost>;
+type HomeFeedRow = HomeRow<PulsePost>;
 
 type HomeScreenProps = {
   badges?: GlobalNavigationBadges;
@@ -139,7 +130,6 @@ function useHomeAmbientMotionEnabled() {
 
 export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const navigation = useNavigation<HomeNavigation>();
-  const commerceNavigation = useCommerceOverlayNavigation(navigation);
   const route = useRoute<RouteProp<AppTabParamList, "Home">>();
   const { authState } = useAuth();
   const isFocused = useIsFocused();
@@ -207,13 +197,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       const row = token.item as HomeFeedRow | undefined;
       if (!row) continue;
       if (row.type === "post" && nextActivePostId == null) nextActivePostId = row.post.id;
-      // `commerce` joins this set for the same reason `ad` is in it: the row
-      // needs to know when it is actually on screen so it can report a visible
-      // impression. The list's 72% threshold is stricter than the server's 60%,
-      // which under-counts rather than over-counts — see `CommerceFeedCard`.
-      if (row.type === "ad" || row.type === "discovery" || row.type === "commerce") {
-        nextViewableRowKeys.add(row.key);
-      }
+      if (row.type === "ad" || row.type === "discovery") nextViewableRowKeys.add(row.key);
     }
     setActivePostId(nextActivePostId);
     setViewableRowKeys((current) => {
@@ -295,55 +279,24 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     refreshToken: discoveryRefreshToken
   });
 
-  const commerce = useFeedCommerce({
-    // Same rule as discovery: no recommendations for a signed-out viewer. The
-    // server would refuse anyway — every discovery route is `@auth_required` —
-    // so this is about not making the call, not about trusting the client.
-    enabled: isAuthenticated,
-    refreshToken: discoveryRefreshToken
-  });
-
   /**
-   * Ads first, then suggestions, then Marketplace recommendations.
+   * Ads first, then suggestions threaded through the result.
    *
    * The order matters and is not interchangeable. `injectAds` owns the sponsored
    * cadence Advertising specified; running it first and composing over its output
    * means discovery can see where the ads landed and keep each ad with the post
-   * that earned it, while an ad slot is never displaced by a carousel.
-   * `injectCommerceRows` runs last for the same reason one level up: it can see
-   * every non-post row the two before it placed, which is what lets it refuse a
-   * slot that would put a product card directly under an advert.
-   *
-   * Each stage is inert when its inputs are empty. With the discovery flags off
-   * `discovery.modules` is empty and `injectDiscoveryRows` returns the
-   * ad-injected array itself; with the commerce engine off `commerce.placements`
-   * is empty and `injectCommerceRows` returns *that* array. So this expression
-   * still produces byte-identical rows to the original `injectAds(...)` call,
-   * which is the §15 rollback path — now two features deep.
+   * that earned it, while an ad slot is never displaced by a carousel. With the
+   * discovery flags off, `discovery.modules` is empty and `injectDiscoveryRows`
+   * returns the ad-injected array itself — so this line produces byte-identical
+   * rows to the previous `injectAds(...)` call, which is the §15 rollback path.
    */
   const feedRows = useMemo<HomeFeedRow[]>(
     () =>
-      injectCommerceRows(
-        injectDiscoveryRows(injectAds(posts, availableAds, { interval: 5, leadIn: 3 }), discovery.modules, {
-          dismissed: discovery.dismissed,
-          rotationOffset: discovery.rotationOffset
-        }),
-        commerce.placements,
-        {
-          dismissedPlacementIds: commerce.dismissedPlacementIds,
-          dismissedSellerIds: commerce.dismissedSellerIds
-        }
-      ),
-    [
-      posts,
-      availableAds,
-      discovery.modules,
-      discovery.dismissed,
-      discovery.rotationOffset,
-      commerce.placements,
-      commerce.dismissedPlacementIds,
-      commerce.dismissedSellerIds
-    ]
+      injectDiscoveryRows(injectAds(posts, availableAds, { interval: 5, leadIn: 3 }), discovery.modules, {
+        dismissed: discovery.dismissed,
+        rotationOffset: discovery.rotationOffset
+      }),
+    [posts, availableAds, discovery.modules, discovery.dismissed, discovery.rotationOffset]
   );
 
   /**
@@ -578,15 +531,8 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     if (!spatialFeed) return;
     const row = feedRows[Math.min(spatialIndex, Math.max(0, feedRows.length - 1))];
     setActivePostId(row && row.type === "post" ? row.post.id : null);
-    // `commerce` belongs here for the same reason it belongs in the FlatList's
-    // viewability callback: this is the *other* writer of `viewableRowKeys`, and
-    // a row type missing from it is a row that can never report a visible
-    // impression on the spatial path. Home does not page spatially today, so
-    // omitting it was invisible rather than harmless.
     setViewableRowKeys(
-      row && (row.type === "ad" || row.type === "discovery" || row.type === "commerce")
-        ? new Set([row.key])
-        : new Set()
+      row && (row.type === "ad" || row.type === "discovery") ? new Set([row.key]) : new Set()
     );
   }, [spatialFeed, feedRows, spatialIndex]);
 
@@ -708,7 +654,15 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   }, [guard.run, updatePost]);
 
   const handleShare = useCallback(async (post: PulsePost) => {
-    await sharePulseObject(buildPostShareMetadata(post)).catch(() => undefined);
+    const author = post.author || post.user || {};
+    await sharePulseObject({
+      kind: "post",
+      url: pulsePostUrl(post.id),
+      title: post.title || "PulseSoc post",
+      description: post.body || post.text || post.content,
+      author: author.display_name || author.name || author.username || post.author_name,
+      previewImageUrl: post.thumbnail_url || post.image_url
+    }).catch(() => undefined);
   }, []);
 
   const handleInlineComment = useCallback(async (post: PulsePost, body: string) => {
@@ -909,13 +863,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
    * loaded a page or a badge poll landed. That only holds if the ~20 callbacks
    * below keep their identities across a parent render.
    */
-  /**
-   * The same destination Profile OS's Marketplace tile uses, deliberately. The
-   * header is the *discovery* entry and the tile is the *management* entry, but
-   * a second route object for one screen is how the two drift apart, so both
-   * name the registered tab.
-   */
-  const openMarketplaceTab = useCallback(() => navigation.navigate("Tabs", { screen: "Marketplace" }), [navigation]);
   const openSearchTab = useCallback(() => navigation.navigate("Tabs", { screen: "Search" }), [navigation]);
   const openActivityInbox = useCallback(() => navigation.navigate("ActivityInbox", { title: "Activity Inbox" }), [navigation]);
   const openProfileTab = useCallback(() => navigation.navigate("Tabs", { screen: "Profile" }), [navigation]);
@@ -1050,24 +997,10 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         />
       );
     }
-    if (row.type === "commerce") {
-      return (
-        <CommerceFeedCard
-          placements={row.placements}
-          isViewable={viewableRowKeys.has(row.key)}
-          visibleDwellMs={commerce.visibleDwellMs}
-          edgeInset={12}
-          navigation={navigation}
-          onFeedback={commerce.onFeedback}
-        />
-      );
-    }
     const item = row.post;
     return (
       <PostCard
         post={item}
-        onOpenCommerceProduct={commerceNavigation.onOpenCommerceProduct}
-        onOpenCommerceSeller={commerceNavigation.onOpenCommerceSeller}
         busy={guard.isItemBusy(item.id)}
         // §24. Viewability fires all the way through a fling, so without this a
         // hard flick would start and abandon a video per card it passed. No card
@@ -1121,9 +1054,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     handleShare,
     isFocused,
     navigation,
-    viewableRowKeys,
-    commerce.visibleDwellMs,
-    commerce.onFeedback
+    viewableRowKeys
   ]);
 
   const renderFeedItem = useCallback(
@@ -1182,7 +1113,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             offline={offline}
             ageMs={feedAgeMs}
             onOpenDrawer={openDrawer}
-            onOpenMarketplace={openMarketplaceTab}
             onOpenSearch={openSearchTab}
             onOpenActivity={openActivityInbox}
             onOpenProfile={openProfileTab}
@@ -1301,7 +1231,6 @@ const HomeHeader = memo(function HomeHeader({
   offline,
   ageMs,
   onOpenDrawer,
-  onOpenMarketplace,
   onOpenSearch,
   onOpenActivity,
   onOpenProfile,
@@ -1338,7 +1267,6 @@ const HomeHeader = memo(function HomeHeader({
   offline: boolean;
   ageMs: number | null;
   onOpenDrawer: () => void;
-  onOpenMarketplace: () => void;
   onOpenSearch: () => void;
   onOpenActivity: () => void;
   onOpenProfile: () => void;
@@ -1369,7 +1297,7 @@ const HomeHeader = memo(function HomeHeader({
   const wideCanvas = width >= 900;
   return (
     <View style={styles.header}>
-      <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenMarketplace={onOpenMarketplace} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} badges={badges} identity={identity} />
+      <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} badges={badges} identity={identity} />
       <View style={[styles.homeCanvas, wideCanvas && styles.homeCanvasWide]}>
         {wideCanvas ? <HomeCommandRail onOpenRoute={onOpenRoute} onOpenPulseRadio={onOpenRadioLibrary} /> : null}
         <View style={styles.homePrimaryColumn}>
@@ -1498,7 +1426,6 @@ function HomeCommandRail({
 
 function HomeTopBar({
   onOpenDrawer,
-  onOpenMarketplace,
   onOpenSearch,
   onOpenActivity,
   onOpenProfile,
@@ -1506,7 +1433,6 @@ function HomeTopBar({
   identity
 }: {
   onOpenDrawer: () => void;
-  onOpenMarketplace: () => void;
   onOpenSearch: () => void;
   onOpenActivity: () => void;
   onOpenProfile: () => void;
@@ -1519,7 +1445,6 @@ function HomeTopBar({
       mode="home"
       showDrawer
       onOpenDrawer={onOpenDrawer}
-      onOpenMarketplace={onOpenMarketplace}
       onOpenSearch={onOpenSearch}
       onOpenActivity={onOpenActivity}
       onOpenProfile={onOpenProfile}
@@ -1570,19 +1495,8 @@ function PulseNetworkHero({
       : "Signals are loading quietly so the feed stays fast.";
   return (
     <LogiNexusPanel style={[styles.hero, compact && styles.heroCompact]} tone="default">
-      {/*
-        `surface="blueGraphite"` is what makes this card the approved material
-        rather than the near-black it used to be. The colour was never in
-        `styles.hero` — that is `rgba(5, 15, 29, 0.03)`, effectively clear — nor
-        in `LogiNexusPanel`'s `glassStrong`, which the `style` array above
-        overrides. It was this layer's own opaque base gradient, which is why
-        lightening the card by editing the panel would do nothing at all.
-
-        Deliberately a prop and not a component-wide change: `ReelsScreen`
-        renders the same component full-screen behind video and has to stay dark.
-      */}
       <View pointerEvents="none" style={styles.heroAtmosphere}>
-        <GalacticAtmosphere variant="feed" surface="blueGraphite" testID="pulse-network-galactic-atmosphere" />
+        <GalacticAtmosphere variant="feed" testID="pulse-network-galactic-atmosphere" />
       </View>
       <View style={styles.heroTopLine}>
         <LogiNexusBadge label="Pulse Network" />

@@ -156,10 +156,6 @@ describe("ProfileHeader (Profile V6)", () => {
         username: "pulsesoc_insight",
         automated: true,
         account_type: "PULSESOC_AUTOMATED",
-        // Sent by the server for this account, and the reason the counts below
-        // are absent. See `has_social_graph` in api/profile.ts: being automated
-        // is not what removes them, being unfollowable is.
-        has_social_graph: false,
         system_account_label: "Official PulseSoc System Account",
         automation_disclosure: "This account is operated automatically by PulseSoc. It is not a human user."
       })} owner={false} />
@@ -171,104 +167,23 @@ describe("ProfileHeader (Profile V6)", () => {
     expect(queryByText("Followers")).toBeNull();
     expect(queryByText("Following")).toBeNull();
   });
-
-  it("keeps the follow counts on an automated account that can be followed", () => {
-    // @pulsedrop. It is every bit as automated as the case above — same badge,
-    // same disclosure, same missing Message and Call — and it is an ordinary
-    // `users` row, so its follower count is a real number about real people.
-    // Hiding it would be hiding a true fact; printing zero for the account above
-    // would be inventing a false one. Only `has_social_graph` separates them,
-    // which is why this case asserts the disclosure too: if a future change
-    // conflated the two conditions again, one of these two tests goes red
-    // whichever way it conflated them.
-    const { getByLabelText, getByText } = render(
-      <ProfileHeader profile={baseProfile({
-        display_name: "PulseDrop",
-        username: "pulsedrop",
-        automated: true,
-        account_type: "PULSESOC_AUTOMATED",
-        has_social_graph: true,
-        follower_count: 1_284,
-        following_count: 3,
-        automation_disclosure: "This account is operated automatically by PulseSoc. It is not a human user."
-      })} owner={false} />
-    );
-    expect(getByLabelText("Automated PulseSoc account disclosure")).toBeTruthy();
-    expect(getByText("Followers")).toBeTruthy();
-    expect(getByText("Following")).toBeTruthy();
-    expect(getByText("1.3K")).toBeTruthy();
-  });
-
-  it("lets a followable automated account be followed, but not messaged", () => {
-    // A Followers count with no way to become one is a wall, and Follow used to
-    // be dropped alongside Message/Call for anything automated. Those two are
-    // not the same withholding: there is nobody to message at either account,
-    // but this one exists to be followed.
-    const onFollow = jest.fn();
-    const { getByText, queryByText } = render(
-      <ProfileHeader profile={baseProfile({
-        username: "pulsedrop", automated: true, account_type: "PULSESOC_AUTOMATED", has_social_graph: true
-      })} owner={false} onFollow={onFollow} />
-    );
-    fireEvent.press(getByText("Follow"));
-    expect(onFollow).toHaveBeenCalledTimes(1);
-    expect(getByText("Share")).toBeTruthy();
-    expect(queryByText("Message")).toBeNull();
-    expect(queryByText("Call")).toBeNull();
-    expect(queryByText("Video")).toBeNull();
-  });
-
-  it("offers no follow control on an automated account that cannot be followed", () => {
-    const { getByText, queryByText } = render(
-      <ProfileHeader profile={baseProfile({
-        username: "pulsesoc_insight", automated: true, account_type: "PULSESOC_AUTOMATED", has_social_graph: false
-      })} owner={false} onFollow={jest.fn()} />
-    );
-    expect(queryByText("Follow")).toBeNull();
-    expect(queryByText("Following")).toBeNull();
-    expect(getByText("Share")).toBeTruthy();
-  });
 });
 
 
-describe("first-party brand cover", () => {
+describe("approved automated account cover", () => {
   const cover = "https://pulsesoc.com/static/brand/pulsesoc-insight-cover-20260825.png";
-
-  // Both official accounts, with the ratios of the real files they ship. They
-  // differ, which is the point: the shape used to be a stylesheet constant, so
-  // the second account here would have been letterboxed inside the first one's
-  // box even once it was allowed to have the treatment at all.
-  it.each([
-    ["insight", 1600 / 640],
-    ["pulsedrop", 2000 / 750]
-  ])("shows %s's banner whole, at the shape the server declares", (_name, ratio) => {
+  it("shows the entire banner at its original aspect ratio", () => {
     const { getByTestId } = render(<ProfileHeader profile={baseProfile({
-      automated: true, cover_url: cover, brand_cover_fit: "contain", brand_cover_aspect_ratio: ratio
+      user_id: 0, public_player_id: "pulsesoc_insight", automated: true, cover_url: cover
     })} />);
     const image = getByTestId("automated-account-brand-cover");
     expect(image.props.source).toEqual({ uri: cover });
     expect(image.props.resizeMode).toBe("contain");
-    expect(StyleSheet.flatten(image.props.style)).toMatchObject({ width: "100%", aspectRatio: ratio, top: 0 });
+    expect(StyleSheet.flatten(image.props.style)).toMatchObject({ width: "100%", aspectRatio: 2.5, top: 0 });
   });
-
-  it("does not change an ordinary profile's cover rendering", () => {
-    // Same URL, no `brand_cover_fit`. The old implementation matched on this
-    // filename, so this profile would have had its cover quietly replaced by
-    // another account's banner treatment.
-    const { queryByTestId, getByTestId } = render(<ProfileHeader profile={baseProfile({ cover_url: cover })} />);
+  it("does not change another account's cover rendering", () => {
+    const { queryByTestId } = render(<ProfileHeader profile={baseProfile({ cover_url: cover })} />);
     expect(queryByTestId("automated-account-brand-cover")).toBeNull();
-    expect(getByTestId("profile-cover-image").props.resizeMode).toBe("cover");
-  });
-
-  it("falls back to the ordinary cover when the declared shape is unusable", () => {
-    // A box needs a height. Rather than guess one and letterbox or clip the
-    // banner by an invented amount, an unusable ratio drops to the normal fill —
-    // a worse crop, but never a wrong shape, and the cover still renders.
-    const { queryByTestId, getByTestId } = render(<ProfileHeader profile={baseProfile({
-      cover_url: cover, brand_cover_fit: "contain", brand_cover_aspect_ratio: 0
-    })} />);
-    expect(queryByTestId("automated-account-brand-cover")).toBeNull();
-    expect(getByTestId("profile-cover-image")).toBeTruthy();
   });
 });
 

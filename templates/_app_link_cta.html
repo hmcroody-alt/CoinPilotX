@@ -35,48 +35,6 @@
 {%- endmacro %}
 
 {#
-  The same call to action, for a page that is itself served from pulsesoc.com.
-
-  Which macro to use is decided by where the tap STARTS, not by where it should
-  land. Both end at the same screen:
-
-    off-domain (email, push, SMS, a partner site) -> app_cta
-    on pulsesoc.com                               -> app_open_cta
-
-  `app_cta` emits the canonical `https://pulsesoc.com/...?pulse_app=1` universal
-  link. Tapped from anywhere else that opens the app directly, which is the best
-  possible result and why it stays the default. Tapped from pulsesoc.com it does
-  nothing a member can perceive: iOS does not consult associated domains for a
-  same-domain navigation, so Safari simply loads the URL -- and the URL is the
-  page they are already on. That is the whole of the "Open this listing in
-  PulseSoc button is dead" defect; it was never a signing, entitlement or AASA
-  problem, and the AASA needs no change to fix it.
-
-  `app_open_cta` goes through `/open/<destination>[/<id>]`, which the
-  association leaves unclaimed -- no component matches it, so iOS hands it to
-  Safari and the page offers the member the choice: a `pulsesoc://` button that
-  opens the app straight to this destination, or the App Store for someone who
-  does not have it. The custom scheme is what does the work; being a different
-  URL shape is not the point, not being subject to the same-domain rule is. One
-  extra tap, and it is the only arrangement that serves both without guessing
-  which one is reading.
-
-  Unclaimed-by-omission is weaker than an explicit `exclude`, so it is pinned by
-  `tests/web_parity/test_aasa_claims.py`: a broad component added to the
-  association later would otherwise swallow this page and take the App Store
-  fallback down with it.
-
-  Same accessibility properties as `app_cta` above -- a real <a>, a label that
-  survives out of context, no ids, no positioning.
-#}
-{% macro app_open_cta(destination, resource_id=None, source="web", label=None, classes="button primary") -%}
-<a class="{{ classes }}"
-   href="{{ app_open_link(destination, resource_id, source) }}"
-   data-app-link="{{ destination }}"
-   data-app-link-mode="open">{{ label or app_link_label(destination) }}</a>
-{%- endmacro %}
-
-{#
   A separately labelled store link. Section 3 allows this alongside a contextual
   app-opening CTA but never instead of one: "Download on the App Store" tells a
   member without the app where to get it, while the CTA above is what actually

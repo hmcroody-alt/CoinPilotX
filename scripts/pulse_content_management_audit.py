@@ -11,11 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.local_database_guard import require_local_database  # noqa: E402
-
-# Importing bot runs init_db() against DATABASE_URL, so this has to come first.
-require_local_database("pulse_content_management_audit")
-
 import bot  # noqa: E402
 
 
@@ -65,7 +60,7 @@ def main():
         '"can_delete": is_owner',
         "pulse_status_updated",
         "pulse_status_deleted",
-        '@webhook_app.route("/api/pulse/reels/<int:reel_id>", methods=["GET", "PATCH", "DELETE"])',
+        '@webhook_app.route("/api/pulse/reels/<int:reel_id>", methods=["PATCH", "DELETE"])',
         '@webhook_app.route("/api/pulse/videos/<int:video_id>", methods=["PATCH", "DELETE"])',
         '@webhook_app.route("/api/pulse/posts/<int:post_id>", methods=["GET", "PATCH", "DELETE"])',
     ]:

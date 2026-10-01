@@ -729,9 +729,9 @@ def _apply_cost(cur, *, source, listing, rows, costs, rule, shipping_cents, econ
         # helper directly on the same reasoning.
         label_after = drafts._checkout_price_label(repriced_bound, listing.get("currency"))
         cur.execute(
-            "UPDATE marketplace_listings SET price_label=?, price_minor=?, updated_at=? "
+            "UPDATE marketplace_listings SET price_label=?, updated_at=? "
             "WHERE id=? AND seller_user_id=?",
-            (label_after, int(repriced_bound), _listing_time(now), listing_id, seller_user_id))
+            (label_after, _listing_time(now), listing_id, seller_user_id))
 
     return {
         "variants": touched,

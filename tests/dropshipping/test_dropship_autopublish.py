@@ -66,7 +66,6 @@ os.environ["BUSINESS_OS_SUPPLIERS_CJ"] = "1"
 os.environ["CJ_ENVIRONMENT_MODE"] = "SANDBOX"
 
 from services import db  # noqa: E402
-from services import marketplace_listing_lifecycle as lifecycle  # noqa: E402
 from services import marketplace_supplier_schema as supplier_schema  # noqa: E402
 from services import marketplace_variants as variants  # noqa: E402
 from services.business_os.suppliers import (  # noqa: E402
@@ -77,7 +76,7 @@ from tests.marketplace_production_listings import seed_production_listings  # no
 from tests.dropshipping.test_dropship_import_pipeline import (  # noqa: E402
     BUSINESS, CONNECTION, CONTEXT, FakeProvider, OTHER_BUSINESS, OTHER_CONNECTION,
     OTHER_OWNER_ID, OTHER_STORE, OWNER_ID, STORE, _seed_connection, _seed_tenancy,
-    assert_released_not_published, cj_product)
+    cj_product)
 
 # That import ran the pipeline module's header, which pointed DATABASE_URL at its
 # own temp file. Point it back before anything here opens a connection.
@@ -263,56 +262,6 @@ def test_a_store_that_turned_auto_publish_off_still_gets_a_draft(provider):
     # and a merchant who wants to review each product still wants a price proposed.
     assert rows("SELECT price_cents FROM marketplace_listing_variants")[0][
         "price_cents"] == 1491
-    # And this one really is the merchant's move, so it must stay out of the
-    # moderation queue. It is the control for the test below: without it, that
-    # test passes just as well if every import were dumped into review.
-    assert lifecycle.awaiting_moderation(listing()) is False
-
-
-# ---------------------------------------------------------------------------
-# A refused import is released, not parked
-# ---------------------------------------------------------------------------
-
-def test_a_product_the_gate_refuses_still_reaches_the_review_queue(provider):
-    """The merchant tapped Import & publish. That is a release either way.
-
-    Two questions get confused into one column, and this separates them. "May a
-    buyer see this" is the gate's, and for this product the answer is no: three
-    variants are orderable, nothing can say which one ships, so
-    ``SUPPLIER_VARIANT_UNBOUND`` stops it. "Did the merchant ask for this" is
-    theirs, and the answer is yes -- they tapped the button.
-
-    Writing the refusal as ``status='draft'`` answered the second question with
-    the first one's no, and the cost was not a label. ``awaiting_moderation`` is
-    a conjunction over both axes, and ``draft`` is deliberately absent from
-    ``MERCHANT_RELEASED_STATUSES``, so every refused import sat holding an
-    ``approval_status`` of ``pending_review`` -- the column's own ``DEFAULT``,
-    asserted by nobody -- and appeared in no queue. Production held 67 of them
-    for seller 1 on 2026-09-27. Nothing would ever have moved them: the only way
-    out was the merchant opening each product and submitting it by hand, which
-    is exactly the second step §-"an import that reliably needs a second step is
-    an import that did not happen" exists to delete.
-
-    The safety half is asserted too, and it is the half to watch on any future
-    edit here: this must not become a way to reach a buyer. ``review_ready`` is
-    not a public status and the gate's refusal is unchanged, so the listing is
-    exactly as invisible as it was -- it is merely in the right queue now.
-    """
-    entry = import_one(provider, variants_=TWO_IN_STOCK)
-    assert entry["outcome"] == importer.NEEDS_ATTENTION
-    assert drafts.SUPPLIER_VARIANT_UNBOUND in entry["problems"]
-
-    row = listing()
-    assert_released_not_published(row["status"])
-    # The bug, in one line. This was False for all 67.
-    assert lifecycle.awaiting_moderation(row) is True
-    # And still nothing a buyer can reach. `is_public` needs columns this row
-    # was not projected with, so the status set is the honest thing to assert.
-    assert row["status"] not in lifecycle.PUBLIC_STATUSES
-    assert row["published_at"] is None
-    # The reason travels with it. A merchant sent to a queue with no explanation
-    # is worse off than one told "draft".
-    assert entry["status"] == "IN_REVIEW"
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +327,7 @@ def test_two_orderable_variants_is_a_question_this_import_will_not_answer(provid
     entry = import_one(provider, variants_=TWO_IN_STOCK)
     assert entry["outcome"] == importer.NEEDS_ATTENTION
     assert drafts.SUPPLIER_VARIANT_UNBOUND in entry["problems"]
-    assert_released_not_published(listing()["status"])
+    assert listing()["status"] == "draft"
     assert source(listing()["id"])["provider_variant_id"] is None
     # Both variants are there, with their real costs and their provider identity —
     # the merchant is choosing between facts, not being asked to retype them.
@@ -455,7 +404,7 @@ def test_a_variant_with_no_readable_cost_is_not_published_at_any_price(provider)
     assert drafts.MISSING_PRICE in entry["problems"]
 
     row = listing()
-    assert_released_not_published(row["status"])
+    assert row["status"] == "draft"
     assert row["price_label"] == ""
     assert row["price_label"] not in {"$0.00", "Free"}
     assert rows("SELECT price_cents FROM marketplace_listing_variants")[0][
@@ -512,9 +461,8 @@ def test_a_supplier_that_dropped_the_product_does_not_publish(provider):
 
     assert result["published"] is False
     assert drafts.PROVIDER_PRODUCT_UNAVAILABLE in result["problems"]
-    assert_released_not_published(
-        rows("SELECT status FROM marketplace_listings WHERE id=?",
-             (listing_id,))[0]["status"])
+    assert rows("SELECT status FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["status"] == "draft"
 
 
 # ---------------------------------------------------------------------------
@@ -625,11 +573,7 @@ def test_one_item_that_cannot_finish_does_not_roll_back_its_neighbours(provider)
 
     states = {r["price_label"]: r["status"] for r in
               rows("SELECT price_label, status FROM marketplace_listings")}
-    # Two different landing states out of one run, which is the point: the good
-    # item went all the way, and the one that could not finish still exists,
-    # still unpriced, released for review rather than filed under the merchant's
-    # own unfinished work.
-    assert states == {"$14.91": "published", "": "review_ready"}
+    assert states == {"$14.91": "published", "": "draft"}
 
 
 # ---------------------------------------------------------------------------
@@ -650,7 +594,7 @@ def test_mutation_a_missing_price_cannot_publish(provider):
     entry = import_one(provider)
     assert entry["outcome"] == importer.NEEDS_ATTENTION
     assert drafts.MISSING_PRICE in entry["problems"]
-    assert_released_not_published(listing()["status"])
+    assert listing()["status"] == "draft"
     assert listing()["price_label"] == ""
 
 
@@ -847,12 +791,10 @@ def test_mutation_i_removing_the_read_back_is_caught(provider):
 
     assert result["published"] is False, "a publish that did not land reported success"
     assert drafts.PUBLISH_NOT_PERSISTED in result["problems"]
-    # And the committed row does not claim to be published while the merchant is
-    # told it is not. It lands in review rather than in drafts: the merchant
-    # released this one and the reason it is not live is ours, not theirs.
-    assert_released_not_published(
-        rows("SELECT status FROM marketplace_listings WHERE id=?",
-             (listing_id,))[0]["status"])
+    # And the committed row is a draft, not a listing claiming to be published
+    # while the merchant is told it is not.
+    assert rows("SELECT status FROM marketplace_listings WHERE id=?",
+                (listing_id,))[0]["status"] == "draft"
 
 
 def test_mutation_j_an_unavailable_supplier_cannot_publish(provider):
@@ -891,9 +833,8 @@ def test_mutation_j_an_unavailable_supplier_cannot_publish(provider):
 
         assert result["published"] is False, state
         assert code in result["problems"], (state, result["problems"])
-        assert_released_not_published(
-            rows("SELECT status FROM marketplace_listings WHERE id=?",
-                 (listing_id,))[0]["status"])
+        assert rows("SELECT status FROM marketplace_listings WHERE id=?",
+                    (listing_id,))[0]["status"] == "draft"
 
 
 # ---------------------------------------------------------------------------

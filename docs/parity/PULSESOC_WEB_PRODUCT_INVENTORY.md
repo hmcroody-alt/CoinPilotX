@@ -3,29 +3,28 @@
 
 # PulseSoc Web Product Inventory
 
-- Rules in the booted Flask `url_map`: **2083** (authoritative)
-- Rules visible to static analysis: **1815**
+- Rules in the booted Flask `url_map`: **2003** (authoritative)
+- Rules visible to static analysis: **1763**
   - the difference is blueprint route packs registered inside `except Exception`
-- Rules that render an HTML page: **420**
-  - admin: **188**, user-facing: **232**
-- JSON/API rules: **1232**
-- Jinja templates: **30**
+- Rules that render an HTML page: **409**
+  - admin: **186**, user-facing: **223**
+- JSON/API rules: **1249**
+- Jinja templates: **20**
 
 Most web pages are not Jinja templates; they are assembled by Python HTML
 helpers in `bot.py`. The shell helpers, by route count:
 
 | Helper | Rules |
 | --- | --- |
-| `admin_page_html` | 182 |
-| `pulse_social_shell` | 75 |
+| `admin_page_html` | 180 |
+| `pulse_social_shell` | 73 |
 | `arena_page_shell` | 39 |
-| `render_template` | 26 |
+| `render_template` | 21 |
 | `render_account_page` | 21 |
 | `arena_simple_page` | 17 |
 | `render_seo_landing` | 10 |
 | `pulse_page_html` | 10 |
 | `pulse_gateway_card_html` | 9 |
-| `dashboard_creator_subsystem_page` | 8 |
 | `dashboard_network_shell` | 7 |
 | `dashboard_creator_shell` | 7 |
 | `pulse_security_settings_page` | 7 |
@@ -36,13 +35,14 @@ helpers in `bot.py`. The shell helpers, by route count:
 | `search_pages` | 4 |
 | `education_shell` | 4 |
 | `education_feature_page` | 4 |
+| `dashboard_creator_subsystem_page` | 4 |
 
 ## Jinja templates
 
 | Template | Rules rendering it |
 | --- | --- |
-| `support.html` | 4 |
-| `app.html` | 4 |
+| `app.html` | 5 |
+| `support.html` | 3 |
 | `pulse_advertiser_portal.html` | 3 |
 | `pulse_messages_v2.html` | 2 |
 | `index.html` | 1 |
@@ -51,10 +51,5 @@ helpers in `bot.py`. The shell helpers, by route count:
 | `search.html` | 1 |
 | `offline.html` | 1 |
 | `dashboard.html` | 1 |
-| `app_landing.html` | 1 |
-| `features_hub.html` | 1 |
-| `feature_page.html` | 1 |
 | `pulse_labs.html` | 1 |
-| `marketplace_cart.html` | 1 |
-| `business_hub.html` | 1 |
 | `business_os_commerce.html` | 1 |

@@ -44,9 +44,14 @@ jest.mock("../../session/auth", () => ({ useAuth: () => ({ authState: { user: { 
 // The body of a message is rendered through the translation engine, which wants
 // locale storage and a translation API. Reduced to the text it is handed so the
 // filename is still assertable.
-jest.mock("../../components/ContentTranslation", () =>
-  require("../../testing/contentTranslationStub").contentTranslationStub()
-);
+jest.mock("../../components/ContentTranslation", () => {
+  const { Text } = jest.requireActual("react-native");
+  const ReactActual = jest.requireActual("react");
+  return {
+    ContentTranslation: ({ text, textStyle }: { text?: string; textStyle?: unknown }) =>
+      ReactActual.createElement(Text, { style: textStyle }, text)
+  };
+});
 
 const CONVERSATION_ID = 6104;
 

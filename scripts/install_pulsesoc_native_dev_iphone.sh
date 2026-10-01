@@ -6,41 +6,18 @@ if [[ $# -ne 1 || -z "${1:-}" ]]; then
   exit 64
 fi
 
-# PULSESOC_APS_ENVIRONMENT below states the intent of this build. The Release
-# configuration declares "production" so that a store build gets the entitlement it
-# must have, and PulseSoc.entitlements reads the build setting rather than a literal;
-# this script builds Release but signs for development, so it passes "development"
-# back.
-#
-# Measured, because the obvious assumption is wrong: with CODE_SIGN_STYLE=Automatic
-# Xcode rewrites aps-environment from the *provisioning profile* and ignores whatever
-# the entitlements file resolved to. A Release build here produced an .xcent reading
-# "development" with and without this override. So the override does not change the
-# local product - it keeps the command honest about what is being built, and it is
-# what makes this script correct under manual signing, where the entitlements file is
-# authoritative and a mismatch does fail.
 DEVICE_ID="$1"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NATIVE_DIR="$ROOT_DIR/mobile-native"
 DERIVED_DATA_PATH="${PULSESOC_DERIVED_DATA_PATH:-/tmp/pulsesoc-native-device-release}"
-# One push-capable bundle id, so this script builds the deployment one. It used to
-# build com.pulsesoc.nativeapp.dev and refuse the line below, which kept the App Store
-# app installed alongside - but that separation cost the thing this script is mostly
-# used for. A PushKit token is minted for the bundle id and the sender addresses
-# <bundle>.voip, so a token from any other bundle draws DeviceTokenNotForTopic, which
-# is revoked rather than retried. A build under the dev id could never ring, which is
-# a poor property for the device you test calls on.
-BUNDLE_ID="com.pulsesoc.app"
+DEVELOPMENT_BUNDLE_ID="com.pulsesoc.nativeapp.dev"
 DEVELOPMENT_DISPLAY_NAME="PulseSoc Native Dev"
+PRODUCTION_BUNDLE_ID="com.pulsesoc.app"
 
-# Read this before running it. Same bundle id means iOS treats this as an *upgrade*
-# of whatever is installed: an App Store or TestFlight PulseSoc on this device is
-# replaced, and re-installing the store build later replaces this one back. The
-# container survives an upgrade in place, so this is not a data wipe - but it is a
-# downgrade to an unsigned-for-distribution build, and the only thing distinguishing
-# the two on the home screen afterwards is the display name below.
-echo "WARNING: installing $BUNDLE_ID - this replaces any App Store or TestFlight"
-echo "  PulseSoc on device $DEVICE_ID. It will appear as \"$DEVELOPMENT_DISPLAY_NAME\"."
+if [[ "$DEVELOPMENT_BUNDLE_ID" == "$PRODUCTION_BUNDLE_ID" ]]; then
+  echo "Refusing to build with the production App Store bundle identifier." >&2
+  exit 65
+fi
 
 cd "$NATIVE_DIR"
 
@@ -55,12 +32,12 @@ env \
   -u EXPO_PUBLIC_PULSESOC_QA_REELS_STATE \
   EXPO_PUBLIC_PULSE_API_BASE_URL=https://pulsesoc.com \
   xcodebuild \
-    -workspace ios/PulseSoc.xcworkspace \
-    -scheme PulseSoc \
+    -workspace ios/PulseSocNative.xcworkspace \
+    -scheme PulseSocNative \
     -configuration Release \
     -destination "id=$DEVICE_ID" \
     -derivedDataPath "$DERIVED_DATA_PATH" \
-    PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+    PRODUCT_BUNDLE_IDENTIFIER="$DEVELOPMENT_BUNDLE_ID" \
     PULSESOC_DISPLAY_NAME="$DEVELOPMENT_DISPLAY_NAME" \
     PULSESOC_APS_ENVIRONMENT=development \
     CODE_SIGN_IDENTITY="Apple Development" \
@@ -69,7 +46,7 @@ env \
     -allowProvisioningUpdates \
     build
 
-APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release-iphoneos/PulseSoc.app"
+APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release-iphoneos/PulseSocNative.app"
 INFO_PLIST="$APP_PATH/Info.plist"
 
 if [[ ! -s "$APP_PATH/main.jsbundle" ]]; then
@@ -80,44 +57,13 @@ fi
 BUILT_BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
 BUILT_DISPLAY_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST")"
 
-# The display name is checked as well as the bundle id, and now that both builds share
-# a bundle id it is the *only* on-device signal telling this apart from the store app.
-# It is also the setting most likely to come back empty: Info.plist expands
-# $(PULSESOC_DISPLAY_NAME), and an undefined build setting expands to the empty string
-# rather than failing, at which point iOS silently falls back to CFBundleName and the
-# home screen looks correct while the check below is the only thing that noticed.
-if [[ "$BUILT_BUNDLE_ID" != "$BUNDLE_ID" || "$BUILT_DISPLAY_NAME" != "$DEVELOPMENT_DISPLAY_NAME" ]]; then
-  echo "Refusing to install: build identity verification failed." >&2
-  echo "  expected $BUNDLE_ID / $DEVELOPMENT_DISPLAY_NAME" >&2
-  echo "  built    $BUILT_BUNDLE_ID / $BUILT_DISPLAY_NAME" >&2
+if [[ "$BUILT_BUNDLE_ID" != "$DEVELOPMENT_BUNDLE_ID" || "$BUILT_DISPLAY_NAME" != "$DEVELOPMENT_DISPLAY_NAME" ]]; then
+  echo "Refusing to install: development identity verification failed." >&2
   exit 67
 fi
 
 xcrun devicectl device install app --device "$DEVICE_ID" "$APP_PATH"
-xcrun devicectl device process launch --device "$DEVICE_ID" "$BUNDLE_ID"
+xcrun devicectl device process launch --device "$DEVICE_ID" "$DEVELOPMENT_BUNDLE_ID"
 
-echo "Installed and launched $DEVELOPMENT_DISPLAY_NAME ($BUNDLE_ID)."
-echo
-echo "WARNING: VoIP pushes do NOT reach this build. Calls ring only while the app is"
-echo "  already in the foreground. This is a property of the signing, not a bug you"
-echo "  can fix from the app side, and it was measured directly against APNs:"
-echo
-echo "    sandbox    + com.pulsesoc.app.voip -> 403 BadEnvironmentKeyInToken"
-echo "    production + com.pulsesoc.app.voip -> 400 BadDeviceToken"
-echo
-echo "  A development-signed build carries aps-environment: development, so PushKit"
-echo "  mints a *sandbox* token, while the deployment addresses the production host"
-echo "  and answers BadDeviceToken. The sender replays once against sandbox - but the"
-echo "  APNs auth key is restricted to production, so sandbox refuses the *request*"
-echo "  with 403 before it ever considers the token. Neither host can accept it."
-echo
-echo "  An earlier version of this note predicted a voip_push_environment_corrected"
-echo "  event here. That was wrong: the replay cannot succeed, and until recently the"
-echo "  two refusals together got the token revoked, which silently downgraded the"
-echo "  handset to a plain alert banner. The revocation is fixed - a replay that never"
-echo "  reached a verdict now degrades to 'failed', never 'invalid_device' - but the"
-echo "  push still does not arrive."
-echo
-echo "  To test ringing on a locked handset, install a TestFlight build. Release is"
-echo "  signed aps-environment: production, which matches the key, and needs no new"
-echo "  Apple credential."
+echo "Installed and launched $DEVELOPMENT_DISPLAY_NAME ($DEVELOPMENT_BUNDLE_ID)."
+echo "Production bundle $PRODUCTION_BUNDLE_ID was not targeted."

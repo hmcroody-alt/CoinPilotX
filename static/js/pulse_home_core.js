@@ -932,55 +932,55 @@
     return Object.values(post.reaction_counts || {}).reduce((sum, value) => sum + count(value), 0);
   }
 
-  // The catalogue is rendered into the page by the server from
-  // services/pulse_reactions.py -- the same table that decides which reactions
-  // the wire accepts. This file used to carry two hardcoded copies of it that
-  // disagreed with each other and with the server, so the glyph a reader saw
-  // depended on which renderer drew it.
-  const reactionCatalog = Array.isArray(window.PULSE_REACTION_CATALOG) ? window.PULSE_REACTION_CATALOG : [];
-  const reactionEmojiByKey = Object.fromEntries(reactionCatalog.map(entry => [entry.key, entry.emoji]));
-  const reactionLabelByKey = Object.fromEntries(reactionCatalog.map(entry => [entry.key, entry.label]));
-  const traySize = Number(window.PULSE_REACTION_TRAY_SIZE) || 7;
-  const feedReactionChoices = reactionCatalog.slice(0, traySize).map(entry => [entry.key, entry.emoji, entry.label]);
+  const feedReactionChoices = [
+    ["like", "👍", "Like"],
+    ["love", "❤️", "Love"],
+    ["funny", "😂", "Funny"],
+    ["wow", "😮", "Wow"],
+    ["brutal", "😢", "Sad"],
+    ["scam_alert", "😡", "Angry"],
+    ["fire", "🔥", "Fire"],
+    ["fast_signal", "⚡", "Genius"],
+    ["elite", "💎", "Valuable"],
+    ["bullish", "🚀", "Bullish"],
+    ["bearish", "🐻", "Bearish"],
+  ];
 
   function reactionEmojiFor(type) {
-    // An unknown key renders as nothing rather than as a plausible substitute.
-    // Substituting used to turn a `whale` reaction into a thumbs-up, which
-    // misreports what a real person sent; an empty glyph is a visible gap.
-    return reactionEmojiByKey[type] || "";
+    return Object.fromEntries(feedReactionChoices.map(([key, emoji]) => [key, emoji]))[type] || "👍";
   }
 
   function reactionLabelFor(type) {
-    return reactionLabelByKey[type] || "";
+    const found = feedReactionChoices.find(([key]) => key === type);
+    return found?.[2] || "Like";
   }
 
   function reactionEmojis(post) {
+    const map = {
+      like: "👍",
+      love: "❤️",
+      fire: "🔥",
+      funny: "😂",
+      laugh: "😂",
+      wow: "😮",
+      brutal: "😢",
+      sad: "😢",
+      scam_alert: "😡",
+      fast_signal: "⚡",
+      smart: "⚡",
+      elite: "💎",
+      bullish: "🚀",
+      bearish: "🐻",
+    };
     const counts = post.reaction_counts || {};
-    // Only reactions that were actually sent. There is no placeholder set for
-    // the empty case: inventing one would put six feelings on a post nobody
-    // has reacted to.
-    return Object.keys(counts)
-      .filter(type => count(counts[type]) > 0)
-      .sort((a, b) => count(counts[b]) - count(counts[a]))
-      .slice(0, 6)
-      .map(reactionEmojiFor)
-      .filter(Boolean)
-      .join(" ");
+    const active = Object.keys(counts).filter(type => count(counts[type]) > 0).sort((a, b) => count(counts[b]) - count(counts[a]));
+    const emojis = (active.length ? active : ["like", "love", "funny", "wow", "brutal", "scam_alert"]).slice(0, 6).map(type => map[type] || "👍");
+    return emojis.join(" ");
   }
 
   function updateSummary(postId, key, value) {
     document.querySelectorAll(`[data-summary-${key}="${postId}"]`).forEach(node => {
       node.textContent = compactNumber(value);
-      // The number lives inside the chip; the chip is what gets hidden. Every
-      // count that reaches the page passes through here, so the zero state
-      // cannot drift away from the value it describes.
-      const chip = node.closest(".post-summary-metric");
-      markZero(chip, value);
-      const noun = count(value) === 1 ? chip?.dataset.singular : chip?.dataset.plural;
-      // The label is the chip's last text node, immediately after the number.
-      if (noun && chip?.lastChild?.nodeType === Node.TEXT_NODE) {
-        chip.lastChild.textContent = ` ${noun}`;
-      }
     });
   }
 
@@ -1063,10 +1063,7 @@
       button.setAttribute("role", "menuitemradio");
       button.setAttribute("aria-label", `${label} reaction`);
       button.setAttribute("aria-checked", post.viewer_reaction === reaction ? "true" : "false");
-      // A closed tray must not be eleven tab stops per post. The Like button
-      // owns the only stop; arrow keys move focus once the tray is open.
-      button.tabIndex = -1;
-      button.append(element("span", "pulse-feed-reaction-choice-emoji", emoji), element("small", "pulse-feed-reaction-choice-label", label));
+      button.append(element("span", "", emoji), element("small", "", label));
       palette.appendChild(button);
     });
     card.appendChild(palette);
@@ -1438,7 +1435,6 @@
       document.createTextNode(" "),
       element("span", "post-reaction-total", `${compactNumber(reactionTotal(post))} Reactions`)
     );
-    markZero(reactions, reactionTotal(post));
     row.appendChild(reactions);
     const metrics = [
       ["comments", post.comments_count || post.comment_count, "Comment", "Comments"],
@@ -1451,35 +1447,11 @@
       const number = element("span", "post-summary-number", compactNumber(value));
       number.dataset[`summary${key[0].toUpperCase()}${key.slice(1)}`] = post.id;
       if (key === "views") number.dataset.postViewCount = post.id;
-      // Carried on the node so `updateSummary` can re-pick the word. The
-      // noun used to be chosen once at render and never revisited, so the
-      // first comment on a post turned the chip into "1 Comments". That was
-      // easy to miss while every chip read zero; now that a chip only appears
-      // once it has a count, one is the number it shows most often.
-      item.dataset.singular = singular;
-      item.dataset.plural = plural;
       item.append(number, document.createTextNode(` ${count(value) === 1 ? singular : plural}`));
-      markZero(item, value);
       row.appendChild(document.createTextNode("    "));
       row.appendChild(item);
     });
     card.appendChild(row);
-  }
-
-  // `pulse_desktop_shell.css:553` hides an engagement chip whose count is zero,
-  // and collapses the whole strip when every chip is. That rule shipped without
-  // this function, so the class it keys on was never written by anyone and the
-  // strip stayed exactly as it was: five pieces of furniture per card reading
-  // "0 Reactions 0 Comments 0 Reposts 0 Shares 0 Saves", which is a row whose
-  // entire content is that nothing has happened yet.
-  //
-  // The chip is hidden, never removed. Both writers find these nodes by
-  // selector, so a chip dropped at render time is a chip that silently stops
-  // updating when the first comment lands; hidden, it comes back the moment the
-  // count leaves zero. Derived from the number at every point the number is
-  // written, so the class cannot disagree with the value beside it.
-  function markZero(node, value) {
-    node?.classList.toggle("is-zero", count(value) === 0);
   }
 
   function renderActions(card, post) {
@@ -1491,10 +1463,6 @@
     like.dataset.postLikeReaction = activeReaction || "like";
     like.dataset.longPressReactions = post.id;
     like.setAttribute("aria-haspopup", "menu");
-    // aria-haspopup promises a menu, so the state of that menu has to be
-    // reported too -- otherwise a screen reader announces a popup that it can
-    // never tell the user is open.
-    like.setAttribute("aria-expanded", "false");
     like.setAttribute("aria-pressed", post.viewer_reaction ? "true" : "false");
     if (post.viewer_reaction) like.classList.add("active");
     const save = feedActionChip("🔖", "Save", { savePost: post.id, action: "save" }, "");
@@ -1615,14 +1583,6 @@
     }
     if (media && !isLiveGateway) card.appendChild(media);
     renderPostMusic(card, post);
-    // Between the media and the social-context row -- the same slot the native
-    // app gives it in `CommerceOverlay.tsx`, so a member who sees a post in both
-    // places sees the product in the same position relative to the picture.
-    //
-    // A no-op for a post with no `commerce` key, which is almost all of them,
-    // and guarded on the global because `pulse_commerce_card.js` is a separate
-    // asset: a cached shell that predates it must still render its feed.
-    window.PulseCommerceCard?.render?.(card, post.commerce, { surface: "signal" });
     renderEngagement(card, post);
     if (!isLiveGateway) {
       renderActions(card, post);
@@ -1776,109 +1736,19 @@
       const open = exceptPostId && palette.dataset.feedReactionPicker === String(exceptPostId);
       palette.classList.toggle("open", !!open);
       palette.setAttribute("aria-hidden", open ? "false" : "true");
-      // Only a tray the user can see may hold focus stops.
-      palette.querySelectorAll("[data-feed-reaction-choice]").forEach(choice => {
-        choice.tabIndex = open ? 0 : -1;
-      });
-      const anchor = document.querySelector(`[data-post-like="${CSS.escape(String(palette.dataset.feedReactionPicker || ""))}"]`);
-      anchor?.setAttribute("aria-expanded", open ? "true" : "false");
     });
   }
 
   function openFeedReactionPicker(postId, anchor) {
     if (!postId) return false;
-    const palette = document.querySelector(`[data-feed-reaction-picker="${CSS.escape(String(postId))}"]`);
-    if (!palette) return false;
     closeFeedReactionPickers(postId);
-    // The card was previously required via `anchor.closest("[data-post-id]")`,
-    // so an open triggered by hovering the tray itself -- or by a keyboard with
-    // no anchor -- returned false and the tray stayed shut. The card is only
-    // wanted for the choosing highlight, so it is now optional.
-    const card = anchor?.closest?.("[data-post-id]") || palette.closest("[data-post-id]");
-    if (card) {
-      card.classList.add("is-choosing-reaction");
-      window.clearTimeout(Number(card.dataset.choosingTimer || 0));
-      card.dataset.choosingTimer = String(window.setTimeout(() => card.classList.remove("is-choosing-reaction"), 1600));
-    }
+    const palette = document.querySelector(`[data-feed-reaction-picker="${CSS.escape(String(postId))}"]`);
+    const card = anchor?.closest?.("[data-post-id]");
+    if (!palette || !card) return false;
+    card.classList.add("is-choosing-reaction");
+    window.setTimeout(() => card.classList.remove("is-choosing-reaction"), 1600);
     return true;
   }
-
-  // Hover is the desktop equivalent of the app's long press, but it must never
-  // be the only way in: the same tray opens from the keyboard below, and the
-  // 420ms press still serves touch. A short intent delay keeps the tray from
-  // flashing open while the pointer crosses the action bar on its way
-  // somewhere else, and a longer close delay leaves time to travel from the
-  // Like button up to the tray without it shutting in the gap.
-  const REACTION_HOVER_IN = 170;
-  const REACTION_HOVER_OUT = 280;
-  const REACTION_TRAY_TARGETS = "[data-post-like],[data-feed-reaction-picker]";
-  let reactionHoverTimer = 0;
-  let reactionCloseTimer = 0;
-
-  function isMouseLike(event) {
-    // A missing pointerType means a synthetic event; treat it as a mouse so
-    // tests and assistive tooling get the hover path rather than silence.
-    return !event.pointerType || event.pointerType === "mouse";
-  }
-
-  document.addEventListener("pointerover", event => {
-    if (!isMouseLike(event)) return;
-    const target = event.target.closest?.(REACTION_TRAY_TARGETS);
-    if (!target) return;
-    window.clearTimeout(reactionCloseTimer);
-    // Already inside the open tray: keep it, do not re-open it.
-    if (target.matches("[data-feed-reaction-picker]")) return;
-    const postId = target.dataset.postLike;
-    window.clearTimeout(reactionHoverTimer);
-    reactionHoverTimer = window.setTimeout(() => openFeedReactionPicker(postId, target), REACTION_HOVER_IN);
-  });
-
-  document.addEventListener("pointerout", event => {
-    if (!isMouseLike(event)) return;
-    if (!event.target.closest?.(REACTION_TRAY_TARGETS)) return;
-    // Moving between the Like button and its tray is not leaving.
-    if (event.relatedTarget?.closest?.(REACTION_TRAY_TARGETS)) return;
-    window.clearTimeout(reactionHoverTimer);
-    window.clearTimeout(reactionCloseTimer);
-    reactionCloseTimer = window.setTimeout(() => closeFeedReactionPickers(), REACTION_HOVER_OUT);
-  });
-
-  // The keyboard path. `aria-haspopup="menu"` on the Like button promises the
-  // standard menu-button interaction, so that is what this implements: Down or
-  // Up opens the tray and lands on the first choice, arrows walk it, Escape
-  // closes and hands focus back. Plain focus deliberately does NOT open the
-  // tray -- tabbing through a feed would otherwise pop one open per post.
-  document.addEventListener("keydown", event => {
-    const palette = event.target.closest?.("[data-feed-reaction-picker]");
-    const like = palette ? null : event.target.closest?.("[data-post-like]");
-    if (like) {
-      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-      event.preventDefault();
-      if (!openFeedReactionPicker(like.dataset.postLike, like)) return;
-      const first = document.querySelector(`[data-feed-reaction-picker="${CSS.escape(String(like.dataset.postLike))}"] [data-feed-reaction-choice]`);
-      first?.focus();
-      return;
-    }
-    if (!palette) return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      const anchor = document.querySelector(`[data-post-like="${CSS.escape(String(palette.dataset.feedReactionPicker))}"]`);
-      closeFeedReactionPickers();
-      anchor?.focus();
-      return;
-    }
-    const choices = Array.from(palette.querySelectorAll("[data-feed-reaction-choice]"));
-    if (!choices.length) return;
-    const here = choices.indexOf(event.target.closest("[data-feed-reaction-choice]"));
-    let next = null;
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = here + 1;
-    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = here - 1;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = choices.length - 1;
-    if (next === null) return;
-    event.preventDefault();
-    choices[(next + choices.length) % choices.length]?.focus();
-  });
 
   function syncFeedReactionUi(postId, reactionType, removed, counts = {}) {
     const total = Object.values(counts || {}).reduce((sum, value) => sum + count(value), 0);
@@ -1895,7 +1765,6 @@
     if (Object.keys(counts || {}).length) {
       document.querySelectorAll(`[data-post-id="${postId}"] .post-reaction-emojis`).forEach(node => {
         node.textContent = `${reactionEmojis({ reaction_counts: counts })} ${compactNumber(total)} Reactions`;
-        markZero(node, total);
       });
       document.querySelectorAll(`[data-post-like-count="${postId}"]`).forEach(node => {
         node.textContent = compactNumber(total);
@@ -1983,45 +1852,6 @@
       button.classList.toggle("is-disabled", !ready);
       button.setAttribute("aria-disabled", ready ? "false" : "true");
     });
-  }
-
-  // The desktop shell hides the inline comment composer on every feed card
-  // until the card carries `is-commenting` (pulse_desktop_shell.css:588) --
-  // ~80px of always-on chrome per card was the single biggest reason Home read
-  // as a control panel. That rule shipped, but the class that clears it never
-  // did, so on desktop Home the Comment button ran a 480ms glow
-  // (pulse_reaction_system.js:110) and nothing else: the composer was
-  // unreachable and inline commenting was dead. This is the missing half.
-  //
-  // Two renderers produce two attributes for the same button -- the server
-  // template emits `data-open-comments`, the client card builder emits
-  // `data-post-comment` -- and only the second was ever handled. Both route
-  // here so the behaviour cannot depend on which renderer drew the card.
-  function revealCommentComposer(postId, trigger) {
-    if (!postId) return;
-    const card = trigger?.closest?.(
-      ".pulse-feed-post-v3,.post-card-modern,.pulse-status-story-viewer,.reel-card"
-    );
-    // Toggle, not add: the button is the same affordance in both directions,
-    // and a reader who opened a composer by mistake should be able to put it
-    // away with the control they just pressed.
-    const input = document.querySelector(`[data-comment-input="${CSS.escape(String(postId))}"]`);
-    if (card) {
-      const opening = !card.classList.contains("is-commenting");
-      card.classList.toggle("is-commenting", opening);
-      if (!opening) {
-        // Leaving text behind in a box the reader just dismissed would
-        // resurface it silently on the next open. Send state follows.
-        if (input) {
-          input.value = "";
-          updateCommentSendState(postId);
-        }
-        return;
-      }
-    }
-    // `preventScroll` because the composer is at the bottom of a tall card and
-    // the default scroll-into-view jumps the post's own text off screen.
-    input?.focus({ preventScroll: true });
   }
 
   function openLightbox(trigger) {
@@ -2963,36 +2793,6 @@
       toast("Create menu opened.");
       return;
     }
-    const composerEmoji = event.target.closest("[data-composer-emoji]");
-    if (composerEmoji) {
-      event.preventDefault();
-      // This button used to be labelled "Feeling" and typed the literal string
-      // "Feeling: " into the post body. The app refuses that same action on
-      // purpose -- HomePulseComposer's Feeling handler answers "Structured
-      // feelings are not supported by the production post contract yet.
-      // PulseSoc will not change what you wrote or add a feeling for you."
-      // There is no feeling column on a post, so the web was inventing a field
-      // by editing the author's own sentence, which is the one thing the app
-      // promises not to do. The affordance a ☺ button owes you is the picker,
-      // and the app has one: the same 1,914-emoji dataset, opened here.
-      const bodyInput = document.getElementById("postBody");
-      if (!bodyInput) return;
-      composer?.classList.add("is-expanded");
-      if (window.PulseEmoji) {
-        window.PulseEmoji.open({
-          anchor: composerEmoji,
-          returnFocusTo: bodyInput,
-          stayOpenOnSelect: true,
-          label: "Add emoji to your post",
-          onSelect: glyph => window.PulseEmoji.insertAtCaret(bodyInput, glyph)
-        });
-      } else {
-        // The picker is deferred; a click that beats it to the parser should
-        // still put the caret where the user expects to type.
-        bodyInput.focus();
-      }
-      return;
-    }
     const chip = event.target.closest("[data-composer-chip],[data-composer-rail]");
     if (chip) {
       event.preventDefault();
@@ -3001,6 +2801,7 @@
         topic: "#Topic",
         mention: "@",
         location: "Location: ",
+        feeling: "Feeling: ",
       };
       insertComposerText(snippets[chipType] || "");
       return;
@@ -3125,12 +2926,9 @@
     }
     const like = event.target.closest("[data-post-like]");
     if (like) return reactToPost(like.dataset.postLike, like, like.dataset.postLikeReaction || "like");
-    const comment = event.target.closest("[data-post-comment],[data-open-comments]");
+    const comment = event.target.closest("[data-post-comment]");
     if (comment) {
-      revealCommentComposer(
-        comment.dataset.postComment || comment.dataset.openComments,
-        comment
-      );
+      document.querySelector(`[data-comment-input="${comment.dataset.postComment}"]`)?.focus();
       return;
     }
     const unavailableAction = event.target.closest("[data-unavailable]");
@@ -3142,30 +2940,11 @@
     if (send) return sendComment(send.dataset.commentSend);
     const emoji = event.target.closest("[data-comment-emoji]");
     if (emoji) {
-      // This used to append a hardcoded 🔥 -- one emoji, chosen once by
-      // whoever wrote the line, with no way to pick another. The app has
-      // shipped a full 1,914-emoji picker with search, categories, recents
-      // and skin tones since Stage 1; there is no reason the web comment box
-      // gets one glyph. `window.PulseEmoji` is THE picker for the website
-      // (static/js/pulse_emoji.js) and it reads the same dataset the app does.
-      const postId = emoji.dataset.commentEmoji;
-      const input = document.querySelector(`[data-comment-input="${postId}"]`);
-      if (!input) return;
-      if (window.PulseEmoji) {
-        window.PulseEmoji.open({
-          anchor: emoji,
-          returnFocusTo: input,
-          stayOpenOnSelect: true,
-          label: "Add emoji to your comment",
-          onSelect: glyph => {
-            window.PulseEmoji.insertAtCaret(input, glyph);
-            updateCommentSendState(postId);
-          }
-        });
-      } else {
-        // The picker script is deferred; a click that lands before it parses
-        // should put the caret in the box rather than do nothing at all.
+      const input = document.querySelector(`[data-comment-input="${emoji.dataset.commentEmoji}"]`);
+      if (input) {
+        input.value = `${input.value || ""}🔥`;
         input.focus();
+        updateCommentSendState(emoji.dataset.commentEmoji);
       }
       return;
     }
@@ -3507,21 +3286,9 @@
     return safe.replace(new RegExp(`(${needle})`, "ig"), "<em>$1</em>");
   }
 
-  // `item.url` is the canonical web path, and the same search payload is read by
-  // the native app, which feeds that url to its own router. So the app-first
-  // rewrite happens here, on a shape the server built in `app_links`, rather
-  // than in the API. A result type with no entry keeps its canonical url.
-  function pulseSearchAppFirstHref(item) {
-    const shape = (window.PULSE_APP_FIRST_LINKS || {})[item && item.type];
-    if (!shape) return (item && item.url) || "/pulse";
-    const id = item && item.id;
-    if (id === undefined || id === null || id === "") return shape.fallback;
-    return shape.template.replace(shape.token, encodeURIComponent(String(id)));
-  }
-
   function pulseSearchResultHtml(item, query) {
     const letter = String(item.type || item.title || "P").slice(0, 1).toUpperCase();
-    return `<a class="pulse-search-result" href="${esc(pulseSearchAppFirstHref(item))}"><span class="pulse-search-mark">${esc(letter)}</span><span><strong>${pulseSearchHighlight(item.title || "PulseSoc result", query)}</strong><small>${pulseSearchHighlight(item.description || item.meta || "", query)}</small></span><span class="pulse-search-type">${esc(item.type || "PulseSoc")}</span></a>`;
+    return `<a class="pulse-search-result" href="${esc(item.url || "/pulse")}"><span class="pulse-search-mark">${esc(letter)}</span><span><strong>${pulseSearchHighlight(item.title || "PulseSoc result", query)}</strong><small>${pulseSearchHighlight(item.description || item.meta || "", query)}</small></span><span class="pulse-search-type">${esc(item.type || "PulseSoc")}</span></a>`;
   }
 
   function renderPulseSearchResults(data) {

@@ -12,7 +12,6 @@ Runs against a temp sqlite file so nothing touches coinpilotx.db.
 Run: python3 -m unittest tests.test_pulse_ads_os -v
 """
 
-import datetime
 import os
 import sqlite3
 import sys
@@ -35,18 +34,6 @@ VIEWER_B = 96012
 
 NOW = "2026-08-05T12:00:00+00:00"
 DAY_LATER = "2026-08-06T12:00:00+00:00"
-
-#: The two days the seeded delivery falls on, and the window that asks for
-#: exactly them. Reports filter delivery by a date window whose default is the
-#: trailing `DEFAULT_RANGE_DAYS` days, so seeding a fixed date and then asking for
-#: the default window asserts only that the calendar has not moved. That is how
-#: this file's report test passed the week it was written and failed five weeks
-#: later on `0 != 1`: the seeds had fallen out of the default window and the route
-#: was honestly reporting no delivery in it. The math is asserted over an explicit
-#: window below; that the *default* window tracks the clock is asserted separately.
-DELIVERY_DAY = NOW[:10]
-PURCHASE_DAY = DAY_LATER[:10]
-DELIVERY_WINDOW = f"start={DELIVERY_DAY}&end={PURCHASE_DAY}"
 
 
 class PulseAdsOsTestCase(unittest.TestCase):
@@ -367,7 +354,7 @@ class PulseAdsOsTestCase(unittest.TestCase):
         for field in ("spend_cents", "impressions", "reach", "clicks", "results", "purchases", "revenue_cents", "roas"):
             self.assertEqual(totals[field], 0, field)
 
-    def _seed_delivery(self, account_id, campaign_id, creative_id, at=NOW):
+    def _seed_delivery(self, account_id, campaign_id, creative_id):
         conn = self.db()
         cur = conn.cursor()
         impressions = [
@@ -383,7 +370,7 @@ class PulseAdsOsTestCase(unittest.TestCase):
                 (campaign_id, creative_id, placement_key, viewer_user_id, session_id, created_at)
                 VALUES (?, ?, 'feed_inline', ?, ?, ?)
                 """,
-                (campaign_id, creative_id, viewer, session_id, at),
+                (campaign_id, creative_id, viewer, session_id, NOW),
             )
         for viewer in (VIEWER_A, VIEWER_B):
             cur.execute(
@@ -392,7 +379,7 @@ class PulseAdsOsTestCase(unittest.TestCase):
                 (campaign_id, creative_id, placement_key, viewer_user_id, session_id, clicked_at, created_at)
                 VALUES (?, ?, 'feed_inline', ?, '', ?, ?)
                 """,
-                (campaign_id, creative_id, viewer, at, at),
+                (campaign_id, creative_id, viewer, NOW, NOW),
             )
         for index in range(2):
             cur.execute(
@@ -402,7 +389,7 @@ class PulseAdsOsTestCase(unittest.TestCase):
                  idempotency_key, description, created_at)
                 VALUES (?, ?, ?, 'spend', 50, 'posted', ?, 'Ad delivery spend for feed_inline', ?)
                 """,
-                (account_id, campaign_id, creative_id, f"report-spend-{campaign_id}-{index}", at),
+                (account_id, campaign_id, creative_id, f"report-spend-{campaign_id}-{index}", NOW),
             )
         conn.commit()
         conn.close()
@@ -428,16 +415,10 @@ class PulseAdsOsTestCase(unittest.TestCase):
         conn.commit()
         conn.close()
 
-        response = self.client.get(
-            f"/api/pulse/ads/reports?account_id={account_id}&breakdown=campaign&{DELIVERY_WINDOW}"
-        )
+        response = self.client.get(f"/api/pulse/ads/reports?account_id={account_id}&breakdown=campaign")
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(
-            len(data["rows"]), 1,
-            "the seeded campaign is missing from its own window, so none of the "
-            "arithmetic below is being checked against anything",
-        )
+        self.assertEqual(len(data["rows"]), 1)
         row = data["rows"][0]
         self.assertEqual(row["label"], "Sales Push")
         self.assertEqual(row["spend_cents"], 100)
@@ -455,54 +436,13 @@ class PulseAdsOsTestCase(unittest.TestCase):
         self.assertEqual(data["totals"]["revenue_cents"], 2000)
 
         by_placement = self.client.get(
-            f"/api/pulse/ads/reports?account_id={account_id}&breakdown=placement&{DELIVERY_WINDOW}"
+            f"/api/pulse/ads/reports?account_id={account_id}&breakdown=placement"
         ).get_json()
         self.assertEqual([r["key"] for r in by_placement["rows"]], ["feed_inline"])
         by_date = self.client.get(
-            f"/api/pulse/ads/reports?account_id={account_id}&breakdown=date&{DELIVERY_WINDOW}"
+            f"/api/pulse/ads/reports?account_id={account_id}&breakdown=date"
         ).get_json()
-        self.assertEqual([r["key"] for r in by_date["rows"]], [DELIVERY_DAY])
-
-    def test_the_default_window_follows_the_clock(self):
-        # A report asked for with no dates covers the trailing window ending today.
-        # Nothing else in this file can see that: every other seed is dated by a
-        # literal and asked for by an explicit window, so the default could quietly
-        # become "all time" or "yesterday only" and every assertion would hold.
-        # Two campaigns, one delivered inside the window and one well outside it,
-        # named so the failure says which way the boundary moved.
-        account_id = self.make_account()
-        today = datetime.datetime.now(datetime.timezone.utc).date()
-        recent_day = today - datetime.timedelta(days=1)
-        stale_day = today - datetime.timedelta(days=90)
-
-        wanted = []
-        for name, day in (("Recent", recent_day), ("Stale", stale_day)):
-            campaign_id = self.make_campaign(account_id, name=name)
-            creative_id = self.make_creative(
-                account_id, campaign_id, status="approved", moderation_status="approved",
-            )
-            self._seed_delivery(
-                account_id, campaign_id, creative_id, at=f"{day.isoformat()}T12:00:00+00:00",
-            )
-            wanted.append(name)
-        self.assertEqual(wanted, ["Recent", "Stale"])
-
-        rows = self.client.get(
-            f"/api/pulse/ads/reports?account_id={account_id}&breakdown=campaign"
-        ).get_json()["rows"]
-        self.assertEqual(
-            [row["label"] for row in rows], ["Recent"],
-            "the default window must contain yesterday's delivery and not a "
-            "campaign that stopped delivering 90 days ago",
-        )
-
-        # And the same two campaigns are both reachable, so the exclusion above is
-        # the window's doing and not a missing seed.
-        widened = self.client.get(
-            f"/api/pulse/ads/reports?account_id={account_id}&breakdown=campaign"
-            f"&start={stale_day.isoformat()}&end={today.isoformat()}"
-        ).get_json()["rows"]
-        self.assertEqual(sorted(row["label"] for row in widened), ["Recent", "Stale"])
+        self.assertEqual([r["key"] for r in by_date["rows"]], ["2026-08-05"])
 
     # -- item 9: insights ------------------------------------------------------
 

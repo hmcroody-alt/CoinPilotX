@@ -54,13 +54,7 @@ import {
 import { PulseApiError } from "../api/pulseApi";
 import { describeDeleteError } from "../api/deleteErrors";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
-import { chipEligibleReelIds } from "../commerce/reelChipEligibility";
-import { useCommerceOverlayNavigation } from "../commerce/useCommerceOverlayNavigation";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
-import type { ReelCommerceBinding } from "../components/ReelPlayerCard";
-import { useCallSession } from "../calls/callSessionStore";
-import { reelCommerceContext } from "../commerce/reelContext";
-import { useReelsCommerce } from "../commerce/useReelsCommerce";
 import { ContentTranslation } from "../components/ContentTranslation";
 import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { classifyReelMedia } from "../reels/reelMediaKind";
@@ -77,7 +71,6 @@ import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { useAuth } from "../session/auth";
 import { sharePulseObject } from "../sharing/nativeShare";
-import { buildReelShareMetadata } from "../sharing/reelShare";
 import { createThemedStyles } from "../theme/themedStyles";
 import { takeReelTransfer } from "../discovery/reelTransfer";
 import { spatialReelsEnabled } from "../spatial/flags";
@@ -106,7 +99,6 @@ const QA_RECOVERY_STATES = new Set<ConnectionState>(["loading", "connecting", "o
 
 export function ReelsScreen({ route, navigation }: Props) {
   const { authState, requestReauthentication } = useAuth();
-  const commerceNavigation = useCommerceOverlayNavigation(navigation);
   const insets = useSafeAreaInsets();
   // Scroll-driven dock hiding reads vertical deltas, which a horizontal pager
   // never produces. Opting out in spatial mode makes that explicit rather than
@@ -184,7 +176,6 @@ export function ReelsScreen({ route, navigation }: Props) {
   const [moreReel, setMoreReel] = useState<PulseReel | null>(null);
   const [appActive, setAppActive] = useState(AppState.currentState === "active");
   const [shareOpen, setShareOpen] = useState(false);
-  const [commerceRefreshToken, setCommerceRefreshToken] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(Dimensions.get("window").height);
   const [viewportWidth, setViewportWidth] = useState(Dimensions.get("window").width);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 72 });
@@ -226,110 +217,6 @@ export function ReelsScreen({ route, navigation }: Props) {
    * asserts against it.
    */
   const playbackAllowed = isFocused && appActive && !overlayOpen;
-
-  /**
-   * Marketplace discovery on Reels: at most one chip, or nothing at all.
-   *
-   * ### What gates *existence* versus what gates the *moment*
-   *
-   * `enabled` is the existence gate — false means no fetch is made and no
-   * placement is held. It carries only the durable conditions, because the
-   * server's reels budget is one placement per session: a gate that flickers
-   * would spend that budget on the first fetch and return empty forever after,
-   * turning a transient overlay into a permanent loss.
-   *
-   * So a comment sheet, a blur, or a backgrounded app are deliberately *not*
-   * here. Those are handled by `active` on the card, which already means
-   * "focused AND foreground AND no overlay AND this is the reel on screen", and
-   * which the chip uses to suspend its dwell counting and pause its ignore
-   * timer. The chip stays bound; it just stops counting.
-   *
-   * What is here:
-   *
-   *   * **Signed out.** Every discovery route is `@auth_required`, so this is
-   *     about not making the call rather than about trusting the client.
-   *   * **An active call.** A no-interruption zone, and unlike an overlay it is
-   *     not a state the user steps in and out of while watching reels — they
-   *     leave the screen. Read-only: this subscribes to the call snapshot and
-   *     touches no audio API.
-   *
-   * The camera and the composer are absent on purpose. Both live on other
-   * screens — Reels' ＋ button navigates to Home's composer — so reaching them
-   * already unmounts nothing but does blur this screen, and the no-chip
-   * behaviour follows from the card's `active` rather than from a fetch gate.
-   */
-  const callSession = useCallSession();
-  const signedIn = Number(authState.user?.user_id || 0) > 0;
-  /**
-   * Which reels are even candidates to carry a chip.
-   *
-   * The rule moved to `reelChipEligibility` when a second exclusion joined the
-   * Live one — read it there. It lives outside the component because it is a
-   * pure function of the list and the decision it encodes ("not a candidate",
-   * never "candidate whose chip is hidden") is worth testing directly.
-   */
-  const commerceReelIds = useMemo(() => chipEligibleReelIds(reels), [reels]);
-  /**
-   * What the reel that will carry the chip is about (§8).
-   *
-   * The hook asks for one id — the one its own slot arithmetic picked — and this
-   * hands back that reel's public topic. Looking the reel up here rather than
-   * precomputing a map keeps the work to one lookup per fetch instead of one per
-   * reel per render, and means the screen never has to know which reel is the
-   * target.
-   */
-  const reelsByIdRef = useRef<Map<string, PulseReel>>(new Map());
-  reelsByIdRef.current = useMemo(
-    () => new Map(reels.map((reel) => [String(reel.id), reel])),
-    [reels]
-  );
-  const resolveCommerceContext = useCallback(
-    (reelId: string) => reelCommerceContext(reelsByIdRef.current.get(reelId)),
-    []
-  );
-  /**
-   * The same reel, named rather than described — see `resolvePostId`'s docstring.
-   *
-   * `post_id`, not `id`. The map is keyed by `String(reel.id)`, which is
-   * `pulse_reels.id`, and the server keys its row read on `pulse_posts.id`; the
-   * two id spaces overlap numerically, so passing the key back would read an
-   * unrelated post and judge this reel by it. `PulseReel.post_id` is optional in
-   * the type, and 0 is the hook's "not known", which degrades to the
-   * context-only check rather than to a wrong answer.
-   */
-  const resolveCommercePostId = useCallback(
-    (reelId: string) => Number(reelsByIdRef.current.get(reelId)?.post_id || 0),
-    []
-  );
-  const commerce = useReelsCommerce({
-    reelIds: commerceReelIds,
-    enabled: signedIn && !callSession.sessionActive,
-    refreshToken: commerceRefreshToken,
-    resolveContext: resolveCommerceContext,
-    resolvePostId: resolveCommercePostId
-  });
-  /**
-   * The chip for one reel, or null — which is the answer for all but one reel.
-   *
-   * A function rather than an inline lookup so the "no chip" case is a single
-   * `null` the card can branch on once, and so the map lookup is keyed by the
-   * same string the binder keyed on. `String(reel.id)` is repeated rather than
-   * shared with `commerceReelIds` deliberately: a helper that normalised ids in
-   * one place and not the other is exactly how a binding goes silently missing.
-   */
-  const commerceBindingFor = useCallback(
-    (reel: PulseReel): ReelCommerceBinding | null => {
-      const placement = commerce.chipByReelId.get(String(reel.id));
-      if (!placement) return null;
-      return {
-        placement,
-        visibleDwellMs: commerce.visibleDwellMs,
-        navigation,
-        onFeedback: commerce.onFeedback
-      };
-    },
-    [commerce.chipByReelId, commerce.onFeedback, commerce.visibleDwellMs, navigation]
-  );
   /**
    * Warm the reel after this one before the user swipes to it.
    *
@@ -476,11 +363,6 @@ export function ReelsScreen({ route, navigation }: Props) {
     }
     if (mode === "refresh") setRefreshing(true);
     if (mode === "more") setLoadingMore(true);
-    // Bumped here rather than in the pull-to-refresh handler because refresh has
-    // three entrances — the RefreshControl, the recovery screen's Retry, and the
-    // tab double-tap — and a token wired to only one of them would leave the
-    // other two showing a chip bound to a reel list that no longer exists.
-    if (mode === "refresh") setCommerceRefreshToken((current) => current + 1);
     try {
       const data = await listReels({ lane, limit: PAGE_SIZE, offset: nextOffset, includeComments: false });
       if (version !== loadVersion.current) return;
@@ -753,17 +635,23 @@ export function ReelsScreen({ route, navigation }: Props) {
         return;
       }
       const result = await shareReel(reel.id);
-      // The caption, the title, the creator's name and the poster all leave the
-      // app here, into a share sheet that hands them to whatever the person
-      // picks. `buildReelShareMetadata` is what decides whether they may -- this
-      // used to pass them unconditionally, so a private Reel's caption went out
-      // with every share. The url stays the caller's: `shareReel` mints one
-      // carrying the share source and that is the link the recipient should tap.
-      await sharePulseObject(buildReelShareMetadata(reel, result.share_url || reelWebUrl(reel.id)));
+      await sharePulseObject({
+        kind: "reel",
+        url: result.share_url || reelWebUrl(reel.id),
+        title: reel.title || "PulseSoc Reel",
+        description: reel.caption || reel.body,
+        author: reel.author?.display_name || reel.author?.name || reel.author?.username,
+        previewImageUrl: reel.poster_url
+      });
     } catch {
-      // The share route failing must not quietly restore the unguarded share.
-      // Same metadata builder, only the url is rebuilt locally.
-      await sharePulseObject(buildReelShareMetadata(reel, reelWebUrl(reel.id))).catch(() => undefined);
+      await sharePulseObject({
+        kind: "reel",
+        url: reelWebUrl(reel.id),
+        title: reel.title || "PulseSoc Reel",
+        description: reel.caption || reel.body,
+        author: reel.author?.display_name || reel.author?.name || reel.author?.username,
+        previewImageUrl: reel.poster_url
+      }).catch(() => undefined);
     } finally {
       setShareOpen(false);
     }
@@ -1045,16 +933,10 @@ export function ReelsScreen({ route, navigation }: Props) {
                 const params = profileNavigationParams(target, reel.author?.display_name || "Profile");
                 if (params) navigation.navigate("ProfileDetail", params);
               }}
-              // Shared with every other surface that renders the overlay, so a
-              // product tap lands in the same place from a Reel, the feed, a
-              // post detail or the profile viewer.
-              onOpenCommerceProduct={commerceNavigation.onOpenCommerceProduct}
-              onOpenCommerceSeller={commerceNavigation.onOpenCommerceSeller}
               onOpenMusic={setMusicReel}
               onOpenMore={setMoreReel}
               onJoinLive={joinLiveReel}
               onViewable={(reel, watchMs) => reel.id > 0 ? trackReelView(reel.id, watchMs).catch(() => undefined) : undefined}
-              commerce={commerceBindingFor(item)}
             />
           </View>
         )}

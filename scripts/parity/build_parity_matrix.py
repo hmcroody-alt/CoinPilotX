@@ -111,23 +111,6 @@ def matches(native: list[str], web: list[str]) -> bool:
     return True
 
 
-def specificity(web: tuple) -> tuple[int, ...]:
-    """How specifically a rule names the path, leftmost segment first.
-
-    A literal segment outranks a constrained parameter, which outranks a bare
-    wildcard. All the keys this is compared across have already matched the same
-    native path, so they are the same length and the tuples compare
-    element-by-element -- which is also the order a reader resolves a URL in.
-    """
-    ranks = []
-    for seg in web:
-        if isinstance(seg, frozenset):
-            ranks.append(1)
-        else:
-            ranks.append(0 if seg == "*" else 2)
-    return tuple(ranks)
-
-
 def classify(web_rows: list[dict]) -> str:
     if any(r["templates"] or (set(r["calls"]) & HTML_HELPERS) for r in web_rows):
         return "PARITY"
@@ -161,23 +144,9 @@ def main() -> int:
         if base and base[-1] == "*":
             candidates.append(base[:-1])
         for cand in candidates:
-            hits = [(key, rows) for key, rows in by_norm.items()
-                    if matches(cand, list(key))]
-            if hits:
-                # The *most specific* matching rule, not the first one found.
-                # Several rules can match one path and Werkzeug serves the
-                # specific one, so taking the first put the verdict on a handler
-                # that never runs. `/saved` scored PARITY on `/<slug>` -- the SEO
-                # topic-page rule, which answers nine bytes of "Not found" for
-                # anything it does not recognise -- and went on scoring PARITY on
-                # it after a literal `/saved` route was added, because `/<slug>`
-                # is declared 38,000 lines earlier and won the iteration.
-                #
-                # Same failure this file already fixed for `<any(...)>`: a
-                # parametric rule claiming a path it does not really serve, in
-                # the one direction the matrix exists to catch.
-                key, rows = max(hits, key=lambda hit: specificity(hit[0]))
-                return classify(rows), rows
+            for key, rows in by_norm.items():
+                if matches(cand, list(key)):
+                    return classify(rows), rows
         for cand in candidates:
             if any(matches(cand, list(key)) for key in url_map):
                 # Registered by a blueprint; rule exists but its handler body

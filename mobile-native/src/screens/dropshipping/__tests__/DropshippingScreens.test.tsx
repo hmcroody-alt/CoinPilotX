@@ -28,7 +28,7 @@
  */
 
 import React from "react";
-import { FlatList, RefreshControl, StyleSheet, Text } from "react-native";
+import { FlatList, Text } from "react-native";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 jest.mock("react-native-safe-area-context", () => ({
@@ -83,8 +83,6 @@ const mockConnectSupplier = jest.fn();
 const mockSearchProducts = jest.fn();
 const mockBindDraftVariant = jest.fn();
 const mockListSupplierObligations = jest.fn();
-const mockGetSupplierStatus = jest.fn();
-const mockRequestResync = jest.fn();
 
 jest.mock("../../../api/dropshipping", () => ({
   ...jest.requireActual("../../../api/dropshipping"),
@@ -103,9 +101,7 @@ jest.mock("../../../api/dropshipping", () => ({
   connectSupplier: (...args: unknown[]) => mockConnectSupplier(...args),
   searchSupplierProducts: (...args: unknown[]) => mockSearchProducts(...args),
   bindDraftVariant: (...args: unknown[]) => mockBindDraftVariant(...args),
-  listSupplierObligations: (...args: unknown[]) => mockListSupplierObligations(...args),
-  getSupplierStatus: (...args: unknown[]) => mockGetSupplierStatus(...args),
-  requestSupplierResync: (...args: unknown[]) => mockRequestResync(...args)
+  listSupplierObligations: (...args: unknown[]) => mockListSupplierObligations(...args)
 }));
 
 import { PulseApiError } from "../../../api/pulseApi";
@@ -121,10 +117,8 @@ import {
   type ImportRunResult,
   type ImportedDraft,
   type StoreImportPolicy,
-  type StoreSupplierStatus,
   type SupplierConnection,
-  type SupplierObligation,
-  type SupplierStatus
+  type SupplierObligation
 } from "../../../api/dropshipping";
 import { DropshippingStateView } from "../../../components/dropshipping/DropshippingStates";
 import { ConnectSupplierScreen } from "../ConnectSupplierScreen";
@@ -158,71 +152,6 @@ function connection(over: Partial<SupplierConnection> = {}): SupplierConnection 
   };
 }
 
-/**
- * One supplier as `/supplier-status` describes it.
- *
- * The default is the ordinary healthy sandbox connection, and every field the
- * screen reads is present — including the ones a careless fixture would leave
- * out. `nextAction` defaults to null rather than to something helpful, because a
- * test that wants a particular button must say so: a fixture that quietly
- * supplied one would let a screen rendering the *wrong* action still pass.
- */
-function supplierStatus(over: Partial<SupplierStatus> = {}): SupplierStatus {
-  return {
-    connectionId: "conn-1",
-    provider: "cj",
-    connectionState: "CONNECTED",
-    message: null,
-    environment: "SANDBOX",
-    realOrderSubmissionEnabled: false,
-    fulfillmentShopState: "BOUND",
-    externalShopId: "shop-9",
-    credentialPresent: true,
-    lastVerifiedAt: null,
-    lastSyncAt: null,
-    lastProductSyncAt: null,
-    products: {
-      imported: 0,
-      published: 0,
-      live: 0,
-      awaitingReview: 0,
-      draft: 0,
-      blocked: 0,
-      archived: 0,
-      other: 0
-    },
-    syncState: null,
-    issues: { products: 0, cost: 0, stock: 0 },
-    // Null, not a zeroed block: the default fixture stands for a server that
-    // answered, and `null` is what it sends when the fulfilment read failed. A
-    // test about order counts supplies its own.
-    orders: null,
-    nextAction: null,
-    needsAttention: false,
-    ...over
-  };
-}
-
-/**
- * The store-wide envelope.
- *
- * `environment` and `realOrderSubmissionEnabled` are taken from the first
- * supplier unless overridden, so a test that sets up a production supplier does
- * not accidentally assert a sandbox banner over it.
- */
-function storeStatus(
-  suppliers: SupplierStatus[] = [supplierStatus()],
-  over: Partial<StoreSupplierStatus> = {}
-): StoreSupplierStatus {
-  return {
-    environment: suppliers[0]?.environment ?? "SANDBOX",
-    realOrderSubmissionEnabled: suppliers[0]?.realOrderSubmissionEnabled ?? false,
-    suppliers,
-    needsAttention: suppliers.some((supplier) => supplier.needsAttention),
-    ...over
-  };
-}
-
 function cartItem(over: Partial<ImportCartItem> = {}): ImportCartItem {
   return {
     itemId: "item-1",
@@ -246,18 +175,6 @@ function cartItem(over: Partial<ImportCartItem> = {}): ImportCartItem {
     updatedAt: null,
     ...over
   };
-}
-
-/** A priced row distinguishable from the default by title.
- *
- * The outcome-reporting tests below used `preview: null` to tell their rows
- * apart, which also — incidentally — made those rows unpriced. That is now a
- * blocking state: the footer will not offer "Import & publish" over a row whose
- * supplier cost it could not read. Naming the row instead keeps each of those
- * tests asserting what it was written to assert.
- */
-function pricedPreview(title: string): ImportCartItem["preview"] {
-  return { ...cartItem().preview!, title };
 }
 
 function draft(over: Partial<ImportedDraft> = {}): ImportedDraft {
@@ -316,38 +233,8 @@ function draft(over: Partial<ImportedDraft> = {}): ImportedDraft {
   };
 }
 
-/**
- * A screen's navigation prop, including the event bus.
- *
- * `addListener` is real rather than a `jest.fn()` returning undefined: the hub
- * re-reads its tiles on `focus`, and a stub that accepted the subscription and
- * dropped it would let that reload be deleted with every test here still green.
- * `focus(nav)` below delivers the event, which is the only way this suite — which
- * renders screens bare, with no navigator above them — can produce a return to a
- * screen at all.
- */
 function navigation() {
-  const listeners: Record<string, Array<() => void>> = {};
-  return {
-    navigate: jest.fn(),
-    goBack: jest.fn(),
-    addListener: jest.fn((event: string, listener: () => void) => {
-      (listeners[event] = listeners[event] || []).push(listener);
-      return () => {
-        listeners[event] = (listeners[event] || []).filter((one) => one !== listener);
-      };
-    }),
-    __emit: (event: string) => (listeners[event] || []).slice().forEach((one) => one())
-  };
-}
-
-/** Come back to a screen: deliver `focus`, then let the reload it starts land. */
-async function focus(nav: ReturnType<typeof navigation>) {
-  await act(async () => {
-    nav.__emit("focus");
-    await Promise.resolve();
-  });
-  await settle();
+  return { navigate: jest.fn(), goBack: jest.fn() };
 }
 
 beforeEach(() => {
@@ -723,7 +610,7 @@ describe("DropshippingHubScreen", () => {
       storeName: "M&W Store",
       source: "MARKETPLACE_SELLER"
     });
-    mockGetSupplierStatus.mockResolvedValue(storeStatus([]));
+    mockListConnections.mockResolvedValue([]);
     const { view } = await hub();
 
     await waitFor(() =>
@@ -740,7 +627,7 @@ describe("DropshippingHubScreen", () => {
    */
   it("sends a merchant with no store to set one up, never to a supplier key form", async () => {
     mockResolveScope.mockResolvedValue({ status: "missing", gap: "NO_STORE" });
-    mockGetSupplierStatus.mockResolvedValue(storeStatus([]));
+    mockListConnections.mockResolvedValue([]);
     const { view, nav } = await hub();
 
     await waitFor(() =>
@@ -761,7 +648,7 @@ describe("DropshippingHubScreen", () => {
    */
   it("offers a re-check, not a setup form, while the store is under review", async () => {
     mockResolveScope.mockResolvedValue({ status: "missing", gap: "STORE_PENDING_REVIEW" });
-    mockGetSupplierStatus.mockResolvedValue(storeStatus([]));
+    mockListConnections.mockResolvedValue([]);
     const { view, nav } = await hub();
 
     await waitFor(() =>
@@ -776,7 +663,7 @@ describe("DropshippingHubScreen", () => {
 
   it("keeps sending a Business OS merchant with no storefront to Business OS", async () => {
     mockResolveScope.mockResolvedValue({ status: "missing", gap: "NO_STOREFRONT" });
-    mockGetSupplierStatus.mockResolvedValue(storeStatus([]));
+    mockListConnections.mockResolvedValue([]);
     const { view, nav } = await hub();
 
     await waitFor(() =>
@@ -794,7 +681,7 @@ describe("DropshippingHubScreen", () => {
    */
   it("does not report an absent supplier when the store check itself failed", async () => {
     mockResolveScope.mockRejectedValue(new PulseApiError("down", 500, "server_error"));
-    mockGetSupplierStatus.mockResolvedValue(storeStatus([]));
+    mockListConnections.mockResolvedValue([]);
     const { view } = await hub();
 
     await waitFor(() =>
@@ -814,7 +701,7 @@ describe("DropshippingHubScreen", () => {
    */
   it("names the deployment, not the merchant's store, when suppliers are switched off", async () => {
     mockResolveScope.mockRejectedValue(new PulseApiError("off", 404, "disabled"));
-    mockGetSupplierStatus.mockResolvedValue(storeStatus([]));
+    mockListConnections.mockResolvedValue([]);
     const { view } = await hub();
 
     await waitFor(() =>
@@ -829,306 +716,6 @@ describe("DropshippingHubScreen", () => {
         "Supplier connections are available in the PulseSoc sandbox but aren't enabled on this server yet."
       )
     ).toBeTruthy();
-  });
-});
-
-/* ------------------------------------------------------------------ *
- * 1b(ii) — the hub's tiles, from the one endpoint
- * ------------------------------------------------------------------ */
-
-/**
- * The hub used to hold the connections list and the imported-products list and
- * infer the rest. These tests are about the inference being gone: every figure
- * below is asserted to come from `/supplier-status`, and the two that cannot be
- * read are asserted *not* to appear as zero.
- */
-describe("DropshippingHubScreen — tiles", () => {
-  async function hubWith(rows: SupplierStatus[], cart: { count: number } | Error = { count: 0 }) {
-    mockResolveScope.mockResolvedValue({
-      status: "ok",
-      scope: { businessId: "biz-1", storeId: "store-1" },
-      storeName: "M&W Store",
-      source: "MARKETPLACE_SELLER"
-    });
-    mockGetSupplierStatus.mockResolvedValue(storeStatus(rows));
-    if (cart instanceof Error) mockGetCart.mockRejectedValue(cart);
-    else mockGetCart.mockResolvedValue(cart);
-    const nav = navigation();
-    const view = render(<DropshippingHubScreen navigation={nav} route={{ params: {} }} />);
-    await settle();
-    return { view, nav };
-  }
-
-  it("states the operating mode above the tiles, not under them", async () => {
-    const { view } = await hubWith([supplierStatus()]);
-
-    await waitFor(() =>
-      expect(view.getByTestId("hub-operating-mode").props.accessibilityLabel).toBe(
-        "CJ connected. Sandbox mode. Real fulfilment OFF"
-      )
-    );
-    expect(view.getByText(/No order is really placed with your supplier/)).toBeTruthy();
-  });
-
-  /**
-   * The §8 defect. "Pricing, publishing, Marketplace" rendered as "Pricing,
-   * publishing, Mark…" on a half-width tile, so the merchant was shown a word
-   * that had been cut in half rather than a sentence.
-   */
-  it("gives the import-settings tile a subtitle that fits the tile", async () => {
-    const { view } = await hubWith([supplierStatus()]);
-
-    await waitFor(() => expect(view.getByText("Your pricing and publishing rules")).toBeTruthy());
-    expect(view.queryByText("Pricing, publishing, Marketplace")).toBeNull();
-  });
-
-  it("counts products as imported and live, not imported alone", async () => {
-    const { view } = await hubWith([
-      supplierStatus({ products: { ...supplierStatus().products, imported: 12, published: 3, live: 3 } })
-    ]);
-
-    await waitFor(() => expect(view.getByText("12 imported · 3 live")).toBeTruthy());
-  });
-
-  /**
-   * The word is "live", so the number must be the live one.
-   *
-   * Observed against production on 2026-09-27: this tile read "101 imported ·
-   * 101 live" for a catalogue buyer discovery answered with 39. It rendered
-   * `products.published`, which is only the two-column decision — the merchant
-   * published and a moderator approved. Publication also needs stock, and 62 of
-   * those products sat at quantity 0, so `marketplace_listing_lifecycle`
-   * answered `in_stock` for every one of them and no buyer could reach any.
-   *
-   * A merchant reading "101 live" over an unreachable catalogue has no symptom
-   * left to chase: the store looks full and nothing sells. `published` is still
-   * on the wire and deliberately unused here — the assertion below fails if the
-   * tile ever reaches for it again, which is the only thing keeping the two
-   * numbers from quietly becoming one.
-   */
-  it("shows the live count, not the published count, when they disagree", async () => {
-    const { view } = await hubWith([
-      supplierStatus({
-        products: { ...supplierStatus().products, imported: 101, published: 101, live: 39 }
-      })
-    ]);
-
-    await waitFor(() => expect(view.getByText("101 imported · 39 live")).toBeTruthy());
-    expect(view.queryByText("101 imported · 101 live")).toBeNull();
-  });
-
-  /**
-   * `live: null` is "this server did not say", and zero is not that.
-   *
-   * Every other count here defaults a missing number to zero, which is right
-   * when zero is the reassuring answer and wrong when it is the alarming one. An
-   * older deployment that has not learned to send `live` would otherwise report
-   * a perfectly healthy catalogue as nothing live at all — a false alarm that
-   * sends a merchant looking for a fault that does not exist. Dropping the
-   * clause says less and claims nothing.
-   */
-  it("omits the live clause rather than saying zero when the server did not send it", async () => {
-    const { view } = await hubWith([
-      supplierStatus({
-        products: { ...supplierStatus().products, imported: 101, published: 101, live: null }
-      })
-    ]);
-
-    await waitFor(() => expect(view.getByText("101 imported")).toBeTruthy());
-    expect(view.queryByText("101 imported · 0 live")).toBeNull();
-  });
-
-  /**
-   * Every number on these tiles is produced somewhere else.
-   *
-   * Seen in production on 2026-09-27: a seller imported 32 of the 33 products in
-   * their cart on the Import cart screen, came back here, and read "33 ready to
-   * import" above "66 imported · 15 live". All three numbers were from before the
-   * run. The hub is where a merchant comes to decide whether an import worked at
-   * all, so a count that predates the work is not a cosmetic lag — it is the app
-   * denying something it has already done, which is the failure this whole screen
-   * family was just corrected for.
-   *
-   * The reload is asserted through the *rendered counts* rather than through a
-   * call count, because a re-read whose answer never reaches the tiles fixes
-   * nothing a merchant can see.
-   */
-  it("re-reads the tiles when the merchant comes back, rather than answering from before", async () => {
-    const { view, nav } = await hubWith(
-      [supplierStatus({ products: { ...supplierStatus().products, imported: 66, published: 15, live: 15 } })],
-      { count: 33 }
-    );
-
-    await waitFor(() => expect(view.getByText("66 imported · 15 live")).toBeTruthy());
-    expect(view.getByText("33 ready to import")).toBeTruthy();
-
-    // The import the merchant just ran on the other screen.
-    mockGetSupplierStatus.mockResolvedValue(
-      storeStatus([
-        supplierStatus({ products: { ...supplierStatus().products, imported: 98, published: 47, live: 47 } })
-      ])
-    );
-    mockGetCart.mockResolvedValue({ count: 1 });
-    await focus(nav);
-
-    await waitFor(() => expect(view.getByText("98 imported · 47 live")).toBeTruthy());
-    expect(view.getByText("1 ready to import")).toBeTruthy();
-    expect(view.queryByText("33 ready to import")).toBeNull();
-    expect(view.queryByText("66 imported · 15 live")).toBeNull();
-  });
-
-  /**
-   * The reload must not cost the merchant the screen. `load("refresh")` keeps the
-   * populated tiles up while it runs; `load("initial")` would blank all six back
-   * to the loading state on every single return to this screen, which reads as
-   * the hub crashing and reopening.
-   */
-  it("keeps the tiles up while it re-reads, instead of blanking them", async () => {
-    const { view, nav } = await hubWith(
-      [supplierStatus({ products: { ...supplierStatus().products, imported: 66, published: 15, live: 15 } })],
-      { count: 33 }
-    );
-    await waitFor(() => expect(view.getByText("66 imported · 15 live")).toBeTruthy());
-
-    let release: (value: StoreSupplierStatus) => void = () => undefined;
-    mockGetSupplierStatus.mockReturnValue(
-      new Promise<StoreSupplierStatus>((resolve) => {
-        release = resolve;
-      })
-    );
-    await act(async () => {
-      nav.__emit("focus");
-      await Promise.resolve();
-    });
-
-    // Mid-flight: the old answer is still the one on screen.
-    expect(view.getByText("66 imported · 15 live")).toBeTruthy();
-    await act(async () => {
-      release(
-        storeStatus([
-          supplierStatus({ products: { ...supplierStatus().products, imported: 98, published: 47, live: 47 } })
-        ])
-      );
-      await Promise.resolve();
-    });
-    await settle();
-
-    await waitFor(() => expect(view.getByText("98 imported · 47 live")).toBeTruthy());
-  });
-
-  /**
-   * A focus that arrives before the scope resolves, or after it failed, has no
-   * store to read. `load` returns early without a scope, so the event cannot
-   * start a request against nothing — and cannot overwrite the state the scope
-   * failure produced with a generic one.
-   */
-  it("does not read anything on focus when there is no store to read", async () => {
-    mockResolveScope.mockRejectedValue(new PulseApiError("down", 500, "server_error"));
-    const nav = navigation();
-    const view = render(<DropshippingHubScreen navigation={nav} route={{ params: {} }} />);
-    await settle();
-
-    mockGetSupplierStatus.mockClear();
-    await focus(nav);
-
-    expect(mockGetSupplierStatus).not.toHaveBeenCalled();
-    expect(view.queryByText(/ready to import/)).toBeNull();
-  });
-
-  /**
-   * Two suppliers where one cannot authenticate is not "2 connected". That
-   * count sent a merchant looking elsewhere for the reason half their catalogue
-   * had stopped importing.
-   */
-  it("does not count a broken supplier among the connected ones", async () => {
-    const { view } = await hubWith([
-      supplierStatus(),
-      supplierStatus({ connectionId: "conn-2", connectionState: "AUTH_EXPIRED" })
-    ]);
-
-    await waitFor(() => expect(view.getByText("1 of 2 working")).toBeTruthy());
-    expect(view.queryByText("2 connected")).toBeNull();
-  });
-
-  it("marks the tile the server's next action belongs to", async () => {
-    const { view } = await hubWith([
-      supplierStatus({
-        syncState: "SYNCED",
-        products: { ...supplierStatus().products, imported: 4, published: 4, live: 4, draft: 2 },
-        nextAction: "REVIEW_DRAFTS"
-      })
-    ]);
-
-    await waitFor(() => expect(view.getByText(/saved as drafts/)).toBeTruthy());
-    const products = view.getByLabelText(/^Products\./);
-    expect(products.props.accessibilityLabel).toContain("Needs attention");
-  });
-
-  /**
-   * §24. A fulfilment read that failed comes back as `orders: null`, and the
-   * tile must describe the screen rather than claim nothing is waiting — the
-   * sales it would be claiming about are ones a buyer has already paid for.
-   */
-  it("never reports an unreadable order count as nothing waiting", async () => {
-    const { view } = await hubWith([supplierStatus({ orders: null })]);
-
-    await waitFor(() =>
-      expect(view.getByText("Sales waiting on a supplier purchase")).toBeTruthy()
-    );
-    expect(view.queryByText("Nothing waiting")).toBeNull();
-  });
-
-  it("leads with the orders that cannot be placed, not the ones that can", async () => {
-    const { view } = await hubWith([
-      supplierStatus({
-        orders: { awaitingSupplierOrder: 5, readyToPlace: 2, blocked: 3, placed: 1 }
-      })
-    ]);
-
-    await waitFor(() => expect(view.getByText("3 can't be ordered yet")).toBeTruthy());
-    expect(view.queryByText("2 ready to order")).toBeNull();
-  });
-
-  /**
-   * A cart whose own request failed must not blank the six tiles that do not
-   * depend on it, and must not report itself as empty either.
-   */
-  it("keeps the rest of the hub when only the cart fails to load", async () => {
-    const { view } = await hubWith(
-      [supplierStatus({ products: { ...supplierStatus().products, imported: 7, published: 7, live: 7 } })],
-      new PulseApiError("nope", 500, "server_error")
-    );
-
-    await waitFor(() => expect(view.getByText("7 imported · 7 live")).toBeTruthy());
-    expect(view.getByText("Ready when you are")).toBeTruthy();
-    expect(view.queryByText("Nothing selected yet")).toBeNull();
-  });
-
-  /**
-   * The banner is a claim about the deployment, so it cannot outlive the read
-   * that produced it. Left behind, it would sit over an error screen describing
-   * a state nobody checked.
-   */
-  it("does not leave a stale operating-mode banner over a failed read", async () => {
-    mockResolveScope.mockResolvedValue({
-      status: "ok",
-      scope: { businessId: "biz-1", storeId: "store-1" },
-      storeName: "M&W Store",
-      source: "MARKETPLACE_SELLER"
-    });
-    mockGetSupplierStatus.mockResolvedValueOnce(storeStatus([supplierStatus()]));
-    mockGetCart.mockResolvedValue({ count: 0 });
-    const view = render(
-      <DropshippingHubScreen navigation={navigation()} route={{ params: {} }} />
-    );
-    await settle();
-    await waitFor(() => expect(view.getByTestId("hub-operating-mode")).toBeTruthy());
-
-    mockGetSupplierStatus.mockRejectedValue(new PulseApiError("down", 500, "server_error"));
-    fireEvent(view.UNSAFE_getByType(RefreshControl), "refresh");
-    await settle();
-
-    await waitFor(() => expect(view.queryByTestId("hub-operating-mode")).toBeNull());
   });
 });
 
@@ -1510,13 +1097,9 @@ describe("ConnectSupplierScreen", () => {
  * ------------------------------------------------------------------ */
 
 describe("SuppliersScreen", () => {
-  function suppliersScreen() {
-    return render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
-  }
-
   it("does not read a failed list as an empty one", async () => {
-    mockGetSupplierStatus.mockRejectedValue(new Error("network down"));
-    const view = suppliersScreen();
+    mockListConnections.mockRejectedValue(new Error("network down"));
+    const view = render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
     await settle();
 
     await waitFor(() => expect(view.getByText(/Suppliers didn't load/)).toBeTruthy());
@@ -1524,8 +1107,8 @@ describe("SuppliersScreen", () => {
   });
 
   it("shows the empty invitation only when the server actually said zero", async () => {
-    mockGetSupplierStatus.mockResolvedValue(storeStatus([]));
-    const view = suppliersScreen();
+    mockListConnections.mockResolvedValue([]);
+    const view = render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
     await settle();
 
     await waitFor(() => expect(view.getByText("No suppliers connected yet.")).toBeTruthy());
@@ -1535,10 +1118,8 @@ describe("SuppliersScreen", () => {
   it("never renders an unrecognised status as connected", async () => {
     // A provider adding a status this app has not seen must not be optimistically
     // rounded up. The raw word is unhelpful; "Connected and working" is wrong.
-    mockGetSupplierStatus.mockResolvedValue(
-      storeStatus([supplierStatus({ connectionState: "PENDING_MANUAL_REVIEW" })])
-    );
-    const view = suppliersScreen();
+    mockListConnections.mockResolvedValue([connection({ status: "PENDING_MANUAL_REVIEW" })]);
+    const view = render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
     await settle();
 
     await waitFor(() => expect(view.getByText("PENDING_MANUAL_REVIEW")).toBeTruthy());
@@ -1546,10 +1127,8 @@ describe("SuppliersScreen", () => {
   });
 
   it("offers no catalogue for a connection that cannot serve one", async () => {
-    mockGetSupplierStatus.mockResolvedValue(
-      storeStatus([supplierStatus({ connectionState: "AUTH_EXPIRED" })])
-    );
-    const view = suppliersScreen();
+    mockListConnections.mockResolvedValue([connection({ status: "AUTH_EXPIRED" })]);
+    const view = render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
     await settle();
 
     await waitFor(() => expect(view.getByText(/credential expired/i)).toBeTruthy());
@@ -1558,381 +1137,22 @@ describe("SuppliersScreen", () => {
     expect(view.queryByText("Find products")).toBeNull();
   });
 
-  /**
-   * The §1 banner, and the reason it is asserted on the *healthy* fixture.
-   *
-   * Sandbox and "real fulfilment is off" are the two facts a merchant is most
-   * likely to miss, precisely because everything else on the row looks fine.
-   */
-  it("states the operating mode in one line rather than leaving it to be discovered", async () => {
-    mockGetSupplierStatus.mockResolvedValue(storeStatus());
-    const view = suppliersScreen();
+  it("states that real fulfilment is off rather than leaving it to be discovered", async () => {
+    mockListConnections.mockResolvedValue([connection()]);
+    const view = render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
     await settle();
 
-    await waitFor(() =>
-      expect(view.getByText("CJ connected · Sandbox mode · Real fulfilment OFF")).toBeTruthy()
-    );
-    expect(view.getByText(/No order is really placed with your supplier/)).toBeTruthy();
-  });
-
-  /**
-   * The banner is unconditional. A banner that only appears in sandbox teaches
-   * the merchant to read its absence as production — and absence is also what a
-   * failed request looks like.
-   */
-  it("still states the operating mode when every answer is the dull one", async () => {
-    mockGetSupplierStatus.mockResolvedValue(
-      storeStatus([supplierStatus({ environment: "PRODUCTION", realOrderSubmissionEnabled: true })])
-    );
-    const view = suppliersScreen();
-    await settle();
-
-    await waitFor(() =>
-      expect(view.getByText("CJ connected · Production mode · Real fulfilment ON")).toBeTruthy()
-    );
-    // Neither explanation applies, and printing one anyway would describe a
-    // restriction that is not in force.
-    expect(view.queryByText(/No order is really placed/)).toBeNull();
-    expect(view.queryByText(/switched off platform-wide/)).toBeNull();
-  });
-
-  /**
-   * Two switches, and they can disagree. A production connection with the
-   * platform switch closed is not in sandbox and must not be described as
-   * though it were.
-   */
-  it("explains a closed platform switch in production without calling it sandbox", async () => {
-    mockGetSupplierStatus.mockResolvedValue(
-      storeStatus([supplierStatus({ environment: "PRODUCTION" })])
-    );
-    const view = suppliersScreen();
-    await settle();
-
-    await waitFor(() =>
-      expect(view.getByText("CJ connected · Production mode · Real fulfilment OFF")).toBeTruthy()
-    );
-    expect(view.getByText(/switched off platform-wide/)).toBeTruthy();
-    expect(view.queryByText(/No order is really placed/)).toBeNull();
-  });
-
-  /**
-   * The §21 claim, stated as an absence. A connection with nothing imported has
-   * no sync state, and the row this replaced said "Up to date" about it — a
-   * green tick over a catalogue that did not exist.
-   */
-  it("does not call an empty catalogue synced", async () => {
-    mockGetSupplierStatus.mockResolvedValue(storeStatus());
-    const view = suppliersScreen();
-    await settle();
-
-    await waitFor(() => expect(view.getByText("Nothing imported yet")).toBeTruthy());
-    expect(view.queryByText("Up to date")).toBeNull();
-  });
-
-  /** The server decides what is next; the screen only renders it. */
-  it("promotes the server's next action as the one button that answers what to do", async () => {
-    mockGetSupplierStatus.mockResolvedValue(
-      storeStatus([
-        supplierStatus({
-          fulfillmentShopState: "NOT_SELECTED",
-          externalShopId: null,
-          nextAction: "CHOOSE_FULFILLMENT_SHOP",
-          needsAttention: true
-        })
-      ])
-    );
-    const view = suppliersScreen();
-    await settle();
-
-    await waitFor(() =>
-      expect(view.getByTestId("supplier-primary-action-conn-1")).toBeTruthy()
-    );
-    expect(view.getByText(/Orders can't be sent until you pick the shop/)).toBeTruthy();
-    expect(view.getByText("Needs attention")).toBeTruthy();
-  });
-
-  /**
-   * A row with nothing wrong still reads as a row with nothing wrong. Drawing
-   * "you have drafts" with the same weight as a revoked credential is how a
-   * permanent badge stops being read.
-   */
-  it("does not badge a working supplier as needing attention", async () => {
-    mockGetSupplierStatus.mockResolvedValue(
-      storeStatus([supplierStatus({ nextAction: "IMPORT_FIRST_PRODUCT" })])
-    );
-    const view = suppliersScreen();
-    await settle();
-
-    // Read off the badge itself rather than off the word: "Working" is also the
-    // Connection health row's value, and a text query that matched either would
-    // pass with the badge missing entirely.
-    await waitFor(() =>
-      expect(view.getByTestId("supplier-attention-conn-1").props.accessibilityLabel).toBe("Working")
-    );
-    expect(view.queryByText("Needs attention")).toBeNull();
+    await waitFor(() => expect(view.getByText("Connected and working")).toBeTruthy());
+    expect(view.getByText(/Sending real orders to this supplier is switched off/)).toBeTruthy();
+    expect(view.getByText("Sandbox")).toBeTruthy();
   });
 
   it("sends an unauthenticated merchant to sign in, not to retry", async () => {
-    mockGetSupplierStatus.mockRejectedValue(new PulseApiError("nope", 401));
-    const view = suppliersScreen();
+    mockListConnections.mockRejectedValue(new PulseApiError("nope", 401));
+    const view = render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
     await settle();
 
     await waitFor(() => expect(view.getByText(/not signed in to this store/i)).toBeTruthy());
-  });
-
-  /**
-   * A failed read takes the banner down with it.
-   *
-   * Leaving "Real fulfilment OFF" on screen beside an error states a
-   * platform-level fact this render has no evidence for — and it is the one
-   * fact a merchant would act on.
-   */
-  it("does not leave a stale operating-mode banner over a failed read", async () => {
-    mockGetSupplierStatus.mockResolvedValueOnce(storeStatus());
-    const view = suppliersScreen();
-    await settle();
-    await waitFor(() => expect(view.getByTestId("supplier-operating-mode")).toBeTruthy());
-
-    mockGetSupplierStatus.mockRejectedValue(new Error("network down"));
-    await act(async () => {
-      fireEvent.press(view.getByLabelText(/Check this supplier connection/));
-    });
-    await settle();
-
-    await waitFor(() => expect(view.getByText(/Suppliers didn't load/)).toBeTruthy());
-    expect(view.queryByTestId("supplier-operating-mode")).toBeNull();
-  });
-});
-
-/* ------------------------------------------------------------------ *
- * 2a — Suppliers: the actions have to be on the screen
- * ------------------------------------------------------------------ */
-
-/**
- * §2. The defect these assert against was reported as "unacceptable", and it
- * was: three action pills were laid out in one unwrapped row wider than the
- * card, and React Native neither scrolls nor shrinks an overflowing row — it
- * draws the remainder outside the parent's bounds, where it is invisible *and*
- * untappable. "Check connection" existed, rendered, passed every test that
- * queried it by text, and could not be pressed by a human being.
- *
- * Which is why these read style objects rather than text. A test that finds a
- * button by its label proves the button is in the tree; it says nothing about
- * whether the button is on the screen, and the tree is exactly what was never
- * in doubt. The same lesson is already written down twice in this codebase —
- * the Business Hub revert and `StoreQuickLinkTile` — so the rule here is not
- * prose about geometry, it is arithmetic over the geometry that shipped.
- */
-describe("SuppliersScreen — no action lands off the card", () => {
-  /**
-   * The three-pill row, which is the case that overflowed.
-   *
-   * `REVIEW_DRAFTS` is the next action that demotes neither "Find products" nor
-   * "Sync now", so all three secondaries render together. A fixture with fewer
-   * would fit in one line and measure nothing.
-   */
-  async function threePillRow() {
-    mockGetSupplierStatus.mockResolvedValue(
-      storeStatus([supplierStatus({ nextAction: "REVIEW_DRAFTS" })])
-    );
-    const view = render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
-    await settle();
-    await waitFor(() => expect(view.getByTestId("supplier-secondary-actions-conn-1")).toBeTruthy());
-    return view;
-  }
-
-  it("wraps the action row instead of drawing the third button past the card edge", async () => {
-    const view = await threePillRow();
-    const row = view.getByTestId("supplier-secondary-actions-conn-1");
-    const layout = StyleSheet.flatten(row.props.style);
-
-    expect(row.props.children).toHaveLength(3);
-    expect(layout.flexDirection).toBe("row");
-    // The whole fix. Without it the third pill is outside the parent's bounds.
-    expect(layout.flexWrap).toBe("wrap");
-  });
-
-  it("gives no pill enough width for three to share a line", async () => {
-    const view = await threePillRow();
-    const pills = view
-      .getByTestId("supplier-secondary-actions-conn-1")
-      .props.children.map((pill: { props: { style: unknown } }) =>
-        StyleSheet.flatten(pill.props.style)
-      );
-
-    expect(pills).toHaveLength(3);
-    for (const pill of pills) {
-      // `flexWrap` alone does not decide *when* to wrap — a pill that can
-      // shrink below a third of the row would let all three stay on one line
-      // and clip their labels instead, which is the same defect wearing the
-      // fix's clothes. A basis over a third forces the third one down.
-      expect(Number.parseFloat(String(pill.flexBasis))).toBeGreaterThan(33.4);
-      expect(Number.parseFloat(String(pill.flexBasis))).toBeLessThanOrEqual(50);
-      // Tappable once it is on screen: the row above was only half the report.
-      expect(pill.minHeight).toBeGreaterThanOrEqual(44);
-    }
-  });
-
-  it("lets every action label wrap rather than clipping it to an abbreviation", async () => {
-    const view = await threePillRow();
-    // Both kinds of button, because they are styled by different rules and the
-    // primary carries the longest label in the file ("Choose fulfilment shop").
-    const labels = [
-      view.getByText("Review drafts"),
-      view.getByText("Find products"),
-      view.getByText("Sync now"),
-      view.getByText("Check connection")
-    ];
-
-    for (const label of labels) {
-      expect(label.props.numberOfLines).toBe(2);
-      // Capped, not uncapped: at the largest accessibility sizes an uncapped
-      // label pushes its own pill past the card edge, which is the defect
-      // again. Capped at 1 would ignore the OS setting, which is its own
-      // accessibility failure — so this asserts a ceiling in between.
-      expect(label.props.maxFontSizeMultiplier).toBeGreaterThan(1);
-      expect(label.props.maxFontSizeMultiplier).toBeLessThanOrEqual(1.5);
-    }
-  });
-
-  it("puts the one thing to do next above the three things that can wait", async () => {
-    const view = await threePillRow();
-    const primary = view.getByTestId("supplier-primary-action-conn-1");
-
-    // Full width and on its own line: a primary that is the same size as its
-    // neighbours in the same row cannot mean "this one first", which is what
-    // §2 asked the layout to say.
-    expect(StyleSheet.flatten(primary.props.style).alignSelf).toBe("stretch");
-    const order = view
-      .getByTestId("supplier-secondary-actions-conn-1")
-      .props.children.map((pill: { props: { accessibilityLabel: string } }) =>
-        pill.props.accessibilityLabel
-      );
-    expect(order[0]).toMatch(/Find products/);
-    expect(primary.props.accessibilityLabel).toMatch(/Review drafts/);
-  });
-});
-
-/* ------------------------------------------------------------------ *
- * 2b — Suppliers: asking for a sync
- * ------------------------------------------------------------------ */
-
-/**
- * "Sync now" had to become true before it could be drawn.
- *
- * The button reports what was *queued*, never what was synced: the request
- * returns the moment the jobs are enqueued and a background worker drains them.
- * A merchant told "synced" would read the same stale costs straight back off the
- * screen and conclude the button does nothing — which is worse than the screen
- * that had no button at all, because now they have stopped watching.
- */
-describe("SuppliersScreen — asking for a sync", () => {
-  async function screenWith(over: Partial<SupplierStatus> = {}) {
-    mockGetSupplierStatus.mockResolvedValue(storeStatus([supplierStatus(over)]));
-    const view = render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
-    await settle();
-    return view;
-  }
-
-  async function pressSync(view: ReturnType<typeof render>) {
-    await waitFor(() => expect(view.getByLabelText(/Refresh this supplier's products/)).toBeTruthy());
-    await act(async () => {
-      fireEvent.press(view.getByLabelText(/Refresh this supplier's products/));
-    });
-    await settle();
-  }
-
-  it("asks the server to re-read this connection", async () => {
-    mockRequestResync.mockResolvedValue({
-      queuedProducts: 4,
-      queuedJobs: 11,
-      truncated: false,
-      maxProducts: 200
-    });
-    const view = await screenWith({ products: { ...supplierStatus().products, imported: 4 } });
-    await pressSync(view);
-
-    expect(mockRequestResync).toHaveBeenCalledWith(expect.anything(), "conn-1");
-    await waitFor(() => expect(view.getByText(/Refreshing your connection and 4 products/)).toBeTruthy());
-  });
-
-  it("says a refresh started, never that anything synced", async () => {
-    mockRequestResync.mockResolvedValue({
-      queuedProducts: 0,
-      queuedJobs: 3,
-      truncated: false,
-      maxProducts: 200
-    });
-    const view = await screenWith();
-    await pressSync(view);
-
-    await waitFor(() => expect(view.getByText(/Checking your connection/)).toBeTruthy());
-    expect(view.queryByText(/Synced/)).toBeNull();
-    expect(view.queryByText("Up to date")).toBeNull();
-  });
-
-  /**
-   * The cap is said out loud. A merchant whose catalogue is larger than one
-   * request may enqueue, told simply "syncing", goes looking for a failure that
-   * is really a bound.
-   */
-  it("says so when only part of the catalogue was queued", async () => {
-    mockRequestResync.mockResolvedValue({
-      queuedProducts: 200,
-      queuedJobs: 403,
-      truncated: true,
-      maxProducts: 200
-    });
-    const view = await screenWith({ products: { ...supplierStatus().products, imported: 900 } });
-    await pressSync(view);
-
-    await waitFor(() => expect(view.getByText(/first 200 products/)).toBeTruthy());
-    expect(view.getByText(/Sync again when it finishes/)).toBeTruthy();
-  });
-
-  /**
-   * Named as a failure to *start*, which is what happened. "Sync failed" would
-   * describe a sync that never ran, and sends the merchant to their supplier's
-   * status page instead of to the button they just pressed.
-   */
-  it("reports a refusal as a refusal to start", async () => {
-    mockRequestResync.mockRejectedValue(new PulseApiError("x", 503, "provider_unavailable"));
-    const view = await screenWith();
-    await pressSync(view);
-
-    await waitFor(() => expect(view.getByText(/Couldn't start a refresh just now/)).toBeTruthy());
-  });
-
-  it("sends an unauthenticated merchant to sign in rather than blaming the supplier", async () => {
-    mockRequestResync.mockRejectedValue(new PulseApiError("x", 401));
-    const view = await screenWith();
-    await pressSync(view);
-
-    await waitFor(() => expect(view.getByText(/Sign in again to refresh this supplier/)).toBeTruthy());
-  });
-
-  it("re-reads the status afterwards so the figures can move", async () => {
-    mockRequestResync.mockResolvedValue({
-      queuedProducts: 0,
-      queuedJobs: 3,
-      truncated: false,
-      maxProducts: 200
-    });
-    const view = await screenWith();
-    await pressSync(view);
-
-    expect(mockGetSupplierStatus).toHaveBeenCalledTimes(2);
-  });
-
-  /**
-   * A disconnected supplier is offered no sync, for the same reason it is
-   * offered no catalogue: the request cannot succeed, and an offer that cannot
-   * succeed is worse than no offer.
-   */
-  it("offers no sync on a connection that cannot be read", async () => {
-    const view = await screenWith({ connectionState: "AUTH_EXPIRED" });
-    await waitFor(() => expect(view.getByText(/credential expired/i)).toBeTruthy());
-    expect(view.queryByLabelText(/Refresh this supplier's products/)).toBeNull();
   });
 });
 
@@ -1957,12 +1177,7 @@ describe("SuppliersScreen — asking for a sync", () => {
  * been the claim.
  */
 describe("SuppliersScreen — choosing a fulfilment shop", () => {
-  const UNBOUND = supplierStatus({
-    fulfillmentShopState: "NOT_SELECTED",
-    externalShopId: null,
-    nextAction: "CHOOSE_FULFILLMENT_SHOP",
-    needsAttention: true
-  });
+  const UNBOUND = connection({ externalShopId: null });
 
   function shop(over: Record<string, unknown> = {}) {
     return {
@@ -1976,7 +1191,7 @@ describe("SuppliersScreen — choosing a fulfilment shop", () => {
   }
 
   async function suppliers(rows = [UNBOUND]) {
-    mockGetSupplierStatus.mockResolvedValue(storeStatus(rows));
+    mockListConnections.mockResolvedValue(rows);
     const view = render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
     await settle();
     return view;
@@ -1984,9 +1199,9 @@ describe("SuppliersScreen — choosing a fulfilment shop", () => {
 
   async function openPicker(rows = [UNBOUND]) {
     const view = await suppliers(rows);
-    await waitFor(() => expect(view.getByLabelText(/Choose fulfilment shop for this supplier/)).toBeTruthy());
+    await waitFor(() => expect(view.getByLabelText(/Choose a fulfilment shop/)).toBeTruthy());
     await act(async () => {
-      fireEvent.press(view.getByLabelText(/Choose fulfilment shop for this supplier/));
+      fireEvent.press(view.getByLabelText(/Choose a fulfilment shop/));
     });
     await settle();
     return view;
@@ -2000,14 +1215,14 @@ describe("SuppliersScreen — choosing a fulfilment shop", () => {
 
     // It does not claim to be working. That sentence is what this row said
     // before any of this existed, over a connection that could not ship.
-    await waitFor(() => expect(view.getByText(/Orders can't be sent until you pick the shop/)).toBeTruthy());
+    await waitFor(() => expect(view.getByText(/orders need a fulfilment shop/i)).toBeTruthy());
     expect(view.queryByText("Connected and working")).toBeNull();
     // And importing is untouched, which is the whole reason a shopless
     // connection is allowed in the first place.
     expect(view.getByText("Find products")).toBeTruthy();
 
     await act(async () => {
-      fireEvent.press(view.getByLabelText(/Choose fulfilment shop for this supplier/));
+      fireEvent.press(view.getByLabelText(/Choose a fulfilment shop/));
     });
     await settle();
     await waitFor(() => expect(view.getByText("Main shop")).toBeTruthy());
@@ -2021,32 +1236,22 @@ describe("SuppliersScreen — choosing a fulfilment shop", () => {
     // The connection list is re-read rather than patched locally: it is what
     // every other surface reads, and one source for "what is bound" is worth
     // the extra call.
-    await waitFor(() => expect(mockGetSupplierStatus).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockListConnections).toHaveBeenCalledTimes(2));
   });
 
   it("offers no shop picker to a connection that already has one", async () => {
-    // `supplierStatus()` is bound by default, as most fixtures here are.
-    const view = await suppliers([supplierStatus()]);
+    // `connection()` is bound by default, as most fixtures here are.
+    const view = await suppliers([connection()]);
     await waitFor(() => expect(view.getByText("Connected and working")).toBeTruthy());
-    expect(view.queryByLabelText(/Choose fulfilment shop for this supplier/)).toBeNull();
+    expect(view.queryByLabelText(/Choose a fulfilment shop/)).toBeNull();
   });
 
   it("offers no shop picker to a connection that could not read a list anyway", async () => {
     // An expired credential cannot fetch shops, so a picker on it would open
     // straight onto a reauth error the merchant did not ask for.
-    const view = await suppliers([
-      supplierStatus({
-        connectionState: "AUTH_EXPIRED",
-        fulfillmentShopState: "NOT_SELECTED",
-        externalShopId: null,
-        nextAction: "RECONNECT_SUPPLIER",
-        needsAttention: true
-      })
-    ]);
-    // The server's own next action is reconnecting, so that — not the shop — is
-    // what the row asks for, and the picker it would otherwise offer is gone.
-    await waitFor(() => expect(view.getByText(/can't be reached with the credential/i)).toBeTruthy());
-    expect(view.queryByLabelText(/Choose fulfilment shop for this supplier/)).toBeNull();
+    const view = await suppliers([connection({ status: "AUTH_EXPIRED", externalShopId: null })]);
+    await waitFor(() => expect(view.getByText(/credential expired/i)).toBeTruthy());
+    expect(view.queryByLabelText(/Choose a fulfilment shop/)).toBeNull();
   });
 
   /**
@@ -2061,12 +1266,8 @@ describe("SuppliersScreen — choosing a fulfilment shop", () => {
     const view = await openPicker();
 
     await waitFor(() => expect(view.getByText("This supplier account has no shops.")).toBeTruthy());
-    expect(view.getByText(/Create one there, then check again below/)).toBeTruthy();
+    expect(view.getByText(/Create one there, then reopen this list/)).toBeTruthy();
     expect(view.queryByText(/didn't load/)).toBeNull();
-    // And the control that sentence points at is really there. The copy used to
-    // ask the merchant to close and reopen the picker, which is the same read
-    // with more steps and nothing on screen to tell them it had happened.
-    expect(view.getByLabelText("Check for shops again")).toBeTruthy();
   });
 
   it("does not read a failed shop read as an account with no shops", async () => {
@@ -2157,181 +1358,14 @@ describe("SuppliersScreen — choosing a fulfilment shop", () => {
       expect(view.getByText(/already sends orders to a different shop/i)).toBeTruthy());
     // The row behind it still says what it said: nothing was bound, so nothing
     // about the connection changed.
-    expect(view.getByText(/Orders can't be sent until you pick the shop/)).toBeTruthy();
-    expect(mockGetSupplierStatus).toHaveBeenCalledTimes(1);
+    expect(view.getByText(/orders need a fulfilment shop/i)).toBeTruthy();
+    expect(mockListConnections).toHaveBeenCalledTimes(1);
   });
 
   it("reads the shop list for the connection whose picker was opened", async () => {
     mockListConnectionShops.mockResolvedValue({ shops: [shop()], boundShopId: null });
-    await openPicker([{ ...UNBOUND, connectionId: "conn-7" }]);
+    await openPicker([connection({ id: "conn-7", externalShopId: null })]);
     expect(mockListConnectionShops).toHaveBeenCalledWith(expect.anything(), "conn-7");
-  });
-
-  /**
-   * The failure this whole investigation was about, seen from the screen.
-   *
-   * For two weeks this merchant's picker said "This supplier account has no
-   * shops" over an account that owned one. The server was rejecting CJ's
-   * `code: 0` success envelope, and `connection_shops` was translating that
-   * rejection into an empty list — so a parser fault was printed as a fact
-   * about the merchant's supplier account, in a sentence they had no way to
-   * doubt and no action that could fix.
-   *
-   * The server now sends `shop_list_unavailable` (502) instead. This asserts
-   * the sentence that replaced it: a problem on our side of the wire, with a
-   * retry, and no claim about what the account owns.
-   */
-  it("does not tell a merchant their account is empty when the list failed to load", async () => {
-    mockListConnectionShops.mockRejectedValue(new PulseApiError("x", 502, "shop_list_unavailable"));
-    const view = await openPicker();
-
-    await waitFor(() => expect(view.getByText(/supplier isn't responding/i)).toBeTruthy());
-    expect(view.queryByText("This supplier account has no shops.")).toBeNull();
-    // Retryable, because it is: nothing about the account has to change first.
-    expect(view.getByLabelText(/^Retry\./)).toBeTruthy();
-  });
-
-  /**
-   * A credential that expires between the list loading and the row rendering.
-   *
-   * The row-level guard two tests up stops a picker opening on a connection
-   * already known to be expired. It cannot stop a credential expiring while the
-   * picker is open, and that failure must not land in the empty state either —
-   * "you own no shops" is the one answer a merchant cannot act on when the real
-   * problem is a signed-out supplier.
-   */
-  it("reads an expired supplier credential as a credential problem, not an empty account", async () => {
-    mockListConnectionShops.mockRejectedValue(new PulseApiError("x", 401, "reauth_required"));
-    const view = await openPicker();
-
-    await waitFor(() => expect(view.queryByText("This supplier account has no shops.")).toBeNull());
-    expect(view.queryByText(/Create one there, then reopen this list/)).toBeNull();
-  });
-
-  /**
-   * A shop switched off in the supplier's console, which is not the same
-   * refusal as a shop of the wrong kind even though dispatch answers both with
-   * one code.
-   *
-   * The server separates them for display only. It matters because the two
-   * point in opposite directions: this merchant can turn their shop back on,
-   * while a Shopify storefront will never take an API order. Reading the
-   * wrong-kind sentence over a switched-off shop sends them looking for a
-   * problem with the shop's type that does not exist.
-   */
-  it("says a switched-off shop is switched off, not the wrong kind of shop", async () => {
-    mockListConnectionShops.mockResolvedValue({
-      shops: [
-        shop({ externalShopId: "shop-c", name: "Paused shop", status: 0,
-               fulfillable: false, unfulfillableReason: "shop_disabled" }),
-        shop()
-      ],
-      boundShopId: null
-    });
-    const view = await openPicker();
-
-    await waitFor(() => expect(view.getByText("Paused shop")).toBeTruthy());
-    expect(view.getByText(/Switched off in your supplier's console/)).toBeTruthy();
-    expect(view.queryByText(/won't take orders for this shop from an outside app/)).toBeNull();
-    expect(view.queryByLabelText(/Send orders to Paused shop/)).toBeNull();
-  });
-
-  /**
-   * More than one usable shop, which is the case a picker exists for at all.
-   *
-   * With one shop the screen could bind it automatically and nobody would
-   * notice the difference; with two, the choice is real and the wrong one is a
-   * misrouted order. So the tapped shop — not the first, not the last — is the
-   * one that must reach the server.
-   */
-  it("sends orders to the shop that was tapped when several could take them", async () => {
-    mockListConnectionShops.mockResolvedValue({
-      shops: [shop(), shop({ externalShopId: "shop-b", name: "Second shop" }),
-              shop({ externalShopId: "shop-c", name: "Third shop" })],
-      boundShopId: null
-    });
-    mockBindConnectionShop.mockResolvedValue(undefined);
-    const view = await openPicker();
-    await waitFor(() => expect(view.getByText("Third shop")).toBeTruthy());
-    expect(view.getByLabelText(/Send orders to Second shop/)).toBeTruthy();
-
-    await act(async () => {
-      fireEvent.press(view.getByLabelText(/Send orders to Second shop/));
-    });
-    await settle();
-
-    expect(mockBindConnectionShop).toHaveBeenCalledWith(expect.anything(), "conn-1", "shop-b");
-    expect(mockBindConnectionShop).toHaveBeenCalledTimes(1);
-  });
-
-  /**
-   * A shop created in the supplier's console while this screen was open.
-   *
-   * There is no client-side shop cache, and this is the test that keeps it that
-   * way: every read is live, so a merchant who goes to CJ, makes a shop and
-   * comes back sees it without signing out or reinstalling. A cache added here
-   * later — even a well-meant one keyed on connection id — fails this.
-   *
-   * The empty state carries its own control for exactly this, which no other
-   * empty state in the app does. Without it the only way to re-read is to close
-   * the picker and reopen it, and the merchant has to be told so in prose.
-   */
-  it("re-reads the list on request rather than showing what it saw before", async () => {
-    mockListConnectionShops.mockResolvedValue({ shops: [], boundShopId: null });
-    const view = await openPicker();
-    await waitFor(() => expect(view.getByText("This supplier account has no shops.")).toBeTruthy());
-
-    // The shop is created in the supplier's console, outside this app.
-    mockListConnectionShops.mockResolvedValue({
-      shops: [shop({ name: "Just created" })], boundShopId: null });
-    await act(async () => {
-      fireEvent.press(view.getByLabelText("Check for shops again"));
-    });
-    await settle();
-
-    await waitFor(() => expect(view.getByText("Just created")).toBeTruthy());
-    expect(view.queryByText("This supplier account has no shops.")).toBeNull();
-    expect(view.getByLabelText(/Send orders to Just created/)).toBeTruthy();
-  });
-
-  /**
-   * What the merchant sees on the row itself once the choice is made, and after
-   * closing the app.
-   *
-   * Both halves are the same claim: the binding lives on the server and the row
-   * is drawn from it. So the card changes without a manual refresh because it
-   * re-reads, and it survives a relaunch because there was never any local
-   * state to survive. Asserting only the first would leave "it looked right
-   * until you closed the app" untested, which is the shape this bug had.
-   */
-  it("shows the bound shop on the card straight away and again after a relaunch", async () => {
-    const BOUND = supplierStatus({ fulfillmentShopState: "BOUND", externalShopId: "shop-a",
-                                   needsAttention: false });
-    mockListConnectionShops.mockResolvedValue({ shops: [shop()], boundShopId: null });
-    mockBindConnectionShop.mockResolvedValue(undefined);
-    mockGetSupplierStatus.mockResolvedValueOnce(storeStatus([UNBOUND]));
-    mockGetSupplierStatus.mockResolvedValue(storeStatus([BOUND]));
-
-    const view = render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
-    await settle();
-    await act(async () => {
-      fireEvent.press(view.getByLabelText(/Choose fulfilment shop for this supplier/));
-    });
-    await settle();
-    await act(async () => {
-      fireEvent.press(view.getByLabelText(/Send orders to Main shop/));
-    });
-    await settle();
-
-    await waitFor(() => expect(view.getByText("Connected and working")).toBeTruthy());
-    expect(view.queryByText(/Orders can't be sent until you pick the shop/)).toBeNull();
-    view.unmount();
-
-    // A cold start reads the same server state and draws the same row.
-    const relaunched = render(<SuppliersScreen navigation={navigation()} route={{ params: {} }} />);
-    await settle();
-    await waitFor(() => expect(relaunched.getByText("Connected and working")).toBeTruthy());
-    expect(relaunched.queryByLabelText(/Choose fulfilment shop for this supplier/)).toBeNull();
   });
 });
 
@@ -2377,11 +1411,6 @@ describe("ImportCartScreen", () => {
       published: publishedCount === results.length,
       publishedCount,
       needsAttention: results.filter((item) => item.outcome === "NEEDS_ATTENTION").length,
-      // Derived from the rows for the same reason as the counts above: a test
-      // that could state "5 deferred" alongside no deferred row could make the
-      // summary line claim anything.
-      deferred: results.filter((item) => item.outcome === "DEFERRED").length,
-      maxPerImport: null,
       pricingRule: { type: "TARGET_MARGIN", value: 45 },
       pricingSource: "PLATFORM_DEFAULT",
       autoPublish: true,
@@ -2399,15 +1428,13 @@ describe("ImportCartScreen", () => {
   async function renderCart(
     items: ImportCartItem[],
     staleCount = 0,
-    policy: StoreImportPolicy | "unavailable" = storePolicy(),
-    maxPerImport: number | null = null
+    policy: StoreImportPolicy | "unavailable" = storePolicy()
   ) {
     mockGetCart.mockResolvedValue({
       items,
       count: items.length,
       staleCount,
-      maxItems: 200,
-      maxPerImport
+      maxItems: 200
     });
     if (policy === "unavailable") {
       mockGetStorePolicy.mockRejectedValue(new PulseApiError("down", 503, "provider_unavailable"));
@@ -2474,8 +1501,8 @@ describe("ImportCartScreen", () => {
   it("reports every per-item outcome instead of one verdict", async () => {
     const { view } = await renderCart([
       cartItem({ itemId: "item-1", externalProductId: "ext-1" }),
-      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: pricedPreview("Linen Shirt") }),
-      cartItem({ itemId: "item-3", externalProductId: "ext-3", preview: pricedPreview("Canvas Tote") })
+      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: null }),
+      cartItem({ itemId: "item-3", externalProductId: "ext-3", preview: null })
     ]);
     await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
 
@@ -2522,7 +1549,7 @@ describe("ImportCartScreen", () => {
   it("says so plainly when the whole run went live", async () => {
     const { view } = await renderCart([
       cartItem({ itemId: "item-1", externalProductId: "ext-1" }),
-      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: pricedPreview("Linen Shirt") })
+      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: null })
     ]);
     await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
 
@@ -2608,7 +1635,7 @@ describe("ImportCartScreen", () => {
   it("only points at the store for a product that is actually in it", async () => {
     const { view, nav } = await renderCart([
       cartItem({ itemId: "item-1", externalProductId: "ext-1" }),
-      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: pricedPreview("Linen Shirt") })
+      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: null })
     ]);
     await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
 
@@ -2737,188 +1764,6 @@ describe("ImportCartScreen", () => {
     expect(view.queryByText("This one couldn't be imported")).toBeNull();
   });
 
-  /* ---------------------------------------------------------------- *
-   * When the client stops waiting
-   *
-   * Measured in production, after the bearer fix let the request
-   * through at all: a 25-product CJ import answered `200` in 153,968ms
-   * having imported all 25. The app was on the shared 15-second budget,
-   * so it had aborted 139 seconds earlier and shown "Your supplier
-   * didn't respond. Nothing was imported — your cart is unchanged."
-   *
-   * Every clause of that was false. The supplier did respond. The
-   * products were imported. The cart went from 58 rows to 33 while the
-   * sentence claiming otherwise was on screen.
-   *
-   * The budget is fixed at the api layer (`IMPORT_TIMEOUT_MS`, above the
-   * server's own 120s ceiling), but a budget can always be exceeded, so
-   * these two pin the behaviour when it is: say the true thing, and go
-   * and look. A merchant who is told nothing happened stops; a merchant
-   * who is told it is still running checks — and the cart is where they
-   * check.
-   * ---------------------------------------------------------------- */
-
-  it("does not claim a rollback it cannot know about when it stops waiting", async () => {
-    const { view } = await renderCart([cartItem()]);
-    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
-
-    // Exactly what `pulseApi` throws when its own budget expires: the request
-    // is still in flight on the server, and this device will never learn how it
-    // ended.
-    mockImportSelected.mockRejectedValue(
-      new PulseApiError("PulseSoc took too long to respond.", 504, "request_timeout")
-    );
-
-    await act(async () => {
-      fireEvent.press(view.getByLabelText("Import and publish 1 products to your store"));
-    });
-    await settle();
-
-    await waitFor(() => expect(view.getByText(/still running on PulseSoc/)).toBeTruthy());
-    // Asserted as the absence of the claim rather than the presence of the new
-    // sentence alone. A future edit that appends "nothing was imported" to the
-    // honest copy would pass a positive-only check and reintroduce the lie.
-    expect(view.queryByText(/[Nn]othing was imported/)).toBeNull();
-    expect(view.queryByText(/cart is unchanged/)).toBeNull();
-    expect(view.queryByText(/supplier didn't respond/)).toBeNull();
-  });
-
-  it("re-reads the cart after it stops waiting, because rows may have left it", async () => {
-    const { view } = await renderCart([cartItem()]);
-    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
-    const readsBefore = mockGetCart.mock.calls.length;
-
-    mockImportSelected.mockRejectedValue(
-      new PulseApiError("PulseSoc took too long to respond.", 504, "request_timeout")
-    );
-
-    await act(async () => {
-      fireEvent.press(view.getByLabelText("Import and publish 1 products to your store"));
-    });
-    await settle();
-
-    // The server empties the cart as it commits, so this read is the merchant's
-    // only readout on a run the app is no longer watching.
-    await waitFor(() => expect(mockGetCart.mock.calls.length).toBeGreaterThan(readsBefore));
-  });
-
-  it("still blames the supplier when the supplier is the one who failed", async () => {
-    // The guard above must not swallow a real provider failure: `503
-    // provider_unavailable` is the server telling us CJ refused, and there the
-    // "nothing was imported" claim is the server's, not ours.
-    const { view } = await renderCart([cartItem()]);
-    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
-
-    mockImportSelected.mockRejectedValue(new PulseApiError("down", 503, "provider_unavailable"));
-
-    await act(async () => {
-      fireEvent.press(view.getByLabelText("Import and publish 1 products to your store"));
-    });
-    await settle();
-
-    await waitFor(() => expect(view.getByText(/supplier didn't respond/)).toBeTruthy());
-    expect(view.queryByText(/still running on PulseSoc/)).toBeNull();
-  });
-
-  /* ---------------------------------------------------------------- *
-   * A cart bigger than one import
-   *
-   * The reported production failure. A seller with 58 products in the
-   * cart pressed "Import & publish 58" and was told "That import didn't
-   * run." — the server refused the whole request with `batch_too_large`
-   * and `stateForError` has no mapping for that code, so it fell through
-   * to a bare ERROR. The server now defers the overflow instead, and
-   * these four assert the seller is told the truth before the tap, after
-   * the tap, and in neither case told something went wrong.
-   * ---------------------------------------------------------------- */
-
-  function manyItems(count: number): ImportCartItem[] {
-    return Array.from({ length: count }, (_, index) =>
-      cartItem({ itemId: `item-${index}`, externalProductId: `ext-${index}` })
-    );
-  }
-
-  it("does not offer to import more than one run can take", async () => {
-    // The button is the promise. "Import & publish 30" over a run that
-    // takes 25 is the sentence this incident was reported as.
-    const { view } = await renderCart(manyItems(30), 0, storePolicy(), 25);
-    await waitFor(() => expect(view.getAllByText("Ceramic Mug").length).toBeGreaterThan(0));
-
-    expect(view.getByText("Import & publish 25")).toBeTruthy();
-    expect(view.queryByText("Import & publish 30")).toBeNull();
-    expect(view.getByText(/25 products at a time. The other 5 stay in your cart/)).toBeTruthy();
-  });
-
-  it("counts the whole selection when one run can serve it", async () => {
-    // The note and the truncation are conditional, not permanent. A cart
-    // inside the cap must read exactly as it did before this change.
-    const { view } = await renderCart(manyItems(3), 0, storePolicy(), 25);
-    await waitFor(() => expect(view.getAllByText("Ceramic Mug").length).toBeGreaterThan(0));
-
-    expect(view.getByText("Import & publish 3")).toBeTruthy();
-    expect(view.queryByText(/stay in your cart/)).toBeNull();
-  });
-
-  it("does not call a deferred product a failure", async () => {
-    // The summary's arithmetic is the trap: `failed` was derived by
-    // subtracting the known-good outcomes from `requested`, so five
-    // perfectly good deferred rows read as "5 couldn't be imported" —
-    // sending the seller hunting a fault that does not exist.
-    const { view } = await renderCart(manyItems(3), 0, storePolicy(), 2);
-    await waitFor(() => expect(view.getAllByText("Ceramic Mug").length).toBeGreaterThan(0));
-
-    mockImportSelected.mockResolvedValue(
-      runResult(
-        [
-          itemResult({ itemId: "item-0", externalProductId: "ext-0" }),
-          itemResult({ itemId: "item-1", externalProductId: "ext-1" }),
-          itemResult({
-            itemId: "item-2",
-            externalProductId: "ext-2",
-            outcome: "DEFERRED",
-            listingId: null,
-            published: false,
-            variantCount: null,
-            priceLabel: null,
-            quantity: null
-          })
-        ],
-        { maxPerImport: 2 }
-      )
-    );
-
-    await act(async () => {
-      fireEvent.press(view.getByLabelText("Import and publish 2 products to your store"));
-    });
-    await settle();
-
-    await waitFor(() => expect(view.getByText(/1 still in your cart/)).toBeTruthy());
-    expect(view.queryByText(/couldn't be imported/)).toBeNull();
-    expect(view.getByText("Still in your cart — import again to continue")).toBeTruthy();
-    expect(view.getByText(/You can run this again/)).toBeTruthy();
-  });
-
-  it("says what to do when the server refuses the batch outright", async () => {
-    // The fallthrough itself, asserted directly. A `batch_too_large` is
-    // still reachable — a request naming more ids than a cart can hold —
-    // and it must never reach the generic sentence again.
-    const { view } = await renderCart(manyItems(3), 0, storePolicy(), 2);
-    await waitFor(() => expect(view.getAllByText("Ceramic Mug").length).toBeGreaterThan(0));
-
-    mockImportSelected.mockRejectedValue(new PulseApiError("too many", 400, "batch_too_large"));
-
-    await act(async () => {
-      fireEvent.press(view.getByLabelText("Import and publish 2 products to your store"));
-    });
-    await settle();
-
-    await waitFor(() =>
-      expect(view.getByText(/more products than one import can take/)).toBeTruthy()
-    );
-    expect(view.getByText(/importing 2 or fewer/)).toBeTruthy();
-    expect(view.queryByText("That import didn't run. Nothing was imported and your cart is unchanged.")).toBeNull();
-  });
-
   it("says a cost is unknown rather than printing a zero", async () => {
     const { view } = await renderCart([
       cartItem({ preview: { ...cartItem().preview!, costLowCents: null, costHighCents: null } })
@@ -2927,68 +1772,6 @@ describe("ImportCartScreen", () => {
 
     expect(view.getByText("— cost unknown")).toBeTruthy();
     expect(view.queryByText(/0\.00 cost/)).toBeNull();
-  });
-
-  it("will not offer to publish a row it cannot price", async () => {
-    const { view } = await renderCart([
-      cartItem({ preview: { ...cartItem().preview!, costLowCents: null, costHighCents: null } })
-    ]);
-    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
-
-    // The defect in one assertion: "Import & publish 1" over a row with no cost
-    // promises a live, priced product. The server then refuses it on
-    // MISSING_PRICE and leaves a draft, so the button was never telling the
-    // truth about what the tap would do.
-    expect(view.queryByText(/Import & publish/)).toBeNull();
-    expect(view.getByText("Resolve pricing issues")).toBeTruthy();
-    expect(
-      view.getByLabelText("Resolve pricing issues on 1 products before importing").props
-        .accessibilityState.disabled
-    ).toBe(true);
-  });
-
-  it("names the unpriced product and says how to get past it", async () => {
-    const { view } = await renderCart([
-      cartItem({ itemId: "item-1", externalProductId: "ext-1" }),
-      cartItem({
-        itemId: "item-2",
-        externalProductId: "ext-2",
-        preview: { ...pricedPreview("Linen Shirt")!, costLowCents: null, costHighCents: null }
-      })
-    ]);
-    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
-
-    // Named, not counted. "1 product has no cost" leaves the merchant hunting a
-    // list for which one.
-    // Matched as one string so the title has to be *inside the note*, not merely
-    // somewhere on screen — it is also the row's own label, which would pass a
-    // looser assertion while the note said nothing useful.
-    expect(
-      view.getByText(/couldn't read a supplier cost for Linen Shirt.*Untick it to import the rest/)
-    ).toBeTruthy();
-  });
-
-  it("lets the priced rows through once the unpriced one is unticked", async () => {
-    const { view } = await renderCart([
-      cartItem({ itemId: "item-1", externalProductId: "ext-1" }),
-      cartItem({
-        itemId: "item-2",
-        externalProductId: "ext-2",
-        preview: { ...pricedPreview("Linen Shirt")!, costLowCents: null, costHighCents: null }
-      })
-    ]);
-    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
-    expect(view.getByText("Resolve pricing issues")).toBeTruthy();
-
-    // The positive control. Without it the pair above only proves the button can
-    // be disabled, not that unticking is the way out — which is the whole
-    // instruction the note gives the merchant.
-    await act(async () => {
-      fireEvent.press(view.getByLabelText("Linen Shirt, selected for import"));
-    });
-
-    expect(view.getByText("Import & publish 1")).toBeTruthy();
-    expect(view.queryByText("Resolve pricing issues")).toBeNull();
   });
 
   it("promises a re-check rather than importing the stale numbers on screen", async () => {
@@ -3809,78 +2592,6 @@ describe("DropshippingProductsScreen", () => {
     await waitFor(() =>
       expect(view.getByText("Last sync from your supplier failed")).toBeTruthy()
     );
-  });
-
-  /**
-   * The landing state of an import the publish gate declined.
-   *
-   * `review_ready` is what the server writes now, and the only reason this
-   * screen has to say anything new is that `draft` was doing two jobs: "no
-   * buyer can reach this", which is still true, and "this is waiting on you",
-   * which was never true of a gate refusal. A merchant who released 58 products
-   * and read "Draft" back on all of them has been told their import did not
-   * work. These four tests are the client half of that fix; the server half is
-   * `_release_for_review` in `services/business_os/suppliers/drafts.py`.
-   */
-  describe("a product the publish gate declined", () => {
-    const inReview = () => row({ listingId: 78, title: "Linen Shirt", status: "review_ready" });
-
-    it("reads as in review, and still says it is not in the store", async () => {
-      // Both halves matter and they are one sentence in the UI: the merchant's
-      // move is over (not "Draft"), and the product is not yet selling (still
-      // not "In your store"). Dropping either half is a different wrong answer.
-      const { view } = await renderProducts([inReview()]);
-      await waitFor(() =>
-        expect(view.getByText("In review — not in your store yet")).toBeTruthy()
-      );
-      expect(view.queryByText("Not in your store yet")).toBeNull();
-      expect(view.queryByText("In your store")).toBeNull();
-    });
-
-    it("has a filter of its own, which asks the server for the released rows", async () => {
-      // The chip is only worth having if it narrows the query. `review_ready`
-      // is the literal the server stores, so a chip that sent "IN_REVIEW" or
-      // "pending_review" would quietly come back empty.
-      const { view } = await renderProducts([inReview()]);
-      mockListImportedProducts.mockClear();
-      fireEvent.press(view.getByLabelText("In review"));
-      await waitFor(() => expect(mockListImportedProducts).toHaveBeenCalled());
-      expect(mockListImportedProducts.mock.calls[0][2]).toMatchObject({
-        status: "review_ready"
-      });
-    });
-
-    it("counts the released rows apart from the drafts, and asks for different things", async () => {
-      // A store can hold both populations at once -- gate refusals from an
-      // auto-publishing store, and true drafts from a store that turned
-      // auto-publish off. One combined count would tell the merchant to go and
-      // publish products that are already released.
-      const { view } = await renderProducts([row(), inReview(), row({ listingId: 79 })]);
-      await waitFor(() =>
-        expect(view.getByText(/2 of these are drafts/)).toBeTruthy()
-      );
-      expect(view.getByText(/1 of these are in review/)).toBeTruthy();
-      // Look, don't publish again. The draft note says "set its price and
-      // publish it"; saying that about a released product is the same bad
-      // instruction the word "Draft" was giving.
-      expect(view.getByText(/Open one to see what it's waiting on/)).toBeTruthy();
-    });
-
-    it("does not claim everything imported is published when there are no drafts", async () => {
-      // The old empty copy read "No drafts -- everything you've imported is
-      // published." Now that a refusal lands in review rather than in drafts,
-      // an empty Drafts tab is the *normal* case for a store holding products
-      // that are not published at all, so that sentence became a false one.
-      mockListImportedProducts.mockResolvedValue({ items: [], count: 0 });
-      const nav = navigation();
-      const view = render(<DropshippingProductsScreen navigation={nav} route={route} />);
-      await settle();
-      fireEvent.press(view.getByLabelText("Drafts"));
-      await waitFor(() =>
-        expect(view.getByText("No drafts — nothing here is waiting on you.")).toBeTruthy()
-      );
-      expect(view.queryByText(/everything you've imported is published/)).toBeNull();
-    });
   });
 });
 

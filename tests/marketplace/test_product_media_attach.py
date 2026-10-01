@@ -27,7 +27,6 @@ os.close(_HANDLE)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
 
 import bot  # noqa: E402
-from services import db as db_service  # noqa: E402
 
 
 def _use_module_database():
@@ -51,32 +50,9 @@ class ProductMediaAttachTest(unittest.TestCase):
         self._real_require_account = bot.require_account
         self._real_emit = bot.pulse_emit_event
         bot.pulse_emit_event = lambda *a, **k: None
-        self._empty_the_media_tables()
         self.owner = self._make_seller("owner")
         self.other = self._make_seller("other")
         self.buyer = self._make_user("buyer")
-
-    def _empty_the_media_tables(self):
-        """Clear what this suite writes, because the accounts are now stable.
-
-        The module database is shared across tests and never emptied. Isolation
-        used to come for free from the wrong place: every ``setUp`` minted a brand
-        new account for ``mkmedia_owner@example.com``, so each test looked at rows
-        keyed to a merchant id nobody else had used. Deduplicating the accounts --
-        which ``ux_users_email_identity`` requires -- takes that away, and the
-        three tests asserting *nothing was attached* started counting the previous
-        tests' rows.
-
-        So the isolation is now explicit and in the right place. Only these two
-        tables: ``users`` and ``marketplace_sellers`` are reused on purpose, and
-        deleting them would put the fixtures back to minting duplicates.
-        """
-        conn = bot.db()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM marketplace_product_media")
-        cur.execute("DELETE FROM chat_media_uploads")
-        conn.commit()
-        conn.close()
 
     def tearDown(self):
         bot.api_account_user = self._real_api_account_user
@@ -87,51 +63,27 @@ class ProductMediaAttachTest(unittest.TestCase):
     # fixtures
     # ------------------------------------------------------------------
     def _make_user(self, role):
-        """Created once per address and reused thereafter.
-
-        The module database is not emptied between tests, so an unconditional
-        INSERT here minted a second account at ``mkmedia_seller@example.com`` on
-        every test after the first -- the duplicate-account state
-        ``ux_users_email_identity`` now forbids, produced by a fixture rather than
-        by the product. Nothing in this suite needs a fresh row, only a seller.
-        """
-        username = f"mkmedia_{role}"
-        email = f"{username}@example.com"
         conn = bot.db()
         cur = conn.cursor()
-        cur.execute("SELECT user_id FROM users WHERE email = ? LIMIT 1", (email,))
-        existing = cur.fetchone()
-        if existing is not None:
-            user_id = int(db_service.row_values(existing)[0])
-        else:
-            cur.execute(
-                "INSERT INTO users (username, display_name, email, account_status, created_at) VALUES (?,?,?,?,?)",
-                (username, f"Media {role}", email, "active", self.now),
-            )
-            user_id = int(cur.lastrowid)
+        username = f"mkmedia_{role}"
+        cur.execute(
+            "INSERT INTO users (username, display_name, email, account_status, created_at) VALUES (?,?,?,?,?)",
+            (username, f"Media {role}", f"{username}@example.com", "active", self.now),
+        )
+        user_id = int(cur.lastrowid)
         conn.commit()
         conn.close()
         return {"user_id": user_id, "username": username}
 
     def _make_seller(self, role):
-        """Idempotent for the same reason ``_make_user`` is, and one layer down.
-
-        ``marketplace_sellers.user_id`` has always been unique. This INSERT only
-        ever succeeded because ``_make_user`` handed it a *different* user id each
-        test -- which it did by creating a duplicate account. With the accounts
-        deduplicated the seller row is reached twice, so it has to tolerate that.
-        """
         user = self._make_user(role)
         conn = bot.db()
         cur = conn.cursor()
-        cur.execute("SELECT 1 FROM marketplace_sellers WHERE user_id = ? LIMIT 1",
-                    (user["user_id"],))
-        if cur.fetchone() is None:
-            cur.execute(
-                "INSERT INTO marketplace_sellers (user_id, business_name, display_name, status, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?)",
-                (user["user_id"], f"{role} store", f"{role} store", "approved", self.now, self.now),
-            )
+        cur.execute(
+            "INSERT INTO marketplace_sellers (user_id, business_name, display_name, status, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (user["user_id"], f"{role} store", f"{role} store", "approved", self.now, self.now),
+        )
         conn.commit()
         conn.close()
         return user

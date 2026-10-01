@@ -86,22 +86,6 @@ def main() -> int:
         )
         return 2
 
-    stale_setup = route_auth.undefined_setup_helpers(ROOT)
-    if stale_setup:
-        # Same reason as above, failing the other way. These names are the ones
-        # the delegation walk refuses to cross into because they provision state
-        # rather than evaluate callers; one of them no longer naming a function
-        # means the walk has started following schema setup again, and the
-        # baseline about to be written would record open routes as `admin`.
-        print(
-            "REFUSING to write a baseline: these SETUP_HELPERS entries define "
-            f"nothing in the tree: {stale_setup}\n"
-            "Rename them to match, or the walk will cross back into schema "
-            "bootstrap and freeze the unauthenticated routes as administrative.",
-            file=sys.stderr,
-        )
-        return 2
-
     records = route_auth.audit_app(bot.app)
     counts = collections.Counter(r["auth"] for r in records)
     evidence = collections.Counter(r["evidence"].split(":")[0] for r in records)

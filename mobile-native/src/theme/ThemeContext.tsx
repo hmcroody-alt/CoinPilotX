@@ -95,15 +95,7 @@ const WHITE: Palette = {
   glassStrong: "#fafafa"
 };
 
-/**
- * High-contrast overrides: maximize text/border separation, drop translucency.
- *
- * `glass`/`glassStrong` here are pre-collapsed to `surface`/`surfaceRaised`,
- * because `buildTheme` overwrites both whenever high contrast is on — a stored
- * value that disagreed with the collapse would be unreachable at runtime and
- * still be read by the parity gate, which is how `glassStrong` sat at
- * `background` long enough to look intentional.
- */
+/** High-contrast overrides: maximize text/border separation, drop translucency. */
 const HIGH_CONTRAST_DARK: Partial<Palette> = {
   background: "#000000",
   surface: "#0a0a0a",
@@ -113,7 +105,7 @@ const HIGH_CONTRAST_DARK: Partial<Palette> = {
   border: "#7b8b99",
   accent: "#4dffc8",
   glass: "#0a0a0a",
-  glassStrong: "#161616"
+  glassStrong: "#000000"
 };
 
 const HIGH_CONTRAST_LIGHT: Partial<Palette> = {
@@ -125,7 +117,7 @@ const HIGH_CONTRAST_LIGHT: Partial<Palette> = {
   border: "#4a5a68",
   accent: "#00614a",
   glass: "#ffffff",
-  glassStrong: "#f0f0f0"
+  glassStrong: "#ffffff"
 };
 
 /** Spacing/typography scale. `compactDensity` tightens rows for power users. */
@@ -174,21 +166,6 @@ export type Theme = {
   reduceMotion: boolean;
   /** True when blur/translucency should be replaced with opaque fills. */
   reduceTransparency: boolean;
-  /**
-   * True when the high-contrast palette is in effect.
-   *
-   * Exposed separately because `reduceTransparency` above is the OR of the
-   * appearance preference and this one, and the two ask for different things.
-   * Reduce Transparency says "stop layering" and leaves the palette alone, so a
-   * surface that is already opaque is entitled to keep its own colour. High
-   * contrast *substitutes* the palette (`HIGH_CONTRAST_DARK`), so a surface
-   * tuned against the normal ramp has to stand down and defer to `colors`.
-   *
-   * A consumer that can only see the OR cannot tell those two apart, and so
-   * applies the palette substitution to someone who merely switched off blur.
-   * That is precisely the defect this field exists to let callers avoid.
-   */
-  highContrast: boolean;
   hapticFeedback: boolean;
   /** Multiply any explicit fontSize by this. */
   scaleFont: (size: number) => number;
@@ -242,13 +219,7 @@ export function buildTheme(
 
   if (appearance.reduceTransparency || accessibility.highContrast) {
     palette.glass = palette.surface;
-    // `surfaceRaised`, not `background`. Each glass token collapses to the
-    // opaque surface it was approximating, so switching translucency off
-    // changes the material and not the hierarchy. Collapsing the *strongest*
-    // surface to the page made a card indistinguishable from what it sits on —
-    // survivable while glass was itself near-black, a visible defect now that
-    // it is graphite and the page is not.
-    palette.glassStrong = palette.surfaceRaised;
+    palette.glassStrong = palette.background;
   }
 
   const compact = appearance.compactDensity;
@@ -273,7 +244,6 @@ export function buildTheme(
     },
     reduceMotion: accessibility.reduceMotion,
     reduceTransparency: appearance.reduceTransparency || accessibility.highContrast,
-    highContrast: accessibility.highContrast,
     hapticFeedback: accessibility.hapticFeedback,
     scaleFont: (size: number) => Math.round(size * fontScale),
     duration: (ms: number) => (accessibility.reduceMotion ? 0 : ms)

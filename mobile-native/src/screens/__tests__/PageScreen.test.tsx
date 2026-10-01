@@ -302,11 +302,9 @@ describe("shop and videos show the presence's own inventory, not a global list",
       listing,
       title: "Tour Hoodie"
     });
-    // `MarketplaceDetail` is the browse grid, and routing through it would now
-    // still reach the product -- it forwards a `listingId` it cannot find
-    // rather than dropping it. It is the wrong route regardless: it mounts the
-    // grid, runs a second search, and forwards whatever that search returned,
-    // discarding the snapshot and title this screen is already holding.
+    // `MarketplaceDetail` is the browse grid. It forwards to the product only
+    // if the listing happens to be inside an unfiltered global search, so for a
+    // small seller it lands the buyer in the marketplace at large instead.
     expect(navigation.navigate).not.toHaveBeenCalledWith(
       "MarketplaceDetail",
       expect.anything()

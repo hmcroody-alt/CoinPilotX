@@ -6,20 +6,11 @@
  * no route, so it could not be deep-linked, shared, or returned to after
  * checkout, and its back gesture dismissed the product rather than the step.
  *
- * A caller may hand over the whole listing or just its id. When the snapshot is
- * there it is used as-is — a refetch would put a spinner in front of data the
- * caller already holds — and when it is absent the screen reads
- * `GET /api/pulse/marketplace/listings/<id>`. That second path is the one that
- * matters: the four commerce discovery surfaces navigate with an id alone (feed
- * strip, reels chip, messenger strip, marketplace shelves) and before the
- * read-one route existed every one of them rendered "This item is no longer
- * available" for a listing that was on sale. `listingId` is carried alongside either way,
- * so identity (save state, cart writes, reporting) never depends on the payload.
- *
- * Loading, failed and unavailable are three states and exactly one renders. A
- * request that did not answer is not an empty shelf: telling a buyer on a
- * dropped connection that the seller withdrew the item is a lie the retry
- * affordance exists to avoid.
+ * The listing travels in the route params rather than being refetched. There is
+ * no read-one endpoint — `/api/pulse/marketplace/search` is the only buyer-side
+ * read — so a refetch here would mean a second search and a spinner in front of
+ * data the caller already holds. `listingId` is carried alongside so identity
+ * (save state, cart writes, reporting) never depends on the snapshot.
  *
  * What this screen deliberately does not render: `safety_score`,
  * `approval_status`, `publication_state`, `publication_label`, or any other
@@ -33,9 +24,8 @@
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -48,7 +38,6 @@ import {
   View
 } from "react-native";
 import {
-  fetchMarketplaceListing,
   MarketplaceListing,
   marketplaceSellerAuthor,
   marketplaceWebUrl,
@@ -56,10 +45,6 @@ import {
   startMarketplaceSellerChat
 } from "../api/marketplace";
 import { addToCart } from "../api/marketplaceCommerce";
-import { CommerceEngagementAction, recordCommerceEngagement } from "../api/commerceDiscovery";
-import { commerceAttributionFor } from "../commerce/attribution";
-import { MarketplaceDiscoveryShelves } from "../commerce/MarketplaceDiscoveryShelves";
-import { useProductDetailCommerce } from "../commerce/useProductDetailCommerce";
 import {
   canPurchaseMarketplaceListing as canPurchaseListing,
   isStocklessMarketplaceListing as isStockless,
@@ -81,10 +66,6 @@ import { useAuth } from "../session/auth";
 import { ContentTranslation } from "../components/ContentTranslation";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { RootStackParamList } from "../navigation/types";
-import {
-  DeliveryEstimateLine,
-  useDeliveryEstimate
-} from "../components/commerce/DeliveryEstimateLine";
 import { peekSaveState, useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { storeLight } from "../theme/marketplaceLight";
@@ -99,21 +80,8 @@ type ProductAction = "save" | "report" | "message" | "cart" | "buy";
 const MAX_QTY = 20;
 
 export function MarketplaceProductScreen({ route, navigation }: Props) {
-  const snapshot = route.params?.listing as MarketplaceListing | undefined;
-  const listingId = Number(route.params?.listingId || snapshot?.id || 0);
-  /**
-   * The listing the screen renders, and how it got here.
-   *
-   * `load` is deliberately one value rather than three booleans, because the
-   * three outcomes are mutually exclusive and a shape that can express
-   * "failed *and* empty" is a shape that will eventually render both.
-   */
-  const [fetched, setFetched] = useState<MarketplaceListing | null>(null);
-  const [load, setLoad] = useState<"ready" | "loading" | "unavailable" | "failed">(
-    snapshot ? "ready" : listingId > 0 ? "loading" : "unavailable"
-  );
-  const [reloadNonce, setReloadNonce] = useState(0);
-  const listing = snapshot ?? fetched ?? undefined;
+  const listing = route.params?.listing as MarketplaceListing | undefined;
+  const listingId = Number(route.params?.listingId || listing?.id || 0);
   const { width } = useWindowDimensions();
   // This screen is registered `headerShown: false`, so it owns the whole window
   // including the status bar and the Dynamic Island. Without a top inset the
@@ -129,35 +97,7 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
   const viewerUserId = Number(authState.user?.user_id || 0);
   const sellerUserId = Number(listing?.seller_user_id || 0);
   const isOwnListing = viewerUserId > 0 && sellerUserId > 0 && viewerUserId === sellerUserId;
-  // Gated on `load === "ready"` rather than on `listingId`, because the server
-  // reads this listing's own category to justify the row's heading. Asking before
-  // the product resolved would be asking about a product that may not exist.
-  const relatedCommerce = useProductDetailCommerce({
-    listingId,
-    enabled: load === "ready",
-    refreshToken: reloadNonce
-  });
   const [qty, setQty] = useState(1);
-
-  /**
-   * When this should arrive, asked of the server and of nothing else.
-   *
-   * The reference is the listing id on its own: this screen has no variant
-   * selector, so there is no variant key to append, and `services/delivery`
-   * accepts a bare listing id as a reference to its default variant. The day a
-   * selector lands here, the selected key joins the reference and the estimate
-   * follows it — which is the whole reason the reference is a string the server
-   * parses rather than two arguments.
-   *
-   * `qty` is passed because freight is quoted for a parcel and three of something
-   * is a different parcel. No country: the server resolves the destination from
-   * the session, and a country this screen guessed would be a confident date for
-   * somewhere the buyer does not live.
-   */
-  const delivery = useDeliveryEstimate(listingId > 0 ? String(listingId) : null, {
-    quantity: qty,
-    debounceMs: 350
-  });
   // One action at a time, but each action reports its own progress. A shared
   // "busy" boolean made every button read "Please wait…" while a different
   // button was working, which is indistinguishable from a hang.
@@ -187,123 +127,9 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
   // reflected there without either screen knowing about the other.
   const savedState = useSavedState("marketplace", listingId, listing?.saved);
 
-  /**
-   * §18: the funnel past the click, for the arrivals that came from one.
-   *
-   * `commerceAttributionFor` returns null for every other way of reaching this
-   * screen — search, a deep link, the grid, a share — and that null is the
-   * point. Reporting an organic arrival against a placement would credit
-   * discovery with sales it did not cause, which is a worse outcome than not
-   * measuring at all.
-   *
-   * Keyed on the listing rather than on the mount so a re-render or a returning
-   * navigation does not restate the view. The server dedups these anyway
-   * (`eng:product_view:<placement>`), so this is about not sending the request,
-   * not about the count being right.
-   *
-   * Placed above the `!listing` early return because it is a hook. The guard
-   * inside it is on `listingId`, which is what this screen can act on even when
-   * the listing snapshot has not arrived.
-   */
-  const viewedRef = useRef(0);
-  useEffect(() => {
-    if (!listingId || viewedRef.current === listingId) return;
-    const attribution = commerceAttributionFor(listingId);
-    if (!attribution) return;
-    viewedRef.current = listingId;
-    recordCommerceEngagement(attribution, "product_view").catch(() => undefined);
-  }, [listingId]);
-
-  /**
-   * One funnel emit, or nothing at all.
-   *
-   * Every §18 event past the view goes through here so the two rules that make
-   * them safe are stated once: an unattributed arrival sends nothing, and the
-   * beacon never throws into a buyer action. A fire-and-forget call inside a
-   * purchase flow is exactly the kind of thing that must not be able to fail
-   * loudly.
-   *
-   * It no longer multiplies the price out. It used to send `unitMinor * qty` as
-   * the event's value, which made this screen the authority on what a placement
-   * earned — a number computed on the device, stored verbatim, and eventually
-   * summed by somebody. The server now prices the event from the listing and
-   * needs only the quantity, which it clamps to the listing's stock.
-   */
-  const emitCommerceFunnel = useCallback(
-    (action: CommerceEngagementAction) => {
-      const attribution = commerceAttributionFor(listingId);
-      if (!attribution) return;
-      recordCommerceEngagement(attribution, action, { quantity: qty }).catch(() => undefined);
-    },
-    [listingId, qty]
-  );
-
-  /**
-   * Read the listing when the caller only had its id.
-   *
-   * Skipped entirely when a snapshot arrived in the params, so the grid keeps
-   * its instant open. `fetchMarketplaceListing` returns null only for a listing
-   * the viewer may not see and throws for everything else, which is what lets
-   * the two failure states stay apart here.
-   */
-  useEffect(() => {
-    if (snapshot || !listingId) return;
-    let live = true;
-    setLoad("loading");
-    fetchMarketplaceListing(listingId)
-      .then((item) => {
-        if (!live) return;
-        if (item) {
-          setFetched(item);
-          setLoad("ready");
-        } else {
-          setFetched(null);
-          setLoad("unavailable");
-        }
-      })
-      .catch(() => {
-        if (!live) return;
-        setFetched(null);
-        setLoad("failed");
-      });
-    return () => {
-      live = false;
-    };
-  }, [listingId, reloadNonce, snapshot]);
-
-  if (load === "loading") {
-    return (
-      <View style={styles.unavailable} testID="marketplace-product-loading">
-        <ActivityIndicator color={storeLight.text.link} />
-        <Text style={styles.unavailableSubtitle}>Loading this product…</Text>
-      </View>
-    );
-  }
-
-  if (load === "failed") {
-    return (
-      <View style={styles.unavailable} testID="marketplace-product-error">
-        <Ionicons name="cloud-offline-outline" size={34} color={storeLight.text.muted} />
-        <Text style={styles.unavailableTitle}>We could not load this product.</Text>
-        <Text style={styles.unavailableSubtitle}>Check your connection and try again.</Text>
-        <Pressable
-          accessibilityRole="button"
-          style={styles.unavailableButton}
-          testID="marketplace-product-retry"
-          onPress={() => setReloadNonce((value) => value + 1)}
-        >
-          <Text style={styles.unavailableButtonText}>Try again</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" style={styles.unavailableButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.unavailableButtonText}>Go back</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
   if (!listing || !listingId) {
     return (
-      <View style={styles.unavailable} testID="marketplace-product-unavailable">
+      <View style={styles.unavailable}>
         <Ionicons name="pricetag-outline" size={34} color={storeLight.text.muted} />
         <Text style={styles.unavailableTitle}>This item is no longer available.</Text>
         <Pressable accessibilityRole="button" style={styles.unavailableButton} onPress={() => navigation.goBack()}>
@@ -415,10 +241,6 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
       // them to checkout here is the bug this screen exists to remove.
       await addToCart(listingId, qty);
       setNotice(`Added to cart · ${qty} × ${listing.title || "item"}`);
-      // §18, after the await: an add-to-cart that failed is not one. Emitting
-      // after the cart write also means the server can read its own cart row for
-      // the quantity and ignore the claim entirely.
-      emitCommerceFunnel("add_to_cart");
     } catch (error) {
       setNotice(buyerErrorCopy(error, "This item could not be added to your cart."));
     } finally {
@@ -434,20 +256,9 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
     }
     // Buy now bypasses the cart entirely — the backend's `buy_now` intent, not a
     // cart group of one, so nothing already in the cart is dragged into it.
-    // The unit price is multiplied out for the checkout CTA below: passing the
-    // bare label would have let it read "$5.00" on an order for two. It is
-    // deliberately *not* passed to the funnel event — that price is the
-    // server's to resolve, from the same listing row, through the same parser
-    // the eligibility gate uses.
+    // The unit price is multiplied out here: passing the bare label would have
+    // let the checkout CTA read "$5.00" on an order for two.
     const unitMinor = marketplaceListingPriceMinor(listing);
-    // §18. Emitted here, on the way *into* checkout, rather than from
-    // `MarketplaceCheckoutScreen` — checkout is a locked path this work must not
-    // touch, and "the buyer started checkout" is a fact this screen already
-    // knows. `purchase` has no equivalent safe hook point and is deliberately
-    // not wired; see the mission report. Buy now writes no cart row, so the
-    // server has no quantity of its own here and falls back to the clamped
-    // claim `emitCommerceFunnel` sends.
-    emitCommerceFunnel("checkout_started");
     const kind = resolveFulfillmentKind(listing);
     const thumbnail = marketplaceListingThumbnail(listing);
     navigation.navigate("MarketplaceCheckout", {
@@ -633,35 +444,12 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Delivery</Text>
           <Protection icon="cube-outline" text={fulfillmentCopy(listing)} />
-          {/* This used to be a hardcoded line: "Delivery timing is arranged with
-              the seller after your order is confirmed." It was true for a
-              locally-shipped listing and false for a CJ-fulfilled one, where the
-              supplier quotes a transit range and no seller arranges anything —
-              and it was shown on both, because the screen had no way to ask.
-              Now the server answers, and the seller-arranged sentence survives as
-              exactly one branch of `deliveryCopy` (`not_supplier_fulfilled`),
-              reached only for the listings it describes.
-
-              The component owns its own request rather than taking a prop: the
-              answer depends on a destination the server resolves from the
-              session, so it is not something this screen holds or could pass
-              down. */}
-          <DeliveryEstimateLine
-            answer={delivery.answer}
-            loading={delivery.loading}
-            onRetry={delivery.retry}
-          />
+          <Protection icon="calendar-outline" text="Delivery timing is arranged with the seller after your order is confirmed." />
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Buyer protection</Text>
-          {/* Names Stripe because Stripe is who takes the card: the sheet in
-              `api/stripePaymentSheet` collects it, so neither PulseSoc nor the
-              seller is ever handed the number. Hedged to "card payments"
-              because this block renders on every listing while the lane is
-              chosen at checkout, and a cash buyer is told the opposite by
-              `checkoutPaymentCopy` — that no Stripe charge will start. */}
-          <Protection icon="lock-closed-outline" text="Card payments are processed by Stripe — neither PulseSoc nor the seller ever sees your card details." />
+          <Protection icon="lock-closed-outline" text="Payment is handled by PulseSoc secure checkout — your card details are never shared with the seller." />
           <Protection icon="receipt-outline" text="Your order and receipt appear in Purchase History as soon as payment is confirmed." />
           <Protection icon="refresh-outline" text="Returns and disputes for eligible orders are opened from the order itself." />
         </View>
@@ -696,19 +484,6 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
         </View>
 
         {notice ? <Text style={styles.notice} accessibilityLiveRegion="polite">{notice}</Text> : null}
-
-        {/* Last in the scroll, below every affordance for buying *this* product.
-            A related-products rail placed above the buy button competes with the
-            conversion this screen exists for; placed here it is the way onward
-            for someone who has decided this one is not it. Renders nothing at all
-            when there is nothing to show — the hook returns an empty array and
-            the shelf answers null, so there is no empty container holding space
-            above the purchase bar. */}
-        <MarketplaceDiscoveryShelves
-          modules={relatedCommerce.modules}
-          navigation={navigation}
-          onFeedback={relatedCommerce.onFeedback}
-        />
       </ScrollView>
 
       {isOwnListing ? (
@@ -978,7 +753,6 @@ const styles = createThemedStyles(() => ({
     paddingHorizontal: 22
   },
   unavailableButtonText: { color: storeLight.text.link, fontSize: 14, fontWeight: "800" },
-  unavailableSubtitle: { color: storeLight.text.muted, fontSize: 14, fontWeight: "600", textAlign: "center" },
   unavailableTitle: { color: storeLight.text.primary, fontSize: 17, fontWeight: "900", textAlign: "center" },
   viewStore: { color: storeLight.text.link, fontSize: 13, fontWeight: "800" }
 }));

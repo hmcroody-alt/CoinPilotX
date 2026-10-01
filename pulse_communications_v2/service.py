@@ -239,15 +239,7 @@ MESSAGE_IDEMPOTENCY_INDEX = "idx_comm_v2_messages_client_idem"
 # protection at all.
 MESSAGE_IDEMPOTENCY_TABLE = "comm_v2_messages"
 MESSAGE_IDEMPOTENCY_COLUMNS = ("conversation_id", "sender_user_id", "client_message_id")
-# The predicate must match `_message_for_client_id` exactly, including its
-# deleted_at filter. Uniqueness enforced over a wider set of rows than the
-# lookup consults is not a stricter guarantee, it is a broken one: the insert
-# would be refused for a row the recovery SELECT cannot see, `winner` would come
-# back None, and a resend after a delete would raise instead of sending.
-MESSAGE_IDEMPOTENCY_PREDICATE = (
-    "client_message_id IS NOT NULL AND client_message_id <> '' "
-    "AND COALESCE(deleted_at, '') = ''"
-)
+MESSAGE_IDEMPOTENCY_PREDICATE = "client_message_id IS NOT NULL AND client_message_id <> ''"
 
 # The four states this installer can end in. They are determined by inspection,
 # never by reading a driver's error string: exception text is a presentation
@@ -267,10 +259,7 @@ IDEMPOTENCY_INDEX_INSTALL_ERROR = "install_error"
 # interleaving.
 #
 # The predicate excludes blank ids because legacy rows and server-authored
-# messages carry none, and NULLs must not collide with each other. It excludes
-# deleted rows for a different reason: a client id names a logical message, and
-# once the sender has deleted that message the id is free again -- which is the
-# rule `_message_for_client_id` already applies when it decides a resend is new.
+# messages carry none, and NULLs must not collide with each other.
 _MESSAGE_IDEMPOTENCY_INDEX_SQL = (
     f"CREATE UNIQUE INDEX IF NOT EXISTS {MESSAGE_IDEMPOTENCY_INDEX} "
     f"ON {MESSAGE_IDEMPOTENCY_TABLE} ({', '.join(MESSAGE_IDEMPOTENCY_COLUMNS)}) "
@@ -350,14 +339,6 @@ def _normalise_predicate(raw: str) -> str:
     as `client_message_id <> ''` comes back as
     `(client_message_id <> ''::text)`. Comparing the raw strings would report a
     correct index as malformed.
-
-    What it does NOT do is normalise spacing inside an expression: PostgreSQL
-    prints `COALESCE(deleted_at, ''::text)` with a space after the comma, and
-    collapsing runs of whitespace will not close that gap. So
-    MESSAGE_IDEMPOTENCY_PREDICATE is written in the server's own spelling, and
-    test_the_postgres_rendering_of_the_real_predicate_reads_back_as_correct
-    holds it there. Getting this wrong fails closed -- the index installs and
-    then fails its own read-back -- which is survivable, but silent.
     """
     text = (raw or "").lower()
     text = text.replace("::text", "").replace("::character varying", "")
@@ -447,30 +428,14 @@ def _index_shape_is_correct(inspected: dict) -> bool:
 
 
 def _count_message_idempotency_duplicates(cur) -> tuple[int, int]:
-    """(groups, rows beyond one per logical message).
-
-    Positional indexing, and never ``list(row)`` — the two disagree by engine.
-
-    SQLite hands back a ``sqlite3.Row``, which is a sequence, so ``list(row)``
-    is ``[18, 46]``. PostgreSQL hands back a ``services.db.CompatRow``, which is
-    a ``Mapping``, so ``list(row)`` is ``['group_count', 'row_total']`` — the
-    column *names*. ``int('group_count')`` is a ValueError.
-
-    That is precisely what production did: this function raised on every boot,
-    the caller's blanket ``except Exception`` recorded ``install_error`` with
-    ``error_class=ValueError``, and the real answer — blocked by 18 groups of
-    historical duplicates, which is a correct and actionable state with a
-    named remedy — never reached the log. The whole suite stayed green because
-    the suite runs on SQLite, where ``list(row)`` means the other thing.
-
-    Both engines agree on ``row[0]``, so ask for the column by position.
-    """
+    """(groups, rows beyond one per logical message)."""
     cur.execute(_MESSAGE_IDEMPOTENCY_DUPLICATE_SQL)
     row = cur.fetchone()
     if not row:
         return 0, 0
-    groups = int(row[0] or 0)
-    total = int(row[1] or 0)
+    values = list(row)
+    groups = int(values[0] or 0)
+    total = int(values[1] or 0)
     return groups, max(total - groups, 0)
 
 
@@ -555,25 +520,6 @@ def _ensure_message_idempotency_index(cur, conn) -> dict:
             conn.rollback()
         except Exception:
             pass
-        # The traceback goes to the log, not into the status dict.
-        #
-        # The status line is deliberately content-free -- no conversation ids,
-        # no sender ids, no client ids -- because operational telemetry is read
-        # by more people and retained in more places than the database is. That
-        # constraint is right, and it is why `error_class` is all the line
-        # carries. But `error_class` alone is not a diagnosis: production said
-        # `ValueError` on every boot for as long as anyone had looked, and the
-        # class name is the same whether the fault is in the catalog query, the
-        # duplicate count, or the row handling in between.
-        #
-        # A traceback names a file and a line and has no user data in it, so it
-        # is both safe here and the thing that was missing. Logged separately at
-        # exception level so the structured line stays machine-parseable.
-        logging.exception(
-            "PULSE_COMM_V2_IDEMPOTENCY_INDEX_FAILED index=%s error_class=%s",
-            MESSAGE_IDEMPOTENCY_INDEX,
-            type(exc).__name__,
-        )
         return _record_message_idempotency_health(
             _idempotency_status(
                 IDEMPOTENCY_INDEX_INSTALL_ERROR,
@@ -2024,11 +1970,6 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                 push_metadata = {
                     "conversation_id": int(conversation_id),
                     "conversationId": int(conversation_id),
-                    "schemaVersion": 1,
-                    "notificationType": "message",
-                    "messageNamespace": "comm_v2",
-                    "recipientUserId": int(recipient_id),
-                    "sentAt": message.get("created_at") or _now(),
                     "message_id": message_id,
                     "messageId": message_id,
                     "sender_id": int(user_id),
@@ -3114,8 +3055,7 @@ def list_messages(user_id: int, conversation_ref: int | str, filters: dict | Non
             # uses and closing a deadlock cycle on comm_v2_read_receipts. Calling
             # mark_read first keeps this transaction's first-acquisition order
             # ascending; the loop then only re-touches rows it already holds.
-            mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False,
-                      through_message_id=max((int(m.get("id") or 0) for m in raw_messages), default=0))
+            mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False)
             incoming_ids = sorted(
                 int(message.get("id") or 0)
                 for message in raw_messages
@@ -3354,7 +3294,7 @@ def search_people(user_id: int, query: str = "", filters: dict | None = None) ->
         conn.close()
 
 
-def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, commit: bool = True, through_message_id: int | None = None) -> dict:
+def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, commit: bool = True) -> dict:
     disabled = _disabled("mark_read")
     if disabled:
         return disabled
@@ -3365,15 +3305,12 @@ def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, com
         if access != "ok":
             return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
         conversation_id = int(conversation["id"])
-        cur.execute("SELECT COALESCE(MAX(id),0) AS max_id FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' AND (? IS NULL OR id<=?)", (conversation_id, through_message_id, through_message_id))
+        cur.execute("SELECT COALESCE(MAX(id),0) AS max_id FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')=''", (conversation_id,))
         max_id = int(_row(cur.fetchone()).get("max_id") or 0)
         now = _now()
         cur.execute(
-            """UPDATE comm_v2_participants SET last_read_message_id=MAX(COALESCE(last_read_message_id,0),?), last_read_at=?,
-            unread_count=(SELECT COUNT(*) FROM comm_v2_messages m WHERE m.conversation_id=? AND m.sender_user_id!=?
-              AND m.id>MAX(COALESCE(comm_v2_participants.last_read_message_id,0),?) AND COALESCE(m.deleted_at,'')=''),
-            last_seen_at=?, updated_at=? WHERE conversation_id=? AND user_id=?""",
-            (max_id, now, conversation_id, int(user_id), max_id, now, now, conversation_id, int(user_id)),
+            "UPDATE comm_v2_participants SET last_read_message_id=?, last_read_at=?, unread_count=0, last_seen_at=?, updated_at=? WHERE conversation_id=? AND user_id=?",
+            (max_id, now, now, now, conversation_id, int(user_id)),
         )
         if _read_receipts_allowed(cur, user_id, conversation_id):
             # ORDER BY is load-bearing, not cosmetic: the INSERT takes a row lock
@@ -4569,9 +4506,6 @@ def set_reaction(user_id: int, message_id: int, reaction_type: str = "heart") ->
         conn.close()
 
 
-MESSAGE_EDIT_WINDOW = timedelta(minutes=15)
-
-
 def edit_message(user_id: int, message_id: int, payload: dict | None = None) -> dict:
     disabled = _disabled("edit_message")
     if disabled:
@@ -4589,7 +4523,7 @@ def edit_message(user_id: int, message_id: int, payload: dict | None = None) -> 
         if int(message.get("sender_user_id") or 0) != int(user_id):
             return _err("You can only edit your own messages.", 403, "forbidden")
         created = datetime.fromisoformat(str(message.get("created_at") or _now()))
-        if datetime.now(timezone.utc) - created > MESSAGE_EDIT_WINDOW:
+        if datetime.now(timezone.utc) - created > timedelta(minutes=int(payload.get("edit_window_minutes") or 15)):
             return _err("This message can no longer be edited.", 403, "edit_window_expired")
         now = _now()
         metadata = _json_loads(message.get("metadata_json"), {}) or {}
