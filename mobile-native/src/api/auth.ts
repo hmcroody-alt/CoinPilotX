@@ -37,17 +37,10 @@ export type RegisterResponse = SessionResponse & {
   email?: string;
 };
 
-/**
- * `confirmed` is the whole contract. The endpoint used to return `exists` and
- * `email_verified` as well, and both were removed server-side: `exists` told any
- * unauthenticated caller whether an account lived at a given address, which is an
- * enumeration oracle, and `email_verified` restated `confirmed` in a second
- * field. Neither was ever read anywhere in this app — they were declared
- * *required* and consumed nowhere, so the type asserted a leak that no code
- * needed.
- */
 export type ConfirmationStatusResponse = {
   ok: boolean;
+  exists: boolean;
+  email_verified: boolean;
   confirmed: boolean;
   message?: string;
 };

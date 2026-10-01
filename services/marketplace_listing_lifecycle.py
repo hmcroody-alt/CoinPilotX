@@ -18,15 +18,6 @@ from services import marketplace_seller_identity as seller_identity
 
 DRAFT = "draft"
 PENDING_REVIEW = "pending_review"
-#: The merchant has released this listing and no decision has been recorded yet.
-#:
-#: Spelled out as a constant because it reaches ``status`` and ``approval_status``
-#: alike and was a bare literal at every site that wrote it. The distinction it
-#: carries is the one :func:`awaiting_moderation` rests on: ``status`` is the
-#: merchant's axis, and this is the only value on that axis that means *they have
-#: asked*. ``approval_status='pending_review'`` cannot mean it -- the column is
-#: ``DEFAULT 'pending_review'``, so every untouched draft is born carrying it.
-REVIEW_READY = "review_ready"
 CHANGES_REQUESTED = "changes_requested"
 APPROVED = "approved"
 PUBLISHED = "published"
@@ -43,46 +34,13 @@ APPROVED_STATES = frozenset({APPROVED})
 # The vocabulary both axes use for "no decision recorded yet". ``review_ready``
 # reaches both columns: ``revenue_safety_engine`` returns it as an approval
 # state, and the seller resume route copies it onto ``status`` as well.
-AWAITING_DECISION_STATES = frozenset({PENDING_REVIEW, REVIEW_READY})
+AWAITING_DECISION_STATES = frozenset({PENDING_REVIEW, "review_ready"})
 
 # The statuses that mean the merchant has released the listing for review --
 # either by submitting it or by publishing it. A ``draft`` is not among them,
 # which is the whole protection in :func:`awaiting_moderation`.
 MERCHANT_RELEASED_STATUSES = AWAITING_DECISION_STATES | PUBLIC_STATUSES
 STOCKLESS_TYPES = frozenset({"digital", "course", "service", "event", "booking"})
-
-#: ``price_label`` values that name no price, normalised by :func:`normalized`.
-#:
-#: ``marketplace_listings.price_label`` is free text and ``DEFAULT 'Request
-#: access'``, so "has a price" is not a NOT NULL question -- an untouched row is
-#: born carrying a phrase where a number belongs, and the CJ supplier imports
-#: land with the column blank.
-#:
-#: ``price_label`` rather than ``price_minor`` is deliberate and is the whole
-#: reason this rule can exist safely. The label is what the buyer is *charged
-#: from*: every money path resolves an amount by parsing it (``bot`` is the only
-#: owner of that parser -- see ``parse_price_label_to_cents``, reached through
-#: ``marketplace_cart_routes._listing_price_minor`` and again at checkout).
-#: ``price_minor`` is a sort key (``marketplace_catalog._PRICED_FIRST``) that no
-#: charge is computed from, so gating on it would have let a row with a number
-#: there and a blank label past this gate and straight into the same dead end.
-#: It is also absent from two of the projections that call :func:`is_public`
-#: (``pulsedrop.hydration._LISTING_COLUMNS`` and
-#: ``commerce_discovery.eligibility.CANDIDATE_COLUMNS``), both of which do select
-#: ``price_label`` -- so a label-based rule is answerable everywhere the gate is
-#: actually asked, and a ``price_minor``-based one would have read as "unknown"
-#: on those paths and taken healthy listings off sale.
-#:
-#: Membership, not parsing, is the test. ``public_sql`` has to stay exactly
-#: equivalent to :func:`is_public` and cannot run a Python parser, and this
-#: module must not import ``bot`` (111k lines, and importing it runs
-#: ``init_db()``). The residual gap is a non-empty label that parses to zero:
-#: that reads as priced here and is still refused by the cart and by checkout.
-#: Being wrong in that direction is deliberate -- it withholds nothing from a
-#: healthy product, which is the failure mode a publication gate cannot have.
-UNPRICED_LABELS = frozenset({
-    "", "request access", "contact", "contact seller", "enquire", "inquire",
-})
 MATERIAL_FIELDS = frozenset({
     "title", "description", "short_description", "category", "subcategory",
     "price_label", "currency", "cover_image_url", "gallery_json", "video_url",
@@ -157,18 +115,6 @@ def _is_in_stock(listing: Mapping[str, Any], quantity: int) -> Optional[bool]:
     return inventory_available(listing, quantity)
 
 
-def _is_priced(listing: Mapping[str, Any], quantity: int) -> Optional[bool]:
-    """Whether the row names a price a buyer could be charged.
-
-    Unprojected is ``None`` on the key itself rather than via ``_UNPROJECTED``:
-    the queries that select this column select it bare, so ``''`` here is a real
-    blank label and not a coalesced stand-in for a missing one.
-    """
-    if "price_label" not in listing:
-        return None
-    return normalized(listing.get("price_label")) not in UNPRICED_LABELS
-
-
 class PublicationRule(NamedTuple):
     """One condition a listing must satisfy before a buyer can reach it.
 
@@ -190,15 +136,6 @@ class PublicationRule(NamedTuple):
     satisfied: Callable[[Mapping[str, Any], int], Optional[bool]]
     #: What a *gate* does when ``satisfied`` answers ``None``.
     passes_when_unknown: bool
-    #: Whether this rule bears on *buying* only, and not on whether the row may
-    #: be shown at all. Default ``False``: almost every condition here is both.
-    #:
-    #: The distinction is not new -- ``marketplace_seo.eligibility`` already
-    #: states it ("Path-level and record-level eligibility are different
-    #: questions and answering them in one place is how a rule for the section
-    #: ends up deciding a fact about a row"). Only ``priced`` sets it, and
-    #: :data:`VISIBILITY_RULES` explains why.
-    purchase_only: bool = False
 
 
 #: Every publication condition, in the order the reason is reported.
@@ -263,85 +200,20 @@ PUBLICATION_RULES: tuple[PublicationRule, ...] = (
         satisfied=_is_in_stock,
         passes_when_unknown=False,
     ),
-    # Last on purpose, and the position is the only thing about this rule that is
-    # a judgement call. Every rule above it already reports a reason for some
-    # listing in production; inserting this one earlier would relabel rows that
-    # are held by an earlier condition anyway, silently changing the reason 62
-    # out-of-stock CJ imports give their own merchant without changing whether
-    # anybody can buy them. A listing that is both unpriced and sold out is more
-    # usefully described as sold out -- the same ordering argument
-    # ``pulsedrop.hydration.state`` already makes for ``NOT_PRICED``.
-    PublicationRule(
-        key="priced",
-        # Shared with ``released``, per the field's own contract: the buyer's next
-        # move is identical, and "this seller forgot to type a price" is the
-        # merchant's business and not a stranger's.
-        denial_code="ITEM_UNAVAILABLE",
-        seller_label="Needs a price",
-        moderator_note="the listing has no price",
-        satisfied=_is_priced,
-        passes_when_unknown=False,
-        purchase_only=True,
-    ),
 )
 
 RULES_BY_KEY = {rule.key: rule for rule in PUBLICATION_RULES}
 
-#: The rules that bear on whether a row may be *shown*, as opposed to bought.
-#:
-#: Everything except ``priced``, and the exclusion is load-bearing rather than
-#: cautious. An unpriced listing is a perfectly good public web page: the product
-#: page renders it with no price pill and no schema.org ``Offer`` (an ``Offer``
-#: without a price is a malformed claim, not an absent one), and it stays in the
-#: sitemap. ``marketplace_seo.eligibility`` encodes that as ``indexable=True,
-#: feed_eligible=False`` and says why -- filtering pages out of Search to satisfy
-#: a rule Search does not have withholds real pages for nothing. Putting the
-#: price condition into :func:`is_public` would 404 those pages and pull their
-#: URLs from the sitemap, which is a worse defect than the one it fixes.
-#:
-#: So the price is a condition on *buying*: :func:`is_purchasable` and
-#: :func:`purchasable_sql` apply it, :func:`is_public` and :func:`public_sql` do
-#: not, and the description-side readers (:func:`publication_blocker`,
-#: :func:`seller_label`, :func:`live_blocker`) always do -- the merchant who owns
-#: an unpriced listing is the one person who can fix it, and they are told.
-VISIBILITY_RULES: tuple[PublicationRule, ...] = tuple(
-    rule for rule in PUBLICATION_RULES if not rule.purchase_only
-)
 
-
-def _first_unmet(
-    rules: tuple[PublicationRule, ...], listing: Mapping[str, Any], quantity: int
-) -> Optional[PublicationRule]:
-    for rule in rules:
+def failing_rule(listing: Mapping[str, Any], quantity: int = 1) -> Optional[PublicationRule]:
+    """The first rule a *gate* considers unmet, or ``None`` when all are met."""
+    for rule in PUBLICATION_RULES:
         verdict = rule.satisfied(listing, quantity)
         if verdict is None:
             verdict = rule.passes_when_unknown
         if not verdict:
             return rule
     return None
-
-
-def failing_rule(listing: Mapping[str, Any], quantity: int = 1) -> Optional[PublicationRule]:
-    """The first rule a *visibility* gate considers unmet, else ``None``.
-
-    Unchanged in meaning: ``priced`` is ``purchase_only`` and so is not consulted
-    here. Use :func:`failing_purchase_rule` before taking money.
-    """
-    return _first_unmet(VISIBILITY_RULES, listing, quantity)
-
-
-def failing_purchase_rule(
-    listing: Mapping[str, Any], quantity: int = 1
-) -> Optional[PublicationRule]:
-    """The first rule standing between this row and a completed purchase.
-
-    Every visibility rule plus the price. This is the predicate a Buy affordance
-    belongs behind: the money paths already refuse an unpriced row -- the cart
-    with 400 ``no_price`` and checkout with "currently free or not priced for
-    checkout" -- so a surface that offers one is promising something the till has
-    already decided to decline.
-    """
-    return _first_unmet(PUBLICATION_RULES, listing, quantity)
 
 
 def publication_blocker(listing: Mapping[str, Any], quantity: int = 1) -> str:
@@ -389,13 +261,7 @@ def blocker_note(blocker_key: str) -> str:
 
 
 def is_public(listing: Mapping[str, Any]) -> bool:
-    """Whether a stranger may be shown this row at all. See :data:`VISIBILITY_RULES`."""
     return failing_rule(listing) is None
-
-
-def is_purchasable(listing: Mapping[str, Any], quantity: int = 1) -> bool:
-    """Whether a stranger may be offered this row for sale. Implies :func:`is_public`."""
-    return failing_purchase_rule(listing, quantity) is None
 
 
 def public_denial_code(listing: Mapping[str, Any], quantity: int = 1) -> str:
@@ -408,48 +274,12 @@ def public_denial_code(listing: Mapping[str, Any], quantity: int = 1) -> str:
     the quantity or wait for a restock. Collapsing them into one "unavailable"
     message is what makes a marketplace feel broken.
     """
-    rule = failing_purchase_rule(listing, quantity)
+    rule = failing_rule(listing, quantity)
     return rule.denial_code if rule else ""
 
 
-def _unpriced_labels_sql() -> str:
-    """The ``UNPRICED_LABELS`` set as a SQL ``IN`` list.
-
-    Rendered from the frozenset rather than written out beside it so the SQL half
-    of the ``priced`` rule cannot drift from the Python half -- adding a phrase in
-    one place and not the other is precisely the class of bug this whole module
-    exists to prevent. Sorted for a deterministic predicate, and quotes are
-    doubled so a future entry containing an apostrophe cannot break out of the
-    literal.
-    """
-    return ", ".join("'%s'" % label.replace("'", "''") for label in sorted(UNPRICED_LABELS))
-
-
-def price_sql(alias: str = "l") -> str:
-    """SQL equivalent of the ``priced`` rule.
-
-    ``LOWER(TRIM(COALESCE(...)))`` is :func:`normalized` spelled in SQL, which is
-    what makes this clause and :func:`_is_priced` the same test rather than two
-    similar ones. Exposed on its own because :func:`public_sql` deliberately
-    excludes it -- see :data:`VISIBILITY_RULES` -- so a surface that gates a Buy
-    affordance in SQL has something to add.
-    """
-    return (
-        f"LOWER(TRIM(COALESCE({alias}.price_label,''))) "
-        f"NOT IN ({_unpriced_labels_sql()})"
-    )
-
-
-def purchasable_sql(alias: str = "l", seller_alias: str = "ms") -> str:
-    """SQL equivalent of :func:`is_purchasable`. Use this to gate a sale."""
-    return f"{public_sql(alias, seller_alias)} AND {price_sql(alias)}"
-
-
 def public_sql(alias: str = "l", seller_alias: str = "ms") -> str:
-    """SQL equivalent of :func:`is_public` for buyer discovery surfaces.
-
-    Does not require a price; :func:`purchasable_sql` does.
-    """
+    """SQL equivalent of :func:`is_public` for buyer discovery surfaces."""
     return (
         f"LOWER(COALESCE({alias}.status,'')) IN ('published','live','active') "
         f"AND LOWER(COALESCE({alias}.approval_status,''))='approved' "

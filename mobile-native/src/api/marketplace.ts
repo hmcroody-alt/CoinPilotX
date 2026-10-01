@@ -7,7 +7,7 @@ import {
   type CheckoutResponse,
   type MarketplacePaymentMode
 } from "./marketplaceCommerce";
-import { pulseApi, PulseApiError } from "./pulseApi";
+import { pulseApi } from "./pulseApi";
 import { sellerStoreName, sellerStoreNameOrEmpty } from "./sellerIdentity";
 
 const MARKETPLACE_CACHE_KEY = "pulsesoc.native.marketplace.search";
@@ -232,13 +232,6 @@ export type MarketplaceListing = {
   publication_state?: string;
   publication_label?: string;
   /**
-   * The canonical state, stamped by the server: `live`, `draft`,
-   * `pending_review`, `suppressed` or `removed`. The single answer to "can a
-   * buyer see this and buy it", shared with the seller metrics aggregate.
-   * Absent only on seller payloads cached before the stamp existed.
-   */
-  listing_state?: string;
-  /**
    * Why an approved, published listing is still unreachable — one of
    * `seller_approved`, `seller_named`, `in_stock`, or `""`. Derived by
    * `marketplace_listing_lifecycle.live_blocker` from the same rule table that
@@ -451,69 +444,9 @@ export type MarketplaceSellerOrdersResponse = {
   message?: string;
 };
 
-/**
- * The seller's numbers, counted once, on the server.
- *
- * Every field here is the answer to a question a screen used to answer for
- * itself out of the raw row lists — Business OS by taking `.length`, the Store
- * screen by applying its own status filters. Two screens, two definitions, one
- * store, and a seller told they had 43 live listings (13) and 32 orders (0).
- *
- * `GET /api/pulse/marketplace/seller/metrics` is now the only place either
- * question is answered. Nothing below may be re-derived from `listings` or
- * `orders`; those arrays are for rendering rows, not for counting.
- */
-export type SellerMetrics = {
-  total_listings: number;
-  live_listings: number;
-  draft_listings: number;
-  pending_review_listings: number;
-  suppressed_listings: number;
-  removed_listings: number;
-  confirmed_orders: number;
-  open_orders: number;
-  fulfilled_orders: number;
-  refunded_orders: number;
-  cash_pending_orders: number;
-  today_sales_minor: number;
-  sold_last_7_days: number;
-  /** Seven daily totals in minor units, oldest first. */
-  sales_last_7_days_minor: number[];
-  /**
-   * Today against the same weekday last week, as a ratio (0.12 = +12%).
-   * `null` when there is no baseline — a store's first week must not report
-   * "+100%".
-   */
-  sales_trend_ratio: number | null;
-  units_sold_last_7_days_by_listing: Record<string, number>;
-  net_sales_minor: number;
-  currency: string;
-  active_campaigns: number;
-  ad_spend_minor: number;
-  raw_order_rows: number;
-  raw_listing_rows: number;
-  order_breakdown: Record<string, number>;
-  listing_breakdown: Record<string, number>;
-  /** Unconfirmed rows holding a PaymentIntent. A reconciliation signal. */
-  unmatched_payments: number;
-};
-
-export type SellerMetricsResponse = { ok?: boolean; metrics?: SellerMetrics; message?: string };
-
-export async function loadSellerMetrics() {
-  const data = await pulseApi<SellerMetricsResponse>("/api/pulse/marketplace/seller/metrics");
-  return data.metrics || null;
-}
-
 export type SellerStoreSnapshot = {
   listings: MarketplaceListing[];
   orders: MarketplaceSellerOrder[];
-  /**
-   * Authoritative counts. Absent only when the metrics call failed; callers
-   * must render "—" in that case rather than falling back to counting the
-   * arrays, because counting the arrays is the bug.
-   */
-  metrics?: SellerMetrics | null;
   commercial_summary?: MarketplaceCommercialSummary;
   cached_at?: string;
   /**
@@ -535,45 +468,6 @@ export async function searchMarketplace(params: { query?: string; limit?: number
   const items = normalizeMarketplaceListings(data.items || data.listings || []);
   if (!params.sellerUserId) await cacheMarketplace(items).catch(() => undefined);
   return { ...data, items };
-}
-
-/**
- * One listing, by id, for a caller that has an id and nothing else.
- *
- * Every other buyer-side read here returns a list, and for a long time that was
- * the whole buyer API — which is why `MarketplaceProductScreen` was written to
- * render only from a snapshot handed to it in navigation params. The four
- * commerce discovery surfaces navigate with an id alone (feed strip, reels chip,
- * messenger strip, marketplace shelves) and every one of them landed on "This
- * item is no longer available" for a listing that was on sale.
- *
- * Returns `null` for a listing the viewer may not see and **throws** for
- * anything else. The distinction is the whole contract: "gone" is a product
- * state the screen renders, a failed request is not, and collapsing the two
- * would tell a user on a dropped connection that a shop had removed their item.
- */
-export async function fetchMarketplaceListing(listingId: number): Promise<MarketplaceListing | null> {
-  const id = Number(listingId) || 0;
-  if (id <= 0) return null;
-  try {
-    const data = await pulseApi<{ ok?: boolean; item?: MarketplaceListing; listing?: MarketplaceListing }>(
-      `/api/pulse/marketplace/listings/${id}`
-    );
-    const raw = data?.item ?? data?.listing;
-    if (!raw) return null;
-    const [item] = normalizeMarketplaceListings([raw]);
-    return item || null;
-  } catch (error) {
-    // The server says LISTING_UNAVAILABLE for both "no such listing" and "not
-    // visible to you". Both are the same thing to a buyer, and neither is an
-    // error worth a retry affordance. Everything else — 401, 5xx, a dropped
-    // connection — is rethrown so the screen can offer a retry instead of
-    // claiming the seller withdrew the item.
-    const code = error instanceof PulseApiError ? error.code : undefined;
-    const status = error instanceof PulseApiError ? error.status : 0;
-    if (code === "LISTING_UNAVAILABLE" || status === 404) return null;
-    throw error;
-  }
 }
 
 export async function listMarketplaceSellerListings(params: { limit?: number } = {}) {
@@ -602,20 +496,14 @@ export async function cacheSellerStore(snapshot: SellerStoreSnapshot) {
 }
 
 export async function loadSellerStoreSnapshot() {
-  const [sellerListings, orders, metrics] = await Promise.allSettled([
+  const [sellerListings, orders] = await Promise.allSettled([
     listMarketplaceSellerListings({ limit: 80 }),
-    listMarketplaceSellerOrders(),
-    loadSellerMetrics()
+    listMarketplaceSellerOrders()
   ]);
-  // `live` deliberately still turns on the two row lists. Metrics is a third
-  // leg that can fail on its own, and when it does the screens show "—" for the
-  // counts while still rendering the rows — a missing number is honest, a
-  // locally recounted one is not.
   const live = sellerListings.status === "fulfilled" && orders.status === "fulfilled";
   const snapshot: SellerStoreSnapshot = {
     listings: sellerListings.status === "fulfilled" ? sellerListings.value.items || [] : [],
     orders: orders.status === "fulfilled" ? orders.value.orders || [] : [],
-    metrics: metrics.status === "fulfilled" ? metrics.value : null,
     commercial_summary: orders.status === "fulfilled" ? orders.value.commercial_summary : undefined,
     cached_at: new Date().toISOString(),
     live
@@ -912,36 +800,6 @@ export type MarketplaceBatchResponse = {
 };
 
 /**
- * How long a bulk write may take before the client stops waiting.
- *
- * This request carries up to 200 listings and the server walks them one at a
- * time — for `publish` that is a safety review, two UPDATEs and an inventory
- * event per row, which on production Postgres is several hundred round trips for
- * a full batch. It was on `pulseApi`'s shared 15-second budget, a number named
- * and chosen for *reads*, while the server it talks to is allowed gunicorn's
- * `--timeout 120`. A client budget below the server's ceiling cannot report
- * anything but failure: the client decides before the server has had its
- * allotted time, so a batch of 200 that legitimately took 20 seconds and
- * published all 200 could only ever be shown to the seller as "Couldn't
- * finish". That is exactly how the dropshipping import came to report a
- * 154-second success as a rollback (see `IMPORT_TIMEOUT_MS`).
- *
- * Above 120s rather than near it, so the *server* is always the one that gives
- * up first and the answer the seller reads is the server's own.
- *
- * The cost of the larger number is that a black-holed connection now leaves the
- * sheet in its running state for longer instead of failing at 15 seconds. That
- * is the right way round: the running state is true, and a refused connection
- * still fails immediately because the transport rejects rather than hangs.
- *
- * No `isClientTimeout` branch is needed here, unlike the import — `StoreBulkSheet`'s
- * error face already refuses to claim a rollback ("Trying again won't repeat
- * anything that already went through"), which is honest whether the batch landed
- * or not. The budget was the only half of that bug this path still had.
- */
-const MARKETPLACE_BATCH_TIMEOUT_MS = 180_000;
-
-/**
  * Apply one action to many listings in ONE request.
  *
  * The alternative — looping the single-listing routes on the phone — is what
@@ -969,7 +827,6 @@ export async function batchMarketplaceSellerListings(input: {
 }) {
   return pulseApi<MarketplaceBatchResponse>("/api/pulse/marketplace/seller/listings/batch", {
     method: "POST",
-    timeoutMs: MARKETPLACE_BATCH_TIMEOUT_MS,
     body: batchBody(input)
   });
 }
@@ -1425,10 +1282,6 @@ function normalizeSellerStoreSnapshot(snapshot: SellerStoreSnapshot): SellerStor
       currency: String(order.currency || "USD"),
       status: String(order.status || "pending")
     })),
-    // Carried through verbatim. There is nothing to normalize — the server
-    // computed these and re-deriving any of them here is exactly what this
-    // payload exists to stop.
-    metrics: snapshot?.metrics || null,
     commercial_summary: snapshot?.commercial_summary,
     cached_at: snapshot?.cached_at || ""
   };

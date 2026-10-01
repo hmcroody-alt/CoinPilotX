@@ -142,7 +142,6 @@ function result(listings: MarketplaceListing[]): StoreLoadResult {
   return {
     listings: { status: "ok", data: listings },
     orders: { status: "ok", data: [] },
-    metrics: null,
     cachedAt: null,
     offline: false
   };

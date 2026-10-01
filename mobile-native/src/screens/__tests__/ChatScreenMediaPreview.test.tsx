@@ -25,7 +25,7 @@
 
 import React from "react";
 import { Dimensions, Image } from "react-native";
-import { act, fireEvent, render, screen, within } from "@testing-library/react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 jest.mock("expo-av", () => ({
@@ -46,33 +46,12 @@ jest.mock("../../session/auth", () => ({ useAuth: () => ({ authState: { user: { 
 // alone cannot tell them apart, and that is the whole subject of the document
 // tests below.
 const BUBBLE_BODY_TEST_ID = "bubble-body";
-// This is the one `ContentTranslation` stub in the repo that does NOT defer to
-// `src/testing/contentTranslationStub`, and the line above is why: this stub
-// *invents* `bubble-body`, a testID the real component does not carry, so that
-// this file can point at the body without matching on its text. The shared stub
-// deliberately hands out no testIDs of its own — one that did would let a test
-// somewhere else find an element that does not exist on a device. So this
-// requirement stays local. The part the shared stub exists to guarantee,
-// honouring `renderText`, is done here too.
 jest.mock("../../components/ContentTranslation", () => {
   const { Text } = jest.requireActual("react-native");
   const ReactActual = jest.requireActual("react");
   return {
-    // The module's other export, `offersTranslation`, is a pure predicate the
-    // bubble calls during render. It is kept real rather than stubbed: a stub
-    // would be this file choosing whether Translate is on offer, and this file
-    // is about media cards. Only the component needs replacing — it is the part
-    // that wants locale storage and a translation API.
-    ...jest.requireActual("../../components/ContentTranslation"),
-    // `renderText` is honoured rather than ignored — the bubble passes one so
-    // that URLs in the body become link segments. The testID stays on the
-    // wrapper either way, so what this file identifies as the body is unchanged.
-    ContentTranslation: ({ text, textStyle, renderText }: { text?: string; textStyle?: unknown; renderText?: (value: string, translated: boolean) => unknown }) =>
-      ReactActual.createElement(
-        Text,
-        { style: textStyle, testID: "bubble-body" },
-        renderText ? renderText(String(text ?? ""), false) : text
-      )
+    ContentTranslation: ({ text, textStyle }: { text?: string; textStyle?: unknown }) =>
+      ReactActual.createElement(Text, { style: textStyle, testID: "bubble-body" }, text)
   };
 });
 
@@ -478,16 +457,8 @@ describe("generated filenames stay out of the bubble", () => {
       photoMessage({ message_type: "file", body: "Everything we packed for Friday", mime_type: "application/pdf" })
     ]);
 
-    // Scoped to the body, because WHERE the caption renders is the whole point:
-    // the card title echoes the same string, so an unscoped text query would
-    // pass even if the bubble body were suppressed entirely.
-    //
-    // The body is segmented now — a URL in a caption becomes its own `<Text>` so
-    // it can be a tap target — so the caption is no longer necessarily one bare
-    // string child, and asserting on child identity would assert on the
-    // segmentation rather than on the caption.
     const body = await screen.findByTestId(BUBBLE_BODY_TEST_ID);
-    expect(within(body).getByText("Everything we packed for Friday")).toBeTruthy();
+    expect(body.props.children).toBe("Everything we packed for Friday");
   });
 });
 

@@ -2,9 +2,7 @@ import * as Notifications from "expo-notifications";
 import { createNavigationContainerRef } from "@react-navigation/native";
 import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
 import { dashboardModuleParamsForRoute } from "./dashboardRouting";
-import { nativeObjectDestination, type NativeRouteNavigation } from "./nativeRouteActions";
 import { RootStackParamList } from "./types";
-import { reconcileMessageNotifications } from "../core/messageNotificationReconciliation";
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
@@ -89,10 +87,6 @@ export function setupNotificationResponseRouting(options: NotificationResponseRo
       return;
     }
     routeNotificationTarget(target).catch(() => undefined);
-    // A tap is a read transition only after the chat screen records it. Running
-    // the idempotent reconciler here handles an already-read message while the
-    // routed screen finishes its own durable receipt.
-    void reconcileMessageNotifications();
   };
   const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
   if (options.includeLastResponse !== false) {
@@ -144,15 +138,6 @@ async function resolveNotificationTarget(target: string): Promise<NotificationRo
   if (!normalized) {
     navigateToNotifications();
     return { handled: true, target: "/pulse/notifications", reason: "missing_target" };
-  }
-
-  // The app's own front door. `linking.ts` and `openNativeRoute` both answer Home
-  // for this path; only this resolver did not, so the most generic "open the app"
-  // URL there is landed on the Activity Inbox. Exact match, so it shadows none of
-  // the `/pulse/...` branches below.
-  if (normalized === "/pulse" && navigationRef.isReady()) {
-    navigationRef.navigate("Tabs", { screen: "Home" });
-    return { handled: true, target: normalized };
   }
 
   if ((normalized === "/dashboard" || normalized === "/dashboard/home" || normalized === "/pulse/dashboard") && navigationRef.isReady()) {
@@ -481,23 +466,16 @@ async function resolveNotificationTarget(target: string): Promise<NotificationRo
     return { handled: true, target: normalized };
   }
 
-  // `MarketplaceProduct`, not `MarketplaceDetail` -- the same correction as in
-  // `nativeObjectDestination`, and it has to be made here too because this is a
-  // third resolver for the same path. This branch serves push taps *and* the
-  // pending-target replay a signed-out arrival goes through after logging in, so
-  // a visitor who followed "Open in the PulseSoc app" from the website, signed
-  // in, and was replayed here landed on the catalogue rather than the listing
-  // they had been reading.
   const marketplacePathMatch = normalized.match(/^\/pulse\/marketplace\/(\d+)/);
   if (marketplacePathMatch?.[1] && navigationRef.isReady()) {
-    navigationRef.navigate("MarketplaceProduct", { listingId: Number(marketplacePathMatch[1]), title: "Marketplace" });
+    navigationRef.navigate("MarketplaceDetail", { listingId: Number(marketplacePathMatch[1]), title: "Marketplace" });
     return { handled: true, target: normalized };
   }
 
   if (normalized.startsWith("/pulse/marketplace") && navigationRef.isReady()) {
     const queryListingId = extractNumericQueryValue(normalized, "listing") || extractNumericQueryValue(normalized, "listing_id");
     if (queryListingId) {
-      navigationRef.navigate("MarketplaceProduct", { listingId: queryListingId, title: "Marketplace" });
+      navigationRef.navigate("MarketplaceDetail", { listingId: queryListingId, title: "Marketplace" });
     } else {
       navigationRef.navigate("Tabs", { screen: "Marketplace" });
     }
@@ -525,27 +503,6 @@ async function resolveNotificationTarget(target: string): Promise<NotificationRo
   if (isIntentionalWebExceptionTarget(normalized)) {
     if (navigationRef.isReady()) navigationRef.navigate("Tabs", { screen: "Settings" });
     return { handled: true, target: normalized, reason: "native_legal_boundary" };
-  }
-
-  // Last stop before the fallback, and the reason the fallback is now honest: ask
-  // the resolver that cold start and in-app taps already share. Everything it
-  // knows that this function also knows has been answered above, so this cannot
-  // change an existing destination -- it can only rescue a path that was about to
-  // be rewritten into the Activity Inbox.
-  //
-  // That rewrite is the defect this branch exists for. A member who asked for
-  // their cart was not shown an error or left where they were; they were shown a
-  // different screen, as though that had been the request. Any destination the
-  // shared resolver can name must outrank a fallback that cannot.
-  const shared = nativeObjectDestination(normalized);
-  if (shared && navigationRef.isReady()) {
-    // `nativeObjectDestination` answers with a screen *name*, which is the point of
-    // it — one resolver serving many screens — and `navigate`'s overloads cannot
-    // express a name chosen at runtime. `NativeRouteNavigation` is the type
-    // `openNativeRoute` already dispatches these same destinations through, so the
-    // widening happens once here rather than loosening the resolver for everyone.
-    (navigationRef as unknown as NativeRouteNavigation).navigate(shared.screen, shared.params);
-    return { handled: true, target: normalized, reason: "shared_resolver" };
   }
 
   navigateToNotifications();

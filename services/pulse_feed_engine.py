@@ -10,17 +10,32 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import db, embed_service, media_service, music_authority, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulse_mutation_audit, pulse_reactions, pulsesoc_notification_system, user_context
+from . import db, embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulse_mutation_audit, pulsesoc_notification_system, user_context
 from .discovery_visibility import REQUIRED_USER_COLUMNS, discovery_visible_sql
 from .pulse_ai.content_policy import AUTOMATED_ACCOUNT_TYPE, sanitize_automated_text
 from .schema_guard import run_once_per_process
 
 
-# Derived from the one catalogue rather than restated here. A key that is
-# accepted on the wire but absent from the catalogue has no glyph, and every
-# renderer then has to invent one -- which is exactly how a `whale` reaction
-# came to be displayed as a thumbs-up. See services/pulse_reactions.py.
-REACTIONS = pulse_reactions.REACTIONS
+REACTIONS = {
+    "like",
+    "love",
+    "fire",
+    "funny",
+    "wow",
+    "rocket",
+    "clap",
+    "hundred",
+    "target",
+    "smart",
+    "fast_signal",
+    "shield",
+    "scam_alert",
+    "whale",
+    "bullish",
+    "bearish",
+    "elite",
+    "brutal",
+}
 FEEDS = {
     "for_you",
     "following",
@@ -76,22 +91,6 @@ MEMBER_000_LEGACY_AVATAR_PATHS = (
     "/static/brand/pulsesoc-insight-avatar-20260823.png",
     "/static/brand/pulsesoc-member-000-avatar.png",
 )
-
-#: How a client should lay the cover out, and the shape of the file it is laying
-#: out. The cover is a designed banner with a centred wordmark, not a
-#: photograph, so cropping it to fill a hero cuts the wordmark in half -- hence
-#: ``contain``, and hence the app needs the true ratio to reserve the right box.
-#:
-#: These are declared here, next to the asset they describe, because the app
-#: used to carry both facts itself: it matched on the literal filename above and
-#: hard-coded ``aspectRatio: 1600 / 640`` in a stylesheet. That works for exactly
-#: one account and only until the artwork is replaced -- a new dated filename
-#: (which is the whole cache-busting mechanism) silently turns the treatment off,
-#: and a second official account cannot have it at all without shipping a build.
-#: The ratio is written as the asset's own pixel dimensions rather than as 2.5 so
-#: that replacing the file means editing the two numbers printed beside it.
-MEMBER_000_COVER_FIT = "contain"
-MEMBER_000_COVER_ASPECT_RATIO = 1600 / 640
 
 
 def _brand_media_url(path: str) -> str:
@@ -170,40 +169,14 @@ def _public_media_url(url):
     return media_service.normalize_url(url)
 
 
-def _first_still(*candidates):
-    """The first candidate that is a picture, skipping any that is a video.
-
-    A `or`-chain cannot express this: it stops at the first *truthy* value, and a
-    video URL sitting in a thumbnail field is very truthy. Skipping rather than
-    blanking matters -- an asset whose stored thumbnail is stale-and-wrong should
-    still fall through to its Mux frame instead of losing its picture entirely.
-    """
-    for candidate in candidates:
-        value = str(candidate or "").strip()
-        if value and not media_service.is_video_url(value):
-            return value
-    return ""
-
-
 def _canonical_media_payload(item, resolved, *, index=0, embed=None):
     """Return the one media schema used by all PulseSoc feed renderers."""
     payload = dict(embed or {})
     media_type = (resolved.get("media_type") or item.get("media_type") or payload.get("media_type") or payload.get("type") or "image")
     media_url = resolved.get("media_url") or payload.get("media_url") or ""
     valid_url = resolved.get("valid_url") or payload.get("valid_url") or media_url
-    # `valid_url` is the asset. For a photo the asset *is* the still, so it is a
-    # fine last resort; for a video it is the thing a still exists to avoid, and
-    # falling back to it here is what undid the guards in `resolve_media` one
-    # layer down -- the field was blanked there and refilled with the video here.
-    # The Mux thumbnail goes ahead of it so a transcoded asset resolves to a real
-    # frame, and a video with nothing at all resolves to "" rather than to
-    # itself, which lets a renderer draw no picture instead of an empty box.
-    mux_thumb = resolved.get("mux_thumbnail_url") or payload.get("mux_thumbnail_url") or ""
-    asset_as_still = "" if media_service.is_video_url(valid_url) else valid_url
-    thumb = _first_still(
-        resolved.get("thumbnail_url"), payload.get("thumbnail_url"), mux_thumb, asset_as_still
-    )
-    poster = _first_still(resolved.get("poster_url"), payload.get("poster_url"), thumb)
+    thumb = resolved.get("thumbnail_url") or payload.get("thumbnail_url") or valid_url
+    poster = resolved.get("poster_url") or payload.get("poster_url") or thumb
     width = int(float(resolved.get("width") or payload.get("width") or 0) or 0)
     height = int(float(resolved.get("height") or payload.get("height") or 0) or 0)
     ratio = resolved.get("aspect_ratio") or payload.get("aspect_ratio") or 0
@@ -667,91 +640,6 @@ def _media_for_posts(post_ids):
         conn.close()
 
 
-def _commerce_for_posts(post_ids):
-    """Live commerce overlay for any PulseDrop posts in this page.
-
-    One query for the whole page, in the same shape as :func:`_media_for_posts`,
-    because a payload builder that opens a connection per row is a recorded
-    outage in this codebase and the pool is eight with a three-second timeout.
-
-    Posts that are not PulseDrop publications are simply absent from the result,
-    so the cost on an ordinary feed page is one statement that matches no rows.
-
-    Imported inside the function, and wrapped, for the reason the optional route
-    packs in ``bot.py`` are: PulseDrop is a subsystem with a kill switch, and a
-    deployment that has never run it does not have the tables this reads. The
-    feed must not fail for that. A PulseDrop post with no overlay renders as an
-    ordinary post by ``@pulsedrop`` — true, and harmless.
-
-    Why the overlay is not baked into the post at publication time is argued at
-    length in ``services/pulsedrop/hydration.py``: price, stock, availability,
-    the store's name and the call to action are live facts, and a price frozen
-    into ``pulse_posts.content`` becomes a lie the platform published under a
-    verified badge the moment the seller re-prices it.
-    """
-    if not post_ids:
-        return {}
-    conn = None
-    try:
-        from services.pulsedrop import hydration
-
-        conn = user_context.connect()
-        return hydration.commerce_for_posts(conn.cursor(), post_ids)
-    except Exception as exc:
-        logging.warning("PulseDrop commerce hydration skipped: %s", exc)
-        return {}
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-
-def _attach_commerce(posts):
-    """Merge the overlay into already-serialized posts. Returns the same list.
-
-    Applied after ``_public_post`` rather than threaded through its twelve
-    arguments, and applied before ranking so a ranker could read commerce state
-    if one ever needs to. ``commerce`` is absent, not null, on ordinary posts:
-    a client testing for the key gets a boolean, and no ordinary post grows a
-    field for a subsystem it has nothing to do with.
-
-    **This also covers Reels, and that is why it is called here and nowhere
-    else.** A PulseDrop Reel carries no price, no CTA and no availability in its
-    pixels -- ``reel_composer`` renders none of them into the video on purpose,
-    so that a March Reel can still show September's price. The overlay beside
-    the video is therefore the only thing that makes it shoppable. Both Reel
-    read paths already run through here: ``bot.pulse_reel_feed_payload`` builds
-    the scrolling feed on ``list_feed(feed='reels')``, and
-    ``bot.pulse_reel_payload`` -- the single builder behind the deep link, the
-    share target, the playable-video supplement and fourteen interaction routes
-    that each return the refreshed reel -- builds on ``get_post``. Every reel
-    transform between here and the wire (``reel_prioritize_video_media``,
-    ``pulse_reel_apply_management_flags``, ``score_reel``, ``rank_reels``,
-    ``pulse_merge_live_reel_items``) either mutates in place or copies with
-    ``dict(reel)``, so nothing whitelists the key away.
-
-    So do not add a second enricher in ``bot.py`` for the Reels surface. It
-    would be a duplicate query per page against a pool of eight, and the two
-    copies would eventually disagree about the same listing on the same screen.
-    """
-    items = [post for post in (posts or []) if isinstance(post, dict)]
-    if not items:
-        return posts
-    overlays = _commerce_for_posts([post.get("id") for post in items])
-    if not overlays:
-        return posts
-    for post in items:
-        try:
-            found = overlays.get(int(post.get("id") or 0))
-        except (TypeError, ValueError):
-            continue
-        if found:
-            post["commerce"] = found
-    return posts
-
-
 def _music_for_posts(post_ids):
     """Hydrate creator-safe music attached to feed posts in one query.
 
@@ -780,8 +668,7 @@ def _music_for_posts(post_ids):
                    pcm.audio_track_id, pcm.title, pcm.artist, pcm.source,
                    pcm.license_snapshot_json, pcm.created_at, pcm.audio_start_time, pcm.audio_volume, pcm.original_audio_muted,
                    at.audio_url AS current_audio_url,
-                   at.duration_seconds AS current_duration_seconds,
-                   at.lifecycle_state, at.removed_at, at.safety_status, at.active, at.approved_by_admin
+                   at.duration_seconds AS current_duration_seconds
             FROM pulse_content_music pcm
             JOIN pulse_audio_tracks at ON CAST(at.id AS TEXT)=CAST(pcm.audio_track_id AS TEXT)
             LEFT JOIN pulse_reels r ON pcm.content_type='reel' AND r.id = pcm.content_id
@@ -789,8 +676,13 @@ def _music_for_posts(post_ids):
                 (pcm.content_type IN ('post','video') AND pcm.content_id IN ({placeholders}))
                 OR (pcm.content_type='reel' AND r.post_id IN ({placeholders}))
               )
+              AND COALESCE(at.safety_status,'approved')='approved'
+              AND COALESCE(at.active,1)=1
+              AND COALESCE(at.approved_by_admin,0)=1
               AND COALESCE(at.commercial_use_allowed,0)=1
               AND COALESCE(at.remix_edit_allowed,0)=1
+              AND COALESCE(at.removed_at,'')=''
+              AND COALESCE(at.audio_url,'')!=''
             ORDER BY CASE WHEN pcm.content_type='video' THEN 0 WHEN pcm.content_type='post' THEN 1 ELSE 2 END, pcm.created_at DESC
             """,
             [int(post_id) for post_id in post_ids] * 2,
@@ -803,35 +695,17 @@ def _music_for_posts(post_ids):
                 continue
             snapshot = _json(item.get("license_snapshot_json"), {})
             audio_baked_in = bool(snapshot.get("audio_baked_in"))
-            # A removed track used to be filtered out of this JOIN entirely, which
-            # looked like the safe answer and was the opposite of it: the post came
-            # back with no `music` at all, and the client's audio policy reads "no
-            # attached music" as "play the original camera audio". A takedown
-            # therefore *unmuted* every video whose creator had deliberately
-            # silenced it. The row is kept now and its audio blanked, so the mute
-            # the creator chose survives and the client can say why it is silent.
-            #
-            # Only the moderation/takedown state is handled this way. The two
-            # licensing predicates above still drop the row: whether a track may be
-            # used commercially is an attach-time question that predates this and
-            # is not what an owner takedown decides.
-            unavailable = not music_authority.is_servable(item) or not (
-                int(item.get("active") if item.get("active") is not None else 1)
-                and int(item.get("approved_by_admin") or 0)
-            )
-            audio_url = "" if (audio_baked_in or unavailable) else _public_media_url(item.get("current_audio_url") or snapshot.get("audio_url") or snapshot.get("preview_url") or "")
-            if not audio_url and not audio_baked_in and not unavailable:
+            audio_url = "" if audio_baked_in else _public_media_url(item.get("current_audio_url") or snapshot.get("audio_url") or snapshot.get("preview_url") or "")
+            if not audio_url and not audio_baked_in:
                 continue
             music[post_id] = {
                 "audio_id": str(item.get("audio_track_id") or snapshot.get("track_id") or ""),
                 "track_id": str(item.get("audio_track_id") or snapshot.get("track_id") or ""),
-                "title": "" if unavailable else _clean_text(item.get("title") or snapshot.get("title") or "Approved track", 180),
-                "artist": "" if unavailable else _clean_text(item.get("artist") or snapshot.get("artist") or "PulseSoc Music", 180),
+                "title": _clean_text(item.get("title") or snapshot.get("title") or "Approved track", 180),
+                "artist": _clean_text(item.get("artist") or snapshot.get("artist") or "PulseSoc Music", 180),
                 "attached_audio_url": audio_url,
                 "audio_url": audio_url,
                 "preview_url": audio_url,
-                "audio_unavailable": unavailable,
-                "audio_unavailable_state": music_authority.normalize_state(item.get("lifecycle_state")) if unavailable else "",
                 "duration_seconds": int(float(item.get("current_duration_seconds") or snapshot.get("duration_seconds") or snapshot.get("duration") or 0) or 0),
                 "audio_duration": int(float(item.get("current_duration_seconds") or snapshot.get("duration_seconds") or snapshot.get("duration") or 0) or 0),
                 "audio_start_time": float(item.get("audio_start_time") or snapshot.get("audio_start_time") or snapshot.get("start_seconds") or 0),
@@ -903,15 +777,7 @@ def _view_counts(cur, post_ids):
 
 
 def _media_with_attached_music(media, music):
-    # A removed track reaches here with every url blank, which the url check
-    # below would read as "no music to stamp" -- leaving each media record
-    # carrying whatever it had before. That is the one case where the records
-    # must still be written, because the blanking is the point: a surface reading
-    # the media item rather than the post must not find a live url on it.
-    unavailable = bool((music or {}).get("audio_unavailable"))
-    if not media or not music:
-        return media or []
-    if not unavailable and not (music.get("attached_audio_url") or music.get("audio_url") or music.get("preview_url")):
+    if not media or not music or not (music.get("attached_audio_url") or music.get("audio_url") or music.get("preview_url")):
         return media or []
     out = []
     for item in media or []:
@@ -920,16 +786,12 @@ def _media_with_attached_music(media, music):
             "audio_id": music.get("audio_id") or music.get("track_id") or "",
             "music_id": music.get("track_id") or music.get("audio_id") or "",
             "attached_audio_url": music.get("attached_audio_url") or music.get("audio_url") or music.get("preview_url") or "",
-            "audio_title": "" if unavailable else (music.get("title") or "Approved track"),
-            "audio_artist": "" if unavailable else (music.get("artist") or "PulseSoc Music"),
+            "audio_title": music.get("title") or "Approved track",
+            "audio_artist": music.get("artist") or "PulseSoc Music",
             "audio_duration": music.get("audio_duration") or music.get("duration_seconds") or 0,
             "audio_start_time": music.get("audio_start_time") or 0,
             "audio_volume": music.get("audio_volume") or 1,
-            # Unchanged by a takedown, deliberately. The creator silenced this
-            # video when they attached a song; removing the song does not give
-            # anyone back the camera audio they chose not to publish.
             "original_audio_muted": True,
-            "audio_unavailable": unavailable,
         })
         out.append(enriched)
     return out
@@ -1241,7 +1103,7 @@ def _repost_originals(cur, rows, viewer_user_id=None):
     viewer_state = _viewer_post_state(cur, originals, viewer_user_id)
     media = _media_for_posts(hydrated_ids)
     music = _music_for_posts(hydrated_ids)
-    originals_by_id = {
+    return {
         int(row["id"]): _public_post(
             row,
             media.get(int(row["id"]), []),
@@ -1258,13 +1120,6 @@ def _repost_originals(cur, rows, viewer_user_id=None):
         )
         for row in originals
     }
-    # A repost renders the original nested inside it, so a resharing user is a
-    # distribution path for a PulseDrop Signal -- and the nested card is the one
-    # that carries the product. Without this the reshare shows the picture and
-    # the caption and no price, which is the worst of the three states. The
-    # outer repost is not itself a publication and correctly gets no overlay.
-    _attach_commerce(list(originals_by_id.values()))
-    return originals_by_id
 
 
 def normalize_feed(feed):
@@ -1311,6 +1166,7 @@ def enqueue_post_jobs(post_id, post_type="text", has_media=False):
     jobs = [
         "moderate_post",
         "scan_links",
+        "generate_ai_summary",
         "generate_ai_tags",
         "rank_feed",
         "notify_followers",
@@ -1375,11 +1231,7 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
                 json.dumps(all_tags),
                 visibility,
                 moderation.get("status") or "approved",
-                # Deliberately empty. Nothing in this codebase summarises a post,
-                # so every value that was ever stored here was a truncated copy of
-                # ``body`` — and a stored copy goes stale the moment an author or
-                # an operator corrects the original. Readers derive from ``body``.
-                "",
+                moderation.get("ai_summary") or (body or title)[:220],
                 json.dumps(all_tags),
                 moderation.get("sentiment") or "neutral",
                 int(moderation.get("risk_score") or 0),
@@ -1427,7 +1279,7 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
             "body": body,
             "visibility": visibility,
             "moderation_status": moderation.get("status") or "approved",
-            "ai_summary": "",
+            "ai_summary": moderation.get("ai_summary") or (body or title)[:220],
             "ai_tags": all_tags,
             "tags": all_tags,
             "sentiment": moderation.get("sentiment") or "neutral",
@@ -1508,7 +1360,7 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
     conn.close()
     media = _media_for_posts(post_ids)
     music = _music_for_posts(post_ids)
-    post = _public_post(
+    return _public_post(
         row,
         media.get(int(post_id), []),
         reactions.get(int(post_id), {}),
@@ -1522,8 +1374,6 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
         int(row.get("user_id") or 0) in viewer_state["following"],
         reposts=reposts.get(int(post_id), 0),
     )
-    _attach_commerce([post])
-    return post
 
 
 def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_player_id="", limit=20, offset=0):
@@ -1692,7 +1542,6 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         )
         for row in rows
     ]
-    _attach_commerce(posts)
     try:
         if feed == "trending" or (feed == "for_you" and (topic or profile_public_player_id)):
             posts = pulse_feed_ranking_engine.rank_posts(posts, {"viewer_user_id": viewer_user_id})
@@ -1774,7 +1623,6 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
         )
         for row in rows
     ]
-    _attach_commerce(posts)
     return {"ok": True, "feed": "my_posts", "topic": "", "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel("")}
 
 
@@ -2389,6 +2237,12 @@ def explain_visibility(post_id, viewer_user_id=None):
 def _empty_intelligence(topic=""):
     return {
         "trending_topics": [],
+        "top_spaces": [
+            {"name": "Scam Watch", "slug": "scam-watch", "heat": 0},
+            {"name": "Educators", "slug": "educators", "heat": 0},
+            {"name": "Alpha Arena", "slug": "alpha-arena", "heat": 0},
+            {"name": "Roast Battle", "slug": "roast-battle", "heat": 0},
+        ],
         "top_posts": [],
         "active_creators": [],
         "scam_warnings": [],
@@ -2471,22 +2325,15 @@ def intelligence_panel(topic=""):
     ]
     conn.close()
     trending = [{"tag": k, "count": v} for k, v in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:8]]
-    # ``top_spaces`` was removed here. It was four hardcoded names -- Scam Watch,
-    # Alpha Arena, Roast Battle, Market Psychology -- with slugs that do not exist
-    # in ``PULSE_SPACES`` and a "heat" number counted from hashtags rather than
-    # from anything happening in a space. It rendered as "Alpha Arena · heat 0"
-    # linking to /pulse/spaces/alpha-arena, and that route answers 200 with a
-    # generic "PulseSoc Space / Explore Spaces" stub rather than 404 -- which is
-    # worse than a broken link, because a reader who clicks it gets a page that
-    # looks like the space exists and is simply empty. An invented community, an
-    # invented metric, and navigation that lies on arrival. Its only reader was
-    # ``renderIntel`` in the shell-runtime script, which ``pulse_page_html``
-    # strips for every request that does not pass ``?boot_profile=`` explicitly,
-    # and nothing in ``mobile-native/src`` or ``static/js`` reads the key. The
-    # real communities rail is ``pulse_rail_communities_html``, which reads
-    # ``pulse_space_members``.
+    top_spaces = [
+        {"name": "Scam Watch", "slug": "scam-watch", "heat": counts.get("scamalert", 0) + counts.get("scam", 0)},
+        {"name": "Alpha Arena", "slug": "alpha-arena", "heat": counts.get("alphaarena", 0) + counts.get("arena", 0)},
+        {"name": "Roast Battle", "slug": "roast-battle", "heat": counts.get("roastbattle", 0) + counts.get("roast", 0)},
+        {"name": "Market Psychology", "slug": "market-psychology", "heat": counts.get("marketpsychology", 0)},
+    ]
     return {
         "trending_topics": trending,
+        "top_spaces": top_spaces,
         "top_posts": top_posts,
         "active_creators": active_creators,
         "scam_warnings": scam_warnings,
@@ -3160,18 +3007,17 @@ def _process_job(cur, job):
         suspicious = 1 if re.search(r"https?://|www\\.|airdrop|seed phrase|private key|claim", post.get("body") or "", re.I) else 0
         if suspicious:
             cur.execute("UPDATE pulse_posts SET risk_score=MAX(COALESCE(risk_score,0), 45), updated_at=? WHERE id=?", (_now(), target_id))
-    # ``generate_ai_summary`` is intentionally absent: it only ever wrote a
-    # 220-character copy of ``body`` back onto the row. Jobs are one-shot, so
-    # that copy never recomputed and silently outlived any later correction to
-    # ``body``. Rows still pending this job in production fall through to the
-    # unconditional _complete_job below and retire without writing.
-    elif job_type == "generate_ai_tags":
+    elif job_type in {"generate_ai_summary", "generate_ai_tags"}:
         cur.execute("SELECT body, title, tags_json FROM pulse_posts WHERE id=? LIMIT 1", (target_id,))
         post = _row(cur.fetchone()) or {}
-        tags = _json(post.get("tags_json"), [])
-        if not tags and post.get("body"):
-            tags = [token.strip("#").lower() for token in re.findall(r"#([A-Za-z0-9_]{2,32})", post.get("body"))][:8]
-        cur.execute("UPDATE pulse_posts SET ai_tags_json=?, updated_at=? WHERE id=?", (json.dumps(tags), _now(), target_id))
+        if job_type == "generate_ai_summary":
+            summary = _clean_text(post.get("body") or post.get("title") or "PulseSoc community update", 220)
+            cur.execute("UPDATE pulse_posts SET ai_summary=?, updated_at=? WHERE id=?", (summary, _now(), target_id))
+        else:
+            tags = _json(post.get("tags_json"), [])
+            if not tags and post.get("body"):
+                tags = [token.strip("#").lower() for token in re.findall(r"#([A-Za-z0-9_]{2,32})", post.get("body"))][:8]
+            cur.execute("UPDATE pulse_posts SET ai_tags_json=?, updated_at=? WHERE id=?", (json.dumps(tags), _now(), target_id))
     elif job_type == "rank_feed":
         cur.execute(
             """

@@ -227,10 +227,7 @@ from telegram.ext import (
 )
 
 from services import (
-    account_email_uniqueness,
     app_links,
-    app_promotion,
-    auth_subject_guard,
     brevo_contacts as brevo_contacts_service,
     client_address,
     command_center_client as command_center_client_service,
@@ -307,7 +304,6 @@ from services import (
     realtime_sync_engine,
     realtime_service,
     telegram_text_router,
-    legal_acceptance,
     live_market_service,
     live_archive_service,
     live_archive_share_service,
@@ -329,22 +325,10 @@ from services import (
     marketplace_fulfillment as marketplace_fulfillment,
     marketplace_listing_types as marketplace_listing_types_service,
     marketplace_listing_lifecycle as marketplace_listing_lifecycle,
-    marketplace_order_fulfillment as marketplace_order_fulfillment,
     marketplace_seller_identity as marketplace_seller_identity,
-    marketplace_seo as marketplace_seo,
-    merchant_center_feed as merchant_center_feed,
-    # The web storefront. Two modules, deliberately: `marketplace_web` derives
-    # facts from rows (price ranges, taxonomy, option groups, description
-    # parsing) and `marketplace_storefront` turns those facts into markup.
-    # Neither imports Flask or `bot`, which is what makes the storefront
-    # testable without booting the app and is why the routes below contain SQL
-    # and HTTP concerns only.
-    marketplace_web as marketplace_web,
-    marketplace_storefront as marketplace_storefront,
     media_service,
     media_storage,
     media_upload_sessions,
-    store_identity_sync as store_identity_sync,
     stored_video_policy,
     messenger_media_foundation,
     mux_live_service,
@@ -366,7 +350,6 @@ from services import (
     schema_guard,
     premium_capability_engine,
     payment_provider,
-    seller_payment_onboarding,
     stripe_webhook_verification,
     premium_entitlement_service,
     premium_identity_engine,
@@ -399,11 +382,8 @@ from services import (
     pulse_identity_engine,
     pulse_id_service,
     pro_access as pro_access_service,
-    pulse_commerce_card,
     pulse_feed_engine,
     pulse_feed_ranking_engine,
-    pulse_reactions,
-    pulse_web_navigation,
     chat_health_service,
     pulse_moderation_engine,
     pulse_search_engine,
@@ -428,7 +408,6 @@ from services import (
     security_monitor,
     seller_lifecycle,
     seo_engine,
-    search_visibility,
     sms_service,
     social_energy_engine,
     social_loop_engine,
@@ -449,18 +428,7 @@ from services import (
     world_presence_engine,
     action_result_tracker,
 )
-# Imported here rather than at its historical position further down the file
-# because route declarations have to be in scope at `def` time, and the sitemap
-# routes are defined well before it. `services.route_auth` imports nothing from
-# this package, so hoisting it cannot create a cycle.
-from services.route_auth import admin_required, auth_required, public_route
-# Hoisted alongside `route_auth` for the same reason: `/business` declares its
-# auth at `def` time and the hub's registry is read inside that view. The module
-# imports only `services.app_links`, so it cannot create a cycle back to here.
-from services import business_web_sections
 from seo import schema as seo_schema
-from seo import features as seo_features
-from seo import commerce_policies as seo_commerce_policies
 from seo.content import (
     all_public_paths,
     article_page,
@@ -1299,35 +1267,8 @@ if not STRIPE_SECRET_KEY:
     logging.error("Railway Stripe ERROR: STRIPE_SECRET_KEY is missing. Checkout session creation and success-page confirmation will fail.")
 if not STRIPE_PUBLISHABLE_KEY:
     logging.warning("Railway Stripe warning: STRIPE_PUBLISHABLE_KEY is missing. Frontend publishable-key integrations may not work.")
-def _process_serves_stripe_webhook() -> bool:
-    """Whether this process could ever verify a Stripe webhook signature.
-
-    The webhook route lives in this module, but so do ``db`` and ``init_db``,
-    which is why every background worker imports ``bot``. The secret is only
-    meaningful in the process actually serving HTTP; a worker that never
-    receives a request has nothing to verify and no use for it.
-
-    Unknown entry points answer **True**. A false alarm costs attention, a
-    missed one costs an unverified live webhook, so the doubt goes to the
-    louder side -- and only the ``*_worker.py`` family is positively
-    recognised as not serving.
-    """
-    entry = os.path.basename(str((sys.argv or [""])[0] or ""))
-    return not entry.endswith("_worker.py")
-
-
 if not STRIPE_WEBHOOK_SECRET:
-    # Unconditional, this fired on every worker service that imports bot and
-    # trained readers to scroll past the line on the one service where it is
-    # real. The enforcement that matters is not here anyway: the route itself
-    # refuses an unsigned webhook with a 503 regardless of what this logs.
-    if _process_serves_stripe_webhook():
-        logging.error("Railway Stripe ERROR: STRIPE_WEBHOOK_SECRET is missing. Live Stripe webhooks cannot be verified.")
-    else:
-        logging.info(
-            "Stripe webhook secret not configured; this process (%s) does not serve the webhook route, so it does not need one.",
-            os.path.basename(str((sys.argv or [""])[0] or "")) or "unknown",
-        )
+    logging.error("Railway Stripe ERROR: STRIPE_WEBHOOK_SECRET is missing. Live Stripe webhooks cannot be verified.")
 if not STRIPE_PRICE_ID:
     logging.warning("Railway Stripe warning: STRIPE_PRICE_ID is missing. Website checkout will be disabled until the Railway variable is configured.")
 if PAYMENT_PROVIDER_ENABLED and not STRIPE_FOUNDER_PRICE_ID:
@@ -1417,15 +1358,6 @@ _load_route_pack("pulse_mobile_settings", "services.pulse_settings_routes")
 _load_route_pack("pulse_marketplace_cart", "services.marketplace_cart_routes")
 _load_route_pack("pulse_marketplace_offers", "services.marketplace_offers_routes")
 _load_route_pack("pulse_marketplace_returns", "services.marketplace_returns_routes")
-_load_route_pack("pulse_marketplace_fulfillment", "services.marketplace_fulfillment_routes")
-# Organic + house commerce discovery. Deliberately registered beside the
-# marketplace packs and nowhere near the advertising packs: this engine gives
-# unpaid reach, and its events must never be accounted as ad delivery.
-_load_route_pack("pulse_commerce_discovery", "services.commerce_discovery_routes")
-# A read layer over the discovery events the pack above writes. No ingest and
-# no table of its own — production already holds 111 event tables and the
-# problem this solves is that none of them join exposure to outcome.
-_load_route_pack("pulse_analytics", "services.pulse_analytics_routes")
 # Business OS web surface (website parity milestone 3): serves the /business-os
 # dashboard page over the existing /api/business-os API — no new API routes.
 _load_route_pack("business_os_web", "services.business_os_web")
@@ -1483,14 +1415,6 @@ _load_route_pack("private_office_relationships", "services.private_office_relati
 # communications engine's room-scope calls. Fail-closed behind
 # PRIVATE_MEETINGS_ENABLED (default OFF) plus the Office second lock.
 _load_route_pack("private_office_meetings", "services.private_office_meetings_routes")
-# Delivery intelligence: POST /api/pulse/delivery/estimate plus an admin health
-# surface. The server is the only place a delivery promise is composed, so every
-# client reads it from here rather than assembling one -- two clients assembling
-# one produce two promises for one parcel. Safe to register unconfigured: with no
-# PULSE_DELIVERY_* variables set the endpoint answers
-# `handling_time_undeclared` and never a date, which is the shadow-mode property
-# §101-103 asks for without a flag anyone could switch on ahead of the policy.
-_load_route_pack("pulse_delivery", "services.delivery_routes")
 # Private Office is Relationship Intelligence, Private Meetings and Office
 # Security. Six packs that used to load here were withdrawn with the features
 # they served: structured records, document intelligence, private briefings,
@@ -1563,22 +1487,9 @@ def app_cta_html(destination, resource_id=None, source="web", label=None, classe
 
     The label always comes from the destination registry unless overridden, so a
     button cannot claim to open a post and land on Home.
-
-    `open_interstitial_url`, for the same reason the `app_open_cta` macro uses
-    it. Every caller of this helper is a page on pulsesoc.com, so the canonical
-    universal link `build_app_link` returns is same-domain -- and iOS does not
-    consult associated domains for a same-domain tap, so it never opened the app
-    from here. `/open/...` is left unclaimed by the association -- not by an
-    `exclude`, but because no component matches it at all -- so Safari keeps the
-    URL and the member is offered a real `pulsesoc://` button, a custom scheme
-    that sidesteps the same-domain rule entirely. That is a weaker guarantee
-    than an exclusion would be, so it is pinned by
-    `tests/web_parity/test_aasa_claims.py::test_the_interstitial_prefix_is_not_claimed_by_the_association`;
-    adding a broad component later would otherwise silently swallow this page.
-    `build_app_link` remains correct for anything sent off-domain.
     """
     try:
-        href = app_links.open_interstitial_url(destination, resource_id, source)
+        href = app_links.build_app_link(destination, resource_id, None, source)
     except app_links.AppLinkError as exc:
         logging.info(
             "%s destination=%s resource_present=%s error=%s",
@@ -1608,47 +1519,15 @@ def inject_app_link_helpers():
 
     `app_store_url` is the same authority the referral redirect and the
     app-intent fallback use, so the listing URL lives in exactly one place.
-
-    `smart_app_banner_meta` is empty on all but the two paths that opted in, so
-    a template can render it unconditionally. Its app-id is parsed back out of
-    that same App Store URL rather than written again, because a banner naming
-    one listing beside a button naming another is the failure worth preventing.
     """
 
     def app_link(destination, resource_id=None, source="web", **params):
         return app_links.build_app_link(destination, resource_id, params or None, source)
 
-    def app_open_link(destination, resource_id=None, source="web"):
-        """The link to use when the CTA is rendered ON pulsesoc.com.
-
-        `app_link` builds the canonical `https://pulsesoc.com/...?pulse_app=1`
-        universal link, which is right in an email, a push payload or an SMS --
-        anywhere the tap starts off-domain. It is wrong here, and wrong in a way
-        that looks fine in review: the public product page is itself served from
-        pulsesoc.com, so the button was a link from a page to that same page.
-        iOS does not consult associated domains for a same-domain tap, so the
-        app is never offered; the request goes to Flask and re-renders the page
-        the member is already looking at. Reported as "the button does nothing",
-        which is exactly what it does.
-
-        `open_interstitial_url` is the on-domain answer and raises for any
-        destination the shipped binary cannot resolve, so a button that would
-        strand someone fails at render instead of in a member's hand.
-        """
-
-        return app_links.open_interstitial_url(destination, resource_id, source)
-
-    try:
-        banner_path = request.path
-    except RuntimeError:
-        banner_path = ""
-
     return {
         "app_link": app_link,
-        "app_open_link": app_open_link,
         "app_link_label": app_links.destination_label,
         "app_store_url": pulsesoc_app_store_url,
-        "smart_app_banner_meta": app_promotion.smart_app_banner_meta(banner_path),
     }
 
 
@@ -1658,13 +1537,7 @@ def home():
     if user:
         return redirect("/pulse")
     greeting = "Welcome to PulseSoc — your AI intelligence command center."
-    response = render_template(
-        "index.html",
-        current_user=user or {},
-        homepage_greeting=greeting,
-        organization_ld=organization_ld(),
-        mobile_app_ld=mobile_app_ld(),
-    )
+    response = render_template("index.html", current_user=user or {}, homepage_greeting=greeting)
     response_obj = webhook_app.make_response(response)
     return response_obj
 
@@ -1763,22 +1636,13 @@ def render_ads_landing_page(slug):
     else:
         signup_url = f"/signup?next={quote(page['next'], safe='')}&utm_source=google_ads&utm_medium=cpc&utm_campaign={slug}&utm_content=hero_{variant}"
     secondary_url = page["next"] if slug != "crypto-scam-scanner" else "/learn/crypto-scams"
-    # One builder renders four paid landing pages, so the anonymous publisher
-    # here was four orphan Organization nodes, not one. `publisher` is now a
-    # reference, and the node it refers to travels with it -- a reference to an
-    # `@id` that appears nowhere in the same graph resolves to nothing.
     schema = {
         "@context": "https://schema.org",
-        "@graph": [
-            seo_schema.organization_schema(),
-            {
-                "@type": page["schema_type"],
-                "name": page["title"].split("|")[0].strip(),
-                "url": canonical,
-                "description": page["description"],
-                "publisher": {"@id": f"{seo_schema.SITE_URL}/#organization"},
-            },
-        ],
+        "@type": page["schema_type"],
+        "name": page["title"].split("|")[0].strip(),
+        "url": canonical,
+        "description": page["description"],
+        "publisher": {"@type": "Organization", "name": "CoinPlotXAI Inc.", "url": "https://pulsesoc.com"},
     }
     proof = "".join(f"<span>{html_escape(clean_html(item))}</span>" for item in page["proof"])
     related = "".join(
@@ -2024,7 +1888,7 @@ def api_support_ticket():
 def security_page():
     return simple_public_page(
         "security",
-        "Security Reporting | PulseSoc",
+        "Security Reporting | CoinPlotXAI Inc.",
         "PulseSoc Security Reporting",
         "Report scams, suspicious wallets, phishing, abusive users, or account compromise to PulseSoc.",
         "Security reports are routed to support@pulsesoc.com. PulseSoc never asks for seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords.",
@@ -2122,38 +1986,14 @@ def scam_shield_scan_page():
     return response
 
 
-def organization_ld():
-    """The Organization node, rendered for templates that embed a `@graph`.
-
-    Passed in rather than written into each template so there is one definition
-    of who this domain belongs to. Both legal pages used to carry their own
-    copy under the same `@id`, naming the company where the others name the
-    brand; the home page carried a third with no `@id` at all, which joins
-    nothing.
-    """
-
-    return json.dumps(seo_schema.organization_schema(), indent=2)
-
-
-def mobile_app_ld():
-    """The iPhone app node, for templates that show an App Store badge.
-
-    The home page shows the badge and said nothing about the app in structured
-    data, while claiming an Android build that does not exist. This is the
-    truthful version of that claim and `seo.schema` owns it.
-    """
-
-    return json.dumps(seo_schema.mobile_app_schema(), indent=2)
-
-
 @webhook_app.route("/privacy", methods=["GET"])
 def privacy_page():
-    return render_template("privacy.html", organization_ld=organization_ld())
+    return render_template("privacy.html")
 
 
 @webhook_app.route("/terms", methods=["GET"])
 def terms_page():
-    return render_template("terms.html", organization_ld=organization_ld())
+    return render_template("terms.html")
 
 
 def legal_money_page(title, body):
@@ -2175,44 +2015,16 @@ def legal_seller_terms_page():
     return legal_money_page("Seller Terms", "<p>Sellers are responsible for taxes, truthful listings, safe fulfillment, accurate education claims, and compliance with marketplace and teacher rules. Scam promotion, guaranteed-profit claims, misleading financial advice, and unsafe content are prohibited.</p><p>Payouts require approval, provider onboarding, and ongoing trust review. CoinPlotXAI may hold, reverse, suspend, or review funds when fraud, disputes, safety risks, or policy violations are detected.</p>")
 
 
-# The shipped iPhone app tells members that these three URLs carry "the full
-# canonical version -- the one that is legally operative", so a 404 here is the
-# app pointing at nothing while claiming otherwise. They redirect rather than
-# render because the operative text has exactly one home: a second copy would be
-# a second document to keep current, and the one that drifted would still be the
-# one a user was shown.
-@webhook_app.route("/legal/terms", methods=["GET"])
-@public_route(reason="Canonical legal URL named by the iPhone app's in-app Terms screen. Redirects to /terms, which is itself public -- terms must be readable before there is an account to read them with.")
-def legal_terms_canonical_page():
-    return redirect("/terms", code=301)
-
-
-@webhook_app.route("/legal/privacy", methods=["GET"])
-@public_route(reason="Canonical legal URL named by the iPhone app's in-app Privacy screen. Redirects to /privacy, which is itself public -- a privacy notice that required an account would be unreadable by the people deciding whether to create one.")
-def legal_privacy_canonical_page():
-    return redirect("/privacy", code=301)
-
-
-@webhook_app.route("/legal/guidelines", methods=["GET"])
-@public_route(reason="Canonical legal URL named by the iPhone app's in-app Community Guidelines screen. Redirects to /community-rules, which is itself public.")
-def legal_guidelines_canonical_page():
-    return redirect("/community-rules", code=301)
-
-
 @webhook_app.route("/about", methods=["GET"])
 def about_page():
-    # The canonical node, not a local copy of one. What was here named the
-    # company where every other page names the brand, carried no `@id` so it
-    # joined nothing, gave `url` as /about rather than the site root, and listed
-    # a page on this same domain under `sameAs` -- a field for profiles that
-    # identify this entity somewhere else.
-    #
-    # Its `description` is the reason to take the whole node rather than patch
-    # the name: it described an educational crypto simulation platform. Under
-    # the canonical `@id` that description would not sit beside the WebSite's,
-    # it would merge with it, and Google would resolve the contradiction by
-    # crawl order.
-    schema = dict(seo_schema.organization_schema(), **{"@context": "https://schema.org"})
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "CoinPlotXAI Inc.",
+        "url": "https://pulsesoc.com/about",
+        "sameAs": ["https://pulsesoc.com/arena-preview"],
+        "description": "CoinPlotXAI is an educational AI crypto intelligence, scam protection, market awareness, and simulation training platform.",
+    }
     sections = [
         ("Mission", "CoinPlotXAI helps people train discipline, understand risk, practice decision-making, improve market awareness, and protect themselves from crypto scams in a simulation-first environment."),
         ("AI + Human Psychology", "The platform combines live/cached market context, AI tactical summaries, psychology checks, and risk education so users can slow down, recognize pressure, and make clearer educational decisions."),
@@ -2729,8 +2541,7 @@ def reset_pwa_page():
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>Reset PulseSoc App Cache</title>
-      <meta name="robots" content="noindex,follow">
+      <title>Reset CoinPlotXAI App Cache</title>
       <style>
         body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,Arial,sans-serif}
         main{width:min(100%,560px);padding:28px;border:1px solid rgba(0,229,255,.22);border-radius:14px;background:#0d1627;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.35)}
@@ -2800,27 +2611,15 @@ def start_performance_trace():
     return None
 
 
-# This hook predates the pulsesoc.com migration and named only the old domain,
-# so `www.pulsesoc.com` -- a host Railway actually serves -- answered 200 beside
-# the apex. A rel=canonical was the only thing joining the two, and a canonical
-# is a hint.
-_WWW_HOSTS = {"www." + search_visibility.CANONICAL_HOST, "www.coinpilotx.app"}
-
-
 @webhook_app.before_request
 def redirect_www_to_apex_domain():
     host = (request.host or "").split(":", 1)[0].lower()
-    if host not in _WWW_HOSTS:
-        return None
-    # Apple fetches the app-site-association file without following redirects,
-    # and app version 1.0.0 shipped `applinks:www.pulsesoc.com`. Redirecting
-    # this prefix would break universal links for anyone still on that build.
-    if (request.path or "").startswith("/.well-known/"):
+    if host != "www.coinpilotx.app":
         return None
     path = request.full_path or request.path or "/"
     if path.endswith("?"):
         path = path[:-1]
-    return redirect(f"{search_visibility.CANONICAL_ORIGIN}{path}", code=301)
+    return redirect(f"https://pulsesoc.com{path}", code=301)
 
 
 def record_performance_trace(path, method, status, duration_ms, db_queries, response_size, trace_id, level):
@@ -2862,7 +2661,7 @@ def record_performance_trace(path, method, status, duration_ms, db_queries, resp
         logging.debug("performance trace store skipped path=%s error=%s", path, exc)
 
 
-PULSESOC_TOKENS_LINK = b'<link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=cache-sweep-20260930a">'
+PULSESOC_TOKENS_LINK = b'<link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a">'
 
 
 @webhook_app.after_request
@@ -2932,27 +2731,9 @@ def add_pwa_headers(response):
         response.headers["Service-Worker-Allowed"] = "/"
         response.headers["Cache-Control"] = "no-store, max-age=0"
     elif request.path == "/pulse" or request.path.startswith("/pulse/") or request.path.startswith("/api/pulse/"):
-        # `/pulse/*` is the signed-in social app, so the default here is the
-        # strict one: per-user content must never reach a shared cache, and the
-        # back button must not resurface a thread after logout. This assignment
-        # is deliberately not `setdefault` -- a view that forgot is the case the
-        # rule exists for.
-        #
-        # A handful of `/pulse/` URLs now answer anonymous readers with a public
-        # page (the marketplace product page is the first), and for those the
-        # strict default is wrong in a way that costs money: Googlebot and
-        # Merchant Center both fetch this URL, `no-store` forbids any of it
-        # being reused, and the crawler spends budget re-downloading an
-        # unchanged product page. The opt-out is a flag the *view* sets, not a
-        # path prefix, because the same path is private for a signed-in member
-        # and public for a visitor -- only the code that rendered the response
-        # knows which it just produced.
-        if getattr(g, "pulse_public_cacheable", False):
-            response.headers.setdefault("Cache-Control", "public, max-age=300")
-        else:
-            response.headers["Cache-Control"] = "no-store, max-age=0"
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     elif request.path == "/admin" or request.path.startswith("/admin/") or request.path.startswith("/api/admin/"):
         # Admin surfaces must never enter browser/proxy caches: after logout
         # or session expiry the back button must not resurface protected
@@ -2962,7 +2743,7 @@ def add_pwa_headers(response):
         response.headers["Expires"] = "0"
     elif request.path.startswith(("/static/", "/icons/")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml", merchant_center_feed.FEED_PATH, "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
+    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-live.xml", "/sitemap-replays.xml", "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
         response.headers["Cache-Control"] = "public, max-age=300"
     if (
         response.status_code == 200
@@ -3003,34 +2784,17 @@ def add_pwa_headers(response):
             # below all query for server-rendered DOM at `defer` time -- when a
             # React app's body is still an empty <div id="root"> -- so they bind
             # to nothing and then never run again. They are not merely useless
-            # there: pulse_i18n.js?v=commerce-i18n-20260929a rewrites text nodes, which is a race against
+            # there: pulse_i18n.js rewrites text nodes, which is a race against
             # React's first paint over nodes React owns.
             spa_isolated = bool(getattr(g, "pulse_spa_response", False))
             gateway_isolated = request.path == "/admin/login" or spa_isolated
-            if not gateway_isolated and "</body>" in html.lower() and "/static/js/pulse_pwa_install.js?v=cache-sweep-20260930a" not in html:
-                # Bumped when the script's behaviour changes, not on a schedule.
-                # The file is served with a long cache lifetime, so a content
-                # change with the old query string reaches only first-time
-                # visitors -- everyone else keeps running the version they
-                # already have, and the deploy silently does nothing for them.
-                # The App Store URL rides on the tag because the tag is the one
-                # thing guaranteed to be on every page this script runs on. The
-                # promotion assets that publish `PULSE_APP_PROMOTION` are on a
-                # shell the marketing pages do not use, and the Smart App Banner
-                # meta is scoped to a path list -- so on /about the iOS surface
-                # had no URL to read and correctly suppressed itself. Attaching
-                # it here removes the gap without giving the script its own copy
-                # of the listing: `app_links.app_store_url()` still decides it.
-                store_url = html_escape(app_links.app_store_url(), quote=True)
-                pwa_install_script = (
-                    '<script src="/static/js/pulse_pwa_install.js?v=cache-sweep-20260930a"'
-                    f' data-pulse-app-store-url="{store_url}" defer></script>'
-                )
+            if not gateway_isolated and "</body>" in html.lower() and "/static/js/pulse_pwa_install.js" not in html:
+                pwa_install_script = '<script src="/static/js/pulse_pwa_install.js?v=brand-20260813" defer></script>'
                 html = re.sub(r"</body>", pwa_install_script + "</body>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
-            if not gateway_isolated and "</head>" in html.lower() and "/static/js/pulse_i18n.js?v=commerce-i18n-20260929a" not in html:
-                i18n_script = '<script src="/static/js/pulse_i18n.js?v=commerce-i18n-20260929a" defer></script>'
+            if not gateway_isolated and "</head>" in html.lower() and "/static/js/pulse_i18n.js" not in html:
+                i18n_script = '<script src="/static/js/pulse_i18n.js?v=persistent-language-20260701" defer></script>'
                 html = re.sub(r"</head>", i18n_script + "</head>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
@@ -3042,7 +2806,7 @@ def add_pwa_headers(response):
             call_overlay_allowed = not spa_isolated and bool(session.get("account_user_id")) and (
                 request.path == "/pulse" or request.path.startswith(("/pulse/", "/dashboard"))
             )
-            if call_overlay_allowed and "</head>" in html.lower() and "/static/css/pulsesoc_global_call_overlay.css?v=fullscreen-incoming-20260704" not in html:
+            if call_overlay_allowed and "</head>" in html.lower() and "/static/css/pulsesoc_global_call_overlay.css" not in html:
                 call_overlay_css = '<link rel="stylesheet" href="/static/css/pulsesoc_global_call_overlay.css?v=fullscreen-incoming-20260704">'
                 html = re.sub(r"</head>", call_overlay_css + "</head>", html, count=1, flags=re.I)
                 response.set_data(html)
@@ -3197,130 +2961,6 @@ ABUSE_GUARD_PROTECTED = {
     "/api/create-checkout-session": (8, 300),
     "/api/ai-assistant": (30, 300),
 }
-
-
-# path -> (scope, json/form field names to read the subject from,
-# distinct-subject limit, window seconds). A companion to ABUSE_GUARD_PROTECTED
-# above, not a replacement: that table bounds requests per path, this one bounds
-# how many *different* accounts one client may ask about. The two answer
-# different questions and the account-identity endpoints need this one, because
-# the only shipped client of `/confirmation-status` polls it every 4 seconds
-# about a single address (VerifyEmailStep.tsx: POLL_INTERVAL_MS = 4000) --
-# roughly 75 requests per 300s that a request counter cannot distinguish from 75
-# probes. See services/auth_subject_guard.py for why variety rather than volume
-# is the quantity to bound.
-#
-# GET is included where the route accepts GET. `basic_abuse_guard` is POST/PUT
-# only, which is correct for a form post and is exactly how the enumeration
-# oracle stayed unbounded: `/confirmation-status` answers GET too, so a prober
-# never had to send a method either limiter was watching.
-#
-# WHY THE SCOPE IS AN EXPLICIT COLUMN AND NOT THE PATH
-# ---------------------------------------------------
-# Neither of the two obvious keys is right, in opposite ways.
-#
-# Keying by path alone would hand an enumerator a fresh budget per spelling:
-# `/api/mobile/auth/confirmation-status` and its `/api/pulse` twin are the same
-# handler mounted twice, so alternating the prefix would buy 2x, and adding a
-# third mount point later would silently buy 3x.
-#
-# Keying by actor alone -- which is what shipped first, and what the mutation
-# matrix caught -- conflates endpoints that have deliberately different limits.
-# A client that has legitimately named 8 addresses at `/confirmation-status`
-# (someone who mistyped their own address a few times) would arrive at
-# `/resend-confirmation`, whose limit is 5, already over it, and be refused a
-# resend it never asked for twice. The endpoints have separate limits precisely
-# because they carry separate risks; sharing one counter erases that.
-#
-# So aliases of one endpoint share a scope and distinct endpoints do not, and
-# the grouping is written down rather than inferred from the URL.
-ENUMERATION_GUARD_PROTECTED = {
-    "/api/mobile/auth/confirmation-status": ("confirmation-status", ("email",), 8, 900),
-    "/api/pulse/mobile/auth/confirmation-status": ("confirmation-status", ("email",), 8, 900),
-    "/api/mobile/auth/resend-confirmation": ("resend-confirmation", ("email",), 5, 900),
-    "/api/pulse/mobile/auth/resend-confirmation": ("resend-confirmation", ("email",), 5, 900),
-    "/resend-confirmation": ("resend-confirmation", ("email",), 5, 900),
-    "/api/mobile/auth/change-confirmation-email": ("change-confirmation-email", ("old_email", "email"), 5, 900),
-    "/api/pulse/mobile/auth/change-confirmation-email": ("change-confirmation-email", ("old_email", "email"), 5, 900),
-    "/change-confirmation-email": ("change-confirmation-email", ("old_email", "email"), 5, 900),
-}
-
-#: How much account-confirmation mail one address may receive in one window,
-#: counted across every caller. Per-subject rather than per-client because the
-#: mailbox being filled is the party at risk and the attacker is not it --
-#: rotating source addresses defeats a per-client cap while the mail still
-#: arrives. The client's own cooldown is 30s (VerifyEmailStep.tsx:
-#: RESEND_COOLDOWN_S = 30), so five in fifteen minutes is well clear of anyone
-#: legitimately retrying.
-CONFIRMATION_EMAIL_PER_ADDRESS = (5, 900)
-
-
-def enumeration_guard_subject(fields):
-    """The address this request is asking about, from body or query or form.
-
-    Reads the same shapes the routes themselves read. A request whose subject
-    cannot be found returns "" and is deliberately not counted: filing every
-    malformed request under one shared bucket would let a junk request refuse
-    the next honest one.
-    """
-    payload = request.get_json(silent=True)
-    payload = payload if isinstance(payload, dict) else {}
-    for field in fields:
-        raw = payload.get(field) or request.args.get(field) or request.form.get(field) or ""
-        candidate = normalize_email(clean_html(str(raw)))
-        if candidate:
-            return candidate
-    return ""
-
-
-@webhook_app.before_request
-def account_enumeration_guard():
-    protected = ENUMERATION_GUARD_PROTECTED
-    if request.path not in protected:
-        return None
-    if request.method not in {"GET", "POST", "PUT"}:
-        return None
-    scope, fields, limit, window_seconds = protected[request.path]
-    actor = client_ip_hash()
-    subject = enumeration_guard_subject(fields)
-    # Compose only when there is an actor to compose with. `f"{scope}:{actor}"`
-    # with an empty actor is `"confirmation-status:"` -- non-empty, so it would
-    # sail past the guard's own `_absent(actor)` check and become exactly the
-    # shared bucket that check exists to prevent, with every actorless request in
-    # the fleet spending one budget.
-    refused = auth_subject_guard.distinct_subject_refused(
-        f"{scope}:{actor}" if actor else "", subject, limit, window_seconds)
-    if refused is None:
-        return None
-    # Log the count, never the subject. The point of the endpoint's refusal is
-    # that no observer learns which addresses were asked about, and a log line
-    # naming them would hand that to anyone with log access.
-    logging.warning(
-        "Account enumeration guard triggered path=%s ip_hash=%s subjects=%s limit=%s",
-        request.path, actor, refused.count, refused.limit)
-    # One security_events row per actor per window, not one per refused request.
-    # `security_monitor.record` opens a connection, and the pool is 8+8 with a 3s
-    # timeout -- a DB write on the refusal path would make this guard an
-    # amplifier for precisely the traffic it exists to refuse: hit the cap, and
-    # every further probe costs a connection instead of costing nothing. The
-    # alarm is itself expressed as a per-subject cap of one, reusing the same
-    # primitive rather than adding a second piece of window bookkeeping.
-    # Keyed by scope, not by path, for the same reason the budget is: otherwise
-    # each alias of one endpoint files its own alarm and the row count reads as
-    # more distinct incidents than happened.
-    first_refusal = auth_subject_guard.subject_event_refused(
-        f"enumeration-alarm:{actor}:{scope}", 1, refused.window_seconds)
-    if first_refusal is None:
-        security_monitor.record(
-            "account_enumeration_guard_refused",
-            "high",
-            account_user_id() or 0,
-            actor,
-            request.path,
-            {"distinct_subjects": refused.count, "limit": refused.limit,
-             "window_seconds": refused.window_seconds},
-        )
-    return rate_limit_refusal(request.path, retry_after=refused.retry_after)
 
 
 @webhook_app.before_request
@@ -3523,18 +3163,7 @@ def interactive_security_guard():
             # produce the specific error the client knows how to show.
             max_request_mb = messenger_media_foundation.max_request_mb()
         elif request.path == "/api/pulse/media/upload":
-            # How many bytes may ride in one proxied request is a different
-            # question from how large a stored video may be, and this used to
-            # fall back to MEDIA_UPLOAD_MAX_VIDEO_MB for the answer. Production
-            # sets that to 700, which admitted a 700 MB multipart POST onto a
-            # worker with a 120s timeout -- surviving it needs 5.8 MB/s sustained
-            # for two minutes, so every upload in that band bought a long wait
-            # and then a killed worker. Nothing legitimate is in the band: native
-            # uploads go direct to R2 and web hands video over to Mux well under
-            # 150 MB, so the ceiling only ever caught requests that could not
-            # finish. Operators who really do want a larger proxied body still
-            # have PULSE_MEDIA_MAX_REQUEST_MB, which now means only that.
-            max_request_mb = float(os.getenv("PULSE_MEDIA_MAX_REQUEST_MB", "150"))
+            max_request_mb = float(os.getenv("PULSE_MEDIA_MAX_REQUEST_MB", os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "150")))
         max_request_bytes = int(max_request_mb * 1024 * 1024)
         if request.content_length > max_request_bytes:
             security_monitor.record("oversized_request_blocked", "high", account_user_id() or 0, client_ip_hash(), request.path, {"content_length": request.content_length, "max_request_mb": max_request_mb})
@@ -3583,16 +3212,7 @@ def log_visitor_request():
     # COMMIT per logged request, and the native app drives almost all of its
     # traffic through /api/. Logging it would add a write to every mobile call on
     # a 2-worker gunicorn. API traffic is measured by analytics_events instead.
-    # `/stripe/webhook` is the same Flask handler as `/stripe-webhook` and
-    # `/api/stripe/webhook` (one function, three rules) but matched none of the
-    # prefixes above, so Stripe deliveries arriving on it paid for a visitor
-    # row each. That is a write on the webhook hot path, it counts a machine as
-    # a visitor, and it stores Stripe's egress IP in `visitor_logs.ip_address`.
-    # All three spellings are excluded now, so the exclusion no longer depends
-    # on which of the aliases a destination happens to be configured with.
-    if request.path.startswith(
-        ("/api/", "/internal/", "/webhook/", "/stripe-webhook", "/stripe/webhook")
-    ):
+    if request.path.startswith(("/api/", "/internal/", "/webhook/", "/stripe-webhook")):
         return None
     if request.path in {"/health", "/health/database"}:
         return None
@@ -3993,174 +3613,6 @@ def enforce_admin_form_csrf():
     )
 
 
-def app_first_href(destination, resource_id=None):
-    """The href for a website button whose destination the app registry owns.
-
-    Every Marketplace button on pulsesoc.com goes through here, so that the
-    decision is made in one place instead of being re-derived at each of the two
-    dozen sites that render one. The name is historical and the function is no
-    longer always app-first: `app_links.website_href` reads `web_equivalent` and
-    returns the real web page for a destination that has one, the `/open/...`
-    interstitial for one that does not.
-
-    That is what changed when `/pulse/marketplace` and `/pulse/marketplace/<id>`
-    became real public templates. They are in `/sitemap-products.xml` and carry
-    canonical URLs, so the website's own navigation has to be able to reach
-    them -- a button that refuses the page we are asking Google to rank is a
-    contradiction a visitor experiences as a dead end. The seller surfaces below
-    them are unchanged and still interstitial: nothing was built for the web
-    there.
-
-    Neither branch is ever the canonical `?pulse_app=1` marker link. That link is
-    tapped from the same domain it points at, and iOS does not consult associated
-    domains for a same-domain tap, so an installed member would land in Safari
-    and get 302'd to the App Store. `open_interstitial_url` explains it in full.
-    """
-
-    return app_links.website_href(destination, resource_id, source="web")
-
-
-def app_first_link_map_script():
-    """The same decision, handed to the scripts that render cards in the browser.
-
-    Search results arrive as JSON from `/api/pulse/search`, and that payload's
-    `url` is shared with the native app, which feeds it to
-    `routeNotificationTarget`. It has to stay canonical, so the app-first
-    rewrite cannot happen in the API -- it has to happen where the web renders
-    the card.
-
-    The alternative is a product URL hand-interpolated in two static JS files,
-    which is the per-site re-derivation `app_links` exists to prevent and is
-    invisible to every Python test in the repo. So the shapes are built here and
-    the browser only substitutes an id.
-
-    Keyed by the result `type` the search API sets, so a card type with no entry
-    keeps its canonical url and nothing has to be excluded by hand.
-
-    The map is kept even though `product` is now web-first and the template it
-    emits is the canonical path -- i.e. the same URL the card's own payload
-    already carries. Deleting the entry would work today and would silently stop
-    working the day a destination moves back to app-first, because the JS would
-    then have no mechanism to rewrite anything. `website_href_template` answers
-    for both cases, so the browser keeps asking the one question and the registry
-    keeps deciding.
-    """
-
-    payload = {
-        "marketplace": {
-            "template": app_links.website_href_template("product", source="web"),
-            "fallback": app_first_href("marketplace"),
-            "token": app_links.CLIENT_ID_TOKEN,
-        }
-    }
-    return (
-        "<script>window.PULSE_APP_FIRST_LINKS="
-        + json.dumps(payload)
-        + ";</script>"
-    )
-
-
-def render_app_only_destination(
-    destination_key, source, can_open_app, scheme_path=None, status=200,
-    web_path=None,
-):
-    """The "this lives in the iPhone app" page, for one destination.
-
-    Deliberately a 200 and not a 302 to the App Store. A visitor at a desktop
-    cannot install an iPhone app on the machine in front of them, so bouncing
-    them to the listing ends the session on a page they can do nothing with; the
-    QR code is the affordance that actually carries the destination to a phone.
-
-    `can_open_app` decides whether the `pulsesoc://` button is offered at all.
-    It is only true where an installed app could plausibly answer — a scheme
-    navigation on a desktop browser can never succeed, and one fired
-    automatically shows an OS error sheet to everybody without the app. The
-    button is offered; it is never taken on the member's behalf.
-
-    `scheme_path` carries the exact resource — `/pulse/marketplace/9`, not
-    `/pulse/marketplace`. It is validated by `app_links.app_scheme_url`, which
-    refuses anything that is not a known destination, so the value that reaches
-    the `href` can never be assembled from raw request input.
-
-    Renders for signed-out visitors too, on purpose: it names a destination and
-    reveals nothing about it, and gating it behind login would strand exactly
-    the person the page exists for.
-    """
-    spec = app_links.DESTINATIONS.get(destination_key)
-    noun = (spec.display_name if spec else "") or "This part of PulseSoc"
-    scheme_url = ""
-    if can_open_app and spec is not None:
-        try:
-            scheme_url = app_links.app_scheme_url(scheme_path or spec.path_template)
-        except app_links.AppLinkError:
-            scheme_url = ""
-
-    logging.info(
-        "%s destination=%s source=%s can_open_app=%s",
-        app_links.EVENT_APP_ONLY_INTERSTITIAL,
-        destination_key,
-        source,
-        "yes" if scheme_url else "no",
-    )
-
-    # Two different pages share this renderer, and the copy has to follow the
-    # destination or it lies to one of them.
-    #
-    # `web_equivalent=False` is the original case: there genuinely is no web
-    # surface, so "we are still building this for the web" is true and the only
-    # way out is the app.
-    #
-    # `web_equivalent=True` arrives here through `/open/...`, which did not
-    # exist when this copy was written -- the `display_name` docstring in
-    # `app_links` even warns that a heading naming a surface is "only worth
-    # setting on the `web_equivalent=False` ones". A member who taps
-    # "Open in the PulseSoc app" on a product page they are *currently reading*
-    # was being told that experience is still being built for the web. That is
-    # false, and it reads as a broken site rather than an invitation.
-    #
-    # The back link matters for the same reason. It pointed at "/" for both
-    # cases, so declining the app cost a member the listing and dropped them on
-    # the homepage -- a Home dead end on the exact journey this mission exists
-    # to repair. When there is a web page for the resource, that is where Back
-    # goes.
-    web_first = bool(spec is not None and spec.web_equivalent)
-    if web_first:
-        heading = f"{noun} is also in the PulseSoc iPhone app"
-        explanation = (
-            "The app remembers where you left off and notifies you when "
-            "something happens. This page keeps working in your browser."
-        )
-    else:
-        heading = f"{noun} is available in the PulseSoc iPhone app"
-        explanation = (
-            "We are still building this experience for the web. Install PulseSoc "
-            "on iPhone to pick up exactly where you left off."
-        )
-
-    # Only ever a builder's output, never request input: `web_path` is the
-    # already-validated path from `resolve_destination_path`. Falling back to
-    # "/" keeps the link present rather than emitting an empty href.
-    back_href = web_path if (web_first and web_path) else "/"
-    back_label = "Keep reading on the web" if back_href != "/" else "Back to PulseSoc"
-
-    body = render_template(
-        "app_only_destination.html",
-        heading=heading,
-        explanation=explanation,
-        back_href=back_href,
-        back_label=back_label,
-        app_store_url=pulsesoc_app_store_url(),
-        qr_src=app_links.app_store_qr_asset(),
-        app_scheme_url=scheme_url,
-        can_open_app=bool(scheme_url),
-        destination_key=destination_key,
-        native_open_event=app_links.EVENT_NATIVE_OPEN_SELECTED,
-    )
-    response = webhook_app.make_response((body, status))
-    response.headers["Cache-Control"] = "no-store, max-age=0"
-    return response
-
-
 @webhook_app.before_request
 def route_app_intent_links_to_the_app_store():
     """App-first fallback for links that say "open this in the PulseSoc app".
@@ -4203,13 +3655,6 @@ def route_app_intent_links_to_the_app_store():
         return None
 
     source = app_links.app_link_source(request.args)
-    if action == app_links.FALLBACK_APP_ONLY:
-        # Desktop or Android on a destination with no finished web surface. Not
-        # a redirect to the listing: an iPhone app cannot be installed from the
-        # machine this visitor is sitting at, so the QR code is the affordance
-        # that actually moves them forward.
-        return render_app_only_destination(detail, source, can_open_app=False)
-
     if action != app_links.FALLBACK_APP_STORE:
         if detail == "unknown_destination":
             # Normal routing takes it from here, which means the ordinary 404 —
@@ -4290,39 +3735,19 @@ def restore_account_from_persistent_cookie():
     return user["user_id"]
 
 
-def _bearer_refused(reason):
-    """Leave a redacted note saying which check the bearer failed, then deny.
-
-    Every branch below returns a bare ``None``, which is right for an
-    authorisation answer and useless as a diagnosis. Six causes -- no header, a
-    forged signature, an expired claim, a revoked session, a device that does
-    not match -- collapsed into one ``403 {"code":"csrf"}`` on the wire, and a
-    seller's 58-product import sat behind it with nothing in the logs to say
-    which. ``services.csrf.bearer_refusal_reason()`` reads this breadcrumb.
-
-    Redacted by construction: the reason is one of a fixed set of enum strings
-    chosen here, never a token, a user id or a header value.
-    """
-    if has_request_context():
-        g.bearer_refusal = reason
-    return None
-
-
 def account_user_id_from_mobile_access_token():
     if not has_request_context():
         return None
     auth_header = (request.headers.get("Authorization") or "").strip()
-    if not auth_header:
-        return _bearer_refused("absent")
     if not auth_header.lower().startswith("bearer "):
-        return _bearer_refused("not-bearer")
+        return None
     access_token = auth_header.split(" ", 1)[1].strip()
     if not access_token:
-        return _bearer_refused("empty")
+        return None
     try:
         body, signature = access_token.rsplit(".", 1)
     except ValueError:
-        return _bearer_refused("malformed")
+        return None
     # No fallback to the old root, deliberately. An access token lives 900s and
     # the client recovers by itself: pulseApi refreshes on a bare 401 and
     # replays, and the refresh token is a random string hashed with a plain
@@ -4330,24 +3755,17 @@ def account_user_id_from_mobile_access_token():
     # would buy at most fifteen minutes of nothing and keep a retired key live.
     expected_signature = hmac.new(COINPILOTX_MOBILE_ACCESS_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(signature, expected_signature):
-        return _bearer_refused("bad-signature")
+        return None
     try:
         padded = body + ("=" * (-len(body) % 4))
         payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
     except Exception:
-        return _bearer_refused("undecodable")
+        return None
     user_id = safe_int(payload.get("uid"), 0)
     device_hash = clean_html(payload.get("dh") or "")[:64]
     expires_at = safe_int(payload.get("exp"), 0)
-    if user_id <= 0 or not device_hash:
-        return _bearer_refused("incomplete-claims")
-    # Split from the claim check above on purpose. Expiry is the *ordinary* end
-    # of an access token's 900-second life and is repaired by a refresh the
-    # client already knows how to do; a missing uid or device hash is a minted
-    # token that was never usable. Reported as one reason, they are
-    # indistinguishable, and only one of them is a bug.
-    if expires_at <= int(time.time()):
-        return _bearer_refused("expired")
+    if user_id <= 0 or not device_hash or expires_at <= int(time.time()):
+        return None
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
         # Defined once and called twice rather than written out twice. This is
@@ -4395,11 +3813,9 @@ def account_user_id_from_mobile_access_token():
             conn.close()
         except Exception:
             pass
-        return _bearer_refused("lookup-failed")
-    if not row:
-        return _bearer_refused("no-live-session")
-    if clean_html(row.get("device_hash") or "")[:64] != device_hash:
-        return _bearer_refused("device-mismatch")
+        return None
+    if not row or clean_html(row.get("device_hash") or "")[:64] != device_hash:
+        return None
     g.mobile_access_user_id = user_id
     return user_id
 
@@ -5302,45 +4718,6 @@ def parse_price_label_to_cents(value, default_currency="USD"):
     return min(cents, MAX_PRICE_LABEL_CENTS), currency
 
 
-# How many listings one boot will derive `price_minor` for. Production carries
-# 47 listings, so this never binds there; it exists so that a database which
-# somehow arrives with a million unpriced rows degrades into several boots
-# rather than into a boot that never finishes. Each pass shrinks the candidate
-# set, because a row that has been written is no longer NULL.
-PRICE_MINOR_BACKFILL_LIMIT = 5000
-
-
-def _backfill_marketplace_price_minor(cur):
-    """Derive `marketplace_listings.price_minor` from `price_label`.
-
-    Runs from `init_db`, and must stay idempotent: it selects only rows whose
-    `price_minor` is still NULL, so a second boot finds nothing to do.
-
-    The parse deliberately goes through `parse_price_label_to_cents` -- the
-    *checkout* parser -- and not through `marketplace_seo.parse_price`, which
-    is stricter and anchored. A storefront that sorts by one number while
-    charging another is worse than one that cannot sort at all, so the sort key
-    is defined as "what this buyer will be charged" rather than as a second,
-    independent reading of the same string.
-
-    A row whose label carries no price at all resolves to 0, which the sort
-    treats identically to NULL (see marketplace_catalog.SORTS): unpriced rows
-    go last whichever direction the buyer sorts.
-    """
-    cur.execute(
-        "SELECT id, COALESCE(price_label,'') FROM marketplace_listings "
-        "WHERE price_minor IS NULL LIMIT ?",
-        (PRICE_MINOR_BACKFILL_LIMIT,),
-    )
-    pending = [db_service.row_values(row) for row in cur.fetchall()]
-    for listing_id, label in pending:
-        cents, _currency = parse_price_label_to_cents(label)
-        cur.execute(
-            "UPDATE marketplace_listings SET price_minor=? WHERE id=? AND price_minor IS NULL",
-            (int(cents), listing_id),
-        )
-
-
 def marketplace_normalize_price_label(value, default_currency="USD"):
     """Round-trip a seller-entered price label through the checkout parser.
 
@@ -5935,7 +5312,7 @@ def save_reset_password_and_verify(cur, user_id, password, now):
     if not saved_hash or not check_password_hash(saved_hash, password):
         raise RuntimeError("password_update_verification_failed")
     try:
-        ensure_mobile_security_session_schema_once(cur)
+        ensure_mobile_security_session_schema(cur)
         cur.execute(
             "UPDATE mobile_security_sessions SET status='revoked', revoked_at=?, last_seen_at=?, revoked_reason='password_changed' WHERE user_id=? AND status IN ('active','rotated')",
             (now, now, user_id),
@@ -5993,91 +5370,6 @@ def user_is_super_user(user):
     return bool(safe_int(user.get("is_super_user"), 0) or user_is_owner_account(user))
 
 
-def ensure_owner_admin_account_link(cur):
-    """Point the owner's ``admin_users`` row at the ``users`` row that may act as it.
-
-    Admin routes identify their caller through ``session["admin_user_id"]``, which
-    only the web login form ever sets. Without this link the owner signed in on
-    the phone -- a ``users`` row holding a bearer token -- has no admin identity
-    at all and is refused before any permission is read.
-
-    This is a bootstrap, not the security rule. ``OWNER_EMAIL`` seeds the link
-    once; from then on authorization reads ``admin_users.account_user_id`` and the
-    role tables, and no email is consulted. The match requires a *verified* email
-    and refuses to guess when several accounts claim it, so an unverified signup
-    on the owner's address cannot acquire the link. Failing to link is a 401 for
-    the owner, which is the safe direction to fail.
-    """
-    email = owner_email_value()
-    if not email:
-        return False
-    try:
-        cur.execute(
-            "SELECT id FROM admin_users WHERE lower(COALESCE(email,''))=lower(?) AND lower(COALESCE(role,''))='owner' LIMIT 2",
-            (email,),
-        )
-        admin_rows = [dict(row) for row in cur.fetchall()]
-        if len(admin_rows) != 1:
-            return False
-        cur.execute(
-            """
-            SELECT user_id FROM users
-            WHERE lower(COALESCE(email,''))=lower(?) AND COALESCE(email_verified,0)=1
-            LIMIT 2
-            """,
-            (email,),
-        )
-        user_rows = [dict(row) for row in cur.fetchall()]
-        if len(user_rows) != 1:
-            return False
-        admin_id = safe_int(admin_rows[0].get("id"), 0)
-        account_id = safe_int(user_rows[0].get("user_id"), 0)
-        if not admin_id or not account_id:
-            return False
-        cur.execute(
-            "UPDATE admin_users SET account_user_id=? WHERE id=? AND COALESCE(account_user_id,0)!=?",
-            (account_id, admin_id, account_id),
-        )
-        return True
-    except Exception as exc:
-        logging.info("OWNER_ADMIN_ACCOUNT_LINK_SKIPPED error=%s", type(exc).__name__)
-        return False
-
-
-def admin_user_by_account_user_id(account_user_id, cur=None):
-    """The active ``admin_users`` row explicitly linked to an account id.
-
-    The only input is an id already proven by a signed bearer token or a session
-    cookie. Nothing from the request body reaches this lookup, so a caller cannot
-    nominate the admin identity it would like to be resolved as.
-    """
-    account_user_id = safe_int(account_user_id, 0)
-    if not account_user_id:
-        return None
-    close_conn = False
-    conn = None
-    try:
-        if cur is None:
-            conn = db()
-            conn.row_factory = sqlite3.Row
-            cur = conn.cursor()
-            close_conn = True
-        cur.execute(
-            "SELECT * FROM admin_users WHERE account_user_id=? AND status='active' LIMIT 1",
-            (account_user_id,),
-        )
-        row = cur.fetchone()
-        return dict(row) if row else None
-    except Exception:
-        return None
-    finally:
-        if close_conn and conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-
 def ensure_owner_super_user(cur=None, conn=None):
     if not owner_super_user_enabled():
         return False
@@ -6095,11 +5387,9 @@ def ensure_owner_super_user(cur=None, conn=None):
             if cur.fetchone():
                 return False
         cur.execute("UPDATE users SET is_super_user=1, updated_at=? WHERE lower(email)=lower(?)", (datetime.now().isoformat(), email))
-        promoted = bool(getattr(cur, "rowcount", 0))
-        ensure_owner_admin_account_link(cur)
         if close_conn:
             conn.commit()
-        return promoted
+        return bool(getattr(cur, "rowcount", 0))
     except Exception as exc:
         logging.info("OWNER_SUPER_USER_BOOTSTRAP_SKIPPED email=%s error=%s", mask_email(email), exc)
         try:
@@ -6368,13 +5658,6 @@ def render_account_page(page, title, **context):
     context.setdefault("paid_digital_access_available", paid_digital_access_available)
     context.setdefault("message", "")
     context.setdefault("error", "")
-    # The auth forms carry the caller's intended destination across the POST.
-    # It has to come from here rather than from `request.args` in the template,
-    # because the re-render after a failed attempt IS the POST -- there is no
-    # query string on it, so a template reading args alone emits an empty field
-    # and the second attempt lands on Home. That is the common path, not the
-    # edge: mistyping a password once is ordinary.
-    context.setdefault("next_target", safe_next_value())
     return render_template("account.html", page=page, title=title, **context)
 
 
@@ -6453,32 +5736,11 @@ def is_legacy_pulsesoc_home_target(target):
     return lowered == "/pulse" and any(marker in query for marker in ("legacy", "old_home", "old-home", "global_pulsesoc_feed"))
 
 
-def safe_next_value():
-    """The requested post-auth destination, or "" if there isn't a usable one.
-
-    Same validation as `safe_redirect_target` and deliberately sharing it: the
-    login form echoes this back as a hidden field so a retry keeps its intent,
-    and a field that sanitised differently from the redirect would be a way to
-    smuggle a target past the check. Only a site-relative single-slash path
-    survives, so `//evil.example.com/x`, `https://evil.example.com/x` and
-    `javascript:alert(1)` all come back as "" -- the field is emitted empty and
-    the redirect falls through to its default.
-
-    Returns "" rather than a default because the caller is filling in a form
-    input: an absent `next` must stay absent, not become a hardcoded "/pulse"
-    that then looks like a deliberate request to go home.
-    """
+def safe_redirect_target(default_endpoint="dashboard_page"):
     target = request.args.get("next") or request.form.get("next") or ""
     if target and target.startswith("/") and not target.startswith("//"):
         if is_legacy_pulsesoc_home_target(target):
             return "/pulse"
-        return target
-    return ""
-
-
-def safe_redirect_target(default_endpoint="dashboard_page"):
-    target = safe_next_value()
-    if target:
         return target
     return "/pulse" if default_endpoint == "pulse_page" else url_for(default_endpoint)
 
@@ -6679,141 +5941,6 @@ def failed_login_severity(total_count=0, blocked=False, challenged=False, is_bot
     return "Low"
 
 
-#: Whether an auth event is an attacker's fingerprint or a real person having a
-#: bad time. `status` does not answer that. It records how a request ended, not
-#: who was making it: `forgot_password_request_failed` (our own error),
-#: `unverified_email_change_failed` (wrong password on a form the account owner
-#: is already logged into) and `verification_link_rejected` (a mail client
-#: prefetched the link) are all `status='failed'`, and none is an attack.
-#:
-#: `login_unconfirmed` is the sharpest case in the other direction: the visitor
-#: supplied the *correct* password. That is evidence they own the account.
-AUTH_EVENT_CLASS = {
-    # Someone trying keys that are not theirs.
-    "login_failed": "security",
-    # Retired in favour of `login_failed`; still the name on historical rows,
-    # so the Security Center must keep recognising it or its own past vanishes.
-    "mobile_login_failed": "security",
-    "login_blocked": "security",
-    "login_challenge_required": "security",
-    "login_restricted": "security",
-    "mobile_login_restricted": "security",
-    "signup_failed": "security",
-    # Someone who owns the account and cannot get in, or whose mail we broke.
-    "login_unconfirmed": "friction",
-    "mobile_login_unconfirmed": "friction",
-    "forgot_password_invalid_email": "friction",
-    "forgot_password_masked_email": "friction",
-    "forgot_password_no_match": "friction",
-    "forgot_password_request_failed": "friction",
-    "signup_duplicate": "friction",
-    "verification_email_failed": "friction",
-    "verification_link_rejected": "friction",
-    "unverified_email_change_failed": "friction",
-    # Progress, not a problem.
-    "login_success": "neutral",
-    "mobile_login_success": "neutral",
-    "signup_started": "neutral",
-    "signup_completed": "neutral",
-    "forgot_password_token_created": "neutral",
-    "verification_email_sent": "neutral",
-    "email_confirmed": "neutral",
-    "unverified_email_changed": "neutral",
-}
-
-AUTH_SECURITY_EVENTS = tuple(sorted(k for k, v in AUTH_EVENT_CLASS.items() if v == "security"))
-AUTH_FRICTION_EVENTS = tuple(sorted(k for k, v in AUTH_EVENT_CLASS.items() if v == "friction"))
-
-#: What may count towards an automated cooldown: a wrong credential, nothing
-#: else. Deliberately narrower than AUTH_SECURITY_EVENTS, for two reasons.
-#:
-#: `login_blocked` and `login_challenge_required` are emitted *by* the lockout
-#: itself, so counting them would let a block re-supply the evidence for its own
-#: renewal and never lift. `signup_failed` is a server-side exception; whoever
-#: was signing up did nothing wrong and locking them out for our crash is
-#: backwards.
-AUTH_LOCKOUT_EVENTS = ("login_failed", "mobile_login_failed")
-
-
-def auth_event_class(event_type):
-    """'security', 'friction', 'neutral', or 'unclassified' for a name we do not know.
-
-    Unclassified is a fourth answer rather than a default into one of the three,
-    because either default is wrong in one direction. Defaulting to security
-    makes every friction event somebody adds later blockable; defaulting to
-    friction quietly drops a new attack signal. Both consumers below therefore
-    require a positive declaration, and an unclassified event lands in neither.
-    """
-    return AUTH_EVENT_CLASS.get((event_type or "").strip(), "unclassified")
-
-
-def auth_friction_level(events, accounts):
-    """Product health, not threat level. Rises with people, not with volume.
-
-    One person retrying twelve times is one person; twelve people hitting the
-    same wall once each is an outage. Keyed on distinct accounts first for that
-    reason, with the event count only able to raise a floor.
-    """
-    accounts = int(accounts or 0)
-    events = int(events or 0)
-    if accounts >= 5 or events >= 40:
-        return "AUTH_FRICTION_HIGH"
-    if accounts >= 2 or events >= 10:
-        return "AUTH_FRICTION_MEDIUM"
-    return "AUTH_FRICTION_LOW"
-
-
-def auth_friction_snapshot(window_hours=24, limit=20):
-    """Who is stuck right now, correlated by hashed email rather than by IP.
-
-    A phone moving between cells changes IP mid-journey, so grouping a journey
-    by IP splits one struggling person into several and makes them look like
-    several attackers. `email_hash` is stable across that, and unlike the
-    address itself it is safe to put on an admin screen.
-    """
-    if not AUTH_FRICTION_EVENTS:
-        return {"level": "AUTH_FRICTION_LOW", "events": 0, "accounts": 0, "window_hours": window_hours, "by_event": {}, "journeys": []}
-    since = (datetime.now() - timedelta(hours=int(window_hours or 24))).isoformat()
-    placeholders = ",".join(["?"] * len(AUTH_FRICTION_EVENTS))
-    conn = db()
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    auth_event_schema_guard(cur, conn)
-    cur.execute(
-        f"SELECT event_type, COUNT(*) AS n FROM auth_events "
-        f"WHERE event_type IN ({placeholders}) AND created_at>=? GROUP BY event_type ORDER BY n DESC",
-        (*AUTH_FRICTION_EVENTS, since),
-    )
-    by_event = {row["event_type"]: int(row["n"] or 0) for row in cur.fetchall()}
-    cur.execute(
-        f"SELECT COALESCE(email_hash,'') AS email_hash, COALESCE(email,'') AS masked_email, "
-        f"COUNT(*) AS n, COUNT(DISTINCT event_type) AS distinct_events, "
-        f"MIN(created_at) AS first_seen, MAX(created_at) AS last_seen "
-        f"FROM auth_events WHERE event_type IN ({placeholders}) AND created_at>=? "
-        f"AND COALESCE(email_hash,'')<>'' GROUP BY email_hash, masked_email "
-        f"ORDER BY n DESC, last_seen DESC LIMIT ?",
-        (*AUTH_FRICTION_EVENTS, since, int(limit or 20)),
-    )
-    journeys = [dict(row) for row in cur.fetchall()]
-    cur.execute(
-        f"SELECT COUNT(DISTINCT COALESCE(email_hash,'')) AS accounts FROM auth_events "
-        f"WHERE event_type IN ({placeholders}) AND created_at>=? AND COALESCE(email_hash,'')<>''",
-        (*AUTH_FRICTION_EVENTS, since),
-    )
-    accounts_row = cur.fetchone()
-    conn.close()
-    accounts = int((accounts_row["accounts"] if accounts_row else 0) or 0)
-    events = sum(by_event.values())
-    return {
-        "level": auth_friction_level(events, accounts),
-        "events": events,
-        "accounts": accounts,
-        "window_hours": int(window_hours or 24),
-        "by_event": by_event,
-        "journeys": journeys,
-    }
-
-
 def log_auth_event(event_type, email="", user_id=0, status="info", details=None):
     try:
         conn = db()
@@ -6912,24 +6039,14 @@ def failed_login_marked_safe(cur, control_type, control_value):
 
 
 def failed_login_recent_count(cur, where_sql, params, window_seconds=FAILED_LOGIN_WINDOW_SECONDS):
-    """How many wrong credentials arrived in the window. Feeds automated cooldowns.
-
-    This used to ask for `status='failed'`, which is a fact about how a request
-    ended rather than about whether anyone was attacking. Fourteen of them on one
-    domain in five minutes buys that whole domain a fifteen-minute cooldown, and
-    a provider outage produces exactly that shape: every pending signup emits
-    `verification_email_failed` at once, most of them on the same two or three
-    mail domains. Mail breaking must not lock out everyone whose mail broke.
-    """
     since = (datetime.now() - timedelta(seconds=window_seconds)).isoformat()
-    placeholders = ",".join(["?"] * len(AUTH_LOCKOUT_EVENTS))
     cur.execute(
         f"""
         SELECT COUNT(*) AS total
         FROM auth_events
-        WHERE event_type IN ({placeholders}) AND created_at>=? {where_sql}
+        WHERE status='failed' AND created_at>=? {where_sql}
         """,
-        (*AUTH_LOCKOUT_EVENTS, since, *params),
+        (since, *params),
     )
     row = cur.fetchone()
     return int((row["total"] if hasattr(row, "keys") else row[0]) or 0)
@@ -7186,24 +6303,7 @@ def register_failed_login(email, user_id=0, reason="invalid_credentials"):
         conn.close()
 
 
-#: The one answer a caller gets when the address or phone is already spoken for.
-#: A single constant rather than two literals because the precheck below and the
-#: uniqueness-violation branch after the INSERT have to be *indistinguishable*:
-#: they are the same fact discovered a few milliseconds apart, and a caller who
-#: could tell which one fired would learn that their request raced somebody
-#: else's -- which is to say, that the address is being registered right now.
-ACCOUNT_ALREADY_EXISTS_MESSAGE = "An account already exists for that contact method."
-
-
-def create_account(full_name, email, password, phone="", country="", email_opt_in=False, sms_opt_in=False, username="", age_confirmed=False, *, accepted_terms_source):
-    # Keyword-only, no default, and it carries the provenance rather than a bare
-    # boolean: `None` for no acceptance, otherwise which surface asked. One
-    # argument instead of two because there is no such thing as an acceptance
-    # without a place it came from, and no default because one of the three
-    # callers must answer `None` -- /admin/users/new creates an account on someone
-    # else's behalf, and that person has agreed to nothing. A default would let
-    # that path record a consent nobody gave, or let a fourth caller record none
-    # and be indistinguishable from the two that do.
+def create_account(full_name, email, password, phone="", country="", email_opt_in=False, sms_opt_in=False, username="", age_confirmed=False):
     email = normalize_email(email)
     logging.info("signup normalized email=%s db_engine=%s", mask_email(email), db_service.ENGINE_NAME)
     log_auth_event("signup_started", email, status="started", details={"db_engine": db_service.ENGINE_NAME})
@@ -7219,27 +6319,9 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
     conn = db()
     try:
         cur = conn.cursor()
-        # Before the precheck, because the precheck is only advisory: it is a
-        # SELECT followed by an INSERT, so two concurrent signups for one address
-        # both pass it and both insert. The index is what actually makes the
-        # invariant true; the check below just turns the common case into a civil
-        # answer instead of a caught exception.
-        account_email_uniqueness.ensure_email_identity_index(cur)
         logging.info("database insert precheck for signup email=%s engine=%s", mask_email(email), db_service.ENGINE_NAME)
         if email:
-            # Asked with the index's own expression, not an approximation of it.
-            # `email` is already `normalize_email`d -- `.strip().lower()` -- so the
-            # parameter side needs no wrapping, but the *column* side does: a
-            # stored address with stray whitespace would slip past
-            # `lower(email)=lower(?)` and then be caught by the index, turning an
-            # ordinary duplicate into the race branch. Same expression, same
-            # answer.
-            cur.execute(
-                f"SELECT user_id FROM users "
-                f"WHERE {account_email_uniqueness.EMAIL_IDENTITY_EXPRESSION}=? "
-                f"AND {account_email_uniqueness.EMAIL_PRESENT_PREDICATE} LIMIT 1",
-                (email,),
-            )
+            cur.execute("SELECT user_id FROM users WHERE lower(email)=lower(?) AND email!='' LIMIT 1", (email,))
             duplicate = cur.fetchone()
         else:
             cur.execute("SELECT user_id FROM users WHERE phone=? AND phone!='' LIMIT 1", (phone,))
@@ -7248,7 +6330,7 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
             conn.close()
             logging.info("duplicate email detection during signup email=%s", mask_email(email))
             log_auth_event("signup_duplicate", email, status="duplicate", details={"db_engine": db_service.ENGINE_NAME})
-            return None, ACCOUNT_ALREADY_EXISTS_MESSAGE
+            return None, "An account already exists for that contact method."
         if username:
             cur.execute("SELECT user_id FROM users WHERE lower(username)=lower(?) LIMIT 1", (username,))
             if cur.fetchone():
@@ -7303,12 +6385,6 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
         )
         user_id = cur.lastrowid
         pulse_id_service.ensure_user_pulse_id(cur, user_id)
-        if accepted_terms_source:
-            # On this cursor, so the acceptance commits with the account it is a
-            # precondition of. Written afterwards on a second connection there
-            # would be a window in which the account exists and the record of why
-            # it was allowed to does not -- which is the state this replaces.
-            legal_acceptance.record(cur, user_id, source=accepted_terms_source)
         logging.info("database insert generated user_id=%s email=%s", user_id, mask_email(email))
         pulsesoc_notification_system.ensure_user_notification_defaults(user_id, conn=conn)
         cur.execute(
@@ -7341,18 +6417,6 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
             conn.rollback()
         except Exception:
             pass
-        if db_service.is_unique_violation(exc):
-            # The race the precheck cannot win: another request inserted this
-            # address between our SELECT and our INSERT. Answer exactly as the
-            # precheck would have, because it is the same fact -- and because the
-            # generic branch below says "try again shortly", which for a
-            # uniqueness violation is simply false. Retrying fails forever, and
-            # the user would keep doing it having been told to.
-            logging.info("signup lost the uniqueness race email=%s engine=%s",
-                         mask_email(email), db_service.ENGINE_NAME)
-            log_auth_event("signup_duplicate", email, status="duplicate",
-                           details={"race": True, "db_engine": db_service.ENGINE_NAME})
-            return None, ACCOUNT_ALREADY_EXISTS_MESSAGE
         logging.exception("database transaction rollback during signup email=%s engine=%s error=%s", mask_email(email), db_service.ENGINE_NAME, exc)
         log_auth_event("signup_failed", email, status="failed", details={"error": str(exc)[:500], "db_engine": db_service.ENGINE_NAME})
         return None, "Account creation is temporarily unavailable. Please try again shortly."
@@ -7426,13 +6490,6 @@ def permanently_delete_account(user, password):
             "avatar_thumbnail_url": "",
             "banner_url": "",
             "cover_url": "",
-            "date_of_birth": "",
-            "recovery_email": "",
-            "recovery_phone": "",
-            "social_links_json": "",
-            "expertise_tags_json": "",
-            "roast_call_sign": "",
-            "roast_call_sign_slug": "",
             "telegram_user_id": None,
             "telegram_username": "",
             "telegram_chat_id": None,
@@ -7456,22 +6513,7 @@ def permanently_delete_account(user, password):
         values.append(user_id)
         cur.execute(f"UPDATE users SET {', '.join(assignments)} WHERE user_id=?", values)
 
-        # Four push registries, not one. `push_subscriptions` was the only one
-        # here because it was the only one that existed when this was written;
-        # the other three were added later by their own services and each keeps
-        # a live token. `pulse_notification_devices` is the one that matters most
-        # -- it stores the whole web-push subscription in `subscription_json`,
-        # and its unsubscribe path only sets `active=0`, so a row left behind is
-        # an addressable device belonging to an account that no longer exists.
-        for table in (
-            "push_subscriptions",
-            "pulse_notification_devices",
-            "user_device_tokens",
-            "notification_device_tokens",
-            "password_reset_tokens",
-            "email_verification_tokens",
-            "telegram_link_codes",
-        ):
+        for table in ("push_subscriptions", "password_reset_tokens", "email_verification_tokens", "telegram_link_codes"):
             columns = set(table_columns(cur, table))
             if "user_id" in columns:
                 cur.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
@@ -7668,12 +6710,6 @@ def safe_password_reset_request(email, source="web"):
             log_auth_event("forgot_password_invalid_email", email, status="invalid", details={"source": source, "db_engine": db_service.ENGINE_NAME})
         except Exception:
             logging.warning("PASSWORD_RESET_INVALID_EMAIL_LOG_FAILED source=%s", source)
-        # Syntax, not existence: the caller typed something that is not an email
-        # address, so no lookup ran and nothing can ever be delivered. Saying so
-        # is enumeration-safe -- it judges their own keystrokes, not the account
-        # store -- while the generic "if an account exists" line is simply false
-        # here, and leaves them waiting for mail that was never sendable.
-        result["invalid_email"] = True
         return result
     try:
         user, token = create_password_reset(email)
@@ -7738,22 +6774,6 @@ def create_email_verification(user_id):
     return token
 
 
-def verification_token_rejection_reason(row):
-    """Why a verification link was refused: unknown, already_used, or expired.
-
-    All three reach the user as the same sentence, which is correct -- telling a
-    stranger which one it was would say whether the token ever existed. The
-    distinction still has to be recorded, because it is the difference between
-    "the mail arrived late" and "they clicked twice", and those have opposite
-    fixes.
-    """
-    if not row:
-        return "unknown_token"
-    if row[2]:
-        return "already_used"
-    return "expired"
-
-
 def send_account_confirmation_email(user, source="signup"):
     if not user or not user.get("email"):
         return {"ok": False, "message": "User email not found.", "trace_id": secrets.token_hex(6)}
@@ -7779,18 +6799,6 @@ def send_account_confirmation_email(user, source="signup"):
             source,
             getattr(send_platform_email, "last_error", "") or "Email provider did not accept the verification email.",
         )
-    # Every confirmation email in the product is sent from here -- signup, the
-    # resend button, the duplicate-signup retry, the email change. Without an
-    # event at this one point an auth journey shows `login_unconfirmed` three
-    # times with no way to tell whether mail was ever sent, which is the whole
-    # question. `source` is what distinguishes a first send from a resend.
-    log_auth_event(
-        "verification_email_sent" if ok else "verification_email_failed",
-        user.get("email"),
-        user.get("user_id"),
-        status="success" if ok else "failed",
-        details={"source": source, "trace_id": trace_id},
-    )
     return {
         "ok": bool(ok),
         "queued": False,
@@ -7800,72 +6808,17 @@ def send_account_confirmation_email(user, source="signup"):
     }
 
 
-#: The one thing an unauthenticated caller is told, whatever the truth is. It has
-#: to read naturally in all four cases it now covers -- no such account, already
-#: confirmed, confirmation re-sent, and send attempted but refused by the mail
-#: provider -- because a caller who can tell those apart can enumerate accounts.
-#: Both shipped consumers display it verbatim and neither branches on it
-#: (VerifyEmailStep.tsx and AccountRecoveryScreen.tsx read only `.message`).
-RESEND_CONFIRMATION_NEUTRAL_MESSAGE = (
-    "If that account still needs confirming, we've sent a fresh link. "
-    "Check your inbox, including spam."
-)
-
-
-def resend_account_confirmation_by_email(email, source="login", *, privileged=False):
-    """Re-send an account confirmation email without saying whether it exists.
-
-    This used to answer three distinguishable things -- "If that account exists
-    and still needs confirmation…" for an unknown address, "This email is
-    already confirmed. You can log in." for a verified one, and "Check your
-    email to confirm your account." for an unverified one -- on three different
-    statuses (200/202/502), with a ``trace_id`` present in only one of them.
-    Any one of those four signals answers "does this person have a PulseSoc
-    account", which is the question Open Commerce §16 turns on: a guest buying
-    with an address that already has an account must complete the purchase
-    without the checkout revealing that the account is there.
-
-    An invalid address still refuses with 400. That is a statement about the
-    syntax of the input, not about the contents of the user table, and
-    ``api_mobile_auth_recover`` already draws the line in the same place and
-    says why.
-
-    ``privileged`` is for the admin console, which reaches this through
-    ``admin_login_required`` and legitimately needs the real outcome and trace
-    id for support work -- an admin can already read the user list, so there is
-    nothing here to withhold from them. It also skips the per-address cap,
-    because "the operator deliberately pressed resend for this customer" is
-    precisely the case where refusing would be the bug.
-    """
+def resend_account_confirmation_by_email(email, source="login"):
     email = normalize_email(email)
     if not email or not is_valid_email(email):
         return {"ok": False, "message": "Enter the email address for your PulseSoc account.", "status": 400}
-    neutral = {"ok": True, "message": RESEND_CONFIRMATION_NEUTRAL_MESSAGE, "status": 200}
-    if not privileged:
-        limit, window_seconds = CONFIRMATION_EMAIL_PER_ADDRESS
-        capped = auth_subject_guard.subject_event_refused(email, limit, window_seconds)
-        if capped is not None:
-            # Same body as a success. A refusal that looked different would
-            # reintroduce the oracle by a side door: only an address with a real
-            # unverified account can accumulate sends, so "you are being
-            # throttled" would itself confirm the account.
-            logging.warning(
-                "Confirmation email per-address cap hit source=%s sends=%s limit=%s",
-                source, capped.count, capped.limit)
-            return dict(neutral)
     user = load_account_by_email(email)
-    if not user or int(user.get("email_verified") or 0):
-        return dict(neutral)
+    if not user:
+        return {"ok": True, "message": "If that account exists and still needs confirmation, PulseSoc will send a confirmation email.", "status": 200}
+    if int(user.get("email_verified") or 0):
+        return {"ok": True, "message": "This email is already confirmed. You can log in.", "status": 200}
     result = send_account_confirmation_email(user, source=source)
     delivery_blocked = "not authorized in brevo" in str(result.get("message") or "").lower()
-    if not privileged:
-        # The delivery failure is real and worth acting on, but the caller is not
-        # who acts on it: `send_account_confirmation_email` has already written
-        # the `verification_email_failed` auth event and the trace id to the
-        # server log, and the admin console reads both. Telling an anonymous
-        # caller would mean only existing unverified accounts can ever see a
-        # 502, which is the oracle again.
-        return dict(neutral)
     return {
         **result,
         "status": 200 if result.get("ok") else 202 if delivery_blocked else 502,
@@ -7911,17 +6864,12 @@ def change_unverified_account_email(old_email, new_email, password, source="emai
     }
 
 
-def unverified_signup_delivery_response(email, message="", trace_id="", delivery_failed=False):
-    # `email_delivery_failed` drives the client's "we couldn't send it, resend
-    # below" copy, so it has to mean a send was attempted and refused. It used to
-    # be `bool(trace_id)`, which is a property of the caller's bookkeeping rather
-    # than of the send -- the one path that passed no trace id reported success
-    # while its own message said delivery had failed.
+def unverified_signup_delivery_response(email, message="", trace_id=""):
     return {
         "ok": True,
         "authenticated": False,
         "requires_email_confirmation": True,
-        "email_delivery_failed": bool(delivery_failed),
+        "email_delivery_failed": bool(trace_id),
         "message": message or "Account created successfully but verification email could not be delivered.",
         "trace_id": trace_id or "",
         "email": email,
@@ -7968,17 +6916,14 @@ def signup_page():
             return render_account_page("signup", "Create Account", error="Agree to the Terms, Privacy Policy, and no-tolerance safety rules before creating your account.")
         if len(password) < 8:
             return render_account_page("signup", "Create Account", error="Use at least 8 characters for your password.")
-        user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in, username, age_confirmed, accepted_terms_source="web_signup")
+        user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in, username, age_confirmed)
         if error:
             existing_user = load_account_by_email(email) if email else None
             if existing_user and not int(existing_user.get("email_verified") or 0):
-                retry = send_account_confirmation_email(existing_user, source="signup_retry")
                 return render_account_page(
                     "login",
                     "Confirm Email",
-                    message="Check your email to confirm your account."
-                    if retry.get("ok")
-                    else f"This account still needs confirming, but the verification email could not be delivered. Trace ID: {retry.get('trace_id')}. Use Resend Email or Change Email Address.",
+                    message="Account created successfully but verification email could not be delivered. Use Resend Email or Change Email Address.",
                     resend_email=email,
                 )
             return render_account_page("signup", "Create Account", error=error)
@@ -8015,13 +6960,7 @@ def signup_page():
 def login_page():
     init_db()
     if request.method == "GET" and require_account():
-        # Already signed in, so there is nothing to log into -- but honour the
-        # destination rather than dumping the member on Home. This fires more
-        # often than it looks: a public product page renders
-        # "Sign in to add to cart" for anyone it cannot see a session for, and
-        # a member arriving with a valid cookie from another tab lands here
-        # with a perfectly good `next` and no reason to be sent to the feed.
-        return redirect(safe_redirect_target("pulse_page"))
+        return redirect("/pulse")
     if request.method == "POST":
         if not verify_csrf():
             return render_account_page("login", "Login", error="Security check failed. Please try again.")
@@ -8058,6 +6997,9 @@ def login_page():
         if restriction_message:
             log_auth_event("login_restricted", email, user["user_id"], status="blocked", details={"account_status": user.get("account_status") or "", "login_enabled": safe_int(user.get("login_enabled"), 1), "access_enabled": safe_int(user.get("access_enabled"), 1), "db_engine": db_service.ENGINE_NAME})
             return render_account_page("login", "Login", error=restriction_message), 403
+        if user.get("email") and not int(user.get("email_verified") or 0):
+            log_auth_event("login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
+            return render_account_page("login", "Login", error="Please confirm your email before logging in.", resend_email=email)
         if not user.get("password_hash") or not check_password_hash(user["password_hash"], password):
             challenge_gate = login_security_preflight(email, enforce_challenge=True)
             if not challenge_gate.get("allowed"):
@@ -8070,11 +7012,6 @@ def login_page():
                 ), int(challenge_gate.get("status") or 403)
             register_failed_login(email, user.get("user_id") if user else 0, "invalid_password")
             return render_account_page("login", "Login", error="Email or password is incorrect.")
-        # Same ordering rule as the mobile endpoint: the unconfirmed page names a
-        # real account and offers to mail it, so it must sit behind the password.
-        if user.get("email") and not int(user.get("email_verified") or 0):
-            log_auth_event("login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
-            return render_account_page("login", "Login", error="Please confirm your email before logging in.", resend_email=email)
         session.permanent = True
         session["account_user_id"] = user["user_id"]
         session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
@@ -8084,13 +7021,6 @@ def login_page():
         if user_is_owner_account(user):
             ensure_owner_super_user(cur, conn)
         cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
-        # This form has always required the tick to sign in and always discarded
-        # it, so every existing member has re-agreed on every visit with nothing
-        # kept. Recording it is what makes the requirement mean something: a
-        # member who predates the acceptance table, or who last agreed to a
-        # superseded version, comes on file at the current one the next time they
-        # sign in. Already on file is a no-op, not a second row.
-        legal_acceptance.record(cur, user["user_id"], source="web_login")
         cancel_scheduled_account_deletion(cur, user["user_id"])
         notify_user(
             cur,
@@ -8314,21 +7244,15 @@ def api_mobile_auth_login():
     if restriction_message:
         log_auth_event("mobile_login_restricted", email, user["user_id"], status="blocked", details={"account_status": user.get("account_status") or "", "login_enabled": safe_int(user.get("login_enabled"), 1), "access_enabled": safe_int(user.get("access_enabled"), 1), "db_engine": db_service.ENGINE_NAME})
         return api_error(restriction_message, 403, error="account_restricted", error_code="account_restricted")
+    if user.get("email") and not int(user.get("email_verified") or 0):
+        log_auth_event("mobile_login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
+        return api_error("Please confirm your email before logging in.", 403, error="email_not_confirmed", error_code="email_not_confirmed")
     if not user.get("password_hash") or not check_password_hash(user["password_hash"], password):
         challenge_gate = login_security_preflight(email, enforce_challenge=True)
         if not challenge_gate.get("allowed"):
             return mobile_login_gate_error(challenge_gate)
         register_failed_login(email, user.get("user_id") if user else 0, "mobile_invalid_password")
         return api_error("Email or password is incorrect.", 401, error=MOBILE_LOGIN_INVALID_CREDENTIALS, error_code=MOBILE_LOGIN_INVALID_CREDENTIALS)
-    # Password first, then confirmation state. `email_not_confirmed` names a real
-    # account, so answering it before the password is checked turns this endpoint
-    # into an oracle: anyone could submit an address with an empty password and
-    # learn whether it is registered -- exactly the distinction the 401 above
-    # refuses to make. Behind a correct password it discloses nothing the account
-    # holder does not already know, which is what makes the clear message safe.
-    if user.get("email") and not int(user.get("email_verified") or 0):
-        log_auth_event("mobile_login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
-        return api_error("Please confirm your email before logging in.", 403, error="email_not_confirmed", error_code="email_not_confirmed")
     session.permanent = True
     session["account_user_id"] = user["user_id"]
     session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
@@ -8401,33 +7325,11 @@ def api_mobile_auth_register():
         return api_error("Please enter a valid phone number or leave it blank.", 400)
     if sms_opt_in and not phone:
         return api_error("SMS opt-in requires a phone number.", 400)
-    # `age_confirmed` is the whole consent on iOS, not half of it: the app offers
-    # one checkbox reading "I'm 16+ and agree to the ..." over links to the Terms
-    # and Privacy Policy, and submits it in this single field. So a true value
-    # here is a member who was shown both and ticked both. Recording it under
-    # `mobile_register` keeps that provenance legible -- a reviewer can tell a
-    # combined tick from the web form's two separate ones.
-    #
-    # The app should send acceptance as its own field so the two can be refused
-    # independently. That is a client change and a release; it does not make the
-    # consent already given unrecordable in the meantime.
-    user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in, username, age_confirmed, accepted_terms_source="mobile_register" if age_confirmed else None)
+    user, error = create_account(full_name, email, password, phone, country, email_opt_in, sms_opt_in, username, age_confirmed)
     if error:
         existing_user = load_account_by_email(email) if email else None
         if existing_user and not int(existing_user.get("email_verified") or 0):
-            # Signing up again with an address that already holds an unverified
-            # account is how someone asks for the mail they never received.
-            # Answering "check your email" without sending one leaves the account
-            # unverified for good, which is where half of them are.
-            retry = send_account_confirmation_email(existing_user, source="mobile_signup_retry")
-            return jsonify(unverified_signup_delivery_response(
-                email,
-                "Check your email to confirm your account."
-                if retry.get("ok")
-                else "This account still needs confirming, but the verification email could not be delivered.",
-                retry.get("trace_id") or "",
-                delivery_failed=not retry.get("ok"),
-            )), 200
+            return jsonify(unverified_signup_delivery_response(email, "Account created successfully but verification email could not be delivered.")), 200
         return api_error(error, 400)
     if preferred_language:
         save_user_preferred_language(user["user_id"], preferred_language, user["user_id"])
@@ -8437,7 +7339,7 @@ def api_mobile_auth_register():
         result = send_account_confirmation_email(user, source="mobile_signup")
         if result.get("ok"):
             return jsonify({"ok": True, "authenticated": False, "requires_email_confirmation": True, "message": "Check your email to confirm your account.", "trace_id": result.get("trace_id"), "email": email}), 200
-        return jsonify(unverified_signup_delivery_response(email, "Account created successfully but verification email could not be delivered.", result.get("trace_id") or "", delivery_failed=True)), 200
+        return jsonify(unverified_signup_delivery_response(email, "Account created successfully but verification email could not be delivered.", result.get("trace_id") or "")), 200
     session.permanent = True
     session["account_user_id"] = user["user_id"]
     session["pulse_welcome_reason"] = "first_login"
@@ -8454,15 +7356,7 @@ def api_mobile_auth_resend_confirmation():
     payload = request.get_json(silent=True) or {}
     email = normalize_email(clean_html(payload.get("email") or ""))
     result = resend_account_confirmation_by_email(email, source="mobile_resend")
-    # `trace_id` is coerced to "" rather than passed through. It used to be
-    # present only when a send was actually attempted, so its mere presence
-    # answered "does this address have an unverified account" -- the same oracle
-    # the message collapse closes, leaking through a field the client never reads.
-    return jsonify({
-        "ok": bool(result.get("ok")),
-        "message": result.get("message") or RESEND_CONFIRMATION_NEUTRAL_MESSAGE,
-        "trace_id": "",
-    }), int(result.get("status") or (200 if result.get("ok") else 400))
+    return jsonify({"ok": bool(result.get("ok")), "message": result.get("message") or "Check your email to confirm your account.", "trace_id": result.get("trace_id")}), int(result.get("status") or (200 if result.get("ok") else 400))
 
 
 @webhook_app.route("/api/mobile/auth/change-confirmation-email", methods=["POST"])
@@ -8491,18 +7385,12 @@ def api_mobile_auth_confirmation_status():
     if not email or not is_valid_email(email):
         return api_error("Enter the email address for your PulseSoc account.", 400)
     user = load_account_by_email(email)
-    confirmed = bool(user and int(user.get("email_verified") or 0))
-    # `exists` and `email_verified` are gone. `exists` was the larger leak of the
-    # two -- it answered "is there an account here" for *unconfirmed* accounts as
-    # well, which `confirmed` cannot -- and neither field had a reader: the only
-    # caller is VerifyEmailStep.tsx, which reads `result.confirmed` and nothing
-    # else (`email_verified` was a duplicate of `confirmed` computed from the same
-    # expression). `confirmed` itself stays, because the screen exists to wait for
-    # it; that residual signal is what account_enumeration_guard bounds instead.
     return jsonify({
         "ok": True,
-        "confirmed": confirmed,
-        "message": "Email confirmed." if confirmed else "Check your email to confirm your account.",
+        "exists": bool(user),
+        "email_verified": bool(user and int(user.get("email_verified") or 0)),
+        "confirmed": bool(user and int(user.get("email_verified") or 0)),
+        "message": "Email confirmed." if user and int(user.get("email_verified") or 0) else "Check your email to confirm your account.",
     })
 
 
@@ -8520,13 +7408,6 @@ def api_mobile_auth_confirm_email():
     row = cur.fetchone()
     if not row or row[2] or row[1] < datetime.now().isoformat():
         conn.close()
-        log_auth_event(
-            "verification_link_rejected",
-            "",
-            (row[0] if row else 0),
-            status="failed",
-            details={"source": "mobile", "reason": verification_token_rejection_reason(row)},
-        )
         return api_error("This verification link is invalid or expired.", 400, error="invalid_or_expired_token")
     now = datetime.now().isoformat()
     cur.execute("UPDATE users SET email_verified=1, updated_at=? WHERE user_id=?", (now, row[0]))
@@ -8534,7 +7415,6 @@ def api_mobile_auth_confirm_email():
     conn.commit()
     conn.close()
     verified_user = load_account_by_id(row[0])
-    log_auth_event("email_confirmed", (verified_user or {}).get("email") or "", row[0], status="success", details={"source": "mobile"})
     if verified_user and verified_user.get("referred_by"):
         conn = db()
         cur = conn.cursor()
@@ -8552,15 +7432,7 @@ def api_mobile_auth_recover():
     init_db()
     payload = request.get_json(silent=True) or {}
     email = normalize_email(clean_html(payload.get("email") or ""))
-    result = safe_password_reset_request(email, source="mobile_api")
-    # An address that never parsed cannot be "sent to if it exists". Answering the
-    # generic line to input that is not an email is what produced every one of the
-    # `forgot_password_invalid_email` events this endpoint has ever logged: the
-    # caller is told to go check a mailbox no request was ever addressed to.
-    # `/api/mobile/auth/resend-confirmation` already refuses the same input this
-    # way; only this route pretended to succeed.
-    if result.get("invalid_email") or result.get("masked_input"):
-        return api_error("Enter the email address for your PulseSoc account.", 400, error="invalid_email", error_code="invalid_email")
+    safe_password_reset_request(email, source="mobile_api")
     return jsonify({"ok": True, "message": "If an account exists, password recovery has been sent."})
 
 
@@ -13112,251 +11984,6 @@ def pulse_advertiser_portal_page():
 
 
 @webhook_app.route("/app", methods=["GET"])
-@public_route(reason="Public landing page for the iPhone app. Signed-in members fall through to the command center, which keeps its own gate.")
-def app_landing_page():
-    """`/app` split off from the command center it used to share a handler with.
-
-    It was the one URL on this site whose subject is the iPhone app, and it
-    answered a 302 to /signup for everyone who was not already a member --
-    including Googlebot, which is why nothing on this domain was eligible to
-    rank for the app's own name.
-
-    The branch is on authentication, not on user-agent. Googlebot sees exactly
-    what a logged-out person sees, and a signed-in member sees exactly what they
-    saw before this change: handing a member a page that sells them the app they
-    are already inside would be a regression dressed as SEO.
-
-    The other three paths this handler used to serve stay authenticated, and
-    `services.search_visibility` marks them `noindex,nofollow` so they cannot
-    inherit this page's indexability by sharing its code.
-    """
-
-    init_db()
-    if require_account():
-        return app_command_center_page()
-
-    page = {
-        "canonical": search_visibility.canonical_url("/app"),
-        "breadcrumb": "PulseSoc for iPhone",
-        "title": "PulseSoc for iPhone — social feed, reels, live video, calls and marketplace",
-        "description": (
-            "PulseSoc is a free iPhone app for posts, reels, live video, direct messages, "
-            "voice and video calls, creator profiles and a marketplace, with reporting, "
-            "blocking and moderation built in. Requires iOS 15.1 or later."
-        ),
-        "image": seo_schema.SHARE_IMAGE_URL,
-        "faqs": APP_LANDING_FAQS,
-    }
-    response = webhook_app.make_response(render_template(
-        "app_landing.html",
-        page=page,
-        robots=search_visibility.robots_meta("/app"),
-        schema_json=seo_schema.app_page_graph(page),
-        screenshots=APP_LANDING_SCREENSHOTS,
-        features=seo_features.cards(search_visibility.canonical_url),
-    ))
-    # Public, identical for every anonymous visitor, and it changes about as
-    # often as the App Store listing does.
-    response.headers["Cache-Control"] = "public, max-age=600"
-    return response
-
-
-# The breadcrumb between the home page and a feature page. Spelled out once
-# because a crumb that disagrees with the one the visitor can see is a
-# structured-data mismatch, and the two are generated from different code.
-_APP_TRAIL = (("PulseSoc for iPhone", search_visibility.canonical_url("/app")),)
-_FEATURES_TRAIL = _APP_TRAIL + (("Features", search_visibility.canonical_url("/features")),)
-
-
-@webhook_app.route("/features", methods=["GET"])
-@public_route(reason="Public hub listing what the iPhone app does. No account state is read.")
-def features_hub_page():
-    """`/features` taken back from the crypto-era landing page.
-
-    It rendered `seo_page.html` with copy about an AI crypto assistant and a
-    Telegram companion bot -- the only /features URL on a domain whose product
-    is a social app. This route is declared before the `/<slug>` catch-all that
-    used to serve it, so Flask matches the static rule first; the crypto pages
-    themselves are untouched and still linked from the hub.
-    """
-
-    page = seo_features.hub_page(search_visibility.canonical_url)
-    page["image"] = seo_schema.SHARE_IMAGE_URL
-    response = webhook_app.make_response(render_template(
-        "features_hub.html",
-        page=page,
-        robots=search_visibility.robots_meta("/features"),
-        schema_json=seo_schema.app_page_graph(page, trail=_APP_TRAIL),
-    ))
-    response.headers["Cache-Control"] = "public, max-age=600"
-    return response
-
-
-@webhook_app.route("/features/<slug>", methods=["GET"])
-@public_route(reason="Public page describing one feature of the iPhone app. No account state is read.")
-def feature_detail_page(slug):
-    """One page per feature, written rather than generated.
-
-    `seo/features.py` explains why the eight are hand-written: this site's 108
-    templated pages measure 99.2% identical and are now `noindex` for it, and
-    generating these from one skeleton would rebuild that problem on the pages
-    that most need to rank. `tests/test_feature_pages.py` measures the rendered
-    similarity and fails if they drift back together.
-
-    An unknown slug 404s rather than falling through to the catch-all, so
-    `/features/anything` cannot become an accidental soft-404 that answers 200.
-    """
-
-    page = seo_features.detail_page(slug, search_visibility.canonical_url)
-    if not page:
-        abort(404)
-    page["image"] = seo_schema.SHARE_IMAGE_URL
-    response = webhook_app.make_response(render_template(
-        "feature_page.html",
-        page=page,
-        robots=search_visibility.robots_meta(f"/features/{slug}"),
-        schema_json=seo_schema.app_page_graph(page, trail=_FEATURES_TRAIL),
-        siblings=seo_features.siblings(slug, search_visibility.canonical_url),
-    ))
-    response.headers["Cache-Control"] = "public, max-age=600"
-    return response
-
-
-# The four commerce policy pages, registered from one list rather than as four
-# copies of the same handler. Merchant Center requires a reachable return policy,
-# refund policy, shipping page and contact page before it will approve a Shopping
-# account, so until these resolve `/feeds/merchant-center.xml` can be perfect and
-# still do nothing. `docs/seo/01_merchant_center_feed.md` tracks that as blocker 1.
-#
-# One handler and a loop, unlike the eight feature pages which share a `<slug>`
-# rule: these are four unrelated top-level URLs (`/returns` is not
-# `/policies/returns`, on purpose -- see `commerce_policies.canonical_path`), so
-# there is no single rule that matches them. What must not happen is four
-# hand-written handlers drifting apart in their cache headers, their robots
-# source or their schema, which is the failure this closure prevents.
-def _register_commerce_policy_route(slug):
-    def handler(slug=slug):
-        page = seo_commerce_policies.page(slug, search_visibility.canonical_url)
-        if not page:
-            # Unreachable while the route table is built from POLICIES, and kept
-            # because the day someone adds a route by hand without a policy
-            # entry, a 404 is the right answer and a 500 is not.
-            abort(404)
-        page["image"] = seo_schema.SHARE_IMAGE_URL
-        response = webhook_app.make_response(render_template(
-            "commerce_policy.html",
-            page=page,
-            robots=search_visibility.robots_meta(seo_commerce_policies.canonical_path(slug)),
-            schema_json=seo_schema.commerce_policy_graph(page),
-        ))
-        # Same as the other written pages. These change when the policy changes,
-        # which is a deliberate act, not a data refresh.
-        response.headers["Cache-Control"] = "public, max-age=600"
-        return response
-
-    handler.__name__ = f"commerce_policy_{slug.replace('-', '_')}_page"
-    handler.__doc__ = (
-        f"`{seo_commerce_policies.canonical_path(slug)}` -- a buyer-facing commerce "
-        "policy page. Content and the reasoning behind every claim on it live in "
-        "`seo/commerce_policies.py`."
-    )
-    handler = public_route(
-        reason=(
-            "Buyer-facing commerce policy page. Google Merchant Center fetches it "
-            "unauthenticated during account review, and a buyer must be able to read "
-            "the return and refund terms before creating an account. No account state "
-            "is read."
-        )
-    )(handler)
-    webhook_app.route(seo_commerce_policies.canonical_path(slug), methods=["GET"])(handler)
-
-
-for _policy in seo_commerce_policies.POLICIES:
-    _register_commerce_policy_route(_policy["slug"])
-
-
-# Answers kept here rather than in the template so the FAQPage JSON-LD and the
-# visible text are one string each. Structured data that does not match what the
-# page says is a rich-result violation, and the way it happens is two copies.
-APP_LANDING_FAQS = [
-    {
-        "question": "Is PulseSoc free?",
-        "answer": (
-            "Yes. The iPhone app is free to download and use. PulseSoc Premium is an "
-            "optional subscription billed through your Apple ID, and ad credit is an "
-            "optional one-time purchase."
-        ),
-    },
-    {
-        "question": "Is there an Android app?",
-        "answer": (
-            "Not today. PulseSoc is available on iPhone. In the meantime pulsesoc.com "
-            "works in a mobile browser once you create a free account."
-        ),
-    },
-    {
-        "question": "What iOS version does PulseSoc need?",
-        "answer": "iOS 15.1 or later.",
-    },
-    {
-        "question": "Can I use PulseSoc without installing the app?",
-        "answer": (
-            "Partly. You can search pulsesoc.com and read its public pages without an "
-            "account, and the feed, profiles and messages work in a web browser once "
-            "you sign in. Live video, calls and push notifications are app features."
-        ),
-    },
-    {
-        "question": "How do I report someone or something on PulseSoc?",
-        "answer": (
-            "Every post, profile and message has a report control, and you can block an "
-            "account from its profile. Reports go to human moderation review."
-        ),
-    },
-]
-
-
-# Five of the ten assets on the current App Store listing, re-encoded to WebP at
-# display width rather than hotlinked from Apple's CDN. Showing a different set
-# than the store this page links to is a discrepancy the visitor meets at exactly
-# the moment they are deciding, so these track the listing rather than the repo:
-# the source files are conformed to Apple's 6.9" spec and their names match what
-# `itunes.apple.com/lookup?id=6777591572` returns.
-#
-# They are marketing compositions, not screen captures, and each has its headline
-# rendered into the pixels. That text does not exist for a screen reader or for
-# Google, so the alt attribute transcribes it *verbatim* before describing the
-# picture -- the first pass here quoted tidied-up paraphrases, which is worse than
-# no alt text because it reads as a complete transcription and is not one.
-#
-# The video-calls slot deliberately uses the listing's second video asset. The
-# first one's headline is "Face Time, Reimagined.", and putting that in alt text
-# is how a page tells Google to associate itself with Apple's trademark.
-APP_LANDING_SCREENSHOTS = [
-    ("pulsesoc-app-home-network.webp",
-     "“Share Connect Belong.” — the PulseSoc home screen, with the Pulse Network panel, "
-     "a row of friends' statuses, and Pulse Radio and Safety Shield tiles."),
-    ("pulsesoc-app-live.webp",
-     "“Go Live. Instantly. Real conversations. Real people. A more connected you.” — a live "
-     "broadcast in the PulseSoc feed, with its For You, Following, Friends and Communities tabs."),
-    ("pulsesoc-app-profiles.webp",
-     "“Your Profile. More Than A Page. Express yourself. Show what moves you. Connect deeper.” "
-     "— a PulseSoc profile with a cover photo, follower counts and a grid of profile settings."),
-    # There is deliberately no call screenshot. Both of the listing's call assets
-    # render "End-to-end encrypted" into the image -- one as a feature label, one
-    # inside the mocked call UI. Nothing in this repository calls Agora's
-    # `enableEncryption`, so the claim is not true, and /features/messages says in
-    # as many words that PulseSoc is not end-to-end encrypted. Serving both would
-    # put a contradiction on one site where a visitor could see both halves.
-    #
-    # Dropping it here does not fix the App Store listing, which still ships the
-    # asset. That needs an owner with App Store Connect access.
-    ("pulsesoc-app-market.webp",
-     "“Pulse Market. Real Data. Deeper Insights. Better Decisions.” — the market screen with "
-     "a global overview, market sentiment, and watchlist, news and insight tabs."),
-]
-
-
 @webhook_app.route("/command-center", methods=["GET"])
 @webhook_app.route("/intelligence", methods=["GET"])
 @webhook_app.route("/dashboard/intelligence", methods=["GET"])
@@ -13421,7 +12048,7 @@ def private_chat_thread_page(thread_id):
         )
     other = payload.get("other") or {}
     other_name = clean_html(other.get("display_name") or "CoinPlotXAI user")
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Chat with {other_name} | CoinPlotXAI</title><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166);--red:var(--status-error,#ff6b7a)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#071527);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}}a{{color:inherit}}.shell{{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;width:min(100%,980px);margin:auto;border-inline:1px solid rgba(110,223,246,.12)}}header{{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.92);backdrop-filter:blur(18px);display:flex;justify-content:space-between;gap:12px;align-items:center}}.button,button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:10px 14px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.meta{{color:var(--muted);font-size:13px}}.thread{{min-height:0;overflow:auto;padding:16px;display:grid;gap:9px;background:radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}}.bubble{{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.16)}}.bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.bubble small{{display:block;margin-top:5px;opacity:.72}}.composer-actions{{display:grid;grid-auto-flow:column;gap:8px;align-content:start}}.composer{{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96)}}textarea{{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}.toast{{position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#071321;box-shadow:0 18px 50px rgba(0,0,0,.4);display:none}}.toast.show{{display:block}}@media(max-width:720px){{.shell{{border:0}}.composer{{grid-template-columns:1fr}}.button,button{{width:100%}}.bubble{{max-width:88%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}</style><script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script></head><body><main class="shell" data-thread-id="{int(thread_id)}"><header><div><strong>{other_name}</strong><div class="meta">{html_escape(clean_html(other.get("rank") or "PulseSoc contact"))} · private thread</div></div><a class="button" href="/dashboard">Dashboard</a></header><section class="thread" data-chat-thread></section><form class="composer" data-chat-form><textarea name="message" placeholder="Write a reply..." autocomplete="off"></textarea><div class="composer-actions"><button class="button" type="button" data-emoji-for aria-label="Add emoji to your message">☺</button><button class="button primary" type="submit">Send</button></div></form></main><div class="toast" data-toast></div><script>const threadId={int(thread_id)};let lastMessageId=0;let loading=false;const box=document.querySelector('[data-chat-thread]');const form=document.querySelector('[data-chat-form]');const input=form.elements.message;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));function toast(message){{const t=document.querySelector('[data-toast]');t.textContent=message;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}}function bubble(m,temp=false){{return `<div class="bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||m.id||''}}"><span>${{esc(m.body)}}</span><small>${{temp?'sending...':esc(m.delivery_status||'delivered')}}</small></div>`}}function append(items){{const seen=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{const id=String(m.message_id||m.id||'');if(id&&seen.has(id))return;box.insertAdjacentHTML('beforeend',bubble(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||m.id||0));}});box.scrollTop=box.scrollHeight;}}function render(items){{box.innerHTML=(items||[]).map(m=>bubble(m)).join('')||'<p class="meta">No messages yet.</p>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||m.id||0)));box.scrollTop=box.scrollHeight;}}async function load(initial=false){{if(loading||document.hidden)return;loading=true;try{{const url=initial?`/api/chat/thread/${{threadId}}`:`/api/chat/thread/${{threadId}}/new?after_id=${{lastMessageId}}`;const d=await fetch(url,{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());if(d.ok)initial?render(d.messages):append(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}catch(e){{}}finally{{loading=false;}}}}form.addEventListener('submit',async e=>{{e.preventDefault();const body=input.value.trim();if(!body)return;input.value='';const button=form.querySelector('button');button.disabled=true;const tempId='temp-'+Date.now();box.insertAdjacentHTML('beforeend',`<div class="bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{message:body}})}}).then(r=>r.json());const temp=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(temp)temp.outerHTML=bubble(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||d.message.id||0));if(navigator.vibrate)navigator.vibrate(20);}}else{{if(temp)temp.querySelector('small').textContent='failed';input.value=body;toast(d.message||'Could not send this message.');}}}}catch(err){{input.value=body;toast('Could not send this message.')}}finally{{button.disabled=false;input.focus();}}}});input.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});load(true);setInterval(()=>load(false),1500);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)load(false)}});input.focus();</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Chat with {other_name} | CoinPlotXAI</title><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166);--red:var(--status-error,#ff6b7a)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#071527);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}}a{{color:inherit}}.shell{{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;width:min(100%,980px);margin:auto;border-inline:1px solid rgba(110,223,246,.12)}}header{{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.92);backdrop-filter:blur(18px);display:flex;justify-content:space-between;gap:12px;align-items:center}}.button,button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:10px 14px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.meta{{color:var(--muted);font-size:13px}}.thread{{min-height:0;overflow:auto;padding:16px;display:grid;gap:9px;background:radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}}.bubble{{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.16)}}.bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.bubble small{{display:block;margin-top:5px;opacity:.72}}.composer{{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96)}}textarea{{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}.toast{{position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#071321;box-shadow:0 18px 50px rgba(0,0,0,.4);display:none}}.toast.show{{display:block}}@media(max-width:720px){{.shell{{border:0}}.composer{{grid-template-columns:1fr}}.button,button{{width:100%}}.bubble{{max-width:88%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}</style></head><body><main class="shell" data-thread-id="{int(thread_id)}"><header><div><strong>{other_name}</strong><div class="meta">{html_escape(clean_html(other.get("rank") or "PulseSoc contact"))} · private thread</div></div><a class="button" href="/dashboard">Dashboard</a></header><section class="thread" data-chat-thread></section><form class="composer" data-chat-form><textarea name="message" placeholder="Write a reply..." autocomplete="off"></textarea><button class="button primary" type="submit">Send</button></form></main><div class="toast" data-toast></div><script>const threadId={int(thread_id)};let lastMessageId=0;let loading=false;const box=document.querySelector('[data-chat-thread]');const form=document.querySelector('[data-chat-form]');const input=form.elements.message;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));function toast(message){{const t=document.querySelector('[data-toast]');t.textContent=message;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}}function bubble(m,temp=false){{return `<div class="bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||m.id||''}}"><span>${{esc(m.body)}}</span><small>${{temp?'sending...':esc(m.delivery_status||'delivered')}}</small></div>`}}function append(items){{const seen=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{const id=String(m.message_id||m.id||'');if(id&&seen.has(id))return;box.insertAdjacentHTML('beforeend',bubble(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||m.id||0));}});box.scrollTop=box.scrollHeight;}}function render(items){{box.innerHTML=(items||[]).map(m=>bubble(m)).join('')||'<p class="meta">No messages yet.</p>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||m.id||0)));box.scrollTop=box.scrollHeight;}}async function load(initial=false){{if(loading||document.hidden)return;loading=true;try{{const url=initial?`/api/chat/thread/${{threadId}}`:`/api/chat/thread/${{threadId}}/new?after_id=${{lastMessageId}}`;const d=await fetch(url,{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());if(d.ok)initial?render(d.messages):append(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}catch(e){{}}finally{{loading=false;}}}}form.addEventListener('submit',async e=>{{e.preventDefault();const body=input.value.trim();if(!body)return;input.value='';const button=form.querySelector('button');button.disabled=true;const tempId='temp-'+Date.now();box.insertAdjacentHTML('beforeend',`<div class="bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{message:body}})}}).then(r=>r.json());const temp=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(temp)temp.outerHTML=bubble(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||d.message.id||0));if(navigator.vibrate)navigator.vibrate(20);}}else{{if(temp)temp.querySelector('small').textContent='failed';input.value=body;toast(d.message||'Could not send this message.');}}}}catch(err){{input.value=body;toast('Could not send this message.')}}finally{{button.disabled=false;input.focus();}}}});input.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});load(true);setInterval(()=>load(false),1500);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)load(false)}});input.focus();</script></body></html>""")
 
 
 @webhook_app.route("/chat/fan-messages", methods=["GET"])
@@ -13559,7 +12186,7 @@ def message_thread_page(conversation_id):
         <h2>Conversation</h2>
         <div id='message-thread' style='display:grid;gap:10px;min-height:260px'>Loading...</div>
         <form id='message-send-form' style='display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:16px'>
-          <span class='pulse-emoji-field' data-emoji-scope><input name='body' placeholder='Write a message...' required><button class='pulse-emoji-trigger' type='button' data-emoji-for aria-haspopup='dialog' aria-expanded='false' aria-label='Add emoji'>☺</button></span>
+          <input name='body' placeholder='Write a message...' required>
           <button class='button gold' type='submit'>Send</button>
         </form>
       </section>
@@ -13582,7 +12209,7 @@ def message_thread_page(conversation_id):
         }});
         loadThread();
       </script>
-      <script src="/static/js/time.js?v=bare-asset-tokens-20260930a"></script><script src="/static/js/pulseshell_bridge.js?v=cache-sweep-20260930a" defer></script><script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script>
+      <script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script>
     """
     return render_account_page("custom", "Messages", current_user=user, custom_body=body)
 
@@ -14934,13 +13561,6 @@ def verify_email_page(token=""):
     row = cur.fetchone()
     if not row or row[2] or row[1] < datetime.now().isoformat():
         conn.close()
-        log_auth_event(
-            "verification_link_rejected",
-            "",
-            (row[0] if row else 0),
-            status="failed",
-            details={"source": "web", "reason": verification_token_rejection_reason(row)},
-        )
         return render_account_page("login", "Login", error="This verification link is invalid or expired.")
     now = datetime.now().isoformat()
     cur.execute("UPDATE users SET email_verified=1, updated_at=? WHERE user_id=?", (now, row[0]))
@@ -14948,7 +13568,6 @@ def verify_email_page(token=""):
     conn.commit()
     conn.close()
     verified_user = load_account_by_id(row[0])
-    log_auth_event("email_confirmed", (verified_user or {}).get("email") or "", row[0], status="success", details={"source": "web"})
     if verified_user and verified_user.get("referred_by"):
         conn = db()
         cur = conn.cursor()
@@ -16726,21 +15345,11 @@ def load_admin_by_email(email):
     return dict(row) if row else None
 
 
-def log_admin_audit(admin_user_id, action, target_type="", target_id="", metadata=None, before=None):
-    """Append one admin action to both audit tables.
-
-    ``before`` is the pre-change image of the row, and is optional because
-    ``admin_activity_logs.before_json`` was written as a literal empty string at
-    every call site — the column existed, so the schema looked like it recorded
-    what changed, while in fact it only ever recorded what it changed *to*.
-    Callers that can cheaply read the row first should pass it; the ones that
-    cannot keep the old behaviour rather than guessing at a pre-image.
-    """
+def log_admin_audit(admin_user_id, action, target_type="", target_id="", metadata=None):
     try:
         admin = admin_current_user() if has_request_context() else None
         now = datetime.now().isoformat()
         metadata_text = json.dumps(metadata or {})[:4000]
-        before_text = json.dumps(before, default=str)[:4000] if before is not None else ""
         ip_hash = client_ip_hash() if has_request_context() else ""
         user_agent = request.headers.get("User-Agent", "")[:500] if has_request_context() else ""
         conn = db()
@@ -16775,7 +15384,7 @@ def log_admin_audit(admin_user_id, action, target_type="", target_id="", metadat
                 request.path if has_request_context() else "",
                 target_type,
                 target_id,
-                before_text,
+                "",
                 metadata_text,
                 ip_hash,
                 user_agent,
@@ -17392,9 +16001,6 @@ def admin_page_html(title, body, admin=None):
             ("☎", "Calls", "/admin/calls", False),
         ]),
         ("Commerce", [
-            # The curator publishes on its own schedule, so the kill switch has
-            # to be somewhere an operator can find without knowing it exists.
-            ("◇", "PulseDrop", "/admin/pulsedrop", False),
             ("$", "Transactions", "/admin/transactions", False),
             ("◈", "Payments Command Center", "/admin/payments-command-center", False),
             ("⚠", "Unmatched Payments", "/admin/unmatched-payments", False),
@@ -17477,9 +16083,9 @@ def admin_page_html(title, body, admin=None):
         "<meta name='viewport' content='width=device-width,initial-scale=1'/>"
         "<meta name='robots' content='noindex,nofollow'/>"
         f"<title>{html_escape(clean_html(title))} | CoinPlotXAI Admin</title>"
-        "<link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=cache-sweep-20260930a'/>"
-        "<link rel='stylesheet' href='/static/css/pulse_design_system.css?v=cache-sweep-20260930a'/>"
-        "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css?v=bare-asset-tokens-20260930a'/>"
+        "<link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'/>"
+        "<link rel='stylesheet' href='/static/css/pulse_design_system.css?v=shell-nav-20260909a'/>"
+        "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
         "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260914c'/>"
         "</head><body>"
         "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
@@ -17518,8 +16124,8 @@ def admin_page_html(title, body, admin=None):
         "<span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>"
         "</div></div>"
         f"<script type='application/json' id='ops-nav-index'>{nav_index_json}</script>"
-        "<script src='/static/js/time.js?v=bare-asset-tokens-20260930a'></script>"
-        "<script src='/static/js/pulseshell_bridge.js?v=cache-sweep-20260930a' defer></script>"
+        "<script src='/static/js/time.js'></script>"
+        "<script src='/static/js/pulseshell_bridge.js?v=pulseshell-20260630a' defer></script>"
         "<script src='/static/notifications.js?v=sw-consolidation-20260913' defer></script>"
         "<script src='/static/js/admin_ops_center.js?v=opsv2-20260722i' defer></script>"
         "<script>window.CoinPilotTime?.hydrate(document);</script>"
@@ -19549,9 +18155,7 @@ def admin_emails_resend_confirmation():
     if not verify_csrf():
         return admin_page_html("Security Check Failed", "<h1>Security check failed.</h1>", admin), 400
     email = normalize_email(clean_html(request.form.get("email", "")))
-    # privileged: this caller passed admin_login_required and needs the real
-    # outcome for the audit row below. See resend_account_confirmation_by_email.
-    result = resend_account_confirmation_by_email(email, source="admin_email_page", privileged=True)
+    result = resend_account_confirmation_by_email(email, source="admin_email_page")
     log_admin_audit(admin.get("id"), "admin_resend_confirmation_email", "email", mask_email(email), {"ok": bool(result.get("ok")), "trace_id": result.get("trace_id")})
     return redirect("/admin/emails?filter=confirmation")
 
@@ -22872,23 +21476,10 @@ def api_pulse_rewards_claim(reward_id):
                         logging.exception(
                             "REWARD_CONNECT_SNAPSHOT_FAILED user_id=%s", user["user_id"])
                 base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
-                # `/pulse/rewards` is not a route — there is no such rule in the
-                # URL map, no catch-all, and no 404 handler, so a seller who
-                # finished Stripe onboarding from a reward claim landed on a
-                # bare 404 with their bank details already submitted. The
-                # account this path creates is a *merchant* Connect account
-                # (see `create_connected_account(user, "merchant")` above), and
-                # `/pulse/merchant/payouts/*` reads exactly that account's
-                # onboarding state — the same destinations the marketplace
-                # onboarding route hands Stripe, and split the same way: the
-                # return leg re-reads the account and hands the seller to the
-                # app, the refresh leg says the link went stale. A reward claim
-                # and a marketplace signup produce the same Connect account, so
-                # they must not come back to differently-informed pages.
                 link = _provider.create_onboarding_link(
                     connected_account_id,
-                    refresh_url=f"{base}/pulse/merchant/payouts/refresh",
-                    return_url=f"{base}/pulse/merchant/payouts/return",
+                    refresh_url=f"{base}/pulse/rewards",
+                    return_url=f"{base}/pulse/rewards",
                 )
                 if not link.get("ok"):
                     return jsonify(link), int(link.get("http_status") or 503)
@@ -23884,11 +22475,7 @@ def admin_user_new_page():
             if not is_valid_email(email):
                 error = "Enter a valid email."
             else:
-                # None: an administrator cannot accept the Terms on a member's
-                # behalf, and this form never shows them. The account therefore
-                # starts with nothing on file and `legal_acceptance.outstanding()`
-                # reports both documents, which is the truth about it.
-                user, error = create_account(full_name, email, password, clean_html(request.form.get("phone", "")), clean_html(request.form.get("country", "")), False, False, accepted_terms_source=None)
+                user, error = create_account(full_name, email, password, clean_html(request.form.get("phone", "")), clean_html(request.form.get("country", "")), False, False)
                 if user:
                     log_admin_audit(admin["id"], "admin_created_user", "user", str(user["user_id"]), {"email": mask_email(email)})
                     message = f"User created. Temporary password was generated only for this admin session: {clean_html(password)}"
@@ -30235,14 +28822,9 @@ def admin_security_page():
             log_admin_audit(admin.get("id"), action, "failed_login_control", value, {"event_id": event_id, "message": message})
             conn.commit()
     active_tab = clean_html(request.args.get("tab") or "all").lower()
-    security_placeholders = ",".join(["?"] * len(AUTH_SECURITY_EVENTS))
     filters = {
         "all": ("All", "", ()),
-        # `status='failed'` used to select this tab. That is how a request ended,
-        # not who sent it, so a refused verification link and our own failed
-        # Brevo send landed on a screen whose every row carries a Block IP
-        # button. Name the events instead.
-        "failed-logins": ("Failed Logins", f"WHERE event_type IN ({security_placeholders})", AUTH_SECURITY_EVENTS),
+        "failed-logins": ("Failed Logins", "WHERE status='failed' OR event_type LIKE '%login_failed%'", ()),
         "admin-actions": ("Admin Actions", "", ()),
     }
     where_sql, where_params = filters.get(active_tab, filters["all"])[1], filters.get(active_tab, filters["all"])[2]
@@ -30259,24 +28841,17 @@ def admin_security_page():
     blocked_rows = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT control_type, control_value, reason, created_at FROM failed_login_safe_list ORDER BY updated_at DESC LIMIT 120")
     safe_rows = [dict(row) for row in cur.fetchall()]
-    # Three failures on a domain puts a "Block Domain" button next to it, and
-    # `status='failed'` counted an expired verification link and a refused Brevo
-    # send towards that three. Both arrive in bulk on the common mail domains
-    # during an outage, and blocking gmail.com locks out most of the userbase,
-    # so this list may only be built from events that are actually somebody
-    # trying keys that are not theirs.
-    cur.execute(f"""
+    cur.execute("""
         SELECT email_domain AS domain, COUNT(*) AS failures, MAX(severity) AS severity, MAX(created_at) AS latest
         FROM auth_events
-        WHERE event_type IN ({security_placeholders}) AND COALESCE(email_domain,'')!=''
+        WHERE status='failed' AND COALESCE(email_domain,'')!=''
         GROUP BY email_domain
         HAVING COUNT(*) >= 3
         ORDER BY failures DESC, latest DESC
         LIMIT 120
-    """, AUTH_SECURITY_EVENTS)
+    """)
     suspicious_domains = [dict(row) for row in cur.fetchall()]
     conn.close()
-    friction = auth_friction_snapshot()
     pipeline_recent = {"available": False, "events": []}
     if command_center_client_service.is_enabled():
         pipeline_recent = command_center_client_service.get_recent_security_events(limit=50)
@@ -30374,28 +28949,11 @@ def admin_security_page():
             )
         return "<table><tr><th>Risk</th><th>Severity</th><th>Event Type</th><th>User</th><th>Status</th><th>AI</th><th>Date</th></tr>" + "".join(body_rows) + "</table>"
 
-    def friction_journeys_table(rows):
-        header = "<tr><th>Account</th><th>Events</th><th>Distinct kinds</th><th>First seen</th><th>Last seen</th></tr>"
-        if not rows:
-            return f"<table>{header}<tr><td colspan='5'>Nobody is stuck right now.</td></tr></table>"
-        body_rows = "".join(
-            "<tr>"
-            f"<td>{html_escape(clean_html(row.get('masked_email') or ''))}</td>"
-            f"<td>{int(row.get('n') or 0)}</td>"
-            f"<td>{int(row.get('distinct_events') or 0)}</td>"
-            f"<td>{html_escape(clean_html(row.get('first_seen') or ''))}</td>"
-            f"<td>{html_escape(clean_html(row.get('last_seen') or ''))}</td>"
-            "</tr>"
-            for row in rows
-        )
-        return f"<table>{header}{body_rows}</table>"
-
     tabs = [
         ("all", "All"),
         ("failed-logins", "Failed Logins"),
         ("blocked-ips", "Blocked IPs"),
         ("suspicious-domains", "Suspicious Domains"),
-        ("user-friction", "User Friction"),
         ("admin-actions", "Admin Actions"),
     ]
     tab_html = "<nav aria-label='Security filters'>" + "".join(
@@ -30406,22 +28964,6 @@ def admin_security_page():
         main_panel = controls_table(blocked_rows)
     elif active_tab == "suspicious-domains":
         main_panel = suspicious_domains_table(suspicious_domains)
-    elif active_tab == "user-friction":
-        # Deliberately no Block buttons on this panel. Everything here is a
-        # person who cannot get into their own account.
-        breakdown = "".join(
-            f"<li>{html_escape(clean_html(name))}: {int(count)}</li>"
-            for name, count in sorted(friction["by_event"].items(), key=lambda kv: -kv[1])
-        ) or "<li>None in this window.</li>"
-        main_panel = (
-            f"<p class='muted'>People who own an account and cannot get in, over the last {friction['window_hours']} hours. "
-            "These are product-health signals, not threats, and no blocking control applies to them. "
-            "Journeys are grouped by hashed email rather than IP, because a phone changing cells mid-journey "
-            "would otherwise split one stuck person into several.</p>"
-            f"<p><strong>{html_escape(friction['level'])}</strong> &middot; {friction['events']} events across {friction['accounts']} accounts</p>"
-            f"<ul>{breakdown}</ul>"
-            + friction_journeys_table(friction["journeys"])
-        )
     elif active_tab == "admin-actions":
         main_panel = admin_rows_table(audit_rows, [("admin_email","Admin"),("action","Action"),("target_type","Target"),("target_id","ID"),("created_at","Date")])
     else:
@@ -30430,7 +28972,7 @@ def admin_security_page():
         "<h1>Security Center</h1>"
         "<p class='muted'>Failed-login monitoring and Command Center scam-shield scoring with IP, country, user-agent, device, route, severity, cooldowns, challenges, and reversible admin controls. Emails remain masked.</p>"
         + (f"<div class='card'>{html_escape(clean_html(message))}</div>" if message else "")
-        + f"<div class='grid'><div class='card'><strong>Security Engine</strong><p class='metric'>{'Online' if pipeline_recent.get('available') else 'Disabled'}</p></div><div class='card'><strong>Recent Risk Events</strong><p class='metric'>{len(pipeline_recent.get('events') or [])}</p></div><div class='card'><strong>User Friction</strong><p class='metric'>{html_escape(friction['level'].replace('AUTH_FRICTION_', '').title())}</p><p class='muted'>{friction['accounts']} accounts stuck, {friction['window_hours']}h</p></div></div>"
+        + f"<div class='grid'><div class='card'><strong>Security Engine</strong><p class='metric'>{'Online' if pipeline_recent.get('available') else 'Disabled'}</p></div><div class='card'><strong>Recent Risk Events</strong><p class='metric'>{len(pipeline_recent.get('events') or [])}</p></div></div>"
         + tab_html
         + f"<div class='card'>{main_panel}</div>"
         + "<h2>Command Center Risk Signals</h2>"
@@ -30672,16 +29214,8 @@ def admin_analytics_page():
         def cell(value):
             return html_escape(str(value)[:180])
 
-        # row_values, not ``for value in row``: iterating a row yields its
-        # VALUES on SQLite and its column NAMES on Postgres, so every one of
-        # the fifteen tables on this page rendered the same line of column
-        # names over and over, once per row it was supposed to be showing.
-        # It does not raise -- the names are strings and escape cleanly -- so
-        # the page returns 200 and looks populated. See services.db.row_values.
         body = "".join(
-            "<tr>"
-            + "".join(f"<td>{cell(value)}</td>" for value in db_service.row_values(row))
-            + "</tr>"
+            "<tr>" + "".join(f"<td>{cell(value)}</td>" for value in row) + "</tr>"
             for row in rows
         )
         head = "<tr>" + "".join(f"<th>{html_escape(str(h))}</th>" for h in headers) + "</tr>"
@@ -31033,259 +29567,67 @@ def ai_index_json():
     return jsonify(seo_index_payload())
 
 
-def pulse_public_entries(limit=200):
-    """Public posts as `(path, lastmod)`, filtered by the central policy.
-
-    The SQL selects candidates; `search_visibility.content_eligibility` decides.
-    The two overlap on visibility and moderation, and that duplication is
-    deliberate -- the query is an index-friendly prefilter, the policy is the
-    answer, and the policy sees the fields SQL cannot conveniently express
-    (creator opt-out, takedown, thin content).
-
-    A column left out of the SELECT list is a permission silently granted.
-    `content_eligibility` treats a missing key as its permissive default, so an
-    unselected column reads as "no objection" rather than as "unknown" -- which
-    is how `status` came to be omitted here and draft posts came to be
-    submitted to Google. Any field the policy consults must be selected --
-    including `deleted_at`, which the WHERE clause already excludes. Leaving it
-    out would work today and stop working the moment someone relaxes the WHERE,
-    and the policy would waive it rather than complain.
-
-    `lastmod` is the post's own `updated_at`, falling back to `created_at`, and
-    is omitted entirely when neither exists. It is never today's date: a
-    sitemap that claims all 200 posts changed this morning teaches Google to
-    ignore the field on the pages that really did change.
-    """
-
+def pulse_public_paths(limit=200):
     try:
         conn = db()
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT id, user_id, title, body, visibility, moderation_status, status,
-                   deleted_at, updated_at, created_at
-            FROM pulse_posts
+            SELECT id FROM pulse_posts
             WHERE visibility='public' AND moderation_status='approved' AND deleted_at IS NULL
             ORDER BY engagement_score DESC, created_at DESC
             LIMIT ?
             """,
             (int(limit),),
         )
-        rows = [dict(row) if hasattr(row, "keys") else row for row in cur.fetchall()]
+        paths = [f"/pulse/post/{int(row['id'] if hasattr(row, 'keys') else row[0])}" for row in cur.fetchall()]
         conn.close()
+        return paths
     except Exception:
-        # Serving an empty <urlset> beats returning 500 to Googlebot, but an
-        # empty sitemap and a genuinely postless site are byte-identical.
-        # Without this line the only symptom is "Search Console discovered 0
-        # URLs", with no way to tell a broken query from an empty table.
-        logging.exception("SITEMAP_POSTS_QUERY_FAILED serving an empty posts sitemap")
         return []
-
-    entries = []
-    for row in rows:
-        path = f"/pulse/post/{int(row.get('id') or 0)}"
-        if not search_visibility.sitemap_eligible(path, row):
-            continue
-        entries.append((path, row.get("updated_at") or row.get("created_at") or ""))
-    return entries
-
-
-def pulse_public_paths(limit=200):
-    return [path for path, _lastmod in pulse_public_entries(limit)]
-
-
-def marketplace_public_listings(limit=500):
-    """Every publishable listing, payload-shaped, for Search and for Shopping.
-
-    One query with two consumers: `marketplace_public_entries` below builds the
-    sitemap from it and `/feeds/merchant-center.xml` builds the Shopping feed
-    from it. Shared deliberately rather than written twice, because the two
-    surfaces have to agree about *which rows exist* even though they disagree
-    about which of those rows they publish. A second copy of this query is how a
-    feed ends up advertising a product the sitemap has already dropped, and the
-    landing page for that product 404s.
-
-    The SQL clauses are the *same two* the grid and the product page apply --
-    `public_sql` for the lifecycle and `discovery_visible_sql` for the seller --
-    because a list that selects on looser predicates than the page it submits is
-    a list of URLs that 404.
-
-    Rows are shaped by `pulse_marketplace_listing_payload` rather than read raw,
-    for one specific reason: `marketplace_seo.eligibility` asks whether the
-    listing has an image, and the answer lives in the payload's resolved `media`
-    list, not in any single column. A raw row would report "no image" for every
-    product whose cover came from `gallery_json`, and the symptom would be a
-    sitemap and a feed that are both valid, green and half the size they should
-    be.
-
-    Returns `(row, listing)` pairs. The raw row is carried alongside the payload
-    because the sitemap needs `updated_at` for its `lastmod` and the payload does
-    not preserve it.
-    """
-
-    try:
-        from services.discovery_visibility import discovery_visible_sql
-
-        conn = db()
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
-            FROM marketplace_listings l
-            LEFT JOIN users u ON u.user_id=l.seller_user_id
-            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-            WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
-              AND {discovery_visible_sql('u')}
-            ORDER BY l.id DESC LIMIT ?""", (int(limit),))
-        rows = [dict(row) for row in cur.fetchall()]
-        media_by_listing = pulse_marketplace_media_rows_for_listings(
-            cur, [int(row.get("id") or 0) for row in rows])
-        conn.close()
-    except Exception:
-        # Same reasoning as the posts sitemap: an empty `<urlset>` -- or an empty
-        # feed -- is a better answer to a crawler than a 500, and it is
-        # indistinguishable from a catalogue with nothing published in it.
-        # Without this line the only symptom of a broken query is a coverage
-        # number that never moves.
-        logging.exception("MARKETPLACE_PUBLIC_QUERY_FAILED serving an empty list")
-        return []
-
-    return [
-        (row, pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), [])))
-        for row in rows
-    ]
-
-
-def marketplace_feed_listings(limit=500):
-    """Payloads for the Shopping feed, without the sitemap's `lastmod` baggage.
-
-    The eligibility verdict is applied by `merchant_center_feed.feed_row`, not
-    here, so that the module that knows Merchant Center's required fields is the
-    one that decides whether a row satisfies them. This function's only job is
-    to hand over the same rows the sitemap saw.
-    """
-
-    return [listing for _row, listing in marketplace_public_listings(limit)]
-
-
-def marketplace_public_entries(limit=500):
-    """Published products as `(path, lastmod)`, plus the grid that links them.
-
-    Two filters, in the same shape as the posts sitemap above: the SQL in
-    `marketplace_public_listings` is the prefilter and the policy is the answer.
-
-    `marketplace_seo.eligibility` decides per row, and the verdict this reads is
-    `.indexable`, never `.feed_eligible`. The two are different questions and the
-    narrower one belongs to Merchant Center: a product with a real description
-    and image but an unparseable `price_label` is a perfectly good web page that
-    cannot be submitted as a Shopping offer. Filtering the sitemap on
-    `feed_eligible` would quietly withhold those pages from Search to satisfy a
-    rule Search does not have. Production has 21 priced rows against 39 with a
-    real description, so the gap the two verdicts describe is most of the
-    catalogue, not an edge case.
-
-    `/pulse/marketplace` leads the list with no `lastmod`. It belongs in a
-    sitemap -- it is the collection page and it is in no other child -- and it
-    has no honest modification date, since what changes is the 40 rows it
-    happens to render. An absent `lastmod` says that; today's date would not.
-    """
-
-    entries = [(marketplace_seo.INDEX_PATH, "")]
-    for row, listing in marketplace_public_listings(limit):
-        if not marketplace_seo.eligibility(listing).indexable:
-            continue
-        path = marketplace_seo.PRODUCT_PATH.format(listing_id=int(row.get("id") or 0))
-        if not search_visibility.sitemap_eligible(path):
-            continue
-        entries.append((path, row.get("updated_at") or row.get("created_at") or ""))
-    return entries
-
-
-#: Child sitemaps, in the order `/sitemap.xml` lists them.
-SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml")
 
 
 @webhook_app.route("/sitemap.xml", methods=["GET"])
 def sitemap_xml():
-    """A sitemap index, not a flat list.
-
-    It used to be one `<urlset>` of 354 URLs mixing marketing pages, templated
-    market pages and user posts. Search Console reports coverage per submitted
-    sitemap, so a mixed bag produces one uninterpretable number -- "80% indexed"
-    tells you nothing about whether it is the marketing pages or the posts that
-    are missing. Split by type, each line is actionable on its own.
-    """
-
-    return Response(seo_engine.sitemap_index_xml(SITEMAP_CHILDREN), mimetype="application/xml")
+    today = datetime.now().strftime("%Y-%m-%d")
+    priority = {
+        "/": "1.0",
+        "/ai-market-analysis": "0.92",
+        "/telegram-crypto-bot": "0.92",
+        "/crypto-scams": "0.9",
+        "/wallet-security": "0.88",
+        "/sports-edge": "0.86",
+        "/portfolio-intelligence": "0.86",
+    }
+    body = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for path in sorted(set(all_public_paths()) | set(seo_engine.ADS_LANDING_PATHS) | set(pulse_public_paths())):
+        loc = "https://pulsesoc.com" + path
+        if path.startswith("/markets/") and path.endswith("/live"):
+            page_priority = "0.82"
+        elif path.startswith("/markets/") and path.endswith("/prediction"):
+            page_priority = "0.8"
+        elif path.startswith("/markets/"):
+            page_priority = "0.8"
+        elif path.startswith("/sports-edge/") or path.startswith("/intel/"):
+            page_priority = "0.78"
+        elif path.startswith("/country-intelligence/"):
+            page_priority = "0.74"
+        else:
+            page_priority = priority.get(path, "0.72")
+        body.append("  <url>")
+        body.append(f"    <loc>{loc}</loc>")
+        body.append(f"    <lastmod>{today}</lastmod>")
+        body.append("    <changefreq>weekly</changefreq>")
+        body.append(f"    <priority>{page_priority}</priority>")
+        body.append("  </url>")
+    body.append("</urlset>")
+    return Response("\n".join(body), mimetype="application/xml")
 
 
 @webhook_app.route("/sitemap-pages.xml", methods=["GET"])
 def sitemap_pages_xml():
-    paths = sorted(set(all_public_paths()) | set(seo_engine.PUBLIC_LEARN_PATHS) | set(seo_engine.ADS_LANDING_PATHS))
+    paths = sorted(set(all_public_paths()) | set(seo_engine.PUBLIC_LEARN_PATHS) | set(seo_engine.ADS_LANDING_PATHS) | set(pulse_public_paths()))
     return Response(seo_engine.sitemap_xml(paths), mimetype="application/xml")
-
-
-@webhook_app.route("/sitemap-posts.xml", methods=["GET"])
-@public_route(reason="Sitemap for crawlers. Lists only posts the eligibility policy already cleared for public search.")
-def sitemap_posts_xml():
-    """Member posts, each with its own real `updated_at`."""
-
-    return Response(seo_engine.sitemap_xml(pulse_public_entries()), mimetype="application/xml")
-
-
-@webhook_app.route("/sitemap-products.xml", methods=["GET"])
-@public_route(reason="Sitemap for crawlers. Lists the public marketplace grid and only those product pages the listing-eligibility policy already cleared for public search.")
-def sitemap_products_xml():
-    """Products in their own child sitemap, not folded into `/sitemap-pages.xml`.
-
-    Search Console reports coverage per submitted sitemap, and products are the
-    one section where partial indexing has a specific, fixable cause -- a seller
-    who wrote no description, or a listing with no image. Mixed in with the
-    marketing pages, "38 of 41" hides that; on its own, "9 of 15 products" names
-    the work.
-    """
-
-    return Response(seo_engine.sitemap_xml(marketplace_public_entries()), mimetype="application/xml")
-
-
-@webhook_app.route(merchant_center_feed.FEED_PATH, methods=["GET"])
-@public_route(reason="Google Merchant Center fetches this feed unauthenticated on a schedule. It contains only listings the feed-eligibility policy already cleared, which is a strict subset of what the public product pages already show.")
-def merchant_center_feed_xml():
-    """The Shopping feed, built from the same rows as `/sitemap-products.xml`.
-
-    Two sitemaps' worth of filtering separate this from that one, and the
-    difference is the point. `marketplace_public_entries` filters on
-    `.indexable`; this filters on `.feed_eligible`, which additionally requires
-    a price that parses. A product with a real description and image but a blank
-    `price_label` belongs in Search and cannot be a Shopping offer, so the two
-    lists are deliberately allowed to be different lengths.
-
-    Today they are not, and that is worth stating rather than leaving to be
-    discovered. Measured against production on 2026-09-26 with these same
-    predicates: 15 listings are publishable, all 15 carry a price, and 13 clear
-    the 40-character description floor -- so both lists are 13 long and the two
-    rows they drop (ids 50 and 52) are the same two rows. The asymmetry is real
-    policy with no live instance; the first seller to leave a price blank on a
-    described product creates the case.
-
-    The lifecycle and seller predicates are the *same* as the sitemap's --
-    `public_sql` and `discovery_visible_sql` -- because a feed item's `link` has
-    to be fetchable. Submitting a URL that 404s is a disapproval in Merchant
-    Center, and the direction a looser query would drift is a feed advertising
-    products whose pages have been withdrawn.
-
-    The `noindex` arrives as `X-Robots-Tag`, not as a meta tag, because there is
-    nowhere in an XML document to put one. `search_visibility` classifies
-    `/feeds/` as `noindex,follow` and for an HTML page that verdict is delivered
-    by `robots_meta()` in the `<head>`; a feed has no head, so declaring the
-    policy without setting the header would have been a rule that governs
-    nothing. Read from `robots_meta` rather than hardcoded so the header cannot
-    drift from the table that decides it.
-    """
-
-    response = Response(
-        merchant_center_feed.feed_xml(marketplace_feed_listings()), mimetype="application/xml")
-    response.headers["X-Robots-Tag"] = search_visibility.robots_meta(merchant_center_feed.FEED_PATH)
-    return response
 
 
 @webhook_app.route("/sitemap-live.xml", methods=["GET"])
@@ -31400,29 +29742,12 @@ def indexnow_key_txt():
 
 @webhook_app.route("/api/indexnow", methods=["GET"])
 def indexnow_metadata_api():
-    """The IndexNow payload we would submit. This endpoint does not submit it.
-
-    Two things were wrong with the payload and both made it unusable:
-
-    `host` said `coinpilotx.app` while every URL in `urlList` and the key file
-    itself are on `pulsesoc.com`. IndexNow requires the host to own the URLs
-    being submitted, so the endpoint would have rejected the whole batch --
-    this was not a cosmetic mismatch, it was a payload that could not succeed.
-
-    `urlList` came from `all_public_paths()` unfiltered, which is the same list
-    the old sitemap used and carried `/signup`, `/support` and the templated
-    market pages. Submitting a URL we have marked `noindex` asks Bing to hurry
-    and crawl something we have asked it not to index.
-    """
-
     return jsonify({
-        "host": search_visibility.CANONICAL_HOST,
+        "host": "coinpilotx.app",
         "key": "4d4dc0c2c0f94b7bb8184fd91b7f0b1e",
-        "keyLocation": f"{search_visibility.CANONICAL_ORIGIN}/indexnow-key.txt",
+        "keyLocation": "https://pulsesoc.com/indexnow-key.txt",
         "urlList": [
-            search_visibility.canonical_url(path)
-            for path in all_public_paths()
-            if search_visibility.sitemap_eligible(path)
+            *["https://pulsesoc.com" + path for path in all_public_paths()],
         ],
         "submitEndpoint": "https://api.indexnow.org/indexnow",
     })
@@ -32582,94 +30907,37 @@ def admin_predictions_page():
     return admin_page_html("Predictions Intelligence", body, admin)
 
 
-def email_health_snapshot():
-    # `bool(os.getenv("BREVO_API_KEY"))` answers a different question than "can
-    # this process send mail": it ignores BREVO_EMAIL_ENABLED, a blank sender,
-    # and a key pasted with surrounding whitespace. Ask the sender itself.
-    brevo = brevo_config_diagnostics()
-    now_iso = datetime.utcnow().isoformat(timespec="seconds")
-    worker_cutoff = (datetime.utcnow() - timedelta(hours=1)).isoformat(timespec="seconds")
-    conn = db()
-    cur = conn.cursor()
-    cur.execute("SELECT created_at, recipient_email, email_type, subject, status FROM email_logs ORDER BY created_at DESC LIMIT 1")
-    last_email = cur.fetchone()
-    # Every failure this codebase records is `failed_*`; matching only the two
-    # bare words counted 2 of the 1,551 failures in production and put a
-    # reassuring number in front of whoever came here to find out why mail was
-    # not arriving.
-    cur.execute("SELECT COUNT(*) AS count FROM email_logs WHERE status LIKE 'failed%'")
-    failed_row = cur.fetchone()
-    failed_count = failed_row["count"] if failed_row else 0
-    # Rows actually waiting on us. The same table holds scheduled mail whose
-    # next_retry_at is deliberately far in the future, and delivered and
-    # dead-lettered history; counting all of it reported a backlog of thousands
-    # against a real backlog of six.
-    cur.execute(
-        "SELECT COUNT(*) AS count FROM failed_email_queue "
-        "WHERE status IN ('pending','failed','retry_ready','processing') "
-        "AND (next_retry_at IS NULL OR next_retry_at='' OR next_retry_at<=?)",
-        (now_iso,),
-    )
-    queued_row = cur.fetchone()
-    queued_count = queued_row["count"] if queued_row else 0
-    cur.execute("SELECT COUNT(*) AS count FROM failed_email_queue WHERE status='dead_letter'")
-    dead_row = cur.fetchone()
-    dead_count = dead_row["count"] if dead_row else 0
-    cur.execute("SELECT created_at FROM email_logs WHERE status LIKE 'sent%' ORDER BY created_at DESC LIMIT 1")
-    last_sent_row = cur.fetchone()
-    last_sent_at = (last_sent_row["created_at"] if last_sent_row else "") or ""
-    cur.execute("SELECT created_at, email_type, status FROM email_logs WHERE status LIKE 'failed%' ORDER BY created_at DESC LIMIT 1")
-    last_failure = cur.fetchone()
-    # The outbox worker is the only thing that moves a row to 'sent', so a
-    # recent one is the evidence that it is running. There is no heartbeat.
-    cur.execute("SELECT COUNT(*) AS count FROM failed_email_queue WHERE status='sent' AND COALESCE(updated_at,'')>=?", (worker_cutoff,))
-    worker_row = cur.fetchone()
-    worker_recent_sends = worker_row["count"] if worker_row else 0
-    cur.execute("SELECT created_at, email, template, status FROM payment_email_logs ORDER BY created_at DESC LIMIT 1")
-    last_payment_email = cur.fetchone()
-    conn.close()
-    return {
-        "provider_ready": bool(brevo.get("ready")),
-        "api_key_configured": bool(brevo.get("api_key_configured")),
-        "api_key_source": brevo.get("api_key_source") or "",
-        "api_key_has_surrounding_whitespace": bool(brevo.get("api_key_has_surrounding_whitespace")),
-        "sender_email_configured": bool(brevo.get("sender_email_configured")),
-        "sender_name_configured": bool(brevo.get("sender_name_configured")),
-        "sending_enabled": bool(brevo.get("enabled")),
-        "missing_fields": brevo.get("missing_fields") or [],
-        "last_successful_send_at": last_sent_at,
-        "last_failure": dict(last_failure) if last_failure else {},
-        "queue_depth_due_now": queued_count,
-        "queue_dead_lettered": dead_count,
-        "worker_sends_in_the_last_hour": worker_recent_sends,
-        "failed_email_count": failed_count,
-        "latest_email": dict(last_email) if last_email else {},
-        "latest_payment_email": dict(last_payment_email) if last_payment_email else {},
-    }
-
-
 @webhook_app.route("/admin/email-health", methods=["GET"])
 def admin_email_health_page():
     admin, denied = require_admin_page("emails.view")
     if denied:
         return denied
-    health = email_health_snapshot()
+    brevo_ready = bool(os.getenv("BREVO_API_KEY"))
     smtp_ready = bool(os.getenv("SMTP_HOST") and os.getenv("SMTP_USER") and os.getenv("SMTP_PASSWORD"))
-    readiness = {k: v for k, v in health.items() if k not in ("latest_email", "latest_payment_email")}
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT created_at, recipient_email, email_type, subject, status FROM email_logs ORDER BY created_at DESC LIMIT 1")
+    last_email = cur.fetchone()
+    cur.execute("SELECT COUNT(*) AS count FROM email_logs WHERE lower(status) IN ('failed','error')")
+    failed_row = cur.fetchone()
+    failed_count = failed_row["count"] if failed_row else 0
+    cur.execute("SELECT COUNT(*) AS count FROM failed_email_queue")
+    queued_row = cur.fetchone()
+    queued_count = queued_row["count"] if queued_row else 0
+    cur.execute("SELECT created_at, email, template, status FROM payment_email_logs ORDER BY created_at DESC LIMIT 1")
+    last_payment_email = cur.fetchone()
+    conn.close()
     body = f"""
     <h1>Email Health</h1>
     <div class="grid">
-      <div class="card"><div class="metric">{'Yes' if health['provider_ready'] else 'No'}</div><p>Brevo can send</p></div>
+      <div class="card"><div class="metric">{'Yes' if brevo_ready else 'No'}</div><p>Brevo configured</p></div>
       <div class="card"><div class="metric">{'Yes' if smtp_ready else 'No'}</div><p>SMTP configured</p></div>
-      <div class="card"><div class="metric">{health['failed_email_count']}</div><p>failed emails</p></div>
-      <div class="card"><div class="metric">{health['queue_depth_due_now']}</div><p>queued and due now</p></div>
-      <div class="card"><div class="metric">{health['queue_dead_lettered']}</div><p>dead-lettered</p></div>
-      <div class="card"><div class="metric">{health['worker_sends_in_the_last_hour']}</div><p>worker sends, last hour</p></div>
+      <div class="card"><div class="metric">{failed_count}</div><p>failed emails</p></div>
+      <div class="card"><div class="metric">{queued_count}</div><p>queued retries</p></div>
     </div>
-    <div class="card"><h2>Readiness</h2><pre>{html_escape(clean_html(json.dumps(readiness, indent=2, default=str)))}</pre></div>
-    <div class="card"><h2>Latest Email</h2><pre>{html_escape(clean_html(json.dumps(health['latest_email'], indent=2, default=str)))}</pre></div>
-    <div class="card"><h2>Latest Payment Email</h2><pre>{html_escape(clean_html(json.dumps(health['latest_payment_email'], indent=2, default=str)))}</pre></div>
-    <p class="muted">Secrets are never shown here: configuration is reported as present or absent, never by value.</p>
+    <div class="card"><h2>Latest Email</h2><pre>{html_escape(clean_html(json.dumps(last_email or {}, indent=2)))}</pre></div>
+    <div class="card"><h2>Latest Payment Email</h2><pre>{html_escape(clean_html(json.dumps(last_payment_email or {}, indent=2)))}</pre></div>
+    <p class="muted">Secrets are never shown here. Sender values are checked from MAIL_FROM_ADDRESS/BREVO_SENDER_EMAIL and MAIL_FROM_NAME/BREVO_SENDER_NAME.</p>
     """
     return admin_page_html("Email Health", body, admin)
 
@@ -33322,7 +31590,7 @@ def issue_mobile_security_tokens(user, payload=None, *, rotate_from=""):
     session_family_id = "pssf_" + secrets.token_urlsafe(18)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
-        ensure_mobile_security_session_schema_once(cur)
+        ensure_mobile_security_session_schema(cur)
         if rotate_from:
             cur.execute(
                 "SELECT session_family_id FROM mobile_security_sessions WHERE refresh_token_hash=? AND user_id=? LIMIT 1",
@@ -33438,7 +31706,7 @@ def rotate_mobile_refresh_token(refresh_token, payload=None):
     context = mobile_security_device_context(payload)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
-        ensure_mobile_security_session_schema_once(cur)
+        ensure_mobile_security_session_schema(cur)
         cur.execute(
             """
             SELECT s.*, u.*
@@ -33572,7 +31840,7 @@ def revoke_mobile_refresh_token(refresh_token, reason="user_logout"):
         return False
     conn = db(); cur = conn.cursor()
     try:
-        ensure_mobile_security_session_schema_once(cur)
+        ensure_mobile_security_session_schema(cur)
         now = datetime.utcnow().isoformat(timespec="seconds")
         cur.execute(
             "UPDATE mobile_security_sessions SET status='revoked', revoked_at=?, last_seen_at=?, revoked_reason=? WHERE refresh_token_hash=? AND status='active'",
@@ -33595,7 +31863,7 @@ def revoke_all_mobile_security_sessions(user_id, reason="user_sign_out_all"):
         return 0
     conn = db(); cur = conn.cursor()
     try:
-        ensure_mobile_security_session_schema_once(cur)
+        ensure_mobile_security_session_schema(cur)
         now = datetime.utcnow().isoformat(timespec="seconds")
         cur.execute(
             """
@@ -35606,7 +33874,7 @@ def arena_page_shell(title, body, user=None, public=False, meta_tags=""):
     setInterval(loadArenaInboxPulse,15000);
     </script>""" if user else ""
     logo_url = url_for("static", filename="brand/pulsesoc-mark-20260913.png")
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name="description" content="CoinPlotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166);--red:var(--status-error,#ff6b7a);--purple:var(--domain-intelligence,#9b5cff)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px}}body.arena-drawer-open{{overflow:hidden}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none;display:inline-flex;align-items:center;gap:10px}}.brand img{{width:34px;height:34px;border-radius:10px;object-fit:contain;box-shadow:0 0 22px rgba(110,223,246,.22)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.arena-mobile-drawer-toggle,.arena-mobile-drawer,.arena-mobile-drawer-backdrop{{display:none}}.arena-bg,.arena-effects,.arena-particles,.arena-glow,.emoji-storm-layer,.emoji-storm,.cinematic-layer:not(.active),.victory-layer:not(.active),.arena-intro{{pointer-events:none!important}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.victory-overlay{{position:fixed;inset:0;z-index:120;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(54,229,143,.28),transparent 20rem),rgba(2,7,14,.74);backdrop-filter:blur(8px);animation:victoryFlash 1.6s ease both}}.victory-card{{width:min(92vw,620px);border:1px solid rgba(110,223,246,.42);border-radius:24px;background:linear-gradient(180deg,rgba(17,29,50,.96),rgba(5,11,20,.94));box-shadow:0 0 80px rgba(54,229,143,.26),0 30px 120px rgba(0,0,0,.55);padding:24px;text-align:center;transform:translateZ(0)}}.victory-title{{font-size:clamp(44px,10vw,96px);line-height:.9;margin:0;background:linear-gradient(135deg,var(--green),var(--cyan),var(--gold));-webkit-background-clip:text;color:transparent}}.emoji-storm{{position:fixed;inset:0;z-index:121;pointer-events:none;overflow:hidden}}.emoji-storm span{{position:absolute;top:-32px;font-size:clamp(24px,5vw,46px);animation:emojiRain 2.8s linear forwards;will-change:transform,opacity}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.live-arena-card{{border-color:rgba(54,229,143,.34);background:radial-gradient(circle at 15% 10%,rgba(54,229,143,.18),transparent 16rem),radial-gradient(circle at 80% 0,rgba(110,223,246,.18),transparent 18rem),linear-gradient(160deg,rgba(10,28,48,.94),rgba(5,11,20,.92));box-shadow:0 30px 100px rgba(0,0,0,.36),0 0 44px rgba(54,229,143,.12)}}.live-arena-card:before{{content:"";position:absolute;inset:-40%;background:conic-gradient(from 180deg,transparent,rgba(54,229,143,.12),transparent 36%,rgba(110,223,246,.14),transparent 68%);pointer-events:none}}.live-arena-card>*{{position:relative;z-index:1}}.live-arena-cta{{font-size:16px;letter-spacing:.04em;box-shadow:0 0 28px rgba(54,229,143,.28)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes victoryFlash{{0%{{opacity:0;transform:scale(1.04)}}18%{{opacity:1}}100%{{opacity:1;transform:scale(1)}}}}@keyframes emojiRain{{0%{{transform:translate3d(0,-20px,0) rotate(0deg);opacity:0}}12%{{opacity:1}}100%{{transform:translate3d(var(--drift,0),105vh,0) rotate(420deg);opacity:0}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(max-width:768px){{header nav>.actions{{display:none}}header{{position:relative}}.wrap{{padding:12px 0 calc(84px + env(safe-area-inset-bottom))}}h1{{font-size:clamp(28px,9vw,42px)}}h2{{font-size:clamp(20px,6vw,26px)}}.hero{{gap:12px;margin-top:12px}}.grid{{gap:12px;margin-top:12px}}.card{{border-radius:14px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.26)}}.card:after,.live-arena-card:before{{display:none}}.arena-intro{{display:none}}.player-card{{padding:10px}}.arena-mobile-drawer-toggle{{display:inline-flex;position:fixed;left:max(8px,env(safe-area-inset-left));top:calc(74px + env(safe-area-inset-top));z-index:74;width:auto;min-height:38px;padding:8px 10px;border-radius:0 12px 12px 0;background:rgba(6,18,31,.92);backdrop-filter:blur(14px);box-shadow:0 0 22px rgba(110,223,246,.18);font-size:13px}}.arena-mobile-drawer-backdrop{{display:none;position:fixed;inset:0;z-index:72;background:rgba(0,0,0,.38);pointer-events:none}}.arena-mobile-drawer-backdrop:not([hidden]){{display:block;pointer-events:auto}}.arena-mobile-drawer{{display:block;position:fixed;top:0;left:0;bottom:0;width:min(82vw,340px);z-index:73;transform:translateX(-104%);transition:transform .22s ease;background:linear-gradient(180deg,rgba(7,19,34,.98),rgba(4,9,18,.98));border-right:1px solid rgba(110,223,246,.24);box-shadow:24px 0 70px rgba(0,0,0,.46);padding:calc(16px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));overflow:auto;pointer-events:none}}.arena-mobile-drawer.open{{transform:translateX(0);pointer-events:auto}}.drawer-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}}.drawer-head button{{width:40px;min-height:40px;padding:0;font-size:22px}}.drawer-actions{{display:grid;gap:10px}}.drawer-actions .card{{position:static!important;max-width:none!important}}.drawer-actions label.option{{justify-content:space-between}}.victory-card{{padding:18px}}.emoji-storm span{{font-size:26px}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}.victory-overlay,.emoji-storm span{{animation:none!important}}}}</style><script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script></head><body>{drawer_html}<header><div class="wrap"><nav><a class="brand" href="/arena"><img src="{logo_url}" alt="PulseSoc logo" width="34" height="34" loading="lazy" onerror="this.style.display='none'"><span>Alpha Arena</span></a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p></main>{script}</body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name="description" content="CoinPlotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166);--red:var(--status-error,#ff6b7a);--purple:var(--domain-intelligence,#9b5cff)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px}}body.arena-drawer-open{{overflow:hidden}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none;display:inline-flex;align-items:center;gap:10px}}.brand img{{width:34px;height:34px;border-radius:10px;object-fit:contain;box-shadow:0 0 22px rgba(110,223,246,.22)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.arena-mobile-drawer-toggle,.arena-mobile-drawer,.arena-mobile-drawer-backdrop{{display:none}}.arena-bg,.arena-effects,.arena-particles,.arena-glow,.emoji-storm-layer,.emoji-storm,.cinematic-layer:not(.active),.victory-layer:not(.active),.arena-intro{{pointer-events:none!important}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.victory-overlay{{position:fixed;inset:0;z-index:120;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(54,229,143,.28),transparent 20rem),rgba(2,7,14,.74);backdrop-filter:blur(8px);animation:victoryFlash 1.6s ease both}}.victory-card{{width:min(92vw,620px);border:1px solid rgba(110,223,246,.42);border-radius:24px;background:linear-gradient(180deg,rgba(17,29,50,.96),rgba(5,11,20,.94));box-shadow:0 0 80px rgba(54,229,143,.26),0 30px 120px rgba(0,0,0,.55);padding:24px;text-align:center;transform:translateZ(0)}}.victory-title{{font-size:clamp(44px,10vw,96px);line-height:.9;margin:0;background:linear-gradient(135deg,var(--green),var(--cyan),var(--gold));-webkit-background-clip:text;color:transparent}}.emoji-storm{{position:fixed;inset:0;z-index:121;pointer-events:none;overflow:hidden}}.emoji-storm span{{position:absolute;top:-32px;font-size:clamp(24px,5vw,46px);animation:emojiRain 2.8s linear forwards;will-change:transform,opacity}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.live-arena-card{{border-color:rgba(54,229,143,.34);background:radial-gradient(circle at 15% 10%,rgba(54,229,143,.18),transparent 16rem),radial-gradient(circle at 80% 0,rgba(110,223,246,.18),transparent 18rem),linear-gradient(160deg,rgba(10,28,48,.94),rgba(5,11,20,.92));box-shadow:0 30px 100px rgba(0,0,0,.36),0 0 44px rgba(54,229,143,.12)}}.live-arena-card:before{{content:"";position:absolute;inset:-40%;background:conic-gradient(from 180deg,transparent,rgba(54,229,143,.12),transparent 36%,rgba(110,223,246,.14),transparent 68%);pointer-events:none}}.live-arena-card>*{{position:relative;z-index:1}}.live-arena-cta{{font-size:16px;letter-spacing:.04em;box-shadow:0 0 28px rgba(54,229,143,.28)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes victoryFlash{{0%{{opacity:0;transform:scale(1.04)}}18%{{opacity:1}}100%{{opacity:1;transform:scale(1)}}}}@keyframes emojiRain{{0%{{transform:translate3d(0,-20px,0) rotate(0deg);opacity:0}}12%{{opacity:1}}100%{{transform:translate3d(var(--drift,0),105vh,0) rotate(420deg);opacity:0}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(max-width:768px){{header nav>.actions{{display:none}}header{{position:relative}}.wrap{{padding:12px 0 calc(84px + env(safe-area-inset-bottom))}}h1{{font-size:clamp(28px,9vw,42px)}}h2{{font-size:clamp(20px,6vw,26px)}}.hero{{gap:12px;margin-top:12px}}.grid{{gap:12px;margin-top:12px}}.card{{border-radius:14px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.26)}}.card:after,.live-arena-card:before{{display:none}}.arena-intro{{display:none}}.player-card{{padding:10px}}.arena-mobile-drawer-toggle{{display:inline-flex;position:fixed;left:max(8px,env(safe-area-inset-left));top:calc(74px + env(safe-area-inset-top));z-index:74;width:auto;min-height:38px;padding:8px 10px;border-radius:0 12px 12px 0;background:rgba(6,18,31,.92);backdrop-filter:blur(14px);box-shadow:0 0 22px rgba(110,223,246,.18);font-size:13px}}.arena-mobile-drawer-backdrop{{display:none;position:fixed;inset:0;z-index:72;background:rgba(0,0,0,.38);pointer-events:none}}.arena-mobile-drawer-backdrop:not([hidden]){{display:block;pointer-events:auto}}.arena-mobile-drawer{{display:block;position:fixed;top:0;left:0;bottom:0;width:min(82vw,340px);z-index:73;transform:translateX(-104%);transition:transform .22s ease;background:linear-gradient(180deg,rgba(7,19,34,.98),rgba(4,9,18,.98));border-right:1px solid rgba(110,223,246,.24);box-shadow:24px 0 70px rgba(0,0,0,.46);padding:calc(16px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));overflow:auto;pointer-events:none}}.arena-mobile-drawer.open{{transform:translateX(0);pointer-events:auto}}.drawer-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}}.drawer-head button{{width:40px;min-height:40px;padding:0;font-size:22px}}.drawer-actions{{display:grid;gap:10px}}.drawer-actions .card{{position:static!important;max-width:none!important}}.drawer-actions label.option{{justify-content:space-between}}.victory-card{{padding:18px}}.emoji-storm span{{font-size:26px}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}.victory-overlay,.emoji-storm span{{animation:none!important}}}}</style></head><body>{drawer_html}<header><div class="wrap"><nav><a class="brand" href="/arena"><img src="{logo_url}" alt="PulseSoc logo" width="34" height="34" loading="lazy" onerror="this.style.display='none'"><span>Alpha Arena</span></a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p></main>{script}</body></html>""")
 
 
 def arena_simple_page(title, heading, intro, cards=None, script=""):
@@ -36185,7 +34453,7 @@ def arena_chat_page(thread_id):
     <section class="card" style="min-height:58vh;display:grid;grid-template-rows:auto 1fr auto;gap:12px">
       <div class="actions"><a class="button" href="/arena/inbox">Inbox</a><a class="button" href="/arena/player/{html_escape(clean_html(other.get('public_player_id') or ''))}">View Profile</a><button data-sound-toggle>Sound</button></div>
       <div class="chat-thread" data-arena-chat-thread></div>
-      <form class="private-chat-form" data-arena-chat-form><input name="body" placeholder="Reply in Arena..." maxlength="1200" autocomplete="off"><button class="button" type="button" data-emoji-for aria-label="Add emoji to your message">☺</button><button class="button primary">Send</button></form>
+      <form class="private-chat-form" data-arena-chat-form><input name="body" placeholder="Reply in Arena..." maxlength="1200" autocomplete="off"><button class="button primary">Send</button></form>
     </section>
     <script>
     const threadId={int(thread_id)};
@@ -36257,7 +34525,7 @@ def arena_inbox_page():
           <form data-inline-reply data-request-id="{int(item.get('id') or 0)}" data-public-player-id="{public_id}" data-thread-id="{thread_id}" hidden>
             <label class="muted">Reply to {name}</label>
             <textarea name="message" rows="3" placeholder="Type a fast Arena reply..."></textarea>
-            <div class="actions"><button class="button" type="button" data-emoji-for aria-label="Add emoji to your reply">☺</button><button class="primary" type="submit">Send Reply</button><a class="button" href="{html_escape(clean_html(item.get('chat_url') or item.get('next_url') or '#'))}">Open Chat</a></div>
+            <div class="actions"><button class="primary" type="submit">Send Reply</button><a class="button" href="{html_escape(clean_html(item.get('chat_url') or item.get('next_url') or '#'))}">Open Chat</a></div>
             <p class="muted" data-reply-status></p>
           </form>
             """
@@ -36514,20 +34782,15 @@ def pulse_roast_battle_shell_response(response):
     html = response.get_data(as_text=True)
     pulse_links = "".join(
         f"<a class='button{' primary' if href == '/pulse/roast-battle' else ''}' href='{href}'>{label}</a>"
-        for label, href in pulse_web_navigation.visible((
+        for label, href in (
             ("Home", "/pulse"),
-            # Reels, not Videos. Videos is withdrawn, and this row is the only
-            # navigation the roast shell renders above 720px -- filtering the
-            # entry out rather than replacing it would leave the desktop header
-            # with no video destination at all, while the phone nav below still
-            # offers Reels.
-            ("Reels", "/pulse/reels"),
+            ("Videos", "/pulse/videos"),
             ("Live", "/pulse/live"),
             ("Messages", "/pulse/messages"),
             ("Roast Battle", "/pulse/roast-battle"),
             ("Premium", "/pulse/premium"),
             ("Profile", "/pulse/profile"),
-        ))
+        )
     )
     pulse_header = (
         "<header><div class='wrap'><nav><a class='brand' href='/pulse'>"
@@ -36537,7 +34800,7 @@ def pulse_roast_battle_shell_response(response):
     )
     pulse_bottom_nav = (
         "<nav class='pulse-roast-mobile-nav' aria-label='PulseSoc mobile navigation'>"
-        "<a href='/pulse'>Home</a><a href='/pulse/reels'>Reels</a>"
+        "<a href='/pulse'>Home</a><a href='/pulse/videos'>Videos</a>"
         "<a href='/pulse/messages'>Messages</a><a href='/pulse/profile'>Profile</a></nav>"
     )
     pulse_style = """<style>
@@ -36601,14 +34864,14 @@ def arena_roast_battle_page(room_id=None, match_id=None):
         <div class="roast-ticker" aria-live="polite"><span data-roast-ticker>New challenger entered · Crowd surging · AI commentators online · Viral roast detected · Room heat rising · </span></div>
         <p class="muted">Roast Battle uses virtual dollars for entertainment scoring only. No real-money value.</p>
         <form data-roast-call-sign class="actions"><input name="call_sign" minlength="3" maxlength="24" placeholder="Choose call sign, e.g. Cyber Flame"><button type="submit">Save Call Sign</button></form>
-        <div class="actions"><button class="primary" data-roast-enroll>Start Battle</button><a class="button" href="/pulse/roast-battle/room/1">Watch Live</a><button type="button" data-roast-fullscreen>Theater Mode</button><a class="button" href="/pulse/roast-clips">Battle Replays</a></div>
+        <div class="actions"><button class="primary" data-roast-enroll>Start Battle</button><a class="button" href="/pulse/roast-battle/room/1">Watch Live</a><button type="button" data-roast-fullscreen>Theater Mode</button><a class="button" href="/pulse/videos">Battle Replays</a></div>
       </article>
       <article class="card"><h2>World Stage</h2><p><strong data-roast-world-count>Loading</strong> watching worldwide · <span data-roast-heat-label>PulseSoc stage heating up</span></p><div class="crowd-meter"><span data-roast-crowd style="width:52%"></span></div><p class="muted">Playful roasts and rivalry energy are welcome. Personal attacks, threats, slurs, doxxing, and protected-class insults are blocked.</p></article>
     </section>
     <section class="grid" data-pulse-roast-battle-hub>
       <article class="card"><div class="kicker">Live Battles</div><h2>Join the room</h2><p>Enter an active moderated battle or watch the crowd decide the room.</p><div class="actions"><button class="primary" data-roast-enroll>Join Battle</button></div></article>
       <article class="card"><div class="kicker">Scheduled Battles</div><h2>Creator Battles</h2><p>Creator and community battle scheduling is preparing inside PulseSoc.</p><span class="notice">Scheduling coming soon</span></article>
-      <article class="card"><div class="kicker">Battle Library</div><h2>Replays & Clips</h2><p>Completed battle replays and shareable highlights live in Battle Clips.</p><div class="actions"><a class="button primary" href="/pulse/roast-clips">Open Battle Clips</a></div></article>
+      <article class="card"><div class="kicker">Battle Library</div><h2>Replays & Clips</h2><p>Completed battle replays and shareable highlights live with PulseSoc Videos.</p><div class="actions"><a class="button" href="/pulse/videos?tab=replays">Open Replays</a><a class="button" href="/pulse/roast-clips">Battle Clips</a></div></article>
       <article class="card"><div class="kicker">Rankings</div><h2>Hall of Fame</h2><p>Audience votes, clean creativity, humor, originality, and engagement shape future rankings.</p></article>
       <article class="card"><div class="kicker">Audience Scoring</div><h2>Vote & React</h2><p>Live audience voting and reactions are active. AI Judge scoring is coming soon.</p></article>
       <article class="card"><div class="kicker">Safety</div><h2>Clever, not cruel</h2><p>Moderation blocks threats, slurs, doxxing, and personal attacks while preserving playful competition.</p></article>
@@ -38316,7 +36579,7 @@ def api_arena_reputation():
     conn = db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO arena_reputation (user_id, discipline, helpfulness, leadership, scam_defense, sportsmanship, consistency, updated_at) VALUES (?, 50, 50, 50, 50, 55, 50, ?) ON CONFLICT(user_id) DO UPDATE SET sportsmanship=MIN(100, arena_reputation.sportsmanship+1), updated_at=excluded.updated_at",
+        "INSERT INTO arena_reputation (user_id, discipline, helpfulness, leadership, scam_defense, sportsmanship, consistency, updated_at) VALUES (?, 50, 50, 50, 50, 55, 50, ?) ON CONFLICT(user_id) DO UPDATE SET sportsmanship=MIN(100, sportsmanship+1), updated_at=excluded.updated_at",
         (user["user_id"], datetime.now().isoformat()),
     )
     conn.commit()
@@ -41266,30 +39529,6 @@ def account_security_notification_redirect():
     return redirect("/dashboard/account/security", code=302)
 
 
-# `linking.ts` declares the root Saved screen as bare `saved`, alongside the tab
-# screen's `pulse/saved`, and its `prefixes` include https://pulsesoc.com -- so
-# the app both opens and *mints* https://pulsesoc.com/saved. On the web that URL
-# landed on `/<slug>`, which is the SEO topic-page rule and answers anything it
-# does not recognise with nine bytes of plain-text "Not found". Not a shell, not
-# a login wall: a bare 404 for a URL the product hands out.
-#
-# It reads as covered from the outside, which is why it lasted. The parity matrix
-# scores `/saved` PARITY because `/<slug>` *matches* it -- a rule existing is not
-# the same as a page being served, and that distinction is invisible to any check
-# that stops at the url_map.
-#
-# Werkzeug orders by specificity rather than registration, so this literal wins
-# over `/<slug>` wherever it is declared; it sits here to be read next to the
-# other alias above.
-@webhook_app.route("/saved", methods=["GET"])
-@auth_required
-def saved_deep_link_alias():
-    user = require_account()
-    if not user:
-        return redirect(url_for("login_page", next=request.path))
-    return redirect("/pulse/saved", code=302)
-
-
 # Declared ahead of the `<path:status_id>` rule below purely so the two are read
 # together; Werkzeug orders by specificity, not by registration, so the literal
 # wins either way. Without it the rule below swallowed this path and treated
@@ -41964,13 +40203,8 @@ def admin_seo_page():
     admin, denied = require_admin_page("system.view")
     if denied:
         return denied
-    # Both lists are read from the policy rather than typed here. The old
-    # hardcoded pair claimed /app and /command-center were noindex (neither is
-    # in the rule table) and omitted a dozen prefixes that are -- an admin
-    # dashboard that reports a different answer than the site serves is worse
-    # than no dashboard, because it gets believed.
-    public_paths = [path for path in all_public_paths() if search_visibility.is_indexable(path)]
-    noindex = [prefix for prefix, _directive, _reason in search_visibility._RULES]
+    public_paths = all_public_paths()
+    noindex = ["/app", "/chat", "/command-center", "/dashboard", "/account", "/admin", "/api/*", "/stripe/*"]
     schema_types = ["Organization", "SoftwareApplication", "Product", "FAQPage", "BreadcrumbList", "WebSite", "Course", "LearningResource"]
     rows = "".join(f"<tr><td>{html_escape(clean_html(path))}</td><td>crawlable</td><td>canonical expected</td></tr>" for path in public_paths[:80])
     body = f"<h1>SEO Intelligence Center</h1><div class='grid'><div class='card'><div class='metric'>{len(public_paths)}</div><p>public indexable paths tracked</p></div><div class='card'><div class='metric'>{len(noindex)}</div><p>private/noindex patterns protected</p></div><div class='card'><div class='metric'>{len(schema_types)}</div><p>schema families active/planned</p></div></div><div class='card'><h2>Noindex Protection</h2><p>{', '.join(noindex)}</p></div><div class='card'><h2>Public Crawl Targets</h2><table><tr><th>Path</th><th>Status</th><th>Metadata</th></tr>{rows}</table></div>"
@@ -42168,14 +40402,14 @@ PULSE_NOTIFICATION_BELL_ICON = (
 
 
 def pulse_desktop_top_nav_html(user=None):
-    nav = pulse_web_navigation.visible([
+    nav = [
         ("Home", "/pulse"),
         ("Discover", "/pulse/discover"),
         ("Reels", "/pulse/reels"),
         ("Videos", "/pulse/videos"),
         ("Live", "/pulse/live"),
         ("Messenger", "/pulse/messages"),
-    ])
+    ]
     apps = [
         ("Dashboard", "/dashboard"),
         ("Music", "/pulse/music"),
@@ -42183,9 +40417,9 @@ def pulse_desktop_top_nav_html(user=None):
         ("Events", "/pulse/events"),
         ("Communities", "/pulse/communities"),
         ("Roast Battle", "/pulse/roast-battle"),
-        ("Marketplace", app_first_href("marketplace")),
+        ("Marketplace", "/pulse/marketplace"),
         ("Creator Studio", "/pulse/creator-studio"),
-        ("Seller Tools", app_first_href("seller")),
+        ("Seller Tools", "/pulse/seller-tools"),
         ("Promote", "/pulse/promote"),
         ("Portfolio", "/pulse/portfolio"),
         ("Premium", "/pulse/premium"),
@@ -42219,14 +40453,7 @@ def pulse_desktop_top_nav_html(user=None):
     apps_html = ""
     for label, href in apps:
         current = " aria-current='page'" if pulse_nav_is_current(href, active_path) else ""
-        # Marketplace and Seller Tools sit in this list looking exactly like the
-        # web destinations around them, and they are not: they hand off to the
-        # app. The marker says so before the click rather than after it.
-        apps_html += (
-            f"<a{current} href='{html_escape(clean_html(href))}'"
-            f"{app_promotion.nav_marker_attrs(href)}>"
-            f"{html_escape(clean_html(label))}{app_promotion.nav_marker_html(href)}</a>"
-        )
+        apps_html += f"<a{current} href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>"
     return (
         "<header class='pulse-desktop-topbar' data-desktop-feed-nav>"
         "<a class='pulse-desktop-brand' href='/pulse'><img src='/static/brand/pulsesoc-mark-20260913.png' alt='PulseSoc logo'>PulseSoc</a>"
@@ -42236,17 +40463,11 @@ def pulse_desktop_top_nav_html(user=None):
         f"{apps_html}"
         "</div></details>"
         "</div>"
-        # First in the actions cluster, which puts it as far as possible from
-        # Create. Two filled buttons side by side compete, and Create is the one
-        # that has to win. The control is inert until pressed and never opens
-        # itself, so it is chrome rather than a promotional surface -- see the
-        # module docstring in services/app_promotion.py.
-        f"<div class='pulse-desktop-actions'>{app_promotion.header_control_html()}"
-        "<form class='pulse-desktop-search-form' data-pulse-search-form role='search' action='/pulse/search' method='get'><input class='pulse-desktop-search' data-pulse-search-input name='q' type='search' placeholder='Search PulseSoc' autocomplete='off' aria-label='Search PulseSoc'></form>"
+        "<div class='pulse-desktop-actions'><form class='pulse-desktop-search-form' data-pulse-search-form role='search' action='/pulse/search' method='get'><input class='pulse-desktop-search' data-pulse-search-input name='q' type='search' placeholder='Search PulseSoc' autocomplete='off' aria-label='Search PulseSoc'></form>"
         "<a class='pulse-topnav-control pulse-topnav-search' href='/pulse/search' aria-label='Open PulseSoc search'><span aria-hidden='true'>⌕</span></a>"
         "<a class='pulse-topnav-control pulse-topnav-alert' data-header-notifications href='/pulse/notifications' aria-label='Notifications'><span class='pulse-alert-radar' aria-hidden='true'></span><span class='pulse-notification-badge' data-alert-unread data-notification-unread hidden>0</span></a>"
         "<a class='pulse-topnav-control pulse-topnav-live' href='/pulse/live' aria-label='Open Live Network'><span aria-hidden='true'>LIVE</span></a>"
-        f"<details class='pulse-topnav-profile-menu'><summary class='pulse-topnav-avatar' aria-label='Open account menu'>{avatar_html}<span class='pulse-topnav-presence' aria-hidden='true'></span></summary><div class='pulse-topnav-profile-panel' role='menu' aria-label='Account menu'><strong>{html_escape(clean_html(display_name))}</strong><a href='/pulse/profile' role='menuitem'>Profile</a><a href='/dashboard' role='menuitem'>Dashboard</a><a href='/pulse/creator-studio' role='menuitem'>Creator Studio</a><a href='/pulse/promote' role='menuitem'>Promote</a><a href='/account/settings' role='menuitem'>Account Settings</a><a href='/pulse/help' role='menuitem'>Help &amp; Support</a><a class='logout' href='/logout' role='menuitem'>Log Out</a></div></details>"
+        f"<details class='pulse-topnav-profile-menu'><summary class='pulse-topnav-avatar' aria-label='Open account menu'>{avatar_html}<span class='pulse-topnav-presence' aria-hidden='true'></span></summary><div class='pulse-topnav-profile-panel' role='menu' aria-label='Account menu'><strong>{html_escape(clean_html(display_name))}</strong><a href='/pulse/profile' role='menuitem'>Profile</a><a href='/dashboard' role='menuitem'>Dashboard</a><a href='/account/settings' role='menuitem'>Account Settings</a><a class='logout' href='/logout' role='menuitem'>Log Out</a></div></details>"
         "<a class='button primary pulse-create-strong' href='#create' data-pulse-create-trigger='1'>Create</a></div>"
         "</header>"
     )
@@ -42273,41 +40494,20 @@ def pulse_shell_rail_items(user=None, is_admin=False):
         ("Videos", "/pulse/videos", "▣"),
         ("Live", "/pulse/live", "●"),
         ("Communities", "/pulse/communities", "◇"),
-        # Not "▣" -- that is Videos', and the two rendered as the same mark in
-        # two different rail groups. Cart arrived on main as "▤", which is
-        # Events' mark here for the same reason, so it moves to "▥"; all three
-        # stay in Geometric Shapes with the rest of the set.
-        ("Marketplace", app_first_href("marketplace"), "◫"),
-        ("Cart", app_first_href("cart"), "▥"),
+        ("Marketplace", "/pulse/marketplace", "▣"),
         ("Music", "/pulse/music", "♪"),
-        # Glyphs, not initials. "E" for Events and "M" for Messenger were the
-        # first letter of the label rendered next to the label, which is a
-        # placeholder that reads as one: five rows of the rail looked unfinished
-        # beside the sixteen that had real marks. Every replacement is drawn from
-        # a Unicode block this list already proves renders in the shell font --
-        # Geometric Shapes (▦ ▣ ◇), Dingbats (✦), Misc Symbols (⚙), Math
-        # Operators -- rather than from emoji, which would break the monochrome
-        # set, and rather than from rarer blocks that risk tofu.
-        ("Events", "/pulse/events", "▤"),
-        ("Messenger", "/pulse/messages", "✉"),
-        ("Notifications", "/pulse/notifications", "⚑"),
-        ("Pulse Radio", "/pulse/music#pulse-radio", "≈"),
+        ("Events", "/pulse/events", "E"),
+        ("Messenger", "/pulse/messages", "M"),
+        ("Notifications", "/pulse/notifications", "A"),
+        ("Pulse Radio", "/pulse/music#pulse-radio", "R"),
         ("Creator Studio", "/pulse/creator-studio", "✦"),
-        # Two entries, deliberately. /business is the browser counterpart of the
-        # app's Business tile -- fourteen named sections, each labelled with what
-        # the web can actually do for it today. /business-os is the older
-        # token-styled console that drives the 199 /api/business-os endpoints
-        # directly through forms. They are different products for different
-        # people, so collapsing them would either hide the console from the
-        # members who use it or dress it up as the section hub, which it is not.
-        ("Business", "/business", "◧"),
         ("Business OS", "/business-os", "◈"),
         ("UNDX AI", "/pulse/assistant", "AI"),
         # Gated on the same flag as the page and every /api/business-os/undx
         # route, so the rail never offers a destination that dark-404s.
         *([("Action Center", "/pulse/undx/actions", "§")]
           if _business_os_undx_actions_enabled() else []),
-        ("Seller Tools", app_first_href("seller"), "$"),
+        ("Seller Tools", "/pulse/seller-tools", "$"),
         ("Premium", "/pulse/premium", "◆"),
         ("Promote", "/pulse/promote", "↗"),
         ("Saved", "/pulse/saved", "★"),
@@ -42319,9 +40519,7 @@ def pulse_shell_rail_items(user=None, is_admin=False):
         items.insert(5, ("PulseSoc Labs", "/pulse/labs", "△"))
     if is_admin:
         items.append(("Admin", "/admin/global-command", "!"))
-    # Filtered here rather than in the literal above so `insert(5, ...)` keeps
-    # counting the same rows it was written against.
-    return pulse_web_navigation.visible(items)
+    return items
 
 
 def pulse_shell_drawer_extras(existing, user=None, is_admin=False):
@@ -42369,112 +40567,24 @@ def pulse_nav_is_current(href, active_path):
     return active == base or (base != "/pulse" and active.startswith(base.rstrip("/") + "/"))
 
 
-PULSE_RAIL_GROUPS = {
-    # Both the web paths and the app-first interstitials, because a commerce
-    # destination is reached by whichever of the two `app_first_href` /
-    # `marketplace_href` currently return, and the section a row belongs to is a
-    # fact about the destination rather than about how this deployment happens to
-    # route it today. Listing only the `/pulse/...` forms left Marketplace and
-    # Seller Tools ungrouped while the app-first links were in effect, which
-    # emptied the Shopping section and silently collapsed it -- the group simply
-    # did not appear, so the failure looked like a design choice.
-    "/pulse/marketplace": "Shopping",
-    "/marketplace": "Shopping",
-    "/open/marketplace": "Shopping",
-    "/open/product": "Shopping",
-    "/open/seller": "Shopping",
-    "/open/seller_dashboard": "Shopping",
-    "/pulse/seller": "Shopping",
-    "/seller": "Shopping",
-    # Cart arrived on main while this branch was open. Unmapped it would have
-    # rendered in the unlabelled primary group, directly beneath Home and Reels,
-    # which is both wrong and the exact failure described above -- and harder to
-    # notice, because an ungrouped row still appears, it just appears in the
-    # wrong place. Anything added to the rail that is a commerce destination
-    # belongs here.
-    "/pulse/cart": "Shopping",
-    "/cart": "Shopping",
-    "/open/cart": "Shopping",
-    "/dashboard": "Your space",
-    "/pulse/creator-studio": "Your space",
-    "/business-os": "Your space",
-    "/pulse/assistant": "Your space",
-    "/pulse/undx/actions": "Your space",
-    "/pulse/premium": "Your space",
-    "/pulse/promote": "Your space",
-    "/pulse/saved": "Your space",
-    "/pulse/collections": "Your space",
-    "/pulse/settings": "Your space",
-    "/pulse/labs": "Your space",
-    "/admin/global-command": "Your space",
-}
-
-PULSE_RAIL_GROUP_ORDER = ("", "Shopping", "Your space")
-
-
-def pulse_shell_rail_group(href):
-    """Which rail section a catalogue destination belongs to.
-
-    Kept beside ``pulse_shell_rail_items`` rather than inside it: that catalogue
-    is a three-tuple the top bar and both drawers consume as well, and none of
-    them render sections. Widening the tuple would force an edit at four call
-    sites to express a decision only the rail has. Keyed by href because labels
-    are display copy, while hrefs are the identity the catalogue's
-    "appears everywhere or nowhere" contract is already keyed on.
-
-    An unclassified destination falls into the unlabelled first group, so adding
-    one to the catalogue still surfaces it -- it just lands in the primary list
-    until someone sorts it. Dropping it silently would be the worse default.
-    """
-    base = str(href or "").split("#")[0].split("?")[0].rstrip("/") or "/"
-    if base in PULSE_RAIL_GROUPS:
-        return PULSE_RAIL_GROUPS[base]
-    for prefix, group in PULSE_RAIL_GROUPS.items():
-        if base.startswith(prefix + "/"):
-            return group
-    return ""
-
-
 def pulse_rail_nav_links_html(user=None, is_admin=False, active_path=""):
     """Render the rail's links, marking the current destination.
 
     The rail previously rendered no active state at all, so on every page it
     looked identical and gave no clue where you were -- one of the concrete ways
     the site read as older than the app, which highlights the selected tab.
-
-    Twenty-five equally weighted rows is a list, not a navigation, so they are
-    emitted in labelled sections. Ordering inside a section stays the
-    catalogue's; only the partition is decided here.
     """
     active = (active_path or request.path or "").split("?")[0]
-    buckets = {name: [] for name in PULSE_RAIL_GROUP_ORDER}
+    out = ""
     for label, href, icon in pulse_shell_rail_items(user, is_admin):
         selected = pulse_nav_is_current(href, active)
         cls = "desktop-rail-link is-active" if selected else "desktop-rail-link"
         current = " aria-current='page'" if selected else ""
-        # Both sides of this line moved, and they are independent: the rail
-        # learned to group its rows, and `app_promotion` learned to mark the rows
-        # that hand off to the app. One decides which section a row lands in, the
-        # other adds attributes to the row's anchor, so both are kept. The marker
-        # attributes belong inside the opening tag, which is why the `>` that used
-        # to close that tag on this line now closes it on the line above.
-        buckets.setdefault(pulse_shell_rail_group(href), []).append(
-            f"<a class='{cls}'{current} href='{html_escape(clean_html(href))}'"
-            f"{app_promotion.nav_marker_attrs(href)}>"
+        out += (
+            f"<a class='{cls}'{current} href='{html_escape(clean_html(href))}'>"
             f"<span class='desktop-rail-ico'>{html_escape(clean_html(icon))}</span>"
-            f"<span>{html_escape(clean_html(label))}{app_promotion.nav_marker_html(href)}</span></a>"
+            f"<span>{html_escape(clean_html(label))}</span></a>"
         )
-    out = ""
-    for name in PULSE_RAIL_GROUP_ORDER:
-        rows = buckets.get(name) or []
-        if not rows:
-            continue
-        heading = (
-            f"<p class='pulse-rail-group-label'>{html_escape(clean_html(name))}</p>"
-            if name
-            else ""
-        )
-        out += f"<div class='pulse-rail-group'>{heading}{''.join(rows)}</div>"
     return out
 
 
@@ -42504,70 +40614,24 @@ def pulse_desktop_rail_nav_html(user=None, is_admin=False, active_path=""):
     )
 
 
-PULSE_FAST_LANES = (
-    ("Create Status", "/pulse?create_status=1", "+", "Stories from your PulseSoc world"),
-    ("Active Stories", "/pulse/status?lane=trending", "↗", "Watch active stories first"),
-    ("PulseSoc Music", "/pulse/music", "♪", "Upload, search, and attach music"),
-    ("Reels", "/pulse/reels", "▶", "Full-screen short videos"),
-    ("Portfolio", "/pulse/portfolio", "$", "Holdings, watchlists, alerts, and AI context"),
-    ("Messenger", "/pulse/messages", "💬", "Chats, groups, and rooms"),
-    ("Live Stage", "/pulse/live", "●", "Rooms, streams, creator moments"),
-    ("Promote", "/pulse/promote", "↗", "Owner-only promotion gateway"),
-)
-
-
-def pulse_rail_fast_lanes_html(user=None, is_admin=False):
-    """Shortcuts the rail's own navigation does not already offer.
-
-    Seven of the ten rows here named a destination sitting a few hundred pixels
-    higher in the same rail, so the card read as a second, differently ordered
-    copy of the navigation. Filtering against the catalogue leaves the genuine
-    shortcuts -- a status composer, a filtered status lane, Portfolio -- and
-    makes the card self-maintaining: promoting one of these into
-    ``pulse_shell_rail_items`` now removes it from here rather than duplicating
-    it. "Create Signal" is dropped separately; it is the header's Create button.
-
-    Returns an empty string when nothing survives, so the card collapses instead
-    of rendering an empty heading.
-    """
-    catalogue = {
-        str(href or "").split("#")[0].split("?")[0].rstrip("/")
-        for _label, href, _icon in pulse_shell_rail_items(user, is_admin)
-    }
-    rows = ""
-    for label, href, icon, blurb in PULSE_FAST_LANES:
-        if str(href).split("#")[0].split("?")[0].rstrip("/") in catalogue:
-            continue
-        cls = "desktop-module-link pulse-status-glow-link" if "create_status" in href else "desktop-module-link"
-        rows += (
-            f"<a class='{cls}' href='{html_escape(clean_html(href))}'>"
-            f"<span class='desktop-rail-ico'>{html_escape(clean_html(icon))}</span>"
-            f"<span><strong>{html_escape(clean_html(label))}</strong>"
-            f"<small class='muted'>{html_escape(clean_html(blurb))}</small></span></a>"
-        )
-    if not rows:
-        return ""
-    return f"<section class='desktop-rail-card pulse-rail-fast-lanes'><h3>Fast Lanes</h3>{rows}</section>"
-
-
 def pulse_desktop_left_rail_html(is_admin=False, user=None):
-    """The feed's left rail: navigation, then feed furniture.
-
-    The rail opened with a card reading "Your PulseSoc OS" over the signed-in
-    initials, then a "Today" card whose three rows were Dashboard, Promote and
-    Log Out. Neither carried information -- the first is a slogan, the second is
-    an account menu -- and together they spent the top ~300px of the rail, which
-    is the only part of it visible without scrolling. All three destinations are
-    in the header's account popover, which is where a signed-in user looks for
-    them, so the cards are gone rather than restyled.
-
-    ``.pulse-desktop-left`` is hidden outright below 1024px by
-    ``pulse_desktop_feed.css``, so this markup is desktop-only and deleting it
-    cannot affect the phone.
-    """
+    shell_user = load_account_by_id((user or {}).get("user_id")) or (user or {})
+    rail_name = shell_user.get("display_name") or shell_user.get("username") or "Me"
+    rail_initials = "".join(part[:1] for part in str(rail_name).strip().split()[:2]).upper() or "ME"
     links = pulse_rail_nav_links_html(user, is_admin)
     return (
         "<aside class='pulse-desktop-left' aria-label='PulseSoc navigation rail'>"
+        "<section class='desktop-rail-card desktop-rail-profile'>"
+        f"<span class='avatar'>{html_escape(clean_html(rail_initials[:2]))}</span><span><strong>Your PulseSoc OS</strong><small class='muted'>Navigate, create, learn, and connect.</small></span>"
+        "</section>"
+        "<section class='desktop-rail-card pulse-rail-today' aria-label='PulseSoc today dashboard'>"
+        "<h3>Today</h3>"
+        "<div class='pulse-rail-today-grid'>"
+        "<a href='/dashboard'><strong>Dashboard</strong><small class='muted'>Account command center</small></a>"
+        "<a href='/pulse/promote'><strong>Promote</strong><small class='muted'>Owner tools</small></a>"
+        "<a href='/logout'><strong>Log Out</strong><small class='muted'>End this session</small></a>"
+        "</div>"
+        "</section>"
         f"<section class='desktop-rail-card desktop-rail-nav'>{links}</section>"
         "<section class='desktop-rail-card pulse-radio-dock' data-pulse-radio-dock>"
         "<h3>Pulse Radio</h3>"
@@ -42578,7 +40642,18 @@ def pulse_desktop_left_rail_html(is_admin=False, user=None):
         "</section>"
         f"{pulse_signal_ad_card('creator')}"
         f"{premium_promo_card(compact=True)}"
-        f"{pulse_rail_fast_lanes_html(user, is_admin)}"
+        "<section class='desktop-rail-card'>"
+        "<h3>Fast Lanes</h3>"
+        "<a class='desktop-module-link pulse-status-glow-link' href='/pulse?create_status=1'><span class='desktop-rail-ico'>+</span><span><strong>Create Status</strong><small class='muted'>Stories from your PulseSoc world</small></span></a>"
+        "<a class='desktop-module-link' href='/pulse/status?lane=trending'><span class='desktop-rail-ico'>↗</span><span><strong>Active Stories</strong><small class='muted'>Watch active stories first</small></span></a>"
+        "<a class='desktop-module-link' href='/pulse/music'><span class='desktop-rail-ico'>♪</span><span><strong>PulseSoc Music</strong><small class='muted'>Upload, search, and attach music</small></span></a>"
+        "<a class='desktop-module-link' href='/pulse/reels'><span class='desktop-rail-ico'>▶</span><span><strong>Reels</strong><small class='muted'>Full-screen short videos</small></span></a>"
+        "<a class='desktop-module-link' href='/pulse/portfolio'><span class='desktop-rail-ico'>$</span><span><strong>Portfolio</strong><small class='muted'>Holdings, watchlists, alerts, and AI context</small></span></a>"
+        "<a class='desktop-module-link' href='/pulse/messages'><span class='desktop-rail-ico'>💬</span><span><strong>Messenger</strong><small class='muted'>Chats, groups, and rooms</small></span></a>"
+        "<a class='desktop-module-link' href='/pulse/live'><span class='desktop-rail-ico'>●</span><span><strong>Live Stage</strong><small class='muted'>Rooms, streams, creator moments</small></span></a>"
+        "<a class='desktop-module-link' href='/pulse/promote'><span class='desktop-rail-ico'>↗</span><span><strong>Promote</strong><small class='muted'>Owner-only promotion gateway</small></span></a>"
+        "<a class='desktop-module-link' href='#create' data-pulse-create-trigger='1'><span class='desktop-rail-ico'>+</span><span><strong>Create Signal</strong><small class='muted'>Publish with AI assistance</small></span></a>"
+        "</section>"
         "</aside>"
     )
 
@@ -42809,7 +40884,7 @@ def pulse_network_globe_html():
     return (
         "<article class='pulse-network-globe-card' data-pulse-network-globe data-creators-online='0' data-live-streams='0' data-ai-alerts='0' data-trending-activity='0'>"
         "<button class='pulse-radio-launch' type='button' data-pulse-radio-toggle aria-pressed='false' aria-label='Play Pulse Radio from approved PulseSoc Music'>"
-        "<span class='pulse-radio-launch-orb' aria-hidden='true'></span><span class='pulse-radio-launch-label'>Radio</span>"
+        "<span class='pulse-radio-launch-orb' aria-hidden='true'></span><span class='pulse-radio-launch-label'>Pulse Radio</span>"
         "</button>"
         "<div class='pulse-network-globe-stage' aria-label='Pulse Network activity globe'>"
         "<a class='pulse-network-globe-hit' href='/pulse/premium/intelligence' data-network-action='detail' aria-label='Open Pulse Network intelligence'></a>"
@@ -42967,7 +41042,7 @@ def marketplace_promo_card(compact=False):
     return promotion_card(
         "Marketplace",
         "Discover trusted sellers, creator products, and commerce signals inside the PulseSoc economy.",
-        app_first_href("marketplace"),
+        "/pulse/marketplace",
         "Explore Marketplace",
         "▣",
         "marketplace",
@@ -43081,544 +41156,58 @@ def pulse_mobile_inline_ad_zone():
     )
 
 
-def pulse_rail_people_html(cur, user=None):
-    """People to follow, from the graph ``/pulse/friends`` already computes.
-
-    The rail had no people module at all -- twenty cards of topics, rooms,
-    momentum and apps, and not one human being -- on a product whose stated
-    hierarchy is PEOPLE before content. ``pulse_friend_graph`` was already
-    producing a ranked ``suggested`` list for one page; this surfaces it where
-    discovery actually happens.
-
-    Returns "" when the graph is empty, which on a young account it will be:
-    a "People" heading over nothing is worse than no heading. The failure branch
-    returns "" for the same reason -- the rail is context, and context that
-    cannot be loaded should be absent, not apologetic.
-    """
-    uid = int((user or {}).get("user_id") or 0)
-    if not uid:
-        return ""
-    try:
-        graph = pulse_friend_graph(cur, uid)
-        rows = ""
-        for person_id in (graph.get("suggested") or [])[:4]:
-            ident = pulse_person_public_payload(cur, person_id)
-            pid = ident.get("public_player_id") or ""
-            if not pid:
-                continue
-            name = ident.get("display_name") or "PulseSoc member"
-            # The engine's catch-all label carries no information (see
-            # GENERIC_CREATOR_LABELS in pulse_home_core.js); a username does.
-            label = ident.get("primary_label") or ""
-            if str(label).strip().lower() in {"", "member", "pulsesoc member"}:
-                label = f"@{ident.get('username')}" if ident.get("username") else ""
-            avatar = ident.get("avatar_url") or ""
-            face = (
-                f"<img class='desktop-rail-face' src='{html_escape(clean_html(avatar))}' alt='' loading='lazy' decoding='async'>"
-                if avatar
-                else f"<span class='desktop-rail-ico'>{html_escape(clean_html(name[:1].upper()))}</span>"
-            )
-            sub = f"<small class='muted'>{html_escape(clean_html(label))}</small>" if label else ""
-            rows += (
-                f"<a class='desktop-intel-row' href='/pulse/profile/{html_escape(clean_html(pid))}'>"
-                f"{face}<span><strong>{html_escape(clean_html(name))}</strong>{sub}</span></a>"
-            )
-        if not rows:
-            return ""
-        return (
-            "<section class='desktop-rail-card home-intel-people'><h3>People to follow</h3>"
-            f"<div class='desktop-intel-grid'>{rows}</div>"
-            "<a class='desktop-rail-more' href='/pulse/friends'>See all suggestions</a></section>"
-        )
-    except Exception:
-        return ""
-
-
-def pulse_rail_communities_html(cur):
-    """Featured spaces, from the catalogue whose pages actually exist.
-
-    The card this replaces was driven by ``intelligence_panel``'s ``top_spaces``:
-    four invented names -- Scam Watch, Alpha Arena, Roast Battle, Market
-    Psychology -- linked to ``/pulse/spaces/<slug>``. None of those slugs are in
-    ``PULSE_SPACES``, so ``pulse_space_detail_page`` fell through to its
-    not-found branch and every one of the four answered 200 with "This space is
-    being prepared." Four links that look live, resolve, and lead nowhere.
-
-    ``PULSE_SPACES`` is the catalogue those pages are built from, so a slug taken
-    from it cannot be dead by construction.
-
-    Membership is counted from ``pulse_space_members`` and omitted when zero,
-    which on a young install is all of them. ``/pulse/spaces`` -- which this rail
-    links to as "Browse all spaces" -- used to render
-    ``counts.get(slug, space["member_count"])``, and the fallback is a literal in
-    the catalogue: 304 members for Haiti Crypto Community, 298 for USA Crypto
-    Intelligence. So the rail said nothing and its own destination advertised a
-    crowd of 270-odd people who do not exist. That is now fixed at both ends --
-    `pulse_spaces_page`, the admin spaces table, and
-    ``space_discovery_engine.score_space``, whose ``member_count or
-    space["member_count"]`` could not tell a counted zero from an uncounted one.
-    The Trust and Energy percentages on that page are still catalogue constants
-    and are deliberately left alone: what those numbers should measure is a
-    product decision, where "how many people are in this space" is arithmetic.
-
-    Ordered by the real count so that once membership exists the busiest spaces
-    lead; ties keep catalogue order, which is what a fresh install gets.
-    """
-    featured = [space for space in PULSE_SPACES if space.get("featured")]
-    if not featured:
-        return ""
-    counts = {}
-    try:
-        cur.execute("SELECT space_slug, COUNT(*) AS total FROM pulse_space_members GROUP BY space_slug")
-        for row in cur.fetchall():
-            item = dict(row)
-            counts[item.get("space_slug")] = int(item.get("total") or 0)
-    except Exception:
-        counts = {}
-    featured.sort(key=lambda space: -counts.get(space.get("slug"), 0))
-    rows = ""
-    for space in featured[:4]:
-        members = counts.get(space.get("slug"), 0)
-        # The region is the honest alternative to a member count: it is a fact
-        # about the space, whereas the raw `category` value is an internal
-        # grouping key ("countries", "crypto") that reads as a typo in a
-        # subtitle.
-        sub = f"{members} member{'' if members == 1 else 's'}" if members else (space.get("region") or "")
-        sub_html = f"<small class='muted'>{html_escape(clean_html(sub))}</small>" if sub else ""
-        rows += (
-            f"<a class='desktop-intel-row' href='/pulse/spaces/{html_escape(clean_html(space['slug']))}'>"
-            "<span class='desktop-rail-ico'>◇</span>"
-            f"<span><strong>{html_escape(clean_html(space['name']))}</strong>{sub_html}</span></a>"
-        )
+def pulse_desktop_right_rail_html():
     return (
-        "<section class='desktop-rail-card home-intel-communities'><h3>Communities</h3>"
-        f"<div class='desktop-intel-grid'>{rows}</div>"
-        "<a class='desktop-rail-more' href='/pulse/spaces'>Browse all spaces</a></section>"
-    )
-
-
-def pulse_rail_live_html(cur):
-    """Live right now -- or nothing.
-
-    The card this replaces was headed "Live Network" and its first row read
-    "<N> signals today", where N was ``posts_today``. Posts published today are
-    not live sessions; the number was true and the sentence it appeared in was
-    not. Below it sat "Realtime layer ready", which is a description of our
-    infrastructure, on a surface meant to tell a reader what is happening.
-
-    So: real rows from ``pulse_live_sessions``, or the module collapses. A
-    social product with nobody live should say nothing, not describe itself.
-
-    Restricted to ``audience='public'``, which is stricter than the live
-    discovery query at :41804 -- that one selects every live row and leaves
-    visibility to ``pulse_live_can_view`` on the detail page. Sound for a page
-    the viewer chose to open; wrong for a rail, which renders the title and the
-    host's name without being asked, and for a followers-only stream those two
-    strings are precisely what the audience setting withholds. A blocked or
-    removed session is excluded for the same reason: the gate that would catch it
-    runs one click too late for a card that appears unbidden.
-    """
-    try:
-        cur.execute(
-            """
-            SELECT l.id, l.title, l.viewer_count,
-                   COALESCE(u.display_name, u.username, 'PulseSoc creator') AS creator_name
-            FROM pulse_live_sessions l
-            LEFT JOIN users u ON u.user_id = l.user_id
-            WHERE l.status IN ('live','publishing','reconnecting')
-              AND LOWER(COALESCE(l.audience,'public')) = 'public'
-              AND LOWER(COALESCE(l.moderation_status,'approved'))
-                  NOT IN ('blocked','removed','restricted','suspended')
-            ORDER BY COALESCE(l.viewer_count, 0) DESC, l.started_at DESC
-            LIMIT 4
-            """
-        )
-        rows = ""
-        for row in cur.fetchall():
-            item = dict(row)
-            title = item.get("title") or f"{item.get('creator_name')} is live"
-            viewers = int(item.get("viewer_count") or 0)
-            watching = f"{viewers} watching" if viewers else str(item.get("creator_name") or "")
-            rows += (
-                f"<a class='desktop-intel-row is-live' href='/pulse/live/{html_escape(clean_html(str(item.get('id'))))}'>"
-                "<span class='desktop-rail-ico'>●</span>"
-                f"<span><strong>{html_escape(clean_html(title))}</strong>"
-                f"<small class='muted'>{html_escape(clean_html(watching))}</small></span></a>"
-            )
-        if not rows:
-            return ""
-        return (
-            "<section class='desktop-rail-card home-intel-live'><h3>Live now</h3>"
-            f"<div class='desktop-intel-grid'>{rows}</div></section>"
-        )
-    except Exception:
-        return ""
-
-
-def pulse_rail_shop_html(cur, limit=3):
-    """A small commerce shelf, or none.
-
-    Commerce gets one card near the bottom of the rail and three products in it.
-    The brief's constraint is that commerce must not take over Home, and the
-    honest reading of that is a frequency cap expressed in the layout itself
-    rather than a rotation the reader cannot see.
-
-    Prices come from ``marketplace_web.derive_price`` and links from
-    ``marketplace_storefront.product_path``, so a product in the rail is priced
-    and addressed exactly as the same product in the Marketplace grid -- the
-    shared logic is the price and the canonical URL, which is what can drift.
-    The 296px card geometry is the rail's, not the grid's.
-
-    Variants are fetched because ``derive_price`` treats them as the price
-    authority and falls back to ``price_label`` only when there are none: the
-    label is a display string a human typed and is unset on more than half the
-    live rows, while ``marketplace_listing_variants.price_cents`` is what the
-    supplier sync writes and what checkout would charge. Calling
-    ``derive_price(listing)`` with no variants would therefore have priced a
-    variant-backed listing from a field its seller never filled -- and shown the
-    rail a different number than the product page shows. One extra query for the
-    whole shelf, not one per row.
-
-    Eligibility mirrors the marketplace search predicate: a listing the shopper
-    could not reach from Marketplace must not be advertised on Home.
-
-    The store name comes from ``marketplace_seller_identity`` rather than from a
-    COALESCE written here, and a listing whose seller has no store name is
-    excluded outright. This card had its own chain that fell back to
-    ``ms.business_name``, which reads as defensive coding and is a privacy leak:
-    ``business_name`` is the registered legal name, and for a sole trader that is
-    usually their own name -- so the "safe" fallback published exactly what the
-    rule exists to keep off buyer surfaces. Every other buyer-facing query in the
-    tree already used the helper; this was the one that did not.
-
-    Excluding nameless sellers rather than printing the `PulseSoc Store`
-    placeholder follows from the sentence above it: a listing with no store
-    identity is not publishable at all, so it is not reachable from Marketplace,
-    so it does not belong in a shelf that promises it is.
-
-    Both helpers are imported inside the function rather than at module scope,
-    and their absence collapses the card instead of raising. The rail must not
-    be the reason `bot` fails to import: this is the only module on Home that
-    depends on the web-storefront layer, and that layer lands on its own
-    schedule. Deriving the price locally instead was the alternative and is the
-    worse one -- a second price derivation is a second answer to "what does this
-    cost", and the reason to share that logic at all is so the rail and the
-    product page cannot disagree about money. So the card either prices a
-    product exactly as the Marketplace does, or it does not appear.
-    """
-    try:
-        from services import marketplace_seller_identity as seller_identity
-        from services import marketplace_storefront, marketplace_web
-    except Exception:
-        return ""
-    try:
-        cur.execute(
-            f"""
-            SELECT l.id, l.title, l.price_label, l.currency,
-                   l.cover_image_url, l.gallery_json, l.video_url,
-                   {seller_identity.store_name_select('ms')}
-            FROM marketplace_listings l
-            LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id
-            WHERE l.status IN ('active','approved')
-              AND COALESCE(l.approval_status,'approved') IN ('approved','review_ready','')
-              AND {seller_identity.store_name_sql('ms')} IS NOT NULL
-            ORDER BY l.featured DESC, l.id DESC
-            LIMIT ?
-            """,
-            (int(limit),),
-        )
-        listings = [dict(row) for row in cur.fetchall()]
-    except Exception:
-        return ""
-    if not listings:
-        return ""
-    variants_by_listing = {}
-    try:
-        ids = [int(item.get("id") or 0) for item in listings if item.get("id")]
-        if ids:
-            cur.execute(
-                "SELECT listing_id, price_cents, currency, status "
-                f"FROM marketplace_listing_variants WHERE listing_id IN ({','.join('?' * len(ids))})",
-                tuple(ids),
-            )
-            for row in cur.fetchall():
-                variant = dict(row)
-                variants_by_listing.setdefault(int(variant.get("listing_id") or 0), []).append(variant)
-    except Exception:
-        # An unreachable variants table means every price falls back to the
-        # seller's label, which is the same answer the product page would give
-        # if it hit the same failure. Degraded, not wrong.
-        variants_by_listing = {}
-    rows = ""
-    for listing in listings:
-        try:
-            price = marketplace_web.derive_price(
-                listing, variants_by_listing.get(int(listing.get("id") or 0)) or ()
-            )
-            media = marketplace_web.gallery_items(listing, limit=1)
-        except Exception:
-            price, media = None, []
-        title = listing.get("title") or "Marketplace listing"
-        thumb = (
-            f"<img class='desktop-rail-thumb' src='{html_escape(clean_html(media[0].url))}' alt='' loading='lazy' decoding='async'>"
-            if media and getattr(media[0], "url", "")
-            else "<span class='desktop-rail-ico'>▣</span>"
-        )
-        # No price, no price line -- an empty or guessed price on a product card
-        # is the one piece of metadata a shopper is entitled to trust.
-        sub = (
-            f"<small class='muted'>{html_escape(clean_html(price.display))}</small>"
-            if price is not None and price.known
-            else ""
-        )
-        rows += (
-            f"<a class='desktop-intel-row' href='{html_escape(clean_html(marketplace_storefront.product_path(listing.get('id'))))}'>"
-            f"{thumb}<span><strong>{html_escape(clean_html(title))}</strong>{sub}</span></a>"
-        )
-    if not rows:
-        return ""
-    return (
-        "<section class='desktop-rail-card home-intel-shop'><h3>From the Marketplace</h3>"
-        f"<div class='desktop-intel-grid'>{rows}</div>"
-        f"<a class='desktop-rail-more' href='{html_escape(clean_html(app_first_href('marketplace')))}'>Browse Marketplace</a></section>"
-    )
-
-
-def pulse_rail_intelligence_html(intel):
-    """Pulse Intelligence, Trending and Safety -- rendered here, not hydrated.
-
-    These three cards shipped as empty shells with ``data-desktop-posts-today``,
-    ``data-desktop-trending`` and ``data-desktop-scams`` hooks for ``renderIntel``
-    to fill. ``renderIntel`` is not on this page. It lives in an inline script in
-    an older Home template; the Home that ships today is rendered by
-    ``static/js/pulse_home_core.js``, which contains no ``data-desktop-*``
-    selector at all (grep it). So the hooks were never written to, and what a
-    reader actually saw was a card permanently reading "0 posts today / Signals
-    are loading quietly so the feed stays fast", a "Trending" card that was a
-    heading over nothing, and a "Safety Status" card the same. Three of the five
-    cards the old rail displayed were empty, and the one number on screen was a
-    hardcoded zero rather than a count.
-
-    Rendering server-side rather than adding the missing hydration to
-    ``pulse_home_core.js``: the data is already computed for this request by
-    ``intelligence_panel``, and the same values are what the feed response
-    carries, so a client fetch would be a second round trip for numbers the page
-    already has. It also makes these modules fail the same way as the other four
-    -- absent when empty -- instead of failing as furniture.
-
-    Each card collapses on its own. A zero is not a signal: "0 posts today" is
-    the module reporting that it has nothing to report, which is the thing this
-    rail is supposed to stop doing.
-    """
-    intel = intel or {}
-    cards = ""
-
-    posts_today = int(intel.get("posts_today") or 0)
-    open_reports = int(intel.get("open_reports") or 0)
-    if posts_today or open_reports:
-        stats = ""
-        if posts_today:
-            stats += (
-                f"<span><strong>{posts_today}</strong>"
-                f"<small class='muted'>post{'' if posts_today == 1 else 's'} today</small></span>"
-            )
-        if open_reports:
-            stats += (
-                f"<span><strong>{open_reports}</strong>"
-                f"<small class='muted'>open report{'' if open_reports == 1 else 's'}</small></span>"
-            )
-        # `suggested_action` has exactly two values, both derived from whether
-        # scam warnings exist, so it is a statement about real state rather than
-        # generated advice. The energy meter beside it was not carried: it was
-        # `Math.max(18, Math.min(96, posts_today * 8 + 42))`, a bar whose width
-        # is a restatement of a number already printed above it, floored at 18%
-        # so it never looks empty.
-        #
-        # `community_mood` IS carried, and the first pass here was wrong to drop
-        # it. This is the "Curious" readout -- it is the only word that module
-        # ever showed -- and it is derived, not decorative:
-        # `pulse_feed_engine.intelligence_panel` returns "Protective" when a
-        # `scamalert` tag is trending and "Curious" otherwise, so it reports
-        # whether the community is currently reacting to a scam. Losing it would
-        # have quietly retired the one piece of Pulse Network worth keeping
-        # while the oversized globe card around it was being reduced.
-        #
-        # It rides inside this card rather than standing as its own, which is
-        # what "reduce it into Pulse Intelligence" means: one word next to the
-        # heading instead of an animated globe in the centre column. It inherits
-        # this card's collapse rule, so a mood never appears without the
-        # activity that produced it -- "Curious" on a silent install would be a
-        # mood read off nothing.
-        action = str(intel.get("suggested_action") or "").strip()
-        action_html = f"<p class='muted'>{html_escape(clean_html(action))}</p>" if action else ""
-        #
-        # The label is a real element rather than a `title=`: `title` is not
-        # announced by most screen readers and never appears on touch, so the
-        # mood would have reached a sighted mouse user and nobody else. Written
-        # plainly inside the span and hidden visually, it reads as "Community
-        # mood: Curious" and the heading above it still reads as its own phrase
-        # rather than running into the word after it.
-        mood = str(intel.get("community_mood") or "").strip()
-        mood_html = (
-            "<span class='home-intel-mood'>"
-            # Leading space matters: these are two flex children, so the source
-            # whitespace between them is dropped and the accessible name came out
-            # as "PulseSoc IntelligenceCommunity mood: Curious". Inside the span
-            # (which sets `white-space: nowrap`) the space survives.
-            "<span class='pulse-shell-sr'> Community mood: </span>"
-            f"{html_escape(clean_html(mood))}</span>"
-            if mood else ""
-        )
-        cards += (
-            "<section class='desktop-rail-card home-intel-overview'>"
-            f"<h3><span>PulseSoc Intelligence</span>{mood_html}</h3>"
-            f"<div class='desktop-rail-stat'>{stats}</div>"
-            f"{action_html}"
-            "<a class='desktop-rail-more' href='/pulse/premium'>Open Intelligence</a>"
-            "</section>"
-        )
-
-    trending = [t for t in (intel.get("trending_topics") or []) if str(t.get("tag") or "").strip()][:6]
-    if trending:
-        rows = ""
-        for topic in trending:
-            tag = str(topic.get("tag")).strip()
-            count = int(topic.get("count") or 0)
-            rows += (
-                f"<a class='desktop-intel-row' href='/pulse/topic/{quote(tag, safe='')}'>"
-                "<span class='desktop-rail-ico'>#</span>"
-                f"<span><strong>#{html_escape(clean_html(tag))}</strong>"
-                f"<small class='muted'>{count} post{'' if count == 1 else 's'}</small></span></a>"
-            )
-        # "N live signals" was the old subtitle for this exact number. The number
-        # counts tagged posts among the last 200; none of them are live and none
-        # of them are signals.
-        cards += (
-            "<section class='desktop-rail-card home-intel-trending'><h3>Trending</h3>"
-            f"<div class='desktop-intel-grid'>{rows}</div></section>"
-        )
-
-    warnings = (intel.get("scam_warnings") or [])[:3]
-    if warnings:
-        rows = ""
-        for warning in warnings:
-            title = str(warning.get("title") or "Community warning").strip()
-            link = str(warning.get("permalink") or "")
-            if not link:
-                continue
-            rows += (
-                f"<a class='desktop-intel-row' href='{html_escape(clean_html(link))}'>"
-                "<span class='desktop-rail-ico'>!</span>"
-                f"<span><strong>Scam watch</strong>"
-                f"<small class='muted'>{html_escape(clean_html(title))}</small></span></a>"
-            )
-        if rows:
-            cards += (
-                "<section class='desktop-rail-card home-intel-safety'><h3>Safety</h3>"
-                f"<div class='desktop-intel-grid'>{rows}</div>"
-                # `/pulse/safety` is an alias onto the network dashboard's safety
-                # subsystem and answered 302 -> /dashboard/network for this
-                # viewer. `/pulse/scam-alerts` is the feed tab these very posts
-                # come from, so it is both reachable and the same kind of thing.
-                "<a class='desktop-rail-more' href='/pulse/scam-alerts'>All scam alerts</a></section>"
-            )
-    return cards
-
-
-def pulse_desktop_right_rail_html(user=None):
-    """The discovery rail: Intelligence, then people, then places, then commerce.
-
-    This was twenty cards. Six of them were navigation the left rail already
-    carries (Quick Apps listed eight destinations, every one of them a rail
-    link); two were the same ``data-desktop-educators`` hook, and since
-    ``renderIntel`` fills it with ``querySelector`` the second card could never
-    update -- it displayed its server-rendered placeholder permanently; one
-    ("Market Intelligence") had no data source at all, just a fixed row reading
-    "Context mode"; four were promotion cards for Premium, Marketplace, Teachers
-    and UNDX AI, each of which is one click away in the left rail; and two were
-    sponsored placeholders occupying 500px between them with no sponsor.
-
-    What is left is ordered the way the brief orders discovery -- intelligence,
-    trending, people, communities, live, commerce -- and every module is built
-    from a query or collapses. A reader should be able to believe the rail.
-
-    Two more cards are gone for reasons worth recording, because neither looks
-    removable from the markup alone:
-
-    "PulseSoc Daily Mentor" rendered a question, a textarea and three buttons --
-    Send, "Ask AI to help me answer", "Post this as a PulseSoc". Nothing on this
-    page listens to any of them. Their handlers (``dailyMentorState``,
-    ``renderDailyMentorMessage``) are in the same inline script as
-    ``renderIntel``, which Home no longer serves, and no file under ``static/js``
-    mentions ``daily-mentor`` at all. The question was not even the rotating
-    ``daily_prompt()`` -- it was the literal "What crypto scam did you almost
-    fall for?" with a fixed ``data-prompt-id``. So this was three dead buttons
-    and a textarea that discarded what a reader typed into it. The helper
-    ``pulse_daily_mentor_card_html`` is kept and still renders on its other
-    caller; reviving it is a feature, not a cleanup.
-
-    "Grow Your Reach" was a Promote gateway. Promote now lives in the account
-    popover, where the rest of the owner tooling went, and it has no business
-    competing with discovery for rail space on a social home page.
-
-    Takes one connection for the whole rail rather than one per module: the pool
-    is small and a discovery rail is not worth four of it. ``intelligence_panel``
-    opens its own connection and closes it before this one is used, so the two
-    do not overlap.
-    """
-    try:
-        intel = pulse_feed_engine.intelligence_panel()
-    except Exception:
-        intel = {}
-    people_html = communities_html = live_html = shop_html = ""
-    conn = None
-    try:
-        conn = db()
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        people_html = pulse_rail_people_html(cur, user)
-        communities_html = pulse_rail_communities_html(cur)
-        live_html = pulse_rail_live_html(cur)
-        shop_html = pulse_rail_shop_html(cur)
-    except Exception:
-        # A rail is decoration around the feed. It must never be the reason a
-        # reader cannot read; every module already collapses on its own, and
-        # this catches the connection itself failing.
-        pass
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-    return (
-        "<aside class='pulse-desktop-right' aria-label='PulseSoc discovery rail'>"
-        f"{pulse_rail_intelligence_html(intel)}"
-        f"{people_html}"
-        f"{communities_html}"
-        "<section class='desktop-rail-card home-intel-teachers'><h3>Teachers</h3><div class='desktop-intel-grid'>"
-        "<a class='desktop-intel-row' href='/pulse/teachers'><span class='desktop-rail-ico'>T</span>"
-        "<span><strong>Teacher network</strong><small class='muted'>Courses, live classes, verified educators.</small></span></a>"
+        "<aside class='pulse-desktop-right' aria-label='PulseSoc intelligence rail'>"
+        "<section class='desktop-rail-card home-intel-overview' data-desktop-intel-card>"
+        "<h3>PulseSoc Intelligence</h3>"
+        "<div class='desktop-rail-stat'><span><strong data-desktop-posts-today>0</strong><small class='muted'>posts today</small></span>"
+        "<span><strong data-desktop-mood>Curious</strong><small class='muted'>community mood</small></span></div>"
+        "<div class='desktop-energy-meter' aria-hidden='true'><span data-desktop-energy style='--energy:58%'></span></div>"
+        "<p class='muted' data-desktop-suggested-action>Signals are loading quietly so the feed stays fast.</p>"
+        "</section>"
+        f"{pulse_daily_mentor_card_html(desktop=True)}"
+        f"{creator_promo_card()}"
+        "<section class='desktop-rail-card home-intel-trending'><h3>Trending Signals</h3><div class='desktop-intel-grid' data-desktop-trending>"
+        "<a class='desktop-intel-row' href='/pulse/topic/scamshield'><span class='desktop-rail-ico'>#</span><span><strong>#scamshield</strong><small class='muted'>Safety intelligence</small></span></a>"
         "</div></section>"
-        f"{live_html}"
-        f"{shop_html}"
         f"{pulse_signal_ad_card('premium')}"
-        # Everything main added to this rail between the premium ad slot and
-        # here was the placeholder layer this mission removes: twelve cards of
-        # invented copy -- "Realtime layer ready", "Scam Shield calm", "Top posts
-        # will surface here" -- none of which read a row from anywhere. They are
-        # replaced above by the People / Communities / Live / Shop / Intelligence
-        # modules, which render only what the database actually returns and
-        # collapse when it returns nothing.
-        #
-        # The app-promotion card is the one exception and is kept verbatim. It is
-        # not placeholder copy: it is the web surface's standing obligation to
-        # promote the iOS app, it renders real state (it hides itself once this
-        # member has dismissed it), and it arrived on main after this branch
-        # started. Dropping it would be exactly the silent destruction of working
-        # behaviour the brief forbids. It stays last, which is what makes its
-        # dismissal free of layout shift -- nothing sits below it to move.
-        f"{app_promotion.promotion_card_html(surface=app_promotion.SURFACE_DESKTOP_CARD, dismissible=True)}"
+        "<section class='desktop-rail-card'><h3>Rooms & Live</h3><div class='desktop-intel-grid' data-desktop-spaces>"
+        "<a class='desktop-intel-row' href='/pulse/messages'><span class='desktop-rail-ico'>↗</span><span><strong>General PulseSoc</strong><small class='muted'>Open the live room layer</small></span></a>"
+        "</div></section>"
+        "<section class='desktop-rail-card'><h3>Creator Momentum</h3><div class='desktop-intel-grid' data-desktop-top-posts>"
+        "<div class='desktop-intel-row'><span class='desktop-rail-ico'>AI</span><span><strong>Quality signals</strong><small class='muted'>Top posts will surface here.</small></span></div>"
+        "</div></section>"
+        "<section class='desktop-rail-card home-intel-live'><h3>Live Network</h3><div class='desktop-intel-grid' data-desktop-live-activity>"
+        "<div class='desktop-intel-row is-live'><span class='desktop-rail-ico'>●</span><span><strong>Realtime layer ready</strong><small class='muted'>New posts, reactions, and replies hydrate calmly.</small></span></div>"
+        "</div></section>"
+        "<section class='desktop-rail-card home-intel-recommended'><h3>Recommended For You</h3><div class='desktop-intel-grid' data-desktop-recommended>"
+        "<a class='desktop-intel-row' href='/pulse/discover'><span class='desktop-rail-ico'>◎</span><span><strong>Discover creators</strong><small class='muted'>Recommendations use available PulseSoc activity only.</small></span></a>"
+        "<a class='desktop-intel-row' href='/pulse/communities'><span class='desktop-rail-ico'>◇</span><span><strong>Communities</strong><small class='muted'>Find rooms and groups without leaving PulseSoc.</small></span></a>"
+        "</div></section>"
+        "<section class='desktop-rail-card home-quick-apps' id='pulseHomeQuickApps'><h3>Quick Apps</h3><div class='pulse-quick-app-grid'>"
+        "<a href='/pulse/communities'>Communities</a><a href='/pulse/marketplace'>Marketplace</a><a href='/pulse/music'>Music</a><a href='/pulse/events'>Events</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/business-os'>Business OS</a><a href='/pulse/assistant'>UNDX AI</a><a href='/pulse/discover#apps'>More Apps</a>"
+        "</div></section>"
+        "<section class='desktop-rail-card home-promotion-gateway'><h3>Grow Your Reach</h3><p class='muted'>Promotion starts from real owner content and checks growth readiness before any launch.</p><a class='button primary' href='/pulse/promote'>Open Promote</a></section>"
+        "<section class='desktop-rail-card'><h3>Educator Signal</h3><div class='desktop-intel-grid' data-desktop-educators>"
+        "<a class='desktop-intel-row' href='/pulse/teachers'><span class='desktop-rail-ico'>T</span><span><strong>Trusted teachers</strong><small class='muted'>Education-first creators belong here.</small></span></a>"
+        "</div></section>"
+        "<section class='desktop-rail-card home-intel-safety'><h3>Safety Status</h3><div class='desktop-intel-grid' data-desktop-scams>"
+        "<div class='desktop-intel-row'><span class='desktop-rail-ico'>!</span><span><strong>Scam Shield calm</strong><small class='muted'>No active warnings loaded.</small></span></div>"
+        "</div></section>"
+        f"{pulse_signal_ad_card('marketplace')}"
+        f"{marketplace_promo_card()}"
+        "<section class='desktop-rail-card'><h3>Active Conversations</h3><div class='desktop-intel-grid' data-desktop-active-convos>"
+        "<a class='desktop-intel-row' href='/pulse/messages'><span class='desktop-rail-ico'>💬</span><span><strong>Messenger pulse</strong><small class='muted'>Chats hydrate quietly.</small></span></a>"
+        "</div></section>"
+        "<section class='desktop-rail-card'><h3>Trusted Educators</h3><div class='desktop-intel-grid' data-desktop-educators>"
+        "<a class='desktop-intel-row' href='/pulse/teachers'><span class='desktop-rail-ico'>T</span><span><strong>Teacher network</strong><small class='muted'>Verified lessons and safety-first learning.</small></span></a>"
+        "</div></section>"
+        f"{teacher_promo_card()}"
+        "<section class='desktop-rail-card'><h3>Market Intelligence</h3><div class='desktop-intel-grid' data-desktop-market-intel>"
+        "<div class='desktop-intel-row'><span class='desktop-rail-ico'>◎</span><span><strong>Context mode</strong><small class='muted'>Watch sentiment, scams, and creator momentum.</small></span></div>"
+        "</div></section>"
+        f"{intelligence_promo_card()}"
         "</aside>"
     )
 
@@ -43689,14 +41278,14 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         ("Portfolio", "/pulse/portfolio"),
         ("Spaces", "/pulse/spaces"),
         ("Friends", "/pulse/friends"),
-        ("Marketplace", app_first_href("marketplace")),
+        ("Marketplace", "/pulse/marketplace"),
         ("Notifications", "/pulse/notifications"),
         ("Messenger", "/pulse/messages"),
         ("Profile", "/pulse/profile"),
         ("Groups", "/pulse/groups"),
         ("Teachers", "/pulse/teachers"),
         ("Creator Studio", "/pulse/creator-studio"),
-        ("Seller Tools", app_first_href("seller")),
+        ("Seller Tools", "/pulse/seller-tools"),
         ("Premium", "/pulse/premium"),
         ("Promote", "/pulse/promote"),
         ("Saved", "/pulse/saved"),
@@ -43709,25 +41298,17 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     ]
     if user_is_super_user(user):
         nav_items.insert(6, ("PulseSoc Labs", "/pulse/labs"))
-    # After the insert, so the index above still counts the rows it was written
-    # against.
-    nav_items = pulse_web_navigation.visible(nav_items)
     shell_user = load_account_by_id(user.get("user_id")) or user
     shell_avatar_url = shell_user.get("avatar_thumbnail_url") or shell_user.get("avatar_url") or ""
     shell_avatar_url = _profile_cache_busted_url(shell_avatar_url, shell_user.get("updated_at") or "") if shell_avatar_url else ""
     shell_name = shell_user.get("display_name") or shell_user.get("username") or "Me"
     shell_initials = "".join(part[:1] for part in str(shell_name).strip().split()[:2]).upper() or "ME"
     shell_avatar_html = f"<img src='{html_escape(clean_html(shell_avatar_url))}' alt='Profile picture'>" if shell_avatar_url else clean_html(shell_initials[:2])
-    nav_html = "".join(
-        f"<a class='pulse-nav-link' href='{html_escape(clean_html(href))}'"
-        f"{app_promotion.nav_marker_attrs(href)}>"
-        f"{html_escape(clean_html(label))}{app_promotion.nav_marker_html(href)}</a>"
-        for label, href in nav_items
-    )
+    nav_html = "".join(f"<a class='pulse-nav-link' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>" for label, href in nav_items)
     drawer_groups = [
         ("Primary", [("Home", "/pulse"), ("Discover", "/pulse/discover"), ("Create Status", "/pulse?create_status=1"), ("Reels", "/pulse/reels"), ("Videos", "/pulse/videos"), ("Live", "/pulse/live"), ("PulseSoc Music", "/pulse/music"), ("Pulse Radio", "/pulse/music#pulse-radio"), *([("PulseSoc Labs", "/pulse/labs")] if user_is_super_user(user) else [])]),
         ("Social", [("Friends", "/pulse/friends"), ("Communities", "/pulse/communities"), ("Groups", "/pulse/groups"), ("Messenger", "/pulse/messages"), ("Notifications", "/pulse/notifications"), ("My Posts", "/pulse/my-posts"), ("Profile", "/pulse/profile")]),
-        ("Creator / Business", [("Creator Studio", "/pulse/creator-studio"), ("Seller Tools", app_first_href("seller")), ("Marketplace", app_first_href("marketplace")), ("Promote", "/pulse/promote"), ("Premium", "/pulse/premium"), ("Portfolio", "/pulse/portfolio")]),
+        ("Creator / Business", [("Creator Studio", "/pulse/creator-studio"), ("Seller Tools", "/pulse/seller-tools"), ("Marketplace", "/pulse/marketplace"), ("Promote", "/pulse/promote"), ("Premium", "/pulse/premium"), ("Portfolio", "/pulse/portfolio")]),
         ("Content", [("Events", "/pulse/events"), ("Scam Alerts", "/pulse/scam-alerts"), ("Arena Highlights", "/pulse/arena"), ("Roast Clips", "/pulse/roast-clips"), ("Saved", "/pulse/saved"), ("Collections", "/pulse/collections")]),
         ("Utility", [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera/post"), ("Settings", "/pulse/settings"), ("Help", "/help"), ("Log Out", "/logout")]),
     ]
@@ -43736,21 +41317,10 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         user, bool(admin_current_user()))
     if drawer_extras:
         drawer_groups.insert(len(drawer_groups) - 1, ("More", drawer_extras))
-    # After the extras are merged in, so a withdrawn destination cannot come back
-    # through `pulse_shell_drawer_extras` -- which is fed the group hrefs to avoid
-    # duplicating them, and would no longer see a filtered-out one as present.
-    drawer_groups = [
-        (group, pulse_web_navigation.visible(links)) for group, links in drawer_groups
-    ]
     drawer_html = "".join(
         "<section><h3>{}</h3>{}</section>".format(
             clean_html(group),
-            "".join(
-                f"<a class='drawer-link' href='{html_escape(clean_html(href))}'"
-                f"{app_promotion.nav_marker_attrs(href)}>"
-                f"{html_escape(clean_html(label))}{app_promotion.nav_marker_html(href)}</a>"
-                for label, href in links
-            ),
+            "".join(f"<a class='drawer-link' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>" for label, href in links),
         )
         for group, links in drawer_groups
     )
@@ -43779,7 +41349,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         )
     desktop_top_nav_html = pulse_desktop_top_nav_html(user)
     desktop_left_rail_html = pulse_desktop_left_rail_html(bool(admin_current_user()), user)
-    desktop_right_rail_html = pulse_desktop_right_rail_html(user)
+    desktop_right_rail_html = pulse_desktop_right_rail_html()
     status_rail_html = pulse_status_rail_html(user)
     live_now_html = ""
     boot_profile = (request.args.get("boot_profile") or "core").strip().lower()
@@ -43791,15 +41361,13 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
 <meta name="robots" content="noindex,nofollow">
 <title>__TITLE__ | CoinPlotXAI</title>
 <link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-favicon-32-20260913.png">
-<link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=cache-sweep-20260930a">
-<link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=apps-menu-width-20260927a">
-<link rel="stylesheet" href="/static/css/pulse_status_system.css?v=cache-sweep-20260930a">
-<link rel="stylesheet" href="/static/css/pulse_home_os.css?v=desktop-dock-20260927a">
-<link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=video-action-fit-20260927i">
-<link rel="stylesheet" href="/static/css/pulse-commerce-attachment.css?v=commerce-attachment-20260928a">
-__APP_PROMOTION_ASSETS__
-<script src="/static/js/pulse_reaction_system.js?v=cache-sweep-20260928a" defer></script>
-<script src="/static/js/pulse_media_renderer.js?v=cache-sweep-20260930a" defer></script>
+<link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a">
+<link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=shell-nav-20260909a">
+<link rel="stylesheet" href="/static/css/pulse_status_system.css?v=status-v4-20260703b">
+<link rel="stylesheet" href="/static/css/pulse_home_os.css?v=shell-nav-20260909a">
+<link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=status-v3-20260629b">
+<script src="/static/js/pulse_reaction_system.js?v=feed-actions-v2-20260629b" defer></script>
+<script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g" defer></script>
 <script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b" defer></script>
 <script src="/static/js/pulse_radio.js?v=pulse-radio-20260623a" defer></script>
 <script src="/static/js/pulse_ads_hooks.js?v=pulse-sci-fi-ads-20260626b" defer></script>
@@ -43829,7 +41397,7 @@ textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px
 	@media(max-width:375px){.mobile-bottom-nav{padding-left:4px;padding-right:4px;gap:1px}.mobile-bottom-nav a{font-size:9px;border-radius:8px}.mobile-bottom-nav .nav-ico{font-size:16px}.pulse-fab{right:12px;width:46px;height:46px;min-height:46px}}
 	@media(max-width:430px){.wrap,.pulse-shell{padding-left:10px;padding-right:10px}.top .actions,.pulse-actions,.composer-tools{grid-template-columns:1fr!important}.badge{max-width:100%;white-space:normal}.card{padding:11px}.hero h1{font-size:30px}.button,button{padding:9px 10px}.comment-composer{grid-template-columns:30px minmax(0,1fr) 34px 36px}.comment-avatar{width:30px;height:30px}.quick-action{font-size:11px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
-	</style><link rel="stylesheet" href="/static/css/pulse_composer_premium.css?v=music-modal-20260621c"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_sci_fi_system.css?v=cache-sweep-20260930a"><link rel="stylesheet" href="/static/css/pulsesoc_promotions.css?v=bare-asset-tokens-20260930a"><link rel="stylesheet" href="/static/css/pulse_desktop_shell.css?v=reaction-catalogue-20260927h"></head><body>
+	</style><link rel="stylesheet" href="/static/css/pulse_composer_premium.css?v=music-modal-20260621c"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_sci_fi_system.css?v=sci-fi-system-20260617a"><link rel="stylesheet" href="/static/css/pulsesoc_promotions.css"></head><body>
 __DESKTOP_TOP_NAV__
 <div class="drawer-backdrop" id="drawerBackdrop"></div>
 <aside class="pulse-drawer" id="pulseDrawer" aria-hidden="true"><header><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><a class="drawer-logout" href="/logout">Log Out</a><button class="icon-btn" id="drawerClose" type="button" aria-label="Close menu">×</button></header>__DRAWER__</aside>
@@ -43845,14 +41413,14 @@ __DESKTOP_LEFT_RAIL__
 __PULSE_STATUS_RAIL__
 __MOBILE_INLINE_AD__
 __LIVE_NOW_HUB__
-<section class="card composer pulse-publisher-card pulse-composer-command" id="pulseComposer"><div class="pulse-composer-top"><div class="pulse-composer-kicker"><span>Pulse Composer</span></div><details class="pulse-live-menu"><summary><span class="pulse-live-dot"></span>LIVE</summary><div><a href="/pulse/live/studio?context_type=home">Go Live</a><a href="/pulse/live/schedule">Schedule Live</a><a href="/pulse/live/events/create">Create Live Event</a></div></details></div><select id="postType" class="post-type-select"><option value="text">Post</option><option value="video">Reel</option><option value="poll">Poll / Question</option><option value="scam_report">Scam Alert</option></select><div class="composer-tools composer-type-row" aria-label="Choose post type"><button class="active" type="button" data-type="text"><span aria-hidden="true">✦</span>Post</button><button type="button" data-composer-reel data-composer-row-reel><span aria-hidden="true">▶</span>Reel</button><a class="button" href="/pulse/live/studio?context_type=home" data-composer-live><span aria-hidden="true">●</span>Live</a><a class="button" href="__MARKETPLACE_CREATE_HREF__"><span aria-hidden="true">▣</span>Marketplace</a><button type="button" data-composer-music><span aria-hidden="true">♪</span>Music</button><button type="button" data-type="poll"><span aria-hidden="true">□</span>Poll</button><button type="button" data-type="poll"><span aria-hidden="true">?</span>Question</button><button type="button" data-create-menu-more><span aria-hidden="true">+</span>More</button></div><div class="composer-advanced" id="composerAdvanced"><input id="postTitle" class="composer-title-buffer" aria-hidden="true" tabindex="-1" autocomplete="off"><div class="pulse-smart-field"><textarea id="postBody" maxlength="3000" placeholder="What’s happening in your world?" aria-describedby="composerAiSuggestions composerCharCounter"></textarea><div class="pulse-composer-counter" id="composerCharCounter" data-composer-char-counter>0/3000</div><div class="pulse-ai-native-suggestions" id="composerAiSuggestions" data-composer-ai-suggestions aria-live="polite"><button type="button" data-ai-suggestion="clarity">Improve wording</button><button type="button" data-ai-suggestion="hashtags">Add hashtags</button><button type="button" data-ai-suggestion="scam">Improve scam alert</button><button type="button" data-ai-suggestion="question">Improve question</button><button type="button" data-ai-suggestion="caption">Generate caption</button></div></div><input id="postMedia" class="pulse-native-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="composer-primary-actions composer-media-actions pulse-action-card-grid" data-pulse-media-picker="composer"><button class="pulse-action-card" type="button" data-open-composer-picker="image"><span>▧</span><strong>Photo</strong></button><button class="pulse-action-card" type="button" data-open-composer-picker="video"><span>▶</span><strong>Video</strong></button><button class="pulse-action-card" type="button" data-composer-music><span>♪</span><strong>Music</strong></button><button class="pulse-action-card" type="button" data-composer-emoji aria-label="Add emoji"><span>☺</span><strong>Emoji</strong></button><button class="pulse-action-card" type="button" data-composer-rail="location"><span>⌖</span><strong>Location</strong></button><button class="pulse-action-card" type="button" data-composer-rail="mention"><span>@</span><strong>Mention</strong></button><button class="pulse-action-card" type="button" data-composer-rail="topic"><span>#</span><strong>Topic</strong></button><button class="pulse-action-card" type="button" data-composer-audience><span>◎</span><strong>Public</strong></button></div><section class="composer-context-panel" data-composer-audience-panel hidden><label for="postAudience">Audience</label><select id="postAudience"><option value="public">Public</option><option value="followers">Followers</option><option value="private">Only me</option></select></section><div class="pulse-media-preview" id="postMediaPreview" data-media-preview aria-live="polite"></div><section class="composer-context-panel" id="composerMusicSelection" data-composer-music-selection hidden aria-live="polite"><span><strong>♪ Music attached</strong><small data-composer-music-label></small></span><button type="button" data-remove-composer-music aria-label="Remove selected music">Remove</button></section><div class="pulse-upload-progress-track pulse-upload-stage-track" data-upload-progress role="progressbar" aria-label="PulseSoc upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-upload-progress-bar></span><small data-upload-progress-text>Ready to publish.</small><em data-upload-progress-meta></em></div><div class="composer-scam-actions" data-scam-actions hidden><a class="button" href="/scam-shield/scan">Run Scam Shield</a></div><p class="muted composer-hint" id="composeMsg">Ready to publish.</p><button class="primary composer-publish-button" id="publishBtn" type="button">Publish Signal</button></div><section class="card success-panel" id="publishSuccess"><h2>Post published.</h2><p class="muted">Your PulseSoc is saved. Use these links if the page does not move automatically.</p><div class="actions pulse-actions"><a class="button primary" id="successView" href="/pulse">View Post</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button" href="#create" data-pulse-create-trigger="1">Create Another</a><a class="button" href="/pulse">PulseSoc Home</a></div></section></section>
+<section class="card composer pulse-publisher-card pulse-composer-command" id="pulseComposer"><div class="pulse-composer-top"><div class="pulse-composer-kicker"><span>Pulse Composer</span></div><details class="pulse-live-menu"><summary><span class="pulse-live-dot"></span>LIVE</summary><div><a href="/pulse/live/studio?context_type=home">Go Live</a><a href="/pulse/live/schedule">Schedule Live</a><a href="/pulse/live/events/create">Create Live Event</a></div></details></div><select id="postType" class="post-type-select"><option value="text">Post</option><option value="video">Reel</option><option value="poll">Poll / Question</option><option value="scam_report">Scam Alert</option></select><div class="composer-tools composer-type-row" aria-label="Choose post type"><button class="active" type="button" data-type="text"><span aria-hidden="true">✦</span>Post</button><button type="button" data-composer-reel data-composer-row-reel><span aria-hidden="true">▶</span>Reel</button><a class="button" href="/pulse/live/studio?context_type=home" data-composer-live><span aria-hidden="true">●</span>Live</a><a class="button" href="/pulse/marketplace/create"><span aria-hidden="true">▣</span>Marketplace</a><button type="button" data-composer-music><span aria-hidden="true">♪</span>Music</button><button type="button" data-type="poll"><span aria-hidden="true">□</span>Poll</button><button type="button" data-type="poll"><span aria-hidden="true">?</span>Question</button><button type="button" data-create-menu-more><span aria-hidden="true">+</span>More</button></div><div class="composer-advanced" id="composerAdvanced"><input id="postTitle" class="composer-title-buffer" aria-hidden="true" tabindex="-1" autocomplete="off"><div class="pulse-smart-field"><textarea id="postBody" maxlength="3000" placeholder="What’s happening in your world?" aria-describedby="composerAiSuggestions composerCharCounter"></textarea><div class="pulse-composer-counter" id="composerCharCounter" data-composer-char-counter>0/3000</div><div class="pulse-ai-native-suggestions" id="composerAiSuggestions" data-composer-ai-suggestions aria-live="polite"><button type="button" data-ai-suggestion="clarity">Improve wording</button><button type="button" data-ai-suggestion="hashtags">Add hashtags</button><button type="button" data-ai-suggestion="scam">Improve scam alert</button><button type="button" data-ai-suggestion="question">Improve question</button><button type="button" data-ai-suggestion="caption">Generate caption</button></div></div><input id="postMedia" class="pulse-native-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="composer-primary-actions composer-media-actions pulse-action-card-grid" data-pulse-media-picker="composer"><button class="pulse-action-card" type="button" data-open-composer-picker="image"><span>▧</span><strong>Photo</strong></button><button class="pulse-action-card" type="button" data-open-composer-picker="video"><span>▶</span><strong>Video</strong></button><button class="pulse-action-card" type="button" data-composer-music><span>♪</span><strong>Music</strong></button><button class="pulse-action-card" type="button" data-composer-rail="feeling"><span>☺</span><strong>Feeling</strong></button><button class="pulse-action-card" type="button" data-composer-rail="location"><span>⌖</span><strong>Location</strong></button><button class="pulse-action-card" type="button" data-composer-rail="mention"><span>@</span><strong>Mention</strong></button><button class="pulse-action-card" type="button" data-composer-rail="topic"><span>#</span><strong>Topic</strong></button><button class="pulse-action-card" type="button" data-composer-audience><span>◎</span><strong>Public</strong></button></div><section class="composer-context-panel" data-composer-audience-panel hidden><label for="postAudience">Audience</label><select id="postAudience"><option value="public">Public</option><option value="followers">Followers</option><option value="private">Only me</option></select></section><div class="pulse-media-preview" id="postMediaPreview" data-media-preview aria-live="polite"></div><section class="composer-context-panel" id="composerMusicSelection" data-composer-music-selection hidden aria-live="polite"><span><strong>♪ Music attached</strong><small data-composer-music-label></small></span><button type="button" data-remove-composer-music aria-label="Remove selected music">Remove</button></section><div class="pulse-upload-progress-track pulse-upload-stage-track" data-upload-progress role="progressbar" aria-label="PulseSoc upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-upload-progress-bar></span><small data-upload-progress-text>Ready to publish.</small><em data-upload-progress-meta></em></div><div class="composer-scam-actions" data-scam-actions hidden><a class="button" href="/scam-shield/scan">Run Scam Shield</a></div><p class="muted composer-hint" id="composeMsg">Ready to publish.</p><button class="primary composer-publish-button" id="publishBtn" type="button">Publish Signal</button></div><section class="card success-panel" id="publishSuccess"><h2>Post published.</h2><p class="muted">Your PulseSoc is saved. Use these links if the page does not move automatically.</p><div class="actions pulse-actions"><a class="button primary" id="successView" href="/pulse">View Post</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button" href="#create" data-pulse-create-trigger="1">Create Another</a><a class="button" href="/pulse">PulseSoc Home</a></div></section></section>
 <section class="card"><div class="tabs" id="tabs"><button data-feed="for_you">For You</button><button data-feed="following">Following</button><button data-feed="friends">Friends</button><button data-feed="communities">Communities</button><button data-feed="trending">Trending</button><button data-feed="crypto">Crypto</button><button data-feed="scam_alerts">Scam Alerts</button><button data-feed="arena_highlights">Arena Highlights</button><button data-feed="roast_clips">Roast Clips</button><button data-feed="questions">Questions</button><button data-feed="my_posts">My Posts</button></div></section>
 <button class="new-pulses-banner" id="newPulsesBanner" type="button">New Pulses Available</button><section class="feed" id="feed"></section><button class="button" id="loadMore">Load More</button></div>
 <aside class="side"><section class="card"><h2>AI PulseSoc Intelligence</h2><div id="intel" class="intel-list"><p class="muted">Loading community signal...</p></div></section>__DAILY_MENTOR_CARD__<section class="card"><h2>PulseSoc Safety</h2><p class="muted">Never share seed phrases, private keys, wallet passwords, or personal financial details. Report suspicious posts.</p></section></aside></section>
 </div>
 __DESKTOP_RIGHT_RAIL__
 </section>
-</main><nav class="mobile-bottom-nav">__MOBILE_BOTTOM__</nav><button class="pulse-fab" id="pulseFab" type="button" aria-label="Create PulseSoc">+</button><section class="create-sheet" id="createSheet"><h3>Create Signal</h3><div class="create-sheet-grid"><button data-sheet-type="text" data-pulse-create-trigger="1">Post</button><button data-open-composer-picker="image" data-pulse-create-trigger="1">Photo</button><button data-open-composer-picker="video" data-pulse-create-trigger="1">Video</button><button data-sheet-type="video" data-pulse-create-trigger="1">Reel</button><a class="button" href="/pulse/live/studio?context_type=home">Live</a><button data-status-card data-status-intent="create">Status</button><a class="button" href="__MARKETPLACE_CREATE_HREF__">Marketplace Listing</a><a class="button" href="/pulse/music">Music Release</a><a class="button" href="/pulse/events">Event</a><a class="button" href="/pulse/communities">Community Post</a><button data-sheet-type="poll" data-pulse-create-trigger="1">Poll</button><button data-sheet-type="poll" data-pulse-create-trigger="1">Question</button><button data-sheet-type="scam_report" data-pulse-create-trigger="1">Scam Alert</button><a class="button primary" href="#create" data-pulse-create-trigger="1">Full composer</a></div></section><section class="pulse-search-overlay" id="pulseSearchOverlay" aria-hidden="true"><div class="pulse-search-panel" role="dialog" aria-modal="true" aria-label="Search PulseSoc"><header class="pulse-search-head"><div><span class="badge">PulseSoc Search</span><h2>Find people, posts, reels, videos, music, marketplace listings, events, communities, creators, businesses, live streams, hashtags, and topics.</h2></div><button class="icon-btn" type="button" data-close-pulse-search aria-label="Close search">×</button></header><form class="pulse-search-box" data-pulse-search-overlay-form role="search" action="/pulse/search" method="get"><input id="pulseSearchOverlayInput" data-pulse-search-input name="q" type="search" placeholder="Search PulseSoc" autocomplete="off" aria-label="Search PulseSoc"><button class="primary" type="submit">Search</button></form><section class="pulse-search-shelf" data-pulse-search-starter><div><h3>Recent searches</h3><div class="pulse-search-chips" data-pulse-search-recent></div></div><div><h3>Rising searches</h3><div class="pulse-search-chips" data-pulse-search-trending></div></div></section><div class="pulse-search-results" data-pulse-search-results><p class="muted">Search public PulseSoc posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, comments, hashtags, topics, and live activity.</p></div></div></section>__PULSE_STATUS_HOME_CREATOR__<section class="pulse-status-story-viewer" id="pulseStatusStoryViewer" aria-hidden="true" role="dialog" aria-modal="true" aria-label="PulseSoc Status viewer"><article class="pulse-status-story-shell"><div class="pulse-status-story-progress" data-story-progress aria-hidden="true"><span></span></div><button class="pulse-status-story-close" type="button" data-status-story-close aria-label="Close PulseSoc Status">×</button><button class="pulse-status-story-nav prev" type="button" data-status-story-prev aria-label="Previous PulseSoc Status">‹</button><button class="pulse-status-story-nav next" type="button" data-status-story-next aria-label="Next PulseSoc Status">›</button><div class="pulse-status-story-media" data-status-story-media></div><footer class="pulse-status-story-footer"><span class="pulse-status-story-avatar" data-status-story-avatar>P</span><div><strong data-status-story-author>PulseSoc creator</strong><small data-status-story-time>Active story</small><span data-status-story-body>PulseSoc Status</span><small data-status-story-count>0 views</small></div></footer><div class="pulse-status-story-actions"><button type="button" data-status-story-react="love">Like</button><button type="button" data-status-story-comment>Comment</button><button type="button" data-status-story-share>Share</button><button type="button" data-status-story-save>Save</button><button type="button" data-status-story-more>More</button><button type="button" data-status-story-mute>Sound</button><input data-status-story-reply placeholder="Reply to this Status" aria-label="Reply to this Status"><button type="button" data-emoji-for="[data-status-story-reply]" aria-label="Add emoji to your reply">☺</button><button type="button" data-status-story-send-reply>Send</button></div></article></section>__PROMOTION_MODAL____APP_PROMOTION_NOTE__<section class="ufo-welcome-overlay" id="ufoWelcomeOverlay" data-ufo-welcome-overlay hidden aria-hidden="true"><div class="ufo-welcome-stars" aria-hidden="true"></div><article class="ufo-welcome-panel" role="dialog" aria-modal="true" aria-labelledby="ufoWelcomeTitle" aria-describedby="ufoWelcomeBody"><button class="ufo-welcome-close" type="button" data-ufo-welcome-dismiss aria-label="Dismiss welcome">×</button><div class="ufo-welcome-ship" aria-hidden="true"><span></span></div><div class="ufo-welcome-beam" aria-hidden="true"></div><div class="ufo-welcome-copy"><span class="ufo-welcome-kicker" data-ufo-welcome-type>PulseSoc Galaxy</span><h2 id="ufoWelcomeTitle" data-ufo-welcome-title>Welcome back to the Galaxy</h2><p id="ufoWelcomeBody" data-ufo-welcome-body>The galaxy is better with you in it.</p><p data-ufo-welcome-subtext>New adventures. New opportunities.</p><button class="ufo-welcome-cta" type="button" data-ufo-welcome-dismiss>Enter the Galaxy</button></div></article></section><div class="toast" id="toast"></div><section class="pulse-media-lightbox" id="pulseMediaLightbox" aria-hidden="true"><button class="pulse-media-lightbox-close" type="button" data-close-media-lightbox aria-label="Close media preview">×</button><div class="pulse-media-lightbox-stage" data-lightbox-stage></div></section>
+</main><nav class="mobile-bottom-nav">__MOBILE_BOTTOM__</nav><button class="pulse-fab" id="pulseFab" type="button" aria-label="Create PulseSoc">+</button><section class="create-sheet" id="createSheet"><h3>Create Signal</h3><div class="create-sheet-grid"><button data-sheet-type="text" data-pulse-create-trigger="1">Post</button><button data-open-composer-picker="image" data-pulse-create-trigger="1">Photo</button><button data-open-composer-picker="video" data-pulse-create-trigger="1">Video</button><button data-sheet-type="video" data-pulse-create-trigger="1">Reel</button><a class="button" href="/pulse/live/studio?context_type=home">Live</a><button data-status-card data-status-intent="create">Status</button><a class="button" href="/pulse/marketplace/create">Marketplace Listing</a><a class="button" href="/pulse/music">Music Release</a><a class="button" href="/pulse/events">Event</a><a class="button" href="/pulse/communities">Community Post</a><button data-sheet-type="poll" data-pulse-create-trigger="1">Poll</button><button data-sheet-type="poll" data-pulse-create-trigger="1">Question</button><button data-sheet-type="scam_report" data-pulse-create-trigger="1">Scam Alert</button><a class="button primary" href="#create" data-pulse-create-trigger="1">Full composer</a></div></section><section class="pulse-search-overlay" id="pulseSearchOverlay" aria-hidden="true"><div class="pulse-search-panel" role="dialog" aria-modal="true" aria-label="Search PulseSoc"><header class="pulse-search-head"><div><span class="badge">PulseSoc Search</span><h2>Find people, posts, reels, videos, music, marketplace listings, events, communities, creators, businesses, live streams, hashtags, and topics.</h2></div><button class="icon-btn" type="button" data-close-pulse-search aria-label="Close search">×</button></header><form class="pulse-search-box" data-pulse-search-overlay-form role="search" action="/pulse/search" method="get"><input id="pulseSearchOverlayInput" data-pulse-search-input name="q" type="search" placeholder="Search PulseSoc" autocomplete="off" aria-label="Search PulseSoc"><button class="primary" type="submit">Search</button></form><section class="pulse-search-shelf" data-pulse-search-starter><div><h3>Recent searches</h3><div class="pulse-search-chips" data-pulse-search-recent></div></div><div><h3>Rising searches</h3><div class="pulse-search-chips" data-pulse-search-trending></div></div></section><div class="pulse-search-results" data-pulse-search-results><p class="muted">Search public PulseSoc posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, comments, hashtags, topics, and live activity.</p></div></div></section>__PULSE_STATUS_HOME_CREATOR__<section class="pulse-status-story-viewer" id="pulseStatusStoryViewer" aria-hidden="true" role="dialog" aria-modal="true" aria-label="PulseSoc Status viewer"><article class="pulse-status-story-shell"><div class="pulse-status-story-progress" data-story-progress aria-hidden="true"><span></span></div><button class="pulse-status-story-close" type="button" data-status-story-close aria-label="Close PulseSoc Status">×</button><button class="pulse-status-story-nav prev" type="button" data-status-story-prev aria-label="Previous PulseSoc Status">‹</button><button class="pulse-status-story-nav next" type="button" data-status-story-next aria-label="Next PulseSoc Status">›</button><div class="pulse-status-story-media" data-status-story-media></div><footer class="pulse-status-story-footer"><span class="pulse-status-story-avatar" data-status-story-avatar>P</span><div><strong data-status-story-author>PulseSoc creator</strong><small data-status-story-time>Active story</small><span data-status-story-body>PulseSoc Status</span><small data-status-story-count>0 views</small></div></footer><div class="pulse-status-story-actions"><button type="button" data-status-story-react="love">Like</button><button type="button" data-status-story-comment>Comment</button><button type="button" data-status-story-share>Share</button><button type="button" data-status-story-save>Save</button><button type="button" data-status-story-more>More</button><button type="button" data-status-story-mute>Sound</button><input data-status-story-reply placeholder="Reply to this Status" aria-label="Reply to this Status"><button type="button" data-status-story-send-reply>Send</button></div></article></section>__PROMOTION_MODAL__<section class="ufo-welcome-overlay" id="ufoWelcomeOverlay" data-ufo-welcome-overlay hidden aria-hidden="true"><div class="ufo-welcome-stars" aria-hidden="true"></div><article class="ufo-welcome-panel" role="dialog" aria-modal="true" aria-labelledby="ufoWelcomeTitle" aria-describedby="ufoWelcomeBody"><button class="ufo-welcome-close" type="button" data-ufo-welcome-dismiss aria-label="Dismiss welcome">×</button><div class="ufo-welcome-ship" aria-hidden="true"><span></span></div><div class="ufo-welcome-beam" aria-hidden="true"></div><div class="ufo-welcome-copy"><span class="ufo-welcome-kicker" data-ufo-welcome-type>PulseSoc Galaxy</span><h2 id="ufoWelcomeTitle" data-ufo-welcome-title>Welcome back to the Galaxy</h2><p id="ufoWelcomeBody" data-ufo-welcome-body>The galaxy is better with you in it.</p><p data-ufo-welcome-subtext>New adventures. New opportunities.</p><button class="ufo-welcome-cta" type="button" data-ufo-welcome-dismiss>Enter the Galaxy</button></div></article></section><div class="toast" id="toast"></div><section class="pulse-media-lightbox" id="pulseMediaLightbox" aria-hidden="true"><button class="pulse-media-lightbox-close" type="button" data-close-media-lightbox aria-label="Close media preview">×</button><div class="pulse-media-lightbox-stage" data-lightbox-stage></div></section>
 <script data-pulse-instant-core>
 (function(){
   const mark=name=>{window.__pulseInstantMarks=window.__pulseInstantMarks||{};window.__pulseInstantMarks[name]=(window.__pulseInstantMarks[name]||0)+1;try{document.documentElement.dataset[name.replace(/_/g,'-')]=String(window.__pulseInstantMarks[name])}catch(_){ }try{window.performance?.mark?.(name)}catch(_){ }};
@@ -43880,7 +41448,7 @@ __DESKTOP_RIGHT_RAIL__
     if(statusViewerRuntimePromise)return statusViewerRuntimePromise;
     statusViewerRuntimePromise=new Promise((resolve,reject)=>{
       const ready=()=>window.PulseStatusViewer?.render?resolve(window.PulseStatusViewer):reject(new Error('Status viewer could not initialize.'));
-      const existing=document.querySelector('script[src*="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"]');
+      const existing=document.querySelector('script[src*="/static/js/pulse_status_viewer.js"]');
       if(existing){
         if(document.readyState!=='loading'&&!window.PulseStatusViewer?.render){
           existing.remove();
@@ -44214,7 +41782,7 @@ __DESKTOP_RIGHT_RAIL__
     if(event.key==='Escape'&&viewer?.classList.contains('open'))closeStatus();
   });
 
-  idle(()=>['/pulse','/pulse/reels','/pulse/music','/pulse/notifications','/pulse/messages','/pulse/profile','/api/pulse/status/rail?lane=for_you','/api/pulse/status/rail?lane=global'].forEach(href=>{
+  idle(()=>['/pulse','/pulse/reels','/pulse/music','/pulse/videos','/pulse/notifications','/pulse/messages','/pulse/profile','/api/pulse/status/rail?lane=for_you','/api/pulse/status/rail?lane=global'].forEach(href=>{
     if(document.querySelector(`link[rel="prefetch"][href="${href}"]`))return;
     const link=document.createElement('link');
     link.rel='prefetch';
@@ -44223,25 +41791,16 @@ __DESKTOP_RIGHT_RAIL__
   }));
 })();
 </script>
-<script src="/static/js/time.js?v=bare-asset-tokens-20260930a"></script><script src="/static/js/pulseshell_bridge.js?v=cache-sweep-20260930a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script>
+<script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script>
 <script src="/static/js/pulse_environment_engine.js?v=static-bg-20260806a" defer></script>
-<script data-pulse-reaction-catalog>window.PULSE_REACTION_CATALOG=__PULSE_REACTION_CATALOG__;window.PULSE_REACTION_TRAY_SIZE=__PULSE_REACTION_TRAY_SIZE__;</script>
-<script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script>
-<script src="/static/js/pulse_media_picker.js?v=bare-asset-tokens-20260930a" defer></script>
-<script src="/static/js/pulse_upload_manager.js?v=cache-sweep-20260930a"></script>
-__APP_FIRST_LINKS__<script src="/static/js/pulse_search_bridge.js?v=cache-sweep-20260930a" defer></script>
+<script src="/static/js/pulse_media_picker.js" defer></script>
+<script src="/static/js/pulse_upload_manager.js?v=composer-premium-20260617a"></script>
+<script src="/static/js/pulse_search_bridge.js?v=nav-search-20260618a" defer></script>
 <script data-pulse-shell-runtime>
 const main=document.querySelector('main');const pulseShellBootStartedAt=Date.now();const pulseBootTrace=[];function pulseBootLog(step,extra={}){const entry={step,ms:Date.now()-pulseShellBootStartedAt,...extra};pulseBootTrace.push(entry);if(pulseBootTrace.length>80)pulseBootTrace.shift();window.__pulseBootTrace=pulseBootTrace;try{console.info('[PulseShell]',entry)}catch(_){}}pulseBootLog('shell-boot-start',{path:location.pathname});const state={feed:main.dataset.feed||'for_you',topic:main.dataset.topic||'',profile:main.dataset.profile||'',offset:0,loading:false,feedReady:false,shellReady:false,pendingPosts:[],pendingPostIds:new Set(),deletedPostIds:new Set(JSON.parse(sessionStorage.getItem('pulseDeletedPostIds')||'[]')),lastUserScrollAt:Date.now(),checkingFeed:false,lastToast:{message:'',at:0}};
 const feedPaths={for_you:'/pulse',following:'/pulse/friends',trending:'/pulse/trending',crypto:'/pulse?feed=crypto',questions:'/pulse/questions',my_posts:'/pulse/my-posts',scam_alerts:'/pulse/scam-alerts',arena_highlights:'/pulse/arena',roast_clips:'/pulse/roast-clips'};
-	/* Both maps come from the server's one catalogue (services/pulse_reactions.py).
-	   They used to be written out here by hand, which had two consequences: four
-	   of the keys ('sad', 'angry', 'agree', 'watching') are not reactions the
-	   wire accepts and so were dead entries, while 'whale', 'elite' and 'brutal'
-	   -- which it does accept -- were missing and rendered as a bullet. */
-	const reactionCatalog=Array.isArray(window.PULSE_REACTION_CATALOG)?window.PULSE_REACTION_CATALOG:[];
-	const reactions=Object.fromEntries(reactionCatalog.map(e=>[e.key,e.label]));
-	const reactionIcons=Object.fromEntries(reactionCatalog.map(e=>[e.key,e.emoji]));
-	const reactionTrayKeys=reactionCatalog.slice(0,Number(window.PULSE_REACTION_TRAY_SIZE)||7).map(e=>e.key);
+	const reactions={like:'Like',love:'Love',fire:'Fire',funny:'Funny',wow:'Wow',sad:'Sad',angry:'Angry',rocket:'Rocket',clap:'Clap',hundred:'Hundred',agree:'Agree',watching:'Watching',target:'Target',smart:'Smart',fast_signal:'Fast Signal',shield:'Shield',scam_alert:'Scam Alert',bullish:'Bullish',bearish:'Bearish'};
+	const reactionIcons={like:'👍',love:'❤️',fire:'🔥',funny:'😂',wow:'😮',sad:'😢',angry:'😡',rocket:'🚀',clap:'👏',hundred:'💯',agree:'🤝',watching:'👀',target:'🎯',smart:'🧠',fast_signal:'⚡',shield:'🛡️',scam_alert:'🚨',bullish:'📈',bearish:'📉'};
 const esc=v=>String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cssEsc=v=>(window.CSS&&CSS.escape)?CSS.escape(String(v||'')):String(v||'').replace(/["\\\\]/g,'\\\\$&');
 const smartTimeHtml=(ts,suffix='')=>window.CoinPilotTime?window.CoinPilotTime.element(ts,suffix):esc(ts||'Recently');
@@ -44284,7 +41843,7 @@ if(window.PulseStatusViewer?.render)return Promise.resolve(window.PulseStatusVie
 if(pulseStatusRuntimePromise)return pulseStatusRuntimePromise;
 pulseStatusRuntimePromise=new Promise((resolve,reject)=>{
 const ready=()=>window.PulseStatusViewer?.render?resolve(window.PulseStatusViewer):reject(new Error('Status viewer could not initialize.'));
-const existing=document.querySelector('script[data-pulse-status-runtime],script[src*="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"]');
+const existing=document.querySelector('script[data-pulse-status-runtime],script[src*="/static/js/pulse_status_viewer.js"]');
 if(existing){if(document.readyState!=='loading'&&!window.PulseStatusViewer?.render){existing.remove()}else{existing.addEventListener('load',ready,{once:true});existing.addEventListener('error',()=>reject(new Error('Status viewer could not load.')),{once:true});return}}
 const script=document.createElement('script');
 script.src='/static/js/pulse_status_viewer.js?v=status-v4-20260703b';
@@ -44393,8 +41952,7 @@ function pulseSearchSave(q){const clean=String(q||'').trim();if(!clean)return;tr
 function pulseSearchChip(label){return `<button class="pulse-search-chip" type="button" data-pulse-search-chip="${esc(label)}">${esc(label)}</button>`}
 function pulseSearchStarter(trending=[]){if(!pulseSearch.recent||!pulseSearch.trending)return;const recent=pulseSearchRecent();pulseSearch.recent.innerHTML=recent.length?recent.map(pulseSearchChip).join(''):'<span class="muted">Your searches will appear here.</span>';pulseSearch.trending.innerHTML=(trending.length?trending:['scam alerts','AI builders','creator economy','wallet safety']).map(pulseSearchChip).join('')}
 function pulseSearchHighlight(text,q){const safe=esc(text||'');const term=String(q||'').trim();if(!term)return safe;const needle=[...term].map(ch=>'.*+?^${}()|[]\\\\'.includes(ch)?'\\\\'+ch:ch).join('');return safe.replace(new RegExp(`(${needle})`,'ig'),'<em>$1</em>')}
-function pulseSearchAppFirstHref(item){const shape=(window.PULSE_APP_FIRST_LINKS||{})[item&&item.type];if(!shape)return (item&&item.url)||'/pulse';const id=item&&item.id;if(id===undefined||id===null||id==='')return shape.fallback;return shape.template.replace(shape.token,encodeURIComponent(String(id)));}
-function pulseSearchResult(item,q){const letter=(item.type||item.title||'P').slice(0,1).toUpperCase();return `<a class="pulse-search-result" href="${esc(pulseSearchAppFirstHref(item))}"><span class="pulse-search-mark">${esc(letter)}</span><span><strong>${pulseSearchHighlight(item.title||'PulseSoc result',q)}</strong><small>${pulseSearchHighlight(item.description||item.meta||'',q)}</small></span><span class="pulse-search-type">${esc(item.type||'PulseSoc')}</span></a>`}
+function pulseSearchResult(item,q){const letter=(item.type||item.title||'P').slice(0,1).toUpperCase();return `<a class="pulse-search-result" href="${esc(item.url||'/pulse')}"><span class="pulse-search-mark">${esc(letter)}</span><span><strong>${pulseSearchHighlight(item.title||'PulseSoc result',q)}</strong><small>${pulseSearchHighlight(item.description||item.meta||'',q)}</small></span><span class="pulse-search-type">${esc(item.type||'PulseSoc')}</span></a>`}
 function pulseSearchRender(data){const q=data.query||pulseSearch.query||'';const results=data.results||{};const sections=pulseSearch.groups.map(([key,label])=>{const items=results[key]||[];if(!items.length)return '';return `<section class="pulse-search-group"><h3>${label}</h3>${items.map(item=>pulseSearchResult(item,q)).join('')}</section>`}).join('');pulseSearch.panel.innerHTML=sections||'<div class="pulse-search-empty"><strong>No PulseSoc results found.</strong><p class="muted">Try another creator, topic, video, sound, listing, room, reel, or signal.</p></div>';pulseSearchStarter(data.trending||[])}
 async function runPulseSearch(q){const clean=String(q||'').trim();pulseSearch.query=clean;if(!pulseSearch.panel)return;if(!clean){pulseSearch.panel.innerHTML='<p class="muted">Search public PulseSoc posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, and comments.</p>';pulseSearchStarter();return}pulseSearch.starter?.classList.remove('is-hidden');pulseSearch.panel.innerHTML='<div class="pulse-search-loading">Searching PulseSoc...</div>';try{const d=await api('/api/pulse/search?q='+encodeURIComponent(clean)+'&limit=8');pulseSearchSave(clean);pulseSearchRender(d)}catch(err){pulseSearch.panel.innerHTML=`<div class="pulse-search-error"><strong>Search could not load.</strong><p class="muted">${esc(err.message||'Try again in a moment.')}</p></div>`}}
 function openPulseSearch(q=''){if(!pulseSearch.overlay)return;pulseSearch.overlay.classList.add('open');pulseSearch.overlay.setAttribute('aria-hidden','false');document.body.classList.add('pulse-search-open');const value=String(q||pulseSearch.desktopInput?.value||'').trim();if(pulseSearch.overlayInput){pulseSearch.overlayInput.value=value;setTimeout(()=>pulseSearch.overlayInput.focus(),30)}pulseSearchStarter();if(value)runPulseSearch(value);else pulseSearch.panel.innerHTML='<p class="muted">Search public PulseSoc posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, and comments.</p>'}
@@ -44423,23 +41981,14 @@ function mediaFallbackHtml(m){const id=m.id||m.media_id||'';const processing=Str
 function mediaHtml(items){const frameMode='smart';return (items||[]).map(m=>{const mediaType=String(m.media_type||m.type||'image').toLowerCase();const muxHls=m.mux_playback_id?`https://stream.mux.com/${m.mux_playback_id}.m3u8`:(m.mux_hls_url||'');const src=mediaUrl(mediaType==='video'?(muxHls||m.playback_url||m.valid_url||m.cdn_url||m.media_url):(m.valid_url||m.media_url));const raw=mediaUrl(m.media_url);const thumb=mediaUrl(m.thumbnail_url||m.mux_thumbnail_url)||src;const poster=mediaUrl(m.poster_url||m.mux_thumbnail_url)||'';const processing=String(m.processing_status||'').toLowerCase()==='mux_processing'&&!m.mux_playback_id;const available=m.is_available!==false&&!!src&&!processing;const w=Number(m.width||0),h=Number(m.height||0);const ratio=w>0&&h>0?(w/h):Number(m.aspect_ratio||0);const orient=m.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'unknown');const mime=String(src.includes('.m3u8')?'application/vnd.apple.mpegurl':m.playback_mime_type||m.mime_type||'').toLowerCase();const backdrop=mediaUrl(mediaTypePlaceholder(m, thumb, poster, src));const style=(ratio?`--media-ratio:${ratio};`:'')+(backdrop?`--media-backdrop:url('${esc(backdrop)}');`:'');const styleAttr=style?` style="${style}"`:'';const dims=w>0&&h>0?` width="${w}" height="${h}"`:'';const mediaId=esc(m.id||m.media_id||'');const cls=`pulse-media-wrap pulse-cinematic-media-shell pulse-media-galaxy-shell pulse-media-ambient-shell ${mediaType==='video'?'pulse-unified-video-player':''} is-${esc(orient)} media-kind-${esc(mediaType)} ${available?'':'is-broken'}`;const cinematicLayers=`<div class="pulse-media-backdrop" aria-hidden="true"></div><div class="pulse-media-soft-glow" aria-hidden="true"></div><div class="pulse-media-color-orb" aria-hidden="true"></div><div class="pulse-media-depth-layer" aria-hidden="true"></div><div class="pulse-media-aura" aria-hidden="true"></div><div class="pulse-media-vignette" aria-hidden="true"></div>`;const diag=esc(JSON.stringify({id:m.id||0,type:m.media_type||m.type||'',mime_type:m.mime_type||'',playback_mime_type:m.playback_mime_type||'',mux_playback_id:m.mux_playback_id||'',mux_status:m.mux_status||'',embed_type:m.embed_type||'',source_platform:m.source_platform||'',src:src||raw,width:w,height:h,available}).slice(0,500));const srcset=m.srcset?` srcset="${esc(m.srcset)}"`:'';const sizes=m.sizes?` sizes="${esc(m.sizes)}"`:' sizes="(max-width: 760px) 100vw, 760px"';const data=`data-media-id="${mediaId}" data-media-url="${esc(src||raw)}" data-media-src="${esc(src||raw)}" data-media-type="${esc(mediaType)}" data-media-mime="${esc(mime)}" data-media-thumb="${esc(thumb)}" data-media-poster="${esc(poster)}" data-media-backdrop="${esc(backdrop)}" data-media-mux-playback-id="${esc(m.mux_playback_id||'')}" data-media-hls="${esc(muxHls||'')}" data-media-source-type="${esc(muxHls?'mux_hls':(src.includes('/api/pulse/media/')?'first_party_stream':'direct'))}" data-media-processing-status="${esc(String(m.processing_status||'').toLowerCase())}" data-media-embed="${esc(m.embed_type||'upload')}" data-media-platform="${esc(m.source_platform||'coinpilotx')}" data-media-diag="${diag}"`;if(!available)return `<div class="${cls}" data-fit="smart" ${data}${styleAttr}>${cinematicLayers}${mediaFallbackHtml(m)}</div>`;if(mediaType==='video'){const posterAttr=poster?` poster="${esc(poster)}"`:'';const typeAttr=mime?` type="${esc(mime)}"`:'';return `<div class="${cls}" data-fit="smart" data-open-media-lightbox ${data}${styleAttr}>${cinematicLayers}<video data-pulse-video-player controls playsinline webkit-playsinline preload="${m.preload_priority==='high'?'metadata':'metadata'}"${posterAttr} ${dims}><source src="${esc(src)}"${typeAttr}></video><button class="pulse-media-sound-unlock" type="button" data-pulse-media-sound hidden>Tap for sound</button>${mediaFallbackHtml(m)}</div>`}return `<div class="${cls}" data-fit="smart" data-open-media-lightbox ${data}${styleAttr}>${cinematicLayers}<img src="${esc(thumb||src)}" data-full-src="${esc(src)}" alt="PulseSoc media" loading="${m.preload_priority==='high'?'eager':'lazy'}" decoding="async" ${dims}${srcset}${sizes}>${mediaFallbackHtml(m)}</div>`}).join('')}
 function mediaTypePlaceholder(m, thumb, poster, src){const mediaType=String(m.media_type||m.type||'image').toLowerCase();const looksVideo=v=>/\\.(mp4|webm|mov|m4v)(\\?|#|$)/i.test(String(v||''));if(mediaType==='video')return poster&&!looksVideo(poster)?poster:'';return thumb||src}
 function premiumMarkHtml(author){const mark=author&&author.premium_mark;if(!mark)return '';const title=mark.title||'PulseSoc Premium';return `<span class="premium-glow-mark ${esc(mark.type||'star')}" title="${esc(title)}" aria-label="${esc(title)}">${esc(mark.symbol||'✦')}</span>`}
-		/* The tray is the catalogue's leading keys, plus any key that carries a
-		   real count, plus the viewer's own choice. The hand-written list this
-		   replaced was missing six keys the server accepts, so a post whose only
-		   reactions were e.g. `whale` or `bearish` showed a strip of zeroes and
-		   the real counts appeared nowhere. */
-		function reactionHtml(p){const counts=p.reaction_counts||{};const reacted=Object.keys(counts).filter(k=>Number(counts[k]||0)>0);const keys=[...new Set([...reactionTrayKeys,...reacted,...(p.viewer_reaction?[p.viewer_reaction]:[])])].filter(k=>reactionIcons[k]);return keys.map(k=>{const label=reactions[k]||k;return `<button class="reaction-pill ${p.viewer_reaction===k?'active':''}" title="${esc(label)}" aria-label="${esc(label)} reaction" data-react="${k}" data-post="${p.id}" data-count="${Number(counts[k]||0)}"><span>${reactionIcons[k]}</span> <b data-reaction-count>${Number(counts[k]||0)}</b></button>`}).join('')}
+		function reactionHtml(p){const counts=p.reaction_counts||{};const preferred=['like','love','fire','funny','wow','rocket','clap','hundred','target','smart','fast_signal','shield'];const active=p.viewer_reaction&&!preferred.includes(p.viewer_reaction)?[p.viewer_reaction]:[];return [...preferred,...active].map(k=>{const label=reactions[k]||k;return `<button class="reaction-pill ${p.viewer_reaction===k?'active':''}" title="${esc(label)}" aria-label="${esc(label)} reaction" data-react="${k}" data-post="${p.id}" data-count="${Number(counts[k]||0)}"><span>${reactionIcons[k]||'•'}</span> <b data-reaction-count>${Number(counts[k]||0)}</b></button>`}).join('')}
         function postHtml(p){if(isDeletedPost(p))return '';const author=p.author||{};const label=author.primary_label||author.rank||(author.badges||['Member'])[0]||'Member';const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${encodeURIComponent(t)}">#${esc(t)}</a>`).join('');const profile=author.public_player_id?`/pulse/profile/${encodeURIComponent(author.public_player_id)}`:'/pulse/profile';const canDelete=!!p.can_delete;const follow=(!canDelete&&author.public_player_id)?`<button data-follow-public="${esc(author.public_player_id)}">Follow</button>`:'';const msg=(!canDelete&&author.public_player_id)?`<button data-message="${esc(author.public_player_id)}">Message creator</button>`:'';const edit=canDelete?`<button data-edit-post="${p.id}">Edit post</button>`:'';const del=canDelete?`<button data-delete-post="${p.id}">Delete post</button>`:'';const rep=!canDelete?`<button data-report="post" data-id="${p.id}">Report</button>`:'';const mediaItems=p.media||[];const primaryMedia=mediaItems[0]||{};const mediaType=String(primaryMedia.media_type||'').toLowerCase();const postType=String(p.post_type||'post').toLowerCase();const comments=Number(p.comments_count||p.comment_count||0);const reactionsTotal=Number(p.reactions_count||0);const classSafe=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'post';const ratio=Number(primaryMedia.aspect_ratio||0)||((Number(primaryMedia.width||0)>0&&Number(primaryMedia.height||0)>0)?Number(primaryMedia.width)/Number(primaryMedia.height):0);const orientation=primaryMedia.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'none');const intelligenceClass=[comments>=3?'is-discussion':'',reactionsTotal>=5?'is-trending':'',reactionsTotal>=8?'reaction-heat-high':'',author.premium_mark||author.primary_label?'is-creator-forward':''].filter(Boolean).join(' ');const layoutClass=[mediaItems.length?'has-media':'is-text',mediaType==='video'?'is-video':mediaItems.length>1?'is-carousel':mediaItems.length?'is-image':'',`type-${classSafe(postType)}`,`media-${classSafe(orientation)}`,intelligenceClass].filter(Boolean).join(' ');const module=p.post_type==='scam_report'?`<div class="intel-item"><strong>Scam Shield pulse</strong><br><span class="muted">Risk score ${Number(p.risk_score||0)}. Community-generated warning, educational only.</span></div>`:p.post_type==='poll'?`<div class="intel-item"><strong>Question pulse</strong><br><span class="muted">Educators and community members can answer below.</span></div>`:comments>=3?`<div class="intel-item"><strong>Discussion heat</strong><br><span class="muted">${comments} replies. Open comments to follow the thread.</span></div>`:'';const avatar=author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1));return `<article class="card post live-enter ${layoutClass}" data-post-id="${p.id}" data-post-type="${esc(postType)}" data-media-count="${mediaItems.length}" data-media-orientation="${esc(orientation)}" data-engagement-heat="${comments+reactionsTotal}"><div class="author"><div class="author-main"><span class="avatar">${avatar}</span><div><div class="author-name">${esc(author.display_name||p.author_public_name||'PulseSoc creator')}${premiumMarkHtml(author)}</div><span class="badge">${esc(label)}</span></div></div><div class="post-tools"><button class="post-menu-btn" data-post-menu="${p.id}" aria-label="Post actions">•••</button></div><div class="post-sheet" data-post-sheet="${p.id}">${follow}${msg}<a class="button" href="${esc(p.permalink)}">View post</a><a class="button" href="${profile}">View profile</a><button data-share="${esc(p.permalink)}">Share post</button>${edit}${del}${rep}</div></div>${p.title?`<h2>${esc(p.title)}</h2>`:''}<p>${esc(p.body)}</p>${module}${mediaItems.length?`<div class="media-grid">${mediaHtml(mediaItems)}</div>`:''}<div class="tags">${tags}</div><p class="muted">${smartTimeHtml(p.created_at)} <span class="time-dot">•</span> ${esc(p.post_type||'post')} <span class="time-dot">•</span> <span data-comment-count="${p.id}">${comments}</span> comments <span class="time-dot">•</span> <span data-reaction-total="${p.id}">${reactionsTotal}</span> reactions <span class="time-dot">•</span> <span data-post-view-count="${p.id}">${Number(p.view_count||0)}</span> views</p><div class="reaction-strip">${reactionHtml(p)}</div><div class="quick-actions"><button class="quick-action" data-quick-like="${p.id}">Like</button><button class="quick-action" data-open-comments="${p.id}">Comment</button><button class="quick-action" data-share="${esc(p.permalink)}">Share</button><button class="quick-action" data-save-post="${p.id}">Save</button><button class="quick-action" data-post-menu="${p.id}">More</button></div><section class="inline-comments" data-comment-panel="${p.id}"><div class="typing" data-typing="${p.id}"></div><div class="comments" data-comments="${p.id}"></div><button class="comment-preview-toggle" data-view-comments="${p.id}" hidden>View comments</button><div class="comment-composer"><span class="avatar comment-avatar">${avatar}</span><input class="comment-input" data-comment-input="${p.id}" placeholder="Write comment..."><button class="comment-emoji" data-comment-emoji="${p.id}" type="button">☺</button><button class="comment-send" data-send-comment="${p.id}" type="button">➤</button></div></section></article>`}
-const pulseBasePostHtml=postHtml;postHtml=p=>{const music=p?.music||null;const audioUrl=music?.attached_audio_url||music?.audio_url||music?.preview_url||'';const enriched=music?.is_creator_safe&&audioUrl?{...p,media:(p.media||[]).map(m=>({...m,audio_id:music.audio_id||music.track_id||'',music_id:music.track_id||music.audio_id||'',attached_audio_url:audioUrl,audio_title:music.title||'Approved track',audio_artist:music.artist||'PulseSoc Music',audio_duration:music.audio_duration||music.duration_seconds||0,audio_start_time:music.audio_start_time||0,audio_volume:music.audio_volume||1,original_audio_muted:true}))}:p;let html=pulseBasePostHtml(enriched);if(!music?.is_creator_safe||!audioUrl)return html;const audioAttrs=`data-audio-id="${esc(music.audio_id||music.track_id||'')}" data-music-id="${esc(music.track_id||music.audio_id||'')}" data-attached-audio-url="${esc(audioUrl)}" data-audio-title="${esc(music.title||'Approved track')}" data-audio-artist="${esc(music.artist||'PulseSoc Music')}" data-audio-duration="${esc(music.audio_duration||music.duration_seconds||0)}" data-audio-start-time="${esc(music.audio_start_time||0)}" data-audio-volume="${esc(music.audio_volume||1)}" data-original-audio-muted="true"`;html=html.replace(/<div class="pulse-media-wrap/g,`<div ${audioAttrs} class="pulse-media-wrap`).replace(/<video /g,'<video muted data-original-audio-muted="true" ');const player=`<section class="post-music-player" data-post-music="${esc(p.id)}" data-attached-audio-url="${esc(audioUrl)}"><button class="post-music-toggle" type="button" data-toggle-post-music="${esc(p.id)}" aria-label="Play ${esc(music.title||'attached music')}">▶</button><span class="post-music-copy"><strong>${esc(music.title||'Approved track')}</strong><small>${esc(music.artist||'PulseSoc Music')} · Using attached audio · Original audio muted</small></span></section>`;return html.replace('<div class="tags">',player+'<div class="tags">')};let activePostMusicVideo=null;document.addEventListener('click',async e=>{const toggle=e.target.closest('[data-toggle-post-music]');if(!toggle)return;e.preventDefault();e.stopPropagation();const card=toggle.closest('[data-post-id]');const video=card?.querySelector('video');if(!video||!window.PulseMediaRenderer?.hasAttachedAudio?.(video)){toast('Attached music is not available for this post.');return}const enable=toggle.dataset.playing!=='1';if(enable){if(activePostMusicVideo&&activePostMusicVideo!==video)window.PulseMediaRenderer?.pauseAttachedAudio?.(activePostMusicVideo);try{window.PulseMediaRenderer?.forceOriginalAudioMuted?.(video,'post-attached-music');window.PulseMediaRenderer?.setSoundEnabled?.(true);window.PulseMediaRenderer?.setAttachedAudioMuted?.(video,false,true,true);const attachedStarted=await window.PulseMediaRenderer?.playAttachedAudio?.(video,true,true);await video.play();if(!attachedStarted)throw new Error('attached-audio-blocked');activePostMusicVideo=video;toggle.dataset.playing='1';toggle.textContent='❚❚';toggle.setAttribute('aria-label','Pause attached music');toggle.closest('[data-post-music]')?.classList.add('is-playing')}catch(_){toast('Music could not play. Check your device audio settings.')}}else{window.PulseMediaRenderer?.pauseAttachedAudio?.(video);toggle.dataset.playing='0';toggle.textContent='▶';toggle.setAttribute('aria-label','Play attached music');toggle.closest('[data-post-music]')?.classList.remove('is-playing');if(activePostMusicVideo===video)activePostMusicVideo=null}},true);document.addEventListener('pause',e=>{if(!e.target.matches?.('video'))return;const card=e.target.closest('[data-post-id]');const toggle=card?.querySelector('[data-toggle-post-music]');if(toggle){toggle.dataset.playing='0';toggle.textContent='▶';toggle.setAttribute('aria-label','Play attached music')}toggle?.closest('[data-post-music]')?.classList.remove('is-playing');if(activePostMusicVideo===e.target)activePostMusicVideo=null},true);document.addEventListener('pulse:attached-audio-state',e=>{const card=e.target?.closest?.('[data-post-id]');const toggle=card?.querySelector('[data-toggle-post-music]');if(!toggle)return;const playing=e.detail?.state==='playing'&&!e.detail?.muted&&!e.detail?.paused;toggle.dataset.playing=playing?'1':'0';toggle.textContent=playing?'❚❚':'▶';toggle.setAttribute('aria-label',playing?'Pause attached music':'Play attached music');toggle.closest('[data-post-music]')?.classList.toggle('is-playing',playing);if(playing)activePostMusicVideo=card?.querySelector('video')||activePostMusicVideo},true);
+const pulseBasePostHtml=postHtml;postHtml=p=>{const music=p?.music||null;const audioUrl=music?.attached_audio_url||music?.audio_url||music?.preview_url||'';const enriched=music?.is_creator_safe&&audioUrl?{...p,media:(p.media||[]).map(m=>({...m,audio_id:music.audio_id||music.track_id||'',music_id:music.track_id||music.audio_id||'',attached_audio_url:audioUrl,audio_title:music.title||'Approved track',audio_artist:music.artist||'PulseSoc Music',audio_duration:music.audio_duration||music.duration_seconds||0,audio_start_time:music.audio_start_time||0,audio_volume:music.audio_volume||1,original_audio_muted:true}))}:p;let html=pulseBasePostHtml(enriched);if(!music?.is_creator_safe||!audioUrl)return html;const audioAttrs=`data-audio-id="${esc(music.audio_id||music.track_id||'')}" data-music-id="${esc(music.track_id||music.audio_id||'')}" data-attached-audio-url="${esc(audioUrl)}" data-audio-title="${esc(music.title||'Approved track')}" data-audio-artist="${esc(music.artist||'PulseSoc Music')}" data-audio-duration="${esc(music.audio_duration||music.duration_seconds||0)}" data-audio-start-time="${esc(music.audio_start_time||0)}" data-audio-volume="${esc(music.audio_volume||1)}" data-original-audio-muted="true"`;html=html.replace(/<div class="pulse-media-wrap/g,`<div ${audioAttrs} class="pulse-media-wrap`).replace(/<video /g,'<video muted data-original-audio-muted="true" ');const player=`<section class="post-music-player" data-post-music="${esc(p.id)}" data-attached-audio-url="${esc(audioUrl)}"><button class="post-music-toggle" type="button" data-toggle-post-music="${esc(p.id)}" aria-label="Play ${esc(music.title||'attached music')}">▶</button><span class="post-music-copy"><strong>${esc(music.title||'Approved track')}</strong><small>${esc(music.artist||'PulseSoc Music')} · Using attached audio · Original audio muted</small></span></section>`;return html.replace('<div class="tags">',player+'<div class="tags">')};let activePostMusicVideo=null;document.addEventListener('click',async e=>{const toggle=e.target.closest('[data-toggle-post-music]');if(!toggle)return;e.preventDefault();e.stopPropagation();const card=toggle.closest('[data-post-id]');const video=card?.querySelector('video');if(!video||!window.PulseMediaRenderer?.hasAttachedAudio?.(video)){toast('Attached music is not available for this post.');return}const enable=toggle.dataset.playing!=='1';if(enable){if(activePostMusicVideo&&activePostMusicVideo!==video)window.PulseMediaRenderer?.pauseAttachedAudio?.(activePostMusicVideo);try{window.PulseMediaRenderer?.forceOriginalAudioMuted?.(video,'post-attached-music');window.PulseMediaRenderer?.setSoundEnabled?.(true);window.PulseMediaRenderer?.setAttachedAudioMuted?.(video,false,true,true);const attachedStarted=await window.PulseMediaRenderer?.playAttachedAudio?.(video,true,true);await video.play();if(!attachedStarted)throw new Error('attached-audio-blocked');activePostMusicVideo=video;toggle.dataset.playing='1';toggle.textContent='❚❚';toggle.setAttribute('aria-label','Pause attached music');toggle.closest('[data-post-music]')?.classList.add('is-playing')}catch(_){toast('Music could not play. Check your device audio settings.')}}else{window.PulseMediaRenderer?.pauseAttachedAudio?.(video);toggle.dataset.playing='0';toggle.textContent='▶';toggle.setAttribute('aria-label','Play attached music');toggle.closest('[data-post-music]')?.classList.remove('is-playing');if(activePostMusicVideo===video)activePostMusicVideo=null}},true);document.addEventListener('pause',e=>{if(!e.target.matches?.('video'))return;const card=e.target.closest('[data-post-id]');const toggle=card?.querySelector('[data-toggle-post-music]');if(toggle){toggle.dataset.playing='0';toggle.textContent='▶';toggle.setAttribute('aria-label','Play attached music')}toggle?.closest('[data-post-music]')?.classList.remove('is-playing');if(activePostMusicVideo===e.target)activePostMusicVideo=null},true);
 	function commentHtml(c){const a=c.author||{};return `<div class="comment" data-comment-id="${c.id}"><strong>${esc(a.display_name||'PulseSoc user')}${premiumMarkHtml(a)}</strong><p>${esc(c.body||'')}</p><small>${smartTimeHtml(c.created_at)}</small></div>`}
 	async function loadComments(postId,expand=false){const box=document.querySelector(`[data-comments="${postId}"]`);if(!box)return;if(box.dataset.loaded&&box.dataset.expanded===String(Boolean(expand)))return;try{const d=await api(`/api/pulse/posts/${postId}/comments`);const comments=d.comments||[];const visible=expand?comments:comments.slice(0,2);box.innerHTML=visible.map(commentHtml).join('')||'<p class="muted">No comments yet. Start the live thread.</p>';box.dataset.loaded='1';box.dataset.expanded=String(Boolean(expand));const more=document.querySelector(`[data-view-comments="${postId}"]`);if(more){more.hidden=!(comments.length>2&&!expand);more.textContent=`View all ${comments.length} comments`;}}catch(e){box.innerHTML='<p class="muted">Comments temporarily unavailable.</p>'}}
 async function sendComment(postId){const input=document.querySelector(`[data-comment-input="${postId}"]`);if(!input||!input.value.trim())return;const body=input.value;input.value='';try{const d=await api(`/api/pulse/posts/${postId}/comments`,{method:'POST',body:JSON.stringify({body})});applyCommentEvent({post_id:Number(postId),comment:d.comment,comments_count:d.comments_count});await api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:false})}).catch(()=>{})}catch(e){input.value=body;toast(e.message)}}
 	function applyCommentEvent(payload){if(!payload||!payload.comment)return;const postId=payload.post_id||payload.comment.post_id;const box=document.querySelector(`[data-comments="${postId}"]`);if(box&&!box.querySelector(`[data-comment-id="${payload.comment.id}"]`)){box.dataset.loaded='1';box.insertAdjacentHTML('beforeend',commentHtml(payload.comment));window.CoinPilotTime?.hydrate(box);box.scrollTop=box.scrollHeight}const count=document.querySelector(`[data-comment-count="${postId}"]`);if(count)count.textContent=Number(payload.comments_count||Number(count.textContent||0)+1)}
-		/* Only feeds the tap-confirmation burst, so a fallback glyph is fine here:
-		   it echoes the viewer's own action rather than reporting what anyone else
-		   sent. The second hand-written map this replaced also carried a 'heart'
-		   key that nothing ever passed. */
-		function pulseReactionEmoji(key){return reactionIcons[key]||'❤️'}
+		function pulseReactionEmoji(key){return reactionIcons[key]||({heart:'❤️',like:'👍',love:'❤️',fire:'🔥',funny:'😂',wow:'😮',rocket:'🚀',clap:'👏',hundred:'💯',target:'🎯',smart:'🧠',shield:'🛡️'}[key])||'❤️'}
 function animatePulseReaction(btn,emoji){if(!btn)return;btn.classList.remove('is-popping');void btn.offsetWidth;btn.classList.add('is-popping');setTimeout(()=>btn.classList.remove('is-popping'),360);if(window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)return;const r=btn.getBoundingClientRect(),f=document.createElement('span');f.className='pulse-reaction-float';f.textContent=emoji||'❤️';f.style.left=`${r.left+r.width/2}px`;f.style.top=`${r.top+r.height/2}px`;document.body.appendChild(f);setTimeout(()=>f.remove(),900)}
 		function applyReactionEvent(payload){if(!payload||!payload.post_id)return;const counts=payload.reaction_counts||{};let total=0;Object.entries(counts).forEach(([key,value])=>{total+=Number(value||0);const btn=document.querySelector(`[data-post="${payload.post_id}"][data-react="${key}"]`);if(btn){btn.dataset.count=Number(value||0);const countEl=btn.querySelector('[data-reaction-count]');if(countEl)countEl.textContent=Number(value||0)}});document.querySelectorAll(`[data-post="${payload.post_id}"][data-react]`).forEach(btn=>{const selected=(payload.viewer_reaction||payload.my_reaction||payload.reaction_type||'')===btn.dataset.react&&!payload.removed;btn.classList.toggle('active',selected);btn.setAttribute('aria-pressed',selected?'true':'false')});const totalEl=document.querySelector(`[data-reaction-total="${payload.post_id}"]`);if(totalEl)totalEl.textContent=total}
 function readerNearTop(){return window.scrollY<140}
@@ -44482,7 +42031,7 @@ document.addEventListener('click',e=>{const hideSponsor=e.target.closest('[data-
 function validateComposerFiles(files){const allowed=/^(image\\/(jpeg|png|webp|gif)|video\\/(mp4|webm|quicktime))$/i;for(const file of files){const name=file.name||'media',isImage=file.type?.startsWith('image/')||/\\.(jpg|jpeg|png|webp|gif)$/i.test(name),isVideo=composerFileIsVideo(file);if(!isImage&&!isVideo)return`Choose a supported image or video file: ${name}`;if(file.type&&!allowed.test(file.type)&&!/\\.(jpg|jpeg|png|webp|gif|mp4|mov|webm|m4v)$/i.test(name))return`Unsupported media type for ${name}.`;const limit=isVideo?512*1024*1024:25*1024*1024;if(Number(file.size||0)>limit)return`${name} is too large. Use ${isVideo?'a video under 512 MB':'an image under 25 MB'}.`}return''}
 document.getElementById('publishBtn').addEventListener('click',async()=>{const btn=document.getElementById('publishBtn');const progress=document.querySelector('#pulseComposer [data-upload-progress]');const mediaIds=[];let bodyValue=document.getElementById('postBody').value||'';const selectedType=document.getElementById('postType').value;try{const files=(composerMediaFiles.length?composerMediaFiles:[...document.getElementById('postMedia').files]).slice(0,4);if(!bodyValue.trim()&&!document.getElementById('postTitle').value.trim()&&!files.length){toast('Write something or attach media before publishing.');window.PulseUploadManager?.render(progress,{stage:'failed',percent:0,message:'Write something or attach media before publishing.'});return}if(selectedType==='poll'&&bodyValue.trim()&&!bodyValue.trim().endsWith('?')){bodyValue=bodyValue.trim()+'?';document.getElementById('postBody').value=bodyValue}if(selectedType==='scam_report'&&bodyValue.trim().length<24){toast('Add useful scam warning details before publishing.');document.getElementById('postBody').focus();return}const fileError=validateComposerFiles(files);if(fileError){toast(fileError);return}btn.disabled=true;const hasVideo=files.some(composerFileIsVideo);for(const file of files){const fd=new FormData();fd.append('file',file);fd.append('context_type','pulse');fd.append('context_id','draft');toast(composerFileIsVideo(file)?'Uploading video... 0%':'Uploading image... 0%');const d=window.PulseUploadManager?await window.PulseUploadManager.upload({url:'/api/pulse/media/upload',formData:fd,file,button:btn,progressTarget:progress,lockKey:'pulse-feed-upload-'+file.name,onProgress:s=>toast(s.message)}):await api('/api/pulse/media/upload',{method:'POST',body:fd,timeoutMs:composerFileIsVideo(file)?120000:60000});const mediaId=d.media?.id||d.media_id||d.id;if(mediaId)mediaIds.push(mediaId)}if(files.length&&mediaIds.length!==files.length)throw new Error('Upload completed but media did not attach. Please retry.');window.PulseUploadManager?.render(progress,{stage:hasVideo?'processing':'publishing',percent:hasVideo?90:96,message:hasVideo?'Preparing video playback...':'Publishing...'});toast(hasVideo?'Preparing video playback...':'Publishing...');const inferredType=hasVideo?'video':mediaIds.length?'image':selectedType;const d=await api('/api/pulse/posts',{method:'POST',body:JSON.stringify({body:bodyValue,title:document.getElementById('postTitle').value,post_type:inferredType,media_ids:mediaIds,visibility:document.getElementById('postAudience')?.value||'public',music_track_id:composerMusicTrackId})});const next=d.next_url||`/pulse/post/${d.post_id}`;document.getElementById('successView').href=next;document.getElementById('publishSuccess').classList.add('show');window.PulseUploadManager?.render(progress,{stage:'success',percent:100,message:'Posted successfully'});document.getElementById('postBody').value='';document.getElementById('postTitle').value='';document.getElementById('postMedia').value='';composerMusicTrackId='';composerMusicLabel='';composerMediaFiles=[];resetComposerMediaUrls();document.getElementById('postMediaPreview').innerHTML='';setComposerType('text');if(d.post)applyLiveEvents([{event_type:'new_post',id:state.lastEventId||0,post_id:d.post_id,payload:{post:d.post}}]);toast('Posted successfully')}catch(e){window.PulseUploadManager?.render(progress,{stage:'failed',percent:0,message:(e.message||'Upload failed.')+' Tap publish to retry.'});toast((e.message||'Upload failed.')+' Tap publish to retry.')}finally{btn.disabled=false}});
 document.addEventListener('click',async e=>{const r=e.target.closest('[data-react]');if(!r||!r.dataset.post)return;e.preventDefault();e.stopImmediatePropagation();if(r.dataset.busy)return;r.dataset.busy='1';r.classList.add('is-pending');const postId=r.dataset.post;const selected=document.querySelector(`[data-post="${postId}"][data-react].active`);const oldSelected=selected?.dataset.react||'';const oldCounts={};document.querySelectorAll(`[data-post="${postId}"][data-react]`).forEach(btn=>oldCounts[btn.dataset.react]=Number(btn.dataset.count||0));const total=document.querySelector(`[data-reaction-total="${postId}"]`);const oldTotal=Number(total?.textContent||0);const wasActive=r.classList.contains('active');document.querySelectorAll(`[data-post="${postId}"][data-react]`).forEach(btn=>{btn.classList.remove('active');btn.setAttribute('aria-pressed','false')});if(oldSelected&&oldSelected!==r.dataset.react){const prev=document.querySelector(`[data-post="${postId}"][data-react="${oldSelected}"]`);if(prev){const nextPrev=Math.max(0,Number(prev.dataset.count||0)-1);prev.dataset.count=nextPrev;const prevCount=prev.querySelector('[data-reaction-count]');if(prevCount)prevCount.textContent=nextPrev}}const next=Math.max(0,Number(r.dataset.count||0)+(wasActive?-1:1));r.dataset.count=next;const countEl=r.querySelector('[data-reaction-count]');if(countEl)countEl.textContent=next;r.classList.toggle('active',!wasActive);r.setAttribute('aria-pressed',!wasActive?'true':'false');if(total)total.textContent=Math.max(0,oldTotal+(wasActive?-1:(oldSelected&&oldSelected!==r.dataset.react?0:1)));animatePulseReaction(r,pulseReactionEmoji(r.dataset.react));try{const d=await api(`/api/pulse/posts/${postId}/react`,{method:'POST',body:JSON.stringify({reaction_type:r.dataset.react})});applyReactionEvent(d)}catch(err){document.querySelectorAll(`[data-post="${postId}"][data-react]`).forEach(btn=>{const old=Number(oldCounts[btn.dataset.react]||0);btn.dataset.count=old;const el=btn.querySelector('[data-reaction-count]');if(el)el.textContent=old;const active=btn.dataset.react===oldSelected;btn.classList.toggle('active',active);btn.setAttribute('aria-pressed',active?'true':'false')});if(total)total.textContent=oldTotal;toast(err.message)}finally{r.classList.remove('is-pending');delete r.dataset.busy}},true);
-	document.addEventListener('click',async e=>{const removeSelected=e.target.closest('[data-remove-composer-media]');if(removeSelected){const index=Number(removeSelected.dataset.removeComposerMedia);composerMediaFiles=composerMediaFiles.filter((_,i)=>i!==index);renderComposerMediaPreview();if(!composerMediaFiles.length)document.getElementById('postMedia').value='';toast(composerMediaFiles.length?'Media removed.':'Media cleared.');return}const retry=e.target.closest('[data-retry-media]');if(retry){const wrap=retry.closest('.pulse-media-wrap');const media=wrap?.querySelector('img,video');wrap?.classList.remove('is-broken');if(media){const base=(media.dataset.fullSrc||media.currentSrc||media.src||'').split('?')[0];media.src=base+(base.includes('?')?'&':'?')+'retry='+Date.now();media.load?.()}return}const lightbox=document.getElementById('pulseMediaLightbox');if(e.target.closest('[data-close-media-lightbox]')||e.target===lightbox){lightbox?.classList.remove('open');lightbox?.setAttribute('aria-hidden','true');const stage=lightbox?.querySelector('[data-lightbox-stage]');if(stage)stage.innerHTML='';return}const mediaOpen=e.target.closest('[data-open-media-lightbox]');if(mediaOpen&&lightbox&&!e.target.closest('button,a,video,audio,[data-pulse-media-sound]')){const stage=lightbox.querySelector('[data-lightbox-stage]');const src=mediaOpen.dataset.mediaSrc||'';if(stage&&src){stage.innerHTML=mediaOpen.dataset.mediaType==='video'?`<video src="${esc(src)}" poster="${esc(mediaOpen.dataset.mediaPoster||'')}" controls autoplay playsinline webkit-playsinline></video>`:`<img src="${esc(src)}" alt="PulseSoc media preview">`;lightbox.classList.add('open');lightbox.setAttribute('aria-hidden','false')}return}const menu=e.target.closest('[data-post-menu]');if(menu){const id=menu.dataset.postMenu;document.querySelectorAll('.post-sheet.open').forEach(s=>{if(s.dataset.postSheet!==id)s.classList.remove('open')});document.querySelector(`[data-post-sheet="${id}"]`)?.classList.toggle('open');return}if(!e.target.closest('.post-sheet,.post-menu-btn'))document.querySelectorAll('.post-sheet.open').forEach(s=>s.classList.remove('open'));const quick=e.target.closest('[data-quick-like]');if(quick){document.querySelector(`[data-post="${quick.dataset.quickLike}"][data-react="fire"]`)?.click();return}const view=e.target.closest('[data-view-comments],[data-open-comments]');if(view){const id=view.dataset.viewComments||view.dataset.openComments;loadComments(id,true);document.querySelector(`[data-comment-input="${id}"]`)?.focus();return}const emoji=e.target.closest('[data-comment-emoji]');if(emoji){const input=document.querySelector(`[data-comment-input="${emoji.dataset.commentEmoji}"]`);if(input){/* This fallback runtime used to append one hardcoded fire emoji. window.PulseEmoji is loaded in <head> on every boot profile, so the diagnostic profiles get the same picker the core profile does -- one emoji system, not two. */ if(window.PulseEmoji){window.PulseEmoji.open({anchor:emoji,returnFocusTo:input,stayOpenOnSelect:true,label:'Add emoji to your comment',onSelect:g=>window.PulseEmoji.insertAtCaret(input,g)})}else{input.focus()}}return}const save=e.target.closest('[data-save-post]');if(save){try{const d=await api(`/api/pulse/posts/${save.dataset.savePost}/save`,{method:'POST',body:JSON.stringify({})});toast(d.message||'Saved.')}catch(err){toast(err.message)}return}const r=e.target.closest('[data-react]');if(r){if(r.dataset.busy)return;r.dataset.busy='1';const postId=r.dataset.post;const old=Number(r.dataset.count||0);const wasActive=r.classList.contains('active');const next=Math.max(0,old+(wasActive?-1:1));r.dataset.count=next;const countEl=r.querySelector('[data-reaction-count]');if(countEl)countEl.textContent=next;r.classList.toggle('active',!wasActive);const total=document.querySelector(`[data-reaction-total="${postId}"]`);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?-1:1));try{const d=await api(`/api/pulse/posts/${postId}/react`,{method:'POST',body:JSON.stringify({reaction_type:r.dataset.react})});applyReactionEvent(d);r.classList.toggle('active',!d.removed)}catch(err){r.dataset.count=old;if(countEl)countEl.textContent=old;r.classList.toggle('active',wasActive);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?1:-1));toast(err.message)}finally{delete r.dataset.busy}}const c=e.target.closest('[data-send-comment]');if(c)sendComment(c.dataset.sendComment);const openComments=e.target.closest('[data-comment-panel]');if(openComments)loadComments(openComments.dataset.commentPanel);const editPost=e.target.closest('[data-edit-post]');if(editPost){const postId=editPost.dataset.editPost;const card=document.querySelector(`[data-post-id="${postId}"]`);const title=prompt('Edit post title',card?.querySelector('h2')?.textContent?.trim()||'');if(title===null)return;const body=prompt('Edit post',card?.querySelector('p')?.textContent?.trim()||'');if(body===null)return;try{await api(`/api/pulse/posts/${postId}`,{method:'PATCH',body:JSON.stringify({title,body,visibility:'public'})});const h=card?.querySelector('h2');const p=card?.querySelector('p');if(h)h.textContent=title;if(p)p.textContent=body;document.querySelector(`.post-sheet[data-post-sheet="${postId}"]`)?.classList.remove('open');toast('Post updated.')}catch(err){toast(err.message)}return}const del=e.target.closest('[data-delete-post]');if(del){if(!confirm('Delete this PulseSoc post?'))return;try{await api(`/api/pulse/posts/${del.dataset.deletePost}`,{method:'DELETE'});rememberDeletedPost(del.dataset.deletePost);toast('Post deleted.')}catch(err){toast(err.message)}}const follow=e.target.closest('[data-follow-public]');if(follow&&follow.dataset.followPublic){try{await api('/api/pulse/follow',{method:'POST',body:JSON.stringify({public_player_id:follow.dataset.followPublic})});toast('Followed.')}catch(err){toast(err.message)}}const msg=e.target.closest('[data-message]');if(msg){try{const d=await api('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({public_player_id:msg.dataset.message})});location.href=d.next_url}catch(err){toast(err.message)}}const share=e.target.closest('[data-share]');if(share){const url=new URL(share.dataset.share,location.origin).href;if(navigator.share){navigator.share({title:'PulseSoc',url}).catch(()=>{})}else{navigator.clipboard.writeText(url).then(()=>toast('Post link copied.')).catch(()=>toast('Share link ready: '+url))}}const rep=e.target.closest('[data-report]');if(rep){const reason=prompt('Why are you reporting this?')||'reported';try{await api('/api/pulse/report',{method:'POST',body:JSON.stringify({target_type:rep.dataset.report,target_id:rep.dataset.id,reason})});toast('Report sent.')}catch(err){toast(err.message)}}});
+	document.addEventListener('click',async e=>{const removeSelected=e.target.closest('[data-remove-composer-media]');if(removeSelected){const index=Number(removeSelected.dataset.removeComposerMedia);composerMediaFiles=composerMediaFiles.filter((_,i)=>i!==index);renderComposerMediaPreview();if(!composerMediaFiles.length)document.getElementById('postMedia').value='';toast(composerMediaFiles.length?'Media removed.':'Media cleared.');return}const retry=e.target.closest('[data-retry-media]');if(retry){const wrap=retry.closest('.pulse-media-wrap');const media=wrap?.querySelector('img,video');wrap?.classList.remove('is-broken');if(media){const base=(media.dataset.fullSrc||media.currentSrc||media.src||'').split('?')[0];media.src=base+(base.includes('?')?'&':'?')+'retry='+Date.now();media.load?.()}return}const lightbox=document.getElementById('pulseMediaLightbox');if(e.target.closest('[data-close-media-lightbox]')||e.target===lightbox){lightbox?.classList.remove('open');lightbox?.setAttribute('aria-hidden','true');const stage=lightbox?.querySelector('[data-lightbox-stage]');if(stage)stage.innerHTML='';return}const mediaOpen=e.target.closest('[data-open-media-lightbox]');if(mediaOpen&&lightbox&&!e.target.closest('button,a,video,audio,[data-pulse-media-sound]')){const stage=lightbox.querySelector('[data-lightbox-stage]');const src=mediaOpen.dataset.mediaSrc||'';if(stage&&src){stage.innerHTML=mediaOpen.dataset.mediaType==='video'?`<video src="${esc(src)}" poster="${esc(mediaOpen.dataset.mediaPoster||'')}" controls autoplay playsinline webkit-playsinline></video>`:`<img src="${esc(src)}" alt="PulseSoc media preview">`;lightbox.classList.add('open');lightbox.setAttribute('aria-hidden','false')}return}const menu=e.target.closest('[data-post-menu]');if(menu){const id=menu.dataset.postMenu;document.querySelectorAll('.post-sheet.open').forEach(s=>{if(s.dataset.postSheet!==id)s.classList.remove('open')});document.querySelector(`[data-post-sheet="${id}"]`)?.classList.toggle('open');return}if(!e.target.closest('.post-sheet,.post-menu-btn'))document.querySelectorAll('.post-sheet.open').forEach(s=>s.classList.remove('open'));const quick=e.target.closest('[data-quick-like]');if(quick){document.querySelector(`[data-post="${quick.dataset.quickLike}"][data-react="fire"]`)?.click();return}const view=e.target.closest('[data-view-comments],[data-open-comments]');if(view){const id=view.dataset.viewComments||view.dataset.openComments;loadComments(id,true);document.querySelector(`[data-comment-input="${id}"]`)?.focus();return}const emoji=e.target.closest('[data-comment-emoji]');if(emoji){const input=document.querySelector(`[data-comment-input="${emoji.dataset.commentEmoji}"]`);if(input){input.value=(input.value||'')+' 🔥';input.focus()}return}const save=e.target.closest('[data-save-post]');if(save){try{const d=await api(`/api/pulse/posts/${save.dataset.savePost}/save`,{method:'POST',body:JSON.stringify({})});toast(d.message||'Saved.')}catch(err){toast(err.message)}return}const r=e.target.closest('[data-react]');if(r){if(r.dataset.busy)return;r.dataset.busy='1';const postId=r.dataset.post;const old=Number(r.dataset.count||0);const wasActive=r.classList.contains('active');const next=Math.max(0,old+(wasActive?-1:1));r.dataset.count=next;const countEl=r.querySelector('[data-reaction-count]');if(countEl)countEl.textContent=next;r.classList.toggle('active',!wasActive);const total=document.querySelector(`[data-reaction-total="${postId}"]`);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?-1:1));try{const d=await api(`/api/pulse/posts/${postId}/react`,{method:'POST',body:JSON.stringify({reaction_type:r.dataset.react})});applyReactionEvent(d);r.classList.toggle('active',!d.removed)}catch(err){r.dataset.count=old;if(countEl)countEl.textContent=old;r.classList.toggle('active',wasActive);if(total)total.textContent=Math.max(0,Number(total.textContent||0)+(wasActive?1:-1));toast(err.message)}finally{delete r.dataset.busy}}const c=e.target.closest('[data-send-comment]');if(c)sendComment(c.dataset.sendComment);const openComments=e.target.closest('[data-comment-panel]');if(openComments)loadComments(openComments.dataset.commentPanel);const editPost=e.target.closest('[data-edit-post]');if(editPost){const postId=editPost.dataset.editPost;const card=document.querySelector(`[data-post-id="${postId}"]`);const title=prompt('Edit post title',card?.querySelector('h2')?.textContent?.trim()||'');if(title===null)return;const body=prompt('Edit post',card?.querySelector('p')?.textContent?.trim()||'');if(body===null)return;try{await api(`/api/pulse/posts/${postId}`,{method:'PATCH',body:JSON.stringify({title,body,visibility:'public'})});const h=card?.querySelector('h2');const p=card?.querySelector('p');if(h)h.textContent=title;if(p)p.textContent=body;document.querySelector(`.post-sheet[data-post-sheet="${postId}"]`)?.classList.remove('open');toast('Post updated.')}catch(err){toast(err.message)}return}const del=e.target.closest('[data-delete-post]');if(del){if(!confirm('Delete this PulseSoc post?'))return;try{await api(`/api/pulse/posts/${del.dataset.deletePost}`,{method:'DELETE'});rememberDeletedPost(del.dataset.deletePost);toast('Post deleted.')}catch(err){toast(err.message)}}const follow=e.target.closest('[data-follow-public]');if(follow&&follow.dataset.followPublic){try{await api('/api/pulse/follow',{method:'POST',body:JSON.stringify({public_player_id:follow.dataset.followPublic})});toast('Followed.')}catch(err){toast(err.message)}}const msg=e.target.closest('[data-message]');if(msg){try{const d=await api('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({public_player_id:msg.dataset.message})});location.href=d.next_url}catch(err){toast(err.message)}}const share=e.target.closest('[data-share]');if(share){const url=new URL(share.dataset.share,location.origin).href;if(navigator.share){navigator.share({title:'PulseSoc',url}).catch(()=>{})}else{navigator.clipboard.writeText(url).then(()=>toast('Post link copied.')).catch(()=>toast('Share link ready: '+url))}}const rep=e.target.closest('[data-report]');if(rep){const reason=prompt('Why are you reporting this?')||'reported';try{await api('/api/pulse/report',{method:'POST',body:JSON.stringify({target_type:rep.dataset.report,target_id:rep.dataset.id,reason})});toast('Report sent.')}catch(err){toast(err.message)}}});
 document.addEventListener('focusin',e=>{const input=e.target.closest('[data-comment-input]');if(!input)return;const postId=input.dataset.commentInput;loadComments(postId);api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:true})}).catch(()=>{})});
 document.addEventListener('input',e=>{const input=e.target.closest('[data-comment-input]');if(!input)return;clearTimeout(input._typingTimer);const postId=input.dataset.commentInput;api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:true})}).catch(()=>{});input._typingTimer=setTimeout(()=>api('/api/pulse/typing',{method:'POST',body:JSON.stringify({post_id:postId,typing:false})}).catch(()=>{}),2400)});
 document.addEventListener('keydown',e=>{const input=e.target.closest('[data-comment-input]');if(input&&e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendComment(input.dataset.commentInput)}});
@@ -44490,7 +42039,7 @@ async function pollLive(){if(Date.now()-state.lastUserScrollAt<900)return;try{co
 function startLive(){if(pulsePrefersReducedData)return;setInterval(()=>{if(!document.hidden)pollLive()},30000)}
 		document.getElementById('loadMore').addEventListener('click',()=>load(false));document.getElementById('newPulsesBanner')?.addEventListener('click',flushPendingPosts);document.addEventListener('click',e=>{if(e.target.closest('[data-retry-pulse-feed]'))load(true)});const pulseShellWatchdog=setTimeout(()=>{if(!state.shellReady){const feed=document.getElementById('feed');const reason=state.loading?'feed-still-loading':state.feedReady?'render-not-confirmed':'feed-not-ready';pulseBootLog('shell-boot-watchdog-fired',{reason,loading:state.loading,feedReady:state.feedReady,feedChildren:feed?.children?.length||0});if(feed&&!feed.children.length)feed.innerHTML='<section class="card" data-pulse-feed-fallback><p class="muted">PulseSoc shell loaded. Feed is reconnecting.</p><button class="button primary" type="button" data-retry-pulse-feed>Retry feed</button></section>';state.shellReady=true}},10000);pulseBootTask(()=>load(true).catch(error=>{pulseBootLog('initial-feed-failed',{message:String(error?.message||error)});console.warn('PulseSoc initial feed failed',error)}).finally(()=>{clearTimeout(pulseShellWatchdog);pulseBootLog('shell-boot-finish',{feedReady:state.feedReady,shellReady:state.shellReady});pulseBootTask(startLive,'live-start',400)}),'initial-feed',0);setInterval(()=>{if(!document.hidden&&!pulsePrefersReducedData)checkForNewPosts()},60000);setInterval(()=>{if(!document.hidden)api('/api/pulse/heartbeat',{method:'POST',body:JSON.stringify({path:location.pathname}),timeoutMs:8000}).catch(()=>{})},60000);
 let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollAt=Date.now();if(state.loading)return;const remaining=document.documentElement.scrollHeight-(window.scrollY+window.innerHeight);if(remaining<420&&!nearBottom){nearBottom=true;load(false).finally(()=>setTimeout(()=>nearBottom=false,900))}},{passive:true});
-		</script><script src="/static/js/pulsesoc_promotions.js?v=bare-asset-tokens-20260930a" defer></script></body></html>"""
+		</script><script src="/static/js/pulsesoc_promotions.js" defer></script></body></html>"""
     html = html.replace(
         "const del=canDelete?`<button data-delete-post=\"${p.id}\">Delete post</button>`:'';const rep=",
         "const del=canDelete?`<button data-delete-post=\"${p.id}\">Delete post</button>`:'';const rawPromoteType=String(p.post_type||'post').toLowerCase();const promoteType=rawPromoteType==='image'?'photo':(['article','blog','podcast','event','business_post','creator_content'].includes(rawPromoteType)?rawPromoteType:'post');const promote=canDelete?`<button data-promote-content=\"${promoteType}\" data-content-id=\"${p.id}\" data-content-label=\"${esc(p.title||'PulseSoc Post')}\">Promote Post</button>`:'';const rep=",
@@ -44524,58 +42073,38 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         .replace("__NOTIFICATION_BELL_ICON__", PULSE_NOTIFICATION_BELL_ICON)
         .replace("__SHELL_AVATAR__", shell_avatar_html)
         .replace("__MOBILE_BOTTOM__", mobile_bottom_html)
-        .replace("__MARKETPLACE_CREATE_HREF__", app_first_href("marketplace_create"))
-        .replace("__APP_FIRST_LINKS__", app_first_link_map_script())
         .replace("__DESKTOP_TOP_NAV__", desktop_top_nav_html)
         .replace("__DESKTOP_LEFT_RAIL__", desktop_left_rail_html)
         .replace("__PULSE_STATUS_RAIL__", status_rail_html)
         .replace("__MOBILE_INLINE_AD__", pulse_mobile_inline_ad_zone())
         .replace("__PULSE_STATUS_HOME_CREATOR__", pulse_status_home_creator_html())
         .replace("__PROMOTION_MODAL__", pulse_promotion_modal_html())
-        .replace("__APP_PROMOTION_ASSETS__", app_promotion.assets_html())
-        .replace("__APP_PROMOTION_NOTE__", app_promotion.marketplace_note_html())
         .replace("__LIVE_NOW_HUB__", live_now_html)
         .replace("__DAILY_MENTOR_CARD__", pulse_daily_mentor_card_html())
         .replace("__DESKTOP_RIGHT_RAIL__", desktop_right_rail_html)
         .replace("__DISCLAIMER__", clean_html(PULSE_DISCLAIMER))
-        # The reaction catalogue is served from the Python source of truth on
-        # every render instead of being duplicated in JavaScript, so a renderer
-        # cannot drift from the allowlist that decides what the wire accepts.
-        # Its <script> sits outside `data-pulse-shell-runtime` on purpose: the
-        # `core` and `shell_only` boot profiles delete that block, and
-        # pulse_home_core.js -- the renderer the `core` profile installs -- is
-        # the main consumer. It is also not `defer`red, so it has always run by
-        # the time any deferred renderer boots.
-        .replace("__PULSE_REACTION_CATALOG__", json.dumps(pulse_reactions.catalog_payload()))
-        .replace("__PULSE_REACTION_TRAY_SIZE__", str(pulse_reactions.TRAY_SIZE))
     )
     if boot_profile in {"status_off", "optional_off", "shell_only"}:
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b" defer></script>', "")
     if boot_profile in {"core", "media_off", "optional_off", "shell_only"}:
-        rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_renderer.js?v=cache-sweep-20260930a" defer></script>', "")
+        rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g" defer></script>', "")
     if boot_profile in {"notifications_off", "optional_off", "shell_only"}:
         rendered_html = rendered_html.replace('<script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script>', "")
     if boot_profile == "core":
         rendered_html = re.sub(r'<script data-pulse-shell-runtime>.*?</script>', "", rendered_html, count=1, flags=re.S)
-        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js?v=static-bg-20260806a" defer></script>', "")
-        rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js?v=bare-asset-tokens-20260930a" defer></script>', "")
+        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js" defer></script>', "")
+        rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace(
             "</body>",
-            # `pulse_commerce_card.js` first: both are `defer`red, deferred
-            # scripts run in document order, and `renderPost` reads the global
-            # it installs. The token on `pulse_home_core.js` moves with it --
-            # `static/` is served immutable for a year, so a renderer change
-            # that keeps its old token reaches nobody who has the page cached.
-            '<script src="/static/js/pulse_commerce_card.js?v=commerce-i18n-20260929a" defer></script>'
-            '<script src="/static/js/pulse_home_core.js?v=commerce-attachment-20260928a" defer></script></body>',
+            '<script src="/static/js/pulse_home_core.js?v=bottom-dock-scroll-20260719a" defer></script></body>',
             1,
         )
     if boot_profile == "shell_only":
         rendered_html = re.sub(r'<script data-pulse-shell-runtime>.*?</script>', "", rendered_html, count=1, flags=re.S)
-        rendered_html = rendered_html.replace('<script src="/static/js/time.js?v=bare-asset-tokens-20260930a"></script>', "")
-        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js?v=static-bg-20260806a" defer></script>', "")
-        rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js?v=bare-asset-tokens-20260930a" defer></script>', "")
-        rendered_html = rendered_html.replace('<script src="/static/js/pulse_upload_manager.js?v=cache-sweep-20260930a"></script>', "")
+        rendered_html = rendered_html.replace('<script src="/static/js/time.js"></script>', "")
+        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js" defer></script>', "")
+        rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
+        rendered_html = rendered_html.replace('<script src="/static/js/pulse_upload_manager.js?v=composer-premium-20260617a"></script>', "")
     body_class = 'pulse-home-os' if request.path == '/pulse' else ''
     rendered_html = rendered_html.replace(
         "<body>",
@@ -44942,7 +42471,7 @@ def api_pulse_search():
         "marketplace",
         """
         SELECT l.id, l.title, l.description, l.short_description, l.category, l.price_label,
-               NULLIF(TRIM(ms.display_name),'') AS seller_store_name
+               COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name
         FROM marketplace_listings l
         LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
         WHERE l.status IN ('active','approved')
@@ -45370,8 +42899,8 @@ def pulse_status_page():
         for tab_lane, label in tabs
     )
     main_html = f"""
-    <link rel="stylesheet" href="/static/css/pulse_status_system.css?v=cache-sweep-20260930a">
-    <link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=video-action-fit-20260927i">
+    <link rel="stylesheet" href="/static/css/pulse_status_system.css?v=status-v4-20260703b">
+    <link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=status-v3-20260629b">
     <style>
       .pulse-status-full-page{{position:relative}}
       .pulse-status-page-layout{{display:grid;grid-template-columns:minmax(0,.82fr) minmax(360px,1.18fr);gap:14px;align-items:start}}
@@ -46197,101 +43726,6 @@ def pulse_attach_music_to_content(cur, *, content_type, content_id, track_id, us
     return {"ok": True, "music": track}
 
 
-#: How many listing references one composer request may even be *considered*.
-#: `tagging.MAX_TAGGED_PER_CONTENT` is the real cap and is enforced per row against
-#: what is already stored; this is only a bound on the loop, so a request carrying
-#: ten thousand ids costs ten reads and not ten thousand.
-PULSE_PRODUCT_TAG_REQUEST_LIMIT = 20
-
-
-def pulse_attach_products_to_content(cur, *, content_type, content_id, listing_ids, user_id):
-    """Attach the creator's own listings to one piece of content.
-
-    Deliberately shaped like :func:`pulse_attach_music_to_content` above, and
-    called from the same places for the same reason. The judgement — may this
-    person point at this product, and is this post already full — lives in
-    ``services.commerce_discovery.tagging``; this function is only the composer's
-    side of it: the loop, the request bound, and the decision about what a failure
-    does to the post.
-
-    That last part is why this wrapper exists at all rather than the call sites
-    invoking ``tagging.attach`` directly. ``attach`` returns refusals but lets
-    database errors propagate, on the grounds that a driver error is not a
-    judgement it can explain and the composer should decide. This is the composer.
-    The decision is: **the post survives.** A product tag that cannot be written is
-    logged and dropped, because a creator who attached a product and lost the whole
-    post has lost more than the tag.
-
-    Returns ``{"ok", "attached", "refused"}``. ``ok`` is true when *every*
-    requested id was attached, so a caller that wants to tell the creator "one of
-    your products could not be tagged" has the material to; none currently does,
-    and the log line is what an operator has in the meantime.
-    """
-    requested: list[int] = []
-    for value in (listing_ids or [])[:PULSE_PRODUCT_TAG_REQUEST_LIMIT]:
-        listing_ref = safe_int(value, 0)
-        if listing_ref > 0 and listing_ref not in requested:
-            requested.append(listing_ref)
-    if not requested:
-        return {"ok": True, "attached": [], "refused": []}
-
-    from services.commerce_discovery import tagging as _cd_tagging
-
-    attached: list[int] = []
-    refused: list[dict] = []
-    for listing_ref in requested:
-        try:
-            outcome = _cd_tagging.attach(
-                cur,
-                content_type=content_type,
-                content_id=content_id,
-                listing_id=listing_ref,
-                user_id=user_id,
-            )
-        except Exception:
-            logging.warning(
-                "PULSE_PRODUCT_TAG_WRITE_FAILED user_id=%s content_type=%s content_id=%s listing_id=%s",
-                user_id, content_type, content_id, listing_ref, exc_info=True,
-            )
-            refused.append({"listing_id": listing_ref, "reason": "write_failed"})
-            continue
-        if outcome.get("ok"):
-            attached.append(listing_ref)
-        else:
-            # Logged at info, not warning. "You can only tag your own products" is
-            # the system working; an operator reading warnings should not have to
-            # filter out every creator who tried.
-            logging.info(
-                "PULSE_PRODUCT_TAG_REFUSED user_id=%s content_type=%s content_id=%s listing_id=%s reason=%s",
-                user_id, content_type, content_id, listing_ref, outcome.get("reason"),
-            )
-            refused.append({"listing_id": listing_ref, "reason": outcome.get("reason")})
-    return {"ok": not refused, "attached": attached, "refused": refused}
-
-
-def pulse_product_tag_ids_from_payload(payload):
-    """Listing ids a composer request is asking to tag, under any of its names.
-
-    Three keys because three clients. ``product_listing_ids`` is what the native
-    composer will send, ``listing_ids`` is the shorter name the web composer's
-    existing marketplace forms already use, and ``product_ids`` is what a reader of
-    the API would guess. Accepting all three costs nothing — every id is checked
-    for ownership regardless of which key carried it — and the alternative is a
-    silently ignored field, which is the failure mode this repo has the most of.
-
-    A single scalar is accepted as a one-element list for the same reason.
-    """
-    payload = payload or {}
-    for key in ("product_listing_ids", "listing_ids", "product_ids"):
-        value = payload.get(key)
-        if value in (None, "", [], ()):
-            continue
-        if isinstance(value, (list, tuple)):
-            return list(value)
-        return [value]
-    return []
-
-
 @webhook_app.route("/api/pulse/music/attach", methods=["POST"])
 def api_pulse_music_attach():
     init_db()
@@ -46559,566 +43993,6 @@ def api_pulse_music_artist(artist_user_id):
     return jsonify({"ok": True, "artist": artist, "songs": songs, "followers": followers, "plays": sum(int(s.get("play_count") or 0) for s in songs), "trending": bool(any(int(s.get("trend_score") or 0) >= 50 for s in songs))})
 
 
-ADMIN_MUSIC_LIBRARY_PAGE_SIZE = 40
-
-
-def admin_music_library_query(cur, *, search="", state="", page=1):
-    """One page of the music catalogue for the admin library table.
-
-    Searching by id as well as by text matters more than it looks: the audit
-    trail, the reports queue and the mobile client all identify a track by id, so
-    an operator arriving from any of them has a number and not a title.
-
-    The state filter reads `lifecycle_state` through the same COALESCE default the
-    rest of the code uses, so the ~21.7k rows written before that column existed
-    are selectable as ACTIVE rather than being invisible under every filter.
-    """
-    page = max(1, safe_int(page, 1))
-    offset = (page - 1) * ADMIN_MUSIC_LIBRARY_PAGE_SIZE
-    where = []
-    params = []
-    search = (search or "").strip()
-    if search:
-        like = f"%{search.lower()}%"
-        clause = "(lower(COALESCE(t.title,'')) LIKE ? OR lower(COALESCE(t.artist,'')) LIKE ?)"
-        params.extend([like, like])
-        if search.isdigit():
-            clause = clause[:-1] + " OR t.id=?)"
-            params.append(safe_int(search, 0))
-        where.append(clause)
-    state = music_authority.normalize_state(state) if (state or "").strip() else ""
-    if state:
-        where.append("UPPER(COALESCE(t.lifecycle_state,'ACTIVE'))=?")
-        params.append(state)
-    sql_where = ("WHERE " + " AND ".join(where)) if where else ""
-    cur.execute(f"SELECT COUNT(*) AS total FROM pulse_audio_tracks t {sql_where}", tuple(params))
-    total = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
-    cur.execute(
-        f"""
-        SELECT t.*, COALESCE(u.display_name, u.full_name, u.username, '') AS uploader_name,
-               COALESCE(u.email, '') AS uploader_email
-        FROM pulse_audio_tracks t
-        LEFT JOIN users u ON u.user_id=t.uploader_user_id
-        {sql_where}
-        ORDER BY t.id DESC
-        LIMIT ? OFFSET ?
-        """,
-        tuple(params) + (ADMIN_MUSIC_LIBRARY_PAGE_SIZE, offset),
-    )
-    return [dict(row) for row in cur.fetchall()], total
-
-
-def admin_music_library_row(track, permissions):
-    """One library row, with the actions this viewer may take carried on it.
-
-    The action list is computed here and not in the browser. Putting it in the
-    markup rather than letting the script infer it from the state string means the
-    menu is a rendering of a server decision -- the same decision the endpoint will
-    re-make when the item is clicked -- instead of a second, drifting copy of the
-    rules written in JavaScript.
-    """
-    track_id = safe_int(track.get("id"), 0)
-    state = music_authority.normalize_state(track.get("lifecycle_state"))
-    legal_hold = bool(safe_int(track.get("legal_hold"), 0))
-    actions = music_authority.available_actions(
-        state, legal_hold=legal_hold, permissions=permissions
-    )
-    if permissions.get("music.view_all"):
-        actions = ["impact"] + actions + ["audit"]
-    title = html_escape(clean_html(track.get("title") or "Untitled track"))
-    artist = html_escape(clean_html(track.get("artist") or ""))
-    uploader = html_escape(clean_html(
-        track.get("uploader_name") or track.get("uploader_email")
-        or (f"User {track.get('uploader_user_id')}" if track.get("uploader_user_id") else "")
-    ))
-    public_reasons = music_service.public_visibility_reasons(track)
-    public_state = "yes" if not public_reasons else "hidden"
-    public_title = html_escape(clean_html(
-        "; ".join(public_reasons) if public_reasons else "Visible in PulseSoc Music."
-    ))
-    updated = html_escape(clean_html(track.get("updated_at") or track.get("created_at") or ""))
-    hold = " <span class='pill hold'>legal hold</span>" if legal_hold else ""
-    if actions:
-        menu = (
-            f"<button type='button' class='music-dots' data-track='{track_id}' "
-            f"data-title='{title}' data-state='{state}' "
-            f"data-actions='{html_escape(','.join(actions))}' "
-            f"aria-haspopup='true' aria-expanded='false' "
-            f"aria-label='More options for {title}'>&hellip;</button>"
-        )
-    else:
-        # An empty menu button would be a dead control. Say why instead.
-        menu = "<span class='muted' title='This account holds no music permissions.'>&mdash;</span>"
-    return (
-        f"<tr data-track-row='{track_id}'>"
-        f"<td>{track_id}</td><td>{title}</td><td>{artist}</td><td>{uploader}</td>"
-        f"<td><span class='state state-{state}'>{state.replace('_', ' ').title()}</span>{hold}</td>"
-        f"<td title='{public_title}'>{public_state}</td><td>{updated}</td>"
-        f"<td class='music-lib-cell'>{menu}</td>"
-        f"</tr>"
-    )
-
-
-ADMIN_MUSIC_LIBRARY_CSS = """
-      .music-library .music-lib-filter{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
-      .music-library .music-lib-filter input[type=search]{flex:1 1 260px;min-width:0}
-      /* The page-wide admin CSS gives form controls width:100%, which stacks
-         this three-control row into three full-width bars. Constrain here
-         rather than there: that rule is load-bearing for every other admin form. */
-      .music-library .music-lib-filter select{flex:0 0 auto;width:auto;min-width:190px}
-      .music-library .music-lib-filter button{flex:0 0 auto;width:auto}
-      .music-lib-table td,.music-lib-table th{vertical-align:middle}
-      .music-lib-cell{text-align:right;white-space:nowrap}
-      .music-dots{background:transparent;border:1px solid var(--line);border-radius:10px;
-        color:var(--text,#e8f0f5);cursor:pointer;font-size:18px;line-height:1;padding:2px 10px 6px}
-      .music-dots:hover,.music-dots:focus{background:rgba(255,255,255,.08);outline:none}
-      .music-lib-pager{display:flex;gap:10px;margin-top:12px}
-      .state{border-radius:999px;padding:3px 9px;font-size:12px;border:1px solid rgba(255,255,255,.14)}
-      .state-ACTIVE{color:#0f9d58;border-color:rgba(15,157,88,.5)}
-      .state-TAKEN_DOWN,.state-QUARANTINED{color:#e8a33d;border-color:rgba(232,163,61,.5)}
-      .state-PURGE_PENDING{color:#e8713d;border-color:rgba(232,113,61,.5)}
-      .state-PURGED{color:#9aa7b2;border-color:rgba(154,167,178,.4)}
-      .pill.hold{background:rgba(232,61,61,.16);color:#ff9a9a;margin-left:6px}
-      .music-menu{position:absolute;z-index:70;min-width:260px;background:#0d1627;
-        border:1px solid var(--line);border-radius:12px;padding:6px;
-        box-shadow:0 24px 70px rgba(0,0,0,.5)}
-      .music-menu button{display:block;width:100%;text-align:left;background:transparent;
-        border:0;color:var(--text,#e8f0f5);padding:9px 10px;border-radius:8px;cursor:pointer;font-size:14px}
-      .music-menu button:hover,.music-menu button:focus{background:rgba(255,255,255,.08);outline:none}
-      .music-menu button.danger{color:#ff9a9a}
-      .music-menu hr{border:0;border-top:1px solid rgba(255,255,255,.08);margin:5px 2px}
-      .music-dialog{position:fixed;inset:0;z-index:80;background:rgba(3,7,14,.72);
-        display:grid;place-items:center;padding:18px}
-      /* `hidden` is only `display:none` in the UA stylesheet, so any author
-         `display` here outranks it and the dialog would sit open over the page
-         from first paint -- an empty modal with a live confirm button on it.
-         Every element in this section that toggles via `hidden` needs the guard,
-         not just the overlay. */
-      #music-menu[hidden],#music-dialog[hidden],#music-dialog-error[hidden],
-      #music-dialog-confirm[hidden]{display:none}
-      .music-dialog-panel{background:#0d1627;border:1px solid var(--line);border-radius:16px;
-        padding:18px;width:min(560px,100%);max-height:86vh;overflow:auto}
-      .music-dialog-panel label{display:block;margin:12px 0 4px;font-size:13px;color:#9fb5c0}
-      .music-dialog-panel input,.music-dialog-panel select,.music-dialog-panel textarea{width:100%}
-      .music-dialog-panel textarea{min-height:70px}
-      .music-dialog-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
-      .music-dialog-error{color:#ff9a9a;margin-top:10px}
-      .music-dialog-note{color:#9fb5c0;font-size:13px;line-height:1.5}
-      .music-dialog-panel table{width:100%;border-collapse:collapse;font-size:13px}
-      .music-dialog-panel table td,.music-dialog-panel table th{border-bottom:1px solid rgba(255,255,255,.08);
-        padding:6px 4px;text-align:left}
-"""
-
-
-# Vanilla, no build step, and deliberately thin: it renders a menu the server
-# already decided the contents of, and posts. Every rule it appears to enforce --
-# which actions exist, which need a note, whether a purge may proceed -- is
-# re-decided by the endpoint, so a reader of this file should not mistake any of
-# it for a security control.
-ADMIN_MUSIC_LIBRARY_JS = r"""
-(function () {
-  var cfgEl = document.getElementById('music-lib-config');
-  if (!cfgEl) { return; }
-  var CFG = JSON.parse(cfgEl.textContent || '{}');
-  var menu = document.getElementById('music-menu');
-  var dialog = document.getElementById('music-dialog');
-  var dialogTitle = document.getElementById('music-dialog-title');
-  var dialogBody = document.getElementById('music-dialog-body');
-  var dialogError = document.getElementById('music-dialog-error');
-  var confirmBtn = document.getElementById('music-dialog-confirm');
-  var cancelBtn = document.getElementById('music-dialog-cancel');
-  var openerBtn = null;
-
-  function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-    });
-  }
-
-  function closeMenu() {
-    menu.hidden = true;
-    menu.innerHTML = '';
-    var expanded = document.querySelector('.music-dots[aria-expanded="true"]');
-    if (expanded) { expanded.setAttribute('aria-expanded', 'false'); }
-  }
-
-  function closeDialog() {
-    dialog.hidden = true;
-    dialogBody.innerHTML = '';
-    dialogError.hidden = true;
-    confirmBtn.hidden = true;
-    confirmBtn.onclick = null;
-    // Focus goes back where it came from, or the menu button is lost to anyone
-    // driving this from the keyboard.
-    if (openerBtn && document.body.contains(openerBtn)) { openerBtn.focus(); }
-    openerBtn = null;
-  }
-
-  function showError(message) {
-    dialogError.textContent = message;
-    dialogError.hidden = false;
-  }
-
-  function reasonFields(action) {
-    var opts = CFG.reasonCodes.map(function (code) {
-      var selected = code === 'OWNER_DECISION' ? ' selected' : '';
-      var label = (CFG.reasonLabels || {})[code] || code.replace(/_/g, ' ');
-      return '<option value="' + esc(code) + '"' + selected + '>'
-        + esc(label) + '</option>';
-    }).join('');
-    var noteRequired = CFG.destructive.indexOf(action) >= 0;
-    return '<label for="music-reason">Reason</label>'
-      + '<select id="music-reason">' + opts + '</select>'
-      + '<label for="music-note">Note' + (noteRequired ? ' (required)' : '') + '</label>'
-      + '<textarea id="music-note" placeholder="Recorded in the audit trail."></textarea>';
-  }
-
-  function request(trackId, action, body) {
-    var spec = CFG.endpoints[action];
-    var url = '/api/admin/music/tracks/' + encodeURIComponent(trackId) + '/' + spec[1];
-    var opts = { method: spec[0], credentials: 'same-origin', headers: {} };
-    if (spec[0] === 'POST') {
-      opts.headers['Content-Type'] = 'application/json';
-      opts.headers['X-CSRF-Token'] = CFG.csrf;
-      opts.body = JSON.stringify(body || {});
-    }
-    return fetch(url, opts).then(function (res) {
-      return res.json().catch(function () { return {}; }).then(function (data) {
-        return { ok: res.ok, status: res.status, data: data };
-      });
-    });
-  }
-
-  // A refusal is shown as the server worded it. Rewriting these client-side is
-  // how "this track is now TAKEN_DOWN, not ACTIVE" becomes "Something went wrong".
-  function failureText(result) {
-    return (result.data && (result.data.error || result.data.message))
-      || ('Request failed (' + result.status + ').');
-  }
-
-  function openImpact(trackId, title) {
-    dialogTitle.textContent = 'Impact — ' + title;
-    dialogBody.innerHTML = '<p class="music-dialog-note">Loading…</p>';
-    dialog.hidden = false;
-    request(trackId, 'impact').then(function (result) {
-      if (!result.ok) { dialogBody.innerHTML = ''; showError(failureText(result)); return; }
-      var d = result.data;
-      var refs = d.references || {};
-      var cached = d.cached_copies_remain_until_purge
-        ? '<p class="music-dialog-note"><strong>Note:</strong> audio files are served from a CDN '
-          + 'that was told to cache them for a year. Restricting this track stops PulseSoc handing '
-          + 'the link out, but anyone who already has the link can still play it until the file '
-          + 'itself is deleted. Use Quarantine or Delete permanently for copyright or safety cases.</p>'
-        : '';
-      dialogBody.innerHTML =
-        '<table>'
-        + '<tr><th>State</th><td>' + esc(d.track.state) + '</td></tr>'
-        + '<tr><th>Reels using it</th><td>' + esc(refs.reels || 0) + '</td></tr>'
-        + '<tr><th>Posts using it</th><td>' + esc(refs.content || 0) + '</td></tr>'
-        + '<tr><th>Statuses using it</th><td>' + esc(refs.statuses || 0) + '</td></tr>'
-        + '<tr><th>Total references</th><td>' + esc(refs.total || 0) + '</td></tr>'
-        + '<tr><th>Open reports</th><td>' + esc(d.open_reports || 0) + '</td></tr>'
-        + '<tr><th>Plays</th><td>' + esc(d.play_count || 0) + '</td></tr>'
-        + '<tr><th>Legal hold</th><td>' + (d.track.legal_hold ? 'yes' : 'no') + '</td></tr>'
-        + '</table>'
-        + '<p class="music-dialog-note">Restricting this track leaves every post, Reel and status '
-        + 'in place — the video, caption, likes and comments are untouched. Only the audio stops, '
-        + 'and those items show “Audio unavailable”.</p>'
-        + cached;
-    });
-  }
-
-  function openAudit(trackId, title) {
-    dialogTitle.textContent = 'Audit trail — ' + title;
-    dialogBody.innerHTML = '<p class="music-dialog-note">Loading…</p>';
-    dialog.hidden = false;
-    request(trackId, 'audit').then(function (result) {
-      if (!result.ok) { dialogBody.innerHTML = ''; showError(failureText(result)); return; }
-      var entries = (result.data && result.data.entries) || [];
-      if (!entries.length) {
-        dialogBody.innerHTML = '<p class="music-dialog-note">No actions recorded for this track.</p>';
-        return;
-      }
-      var rows = entries.map(function (e) {
-        return '<tr><td>' + esc(e.created_at) + '</td><td>' + esc(e.action)
-          + '</td><td>' + esc(e.previous_state) + ' &rarr; ' + esc(e.new_state)
-          + '</td><td>' + esc(e.actor_role) + ' #' + esc(e.actor_user_id)
-          + '</td><td>' + esc(e.reason_code || '') + '</td></tr>';
-      }).join('');
-      dialogBody.innerHTML = '<table><tr><th>When</th><th>Action</th><th>State</th>'
-        + '<th>By</th><th>Reason</th></tr>' + rows + '</table>';
-    });
-  }
-
-  function openMutation(trackId, title, state, action) {
-    var label = CFG.labels[action] || action;
-    var destructive = CFG.destructive.indexOf(action) >= 0;
-    dialogTitle.textContent = label + ' — ' + title;
-    var intro = '';
-    if (action === 'takedown') {
-      intro = '<p class="music-dialog-note">The track stops appearing in search, Reels audio and '
-        + 'the composer. Existing posts keep their video and engagement and show “Audio unavailable”. '
-        + 'This is reversible.</p>';
-    } else if (action === 'quarantine') {
-      intro = '<p class="music-dialog-note">As Restrict, and the audio file itself is deleted so '
-        + 'cached links stop working too. Use this for copyright and safety cases. The track row '
-        + 'and its history are kept.</p>';
-    } else if (action === 'restore') {
-      intro = '<p class="music-dialog-note">The track becomes available again and existing posts '
-        + 'get their audio back.</p>';
-    } else if (action === 'schedule_purge') {
-      intro = '<p class="music-dialog-note">Marks the track for permanent deletion. Nothing is '
-        + 'deleted yet — you can still cancel.</p>';
-    } else if (action === 'cancel_purge') {
-      intro = '<p class="music-dialog-note">Returns the track to restricted. Nothing was deleted.</p>';
-    } else if (action === 'purge') {
-      intro = '<p class="music-dialog-note"><strong>This cannot be undone.</strong> The audio and '
-        + 'cover files are deleted permanently. Posts that used the track keep their video and '
-        + 'engagement. The audit trail is kept.</p>';
-    }
-    var extra = '';
-    if (destructive) {
-      extra = '<label for="music-confirm-id">Type the track id (' + esc(trackId) + ') to confirm</label>'
-        + '<input id="music-confirm-id" autocomplete="off" inputmode="numeric">'
-        + '<label for="music-password">Your admin password</label>'
-        + '<input id="music-password" type="password" autocomplete="current-password">';
-    }
-    dialogBody.innerHTML = intro + reasonFields(action) + extra;
-    confirmBtn.textContent = label;
-    confirmBtn.hidden = false;
-    confirmBtn.onclick = function () {
-      dialogError.hidden = true;
-      var body = {
-        reason_code: (document.getElementById('music-reason') || {}).value,
-        reason_note: (document.getElementById('music-note') || {}).value,
-        expected_state: state
-      };
-      if (action === 'quarantine') { body.quarantine = true; }
-      confirmBtn.disabled = true;
-      var chain;
-      if (destructive) {
-        var confirmId = (document.getElementById('music-confirm-id') || {}).value;
-        var password = (document.getElementById('music-password') || {}).value;
-        body.confirm_track_id = String(trackId);
-        if (String(confirmId || '').trim() !== String(trackId)) {
-          confirmBtn.disabled = false;
-          showError('The track id did not match.');
-          return;
-        }
-        // The step-up is a separate call so the password is not carried by a
-        // request anything would retry.
-        chain = fetch('/api/admin/music/step-up', {
-          method: 'POST', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CFG.csrf },
-          body: JSON.stringify({ password: password })
-        }).then(function (res) {
-          return res.json().catch(function () { return {}; }).then(function (data) {
-            return { ok: res.ok, status: res.status, data: data };
-          });
-        }).then(function (stepUp) {
-          if (!stepUp.ok) { return stepUp; }
-          return request(trackId, action, body);
-        });
-      } else {
-        chain = request(trackId, action, body);
-      }
-      chain.then(function (result) {
-        confirmBtn.disabled = false;
-        if (!result.ok) { showError(failureText(result)); return; }
-        if (result.data && result.data.changed === false) {
-          // Not an error: the action had already been applied. Saying so beats a
-          // silent reload that looks identical to having done nothing.
-          showError('Already ' + esc(state) + ' — no change was needed.');
-          return;
-        }
-        window.location.reload();
-      }).catch(function () {
-        confirmBtn.disabled = false;
-        showError('Network error. Nothing was changed.');
-      });
-    };
-    dialog.hidden = false;
-    var first = dialogBody.querySelector('select, input, textarea');
-    if (first) { first.focus(); }
-  }
-
-  document.addEventListener('click', function (event) {
-    var dots = event.target.closest ? event.target.closest('.music-dots') : null;
-    if (dots) {
-      event.preventDefault();
-      var wasOpen = dots.getAttribute('aria-expanded') === 'true';
-      closeMenu();
-      if (wasOpen) { return; }
-      var actions = (dots.getAttribute('data-actions') || '').split(',').filter(Boolean);
-      menu.innerHTML = actions.map(function (action) {
-        var danger = CFG.destructive.indexOf(action) >= 0 ? ' danger' : '';
-        var rule = action === 'audit' ? '<hr>' : '';
-        return rule + '<button type="button" role="menuitem" class="music-item' + danger
-          + '" data-action="' + esc(action) + '">' + esc(CFG.labels[action] || action) + '</button>';
-      }).join('');
-      var rect = dots.getBoundingClientRect();
-      menu.hidden = false;
-      var width = menu.offsetWidth || 260;
-      menu.style.top = (window.scrollY + rect.bottom + 6) + 'px';
-      menu.style.left = Math.max(8, window.scrollX + rect.right - width) + 'px';
-      dots.setAttribute('aria-expanded', 'true');
-      openerBtn = dots;
-      var firstItem = menu.querySelector('button');
-      if (firstItem) { firstItem.focus(); }
-      return;
-    }
-    var item = event.target.closest ? event.target.closest('.music-item') : null;
-    if (item && openerBtn) {
-      event.preventDefault();
-      var trackId = openerBtn.getAttribute('data-track');
-      var title = openerBtn.getAttribute('data-title') || ('Track ' + trackId);
-      var state = openerBtn.getAttribute('data-state');
-      var action = item.getAttribute('data-action');
-      closeMenu();
-      dialogError.hidden = true;
-      confirmBtn.hidden = true;
-      if (action === 'impact') { openImpact(trackId, title); }
-      else if (action === 'audit') { openAudit(trackId, title); }
-      else { openMutation(trackId, title, state, action); }
-      return;
-    }
-    if (!menu.hidden && !menu.contains(event.target)) { closeMenu(); }
-    if (!dialog.hidden && event.target === dialog) { closeDialog(); }
-  });
-
-  cancelBtn.addEventListener('click', closeDialog);
-  document.addEventListener('keydown', function (event) {
-    if (event.key !== 'Escape') { return; }
-    if (!dialog.hidden) { closeDialog(); }
-    else if (!menu.hidden) { closeMenu(); }
-  });
-})();
-"""
-
-ADMIN_MUSIC_ACTION_LABELS = {
-    "impact": "View impact",
-    "takedown": "Restrict (take down)",
-    "quarantine": "Quarantine (stop serving + delete file)",
-    "restore": "Restore",
-    "schedule_purge": "Schedule permanent delete",
-    "cancel_purge": "Cancel scheduled delete",
-    "purge": "Delete permanently",
-    "audit": "Audit trail",
-}
-
-# The wire codes are what the audit trail stores and what a later export reads;
-# these are what the operator choosing a reason should see. Derived labels
-# ("OWNER DECISION") leak the storage format into the decision, and the two that
-# matter most -- unauthorised upload vs. uploader request -- are a rights
-# distinction the bare code does not make.
-ADMIN_MUSIC_REASON_LABELS = {
-    "COPYRIGHT": "Copyright claim",
-    "LICENSING_EXPIRED": "Licence expired",
-    "POLICY_VIOLATION": "Policy violation",
-    "UNAUTHORIZED_UPLOAD": "Uploaded without the rights to it",
-    "DUPLICATE": "Duplicate of another track",
-    "MALWARE_OR_UNSAFE_FILE": "Unsafe or malicious file",
-    "PRIVACY_REQUEST": "Privacy request",
-    "UPLOADER_REQUEST": "Uploader asked for it to come down",
-    "OWNER_DECISION": "Owner decision",
-    "OTHER": "Other (note required)",
-}
-
-ADMIN_MUSIC_ACTION_ENDPOINTS = {
-    "impact": ("GET", "impact"),
-    "audit": ("GET", "audit"),
-    "takedown": ("POST", "takedown"),
-    "quarantine": ("POST", "takedown"),
-    "restore": ("POST", "restore"),
-    "schedule_purge": ("POST", "schedule-purge"),
-    "cancel_purge": ("POST", "cancel-purge"),
-    "purge": ("POST", "purge"),
-}
-
-
-def admin_music_library_section(tracks, total, *, search, state, page, permissions, csrf):
-    """The catalogue table, its filter, and the per-row overflow menu.
-
-    Three things here are deliberate rather than incidental:
-
-    * The menu offers only what the viewer may do to *that* track in *that*
-      state, because the alternative -- a fixed menu that errors on click -- makes
-      the operator learn to ignore refusals.
-    * Every action opens a dialog. None fires on the click that opened the menu,
-      including the reversible ones, because the rows are dense and adjacent and
-      the mis-click cost is a track going dark for real users.
-    * `expected_state` goes out with every mutation, taken from what this page
-      rendered. If someone else moved the track meanwhile the server answers 409
-      and the operator reloads, rather than overwriting a decision they never saw.
-    """
-    rows = "".join(admin_music_library_row(track, permissions) for track in tracks)
-    if not rows:
-        rows = "<tr><td colspan='8' class='muted'>No tracks match this filter.</td></tr>"
-    page_size = ADMIN_MUSIC_LIBRARY_PAGE_SIZE
-    pages = max(1, (total + page_size - 1) // page_size)
-    page = min(max(1, page), pages)
-    state_options = "".join(
-        "<option value='{v}'{sel}>{label}</option>".format(
-            v=value,
-            sel=" selected" if value == state else "",
-            label=(value.replace("_", " ").title() if value else "All states"),
-        )
-        for value in ("",) + tuple(music_authority.LIFECYCLE_STATES)
-    )
-    query_base = "q=%s&state=%s" % (quote(search or ""), quote(state or ""))
-    prev_link = (
-        f"<a class='button' href='?{query_base}&page={page - 1}'>Previous</a>" if page > 1 else ""
-    )
-    next_link = (
-        f"<a class='button' href='?{query_base}&page={page + 1}'>Next</a>" if page < pages else ""
-    )
-    config = json.dumps({
-        "csrf": csrf,
-        "labels": ADMIN_MUSIC_ACTION_LABELS,
-        "endpoints": {k: list(v) for k, v in ADMIN_MUSIC_ACTION_ENDPOINTS.items()},
-        "reasonCodes": list(music_authority.REASON_CODES),
-        "reasonLabels": ADMIN_MUSIC_REASON_LABELS,
-        "noteRequiredCodes": sorted(music_authority.REASON_CODES_REQUIRING_NOTE),
-        "destructive": sorted(music_authority.DESTRUCTIVE_ACTIONS),
-        "stepUpTtl": music_authority.STEP_UP_TTL_SECONDS,
-    })
-    return f"""
-    <section class='card music-library' data-total='{total}'>
-      <h2>Music Library</h2>
-      <p class='muted'>Every track on the platform. Use the &hellip; menu on a row to inspect what
-      a removal would touch, restrict a track, restore it, or delete it permanently.
-      Restricting is reversible; deleting permanently is not.</p>
-      <form method='get' class='music-lib-filter'>
-        <input type='search' name='q' value='{html_escape(clean_html(search or ""))}'
-               placeholder='Search title, artist, or track id'>
-        <select name='state'>{state_options}</select>
-        <button class='button primary' type='submit'>Search</button>
-      </form>
-      <p class='muted'>{total} track{"" if total == 1 else "s"} &middot; page {page} of {pages}</p>
-      <table class='table music-lib-table'>
-        <tr><th>ID</th><th>Title</th><th>Artist</th><th>Uploader</th><th>State</th>
-            <th>Public</th><th>Updated</th><th></th></tr>
-        {rows}
-      </table>
-      <p class='music-lib-pager'>{prev_link} {next_link}</p>
-    </section>
-    <div id='music-menu' class='music-menu' hidden role='menu'></div>
-    <div id='music-dialog' class='music-dialog' hidden>
-      <div class='music-dialog-panel' role='dialog' aria-modal='true' aria-labelledby='music-dialog-title'>
-        <h3 id='music-dialog-title'></h3>
-        <div id='music-dialog-body'></div>
-        <p id='music-dialog-error' class='music-dialog-error' hidden></p>
-        <div class='music-dialog-actions'>
-          <button type='button' class='button' id='music-dialog-cancel'>Close</button>
-          <button type='button' class='button primary' id='music-dialog-confirm' hidden></button>
-        </div>
-      </div>
-    </div>
-    <script type='application/json' id='music-lib-config'>{config}</script>
-    <script>{ADMIN_MUSIC_LIBRARY_JS}</script>
-    """
-
-
 def admin_pulse_music_track_card(track):
     track_id = safe_int(track.get("id"), 0)
     title = clean_html(track.get("title") or "Untitled track")
@@ -47285,32 +44159,7 @@ def admin_pulse_music_review_page():
         """
     )
     recent_tracks = [dict(row) for row in cur.fetchall()]
-    # The library is the whole catalogue, not the review queue: an approved track
-    # that has to come down years later is the ordinary case, and it is exactly
-    # the one a "pending uploads" page cannot reach. No approval filter here.
-    library_search = (request.args.get("q") or "").strip()[:120]
-    library_state = (request.args.get("state") or "").strip()
-    library_page = safe_int(request.args.get("page"), 1)
-    library_tracks, library_total = admin_music_library_query(
-        cur, search=library_search, state=library_state, page=library_page
-    )
     conn.close()
-    # Which actions this admin may take, resolved from the role system. The page
-    # itself is `system.view` gated, so a viewer can legitimately reach it holding
-    # no music permissions at all -- they get the table and no menus.
-    library_permissions = music_authority.granted_permissions(
-        music_authority.resolve_actor(admin, account_user_id(), admin_user_by_account_user_id),
-        admin_has_permission,
-    )
-    library_html = admin_music_library_section(
-        library_tracks,
-        library_total,
-        search=library_search,
-        state=library_state,
-        page=library_page,
-        permissions=library_permissions,
-        csrf=get_csrf_token(),
-    )
     pending_html = "".join(admin_pulse_music_track_card(track) for track in pending_tracks) or "<div class='card'><p>No music uploads are waiting for review.</p></div>"
     recent_rows = ""
     for r in recent_tracks:
@@ -47330,13 +44179,11 @@ def admin_pulse_music_review_page():
       .music-review-actions{{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:end;margin-top:12px}}
       .music-review-actions textarea{{min-height:54px}}
       @media(max-width:900px){{.music-review-main,.music-review-actions{{grid-template-columns:1fr}}.music-review-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
-{ADMIN_MUSIC_LIBRARY_CSS}
     </style>
     <h1>PulseSoc Music Review</h1>
     <p class='muted'>Review creator-uploaded music before it can appear in Reels, Status, Composer, or public music search. Approvals require recorded rights and commercial/edit permission.</p>
     <p>{html_escape(clean_html(message))}</p>
     <section class='grid'><div class='card'><h2>Pending Review</h2><p class='metric'>{pending_count}</p></div><div class='card'><h2>Approved Active</h2><p class='metric'>{approved_count}</p></div><div class='card'><h2>Open Music Reports</h2><p class='metric'>{open_reports}</p></div></section>
-    {library_html}
     <section><h2>Pending Uploads</h2>{pending_html}</section>
     <section class='card'><h2>Recent Music Inventory</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Artist</th><th>Uploader</th><th>Status</th><th>Approved</th><th>Active</th><th>Public</th><th>Updated</th></tr>{recent_rows or '<tr><td colspan=9>No tracks yet.</td></tr>'}</table></section>
     <p><a class='button' href='/admin/reels-health'>Reels Health</a> <a class='button' href='/admin/media-studio'>Media Studio</a> <a class='button' href='/pulse/music'>Public Music Page</a></p>
@@ -48086,7 +44933,7 @@ def pulse_section_shell(title, description, cards=None, primary_href="/pulse#cre
     if not card_html:
         card_html = f"<article class='card'><h2>Ready when the community is.</h2><p>{html_escape(clean_html(description))}</p><a class='button primary' href='{html_escape(clean_html(primary_href))}'>{html_escape(clean_html(primary_label))}</a></article>"
     nav_html = "".join(f"<a class='button' href='{href}'>{label}</a>" for label, href in [("PulseSoc", "/pulse"), ("Create", "/pulse#create"), ("My Posts", "/pulse/my-posts"), ("Spaces", "/pulse/spaces")])
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=cache-sweep-20260930a"><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1100px);margin:auto;padding:20px 0 calc(88px + env(safe-area-inset-bottom))}}.actions,.grid{{display:flex;gap:10px;flex-wrap:wrap}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:16px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24)}}h1{{font-size:clamp(36px,7vw,68px);line-height:.96;margin:12px 0}}p{{color:var(--muted);line-height:1.55}}a{{color:inherit}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}@media(max-width:820px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav class="actions">{nav_html}</nav><section class="card"><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(description))}</p><p>{html_escape(clean_html(PULSE_DISCLAIMER))}</p></section><section class="grid">{card_html}</section></main></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1100px);margin:auto;padding:20px 0 calc(88px + env(safe-area-inset-bottom))}}.actions,.grid{{display:flex;gap:10px;flex-wrap:wrap}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:16px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24)}}h1{{font-size:clamp(36px,7vw,68px);line-height:.96;margin:12px 0}}p{{color:var(--muted);line-height:1.55}}a{{color:inherit}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}@media(max-width:820px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav class="actions">{nav_html}</nav><section class="card"><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(description))}</p><p>{html_escape(clean_html(PULSE_DISCLAIMER))}</p></section><section class="grid">{card_html}</section></main></body></html>""")
 
 
 def _pulse_primary_label(row=None, badge_keys=None, badge_labels=None):
@@ -48872,12 +45719,7 @@ def ensure_pulse_messenger_schema(cur, conn=None):
             WHERE user_one_id IS NOT NULL AND user_two_id IS NOT NULL
             GROUP BY user_one_id, user_two_id HAVING COUNT(*) > 1
         """)
-        # Positional, not ``tuple(row)``: on Postgres the latter yields the
-        # column NAMES, so this reconciliation went looking for the thread whose
-        # user_one_id is the literal string "user_one_id". It found none, and
-        # the duplicate merge that has to happen BEFORE the uniqueness index is
-        # created has therefore never run on the production engine.
-        duplicate_pairs = [(row[0], row[1]) for row in cur.fetchall()]
+        duplicate_pairs = [tuple(row) for row in cur.fetchall()]
         for user_one_id, user_two_id in duplicate_pairs:
             cur.execute(
                 "SELECT id, COALESCE(conversation_id,0) AS conversation_id FROM pulse_message_threads WHERE user_one_id=? AND user_two_id=? ORDER BY CASE WHEN COALESCE(conversation_id,0)>0 THEN 0 ELSE 1 END, id",
@@ -50764,7 +47606,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     shell_avatar_html = f"<img src='{html_escape(clean_html(shell_avatar_url))}' alt='Profile picture'>" if shell_avatar_url else clean_html(shell_initials[:2])
     shell_avatar_script = f"document.querySelectorAll('.mobile-topbar .avatar[href=\"/pulse/profile\"],.mobile-topbar .pulse-topnav-avatar[href=\"/pulse/profile\"]').forEach(el=>{{if(!el.querySelector('img')&&!el.dataset.avatarHydrated){{el.dataset.avatarHydrated='1';el.innerHTML={json.dumps(shell_avatar_html)} + '<span class=\"pulse-topnav-presence\" aria-hidden=\"true\"></span>';}}}});"
     script_html = shell_avatar_script + pulse_universal_dock_runtime_script() + (script_html or "")
-    nav = pulse_web_navigation.visible([
+    nav = [
         ("Home", "/pulse"),
         ("Reels", "/pulse/reels"),
         ("Videos", "/pulse/videos"),
@@ -50772,7 +47614,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
         ("Messenger", "/pulse/messages"),
         ("Create", "/pulse#create"),
         ("Log Out", "/logout"),
-    ])
+    ]
     apps_nav = [
         ("Discover", "/pulse/discover"),
         ("Music", "/pulse/music"),
@@ -50780,9 +47622,9 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
         ("Events", "/pulse/events"),
         ("Communities", "/pulse/communities"),
         ("Roast Battle", "/pulse/roast-battle"),
-        ("Marketplace", app_first_href("marketplace")),
+        ("Marketplace", "/pulse/marketplace"),
         ("Creator Studio", "/pulse/creator-studio"),
-        ("Seller Tools", app_first_href("seller")),
+        ("Seller Tools", "/pulse/seller-tools"),
         ("Promote", "/pulse/promote"),
         ("Portfolio", "/pulse/portfolio"),
         ("Premium", "/pulse/premium"),
@@ -50803,11 +47645,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     drawer_items += pulse_shell_drawer_extras(
         [href for _label, href in drawer_items + drawer_tail], user, bool(admin_current_user()))
     drawer_items += drawer_tail
-    drawer_html = "".join(
-        f"<a class='drawer-link' href='{href}'{app_promotion.nav_marker_attrs(href)}>"
-        f"{label}{app_promotion.nav_marker_html(href)}</a>"
-        for label, href in drawer_items
-    )
+    drawer_html = "".join(f"<a class='drawer-link' href='{href}'>{label}</a>" for label, href in drawer_items)
     chat_icon_svg = "<svg viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='M5.5 18.5c-1.7-1.45-2.5-3.24-2.5-5.37C3 8.12 7.03 4.5 12 4.5s9 3.62 9 8.63-4.03 8.62-9 8.62c-1.05 0-2.05-.16-2.98-.47L4.5 22l1-3.5Z'/><path d='M8 12.5h8M8 9.5h6'/></svg>"
     mobile_bottom_icons = {"chat": chat_icon_svg, "profile": shell_avatar_html}
     mobile_bottom_html = ""
@@ -50826,31 +47664,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     _shell_premium_effective, _ = _effective_premium_access(shell_user, premium_visibility_engine.is_premium_user(shell_user))
     premium_side = premium_visibility_engine.prompt_html("dashboard", shell_user, is_premium_override=_shell_premium_effective)
     default_side = side_html or f"<article class='card'><h2>PulseSoc Intelligence</h2><p>Live community tools, safety signals, creator economy, and learning spaces are connected here.</p></article>{premium_side}"
-    # Appended last in the column, never inserted above existing content. The
-    # card ships visible so it paints with the page, and the policy script
-    # removes it when this member has already dismissed it -- being last is what
-    # makes that removal cost no layout shift.
-    #
-    # `native_path` is passed only on iOS because the action it builds is a
-    # `pulsesoc://` link. On a desktop there is no PulseSoc app to receive it,
-    # so the button would look identical and do nothing. `app_promotion` cannot
-    # make this decision itself without importing this module back.
-    #
-    # Not on a live shell. A page carrying a running broadcast is the one place
-    # where an uninvited card beside the video is genuinely in the way, and the
-    # header control still reaches anyone who wants the app from there.
     live_shell_mode = "data-pulse-live-shell" in (main_html or "")
-    if not live_shell_mode:
-        _promo_native_path = (
-            request.path
-            if is_ios_user_agent(request.headers.get("User-Agent", ""))
-            else ""
-        )
-        default_side += app_promotion.promotion_card_html(
-            surface=app_promotion.SURFACE_DESKTOP_CARD,
-            dismissible=True,
-            native_path=_promo_native_path,
-        )
     shell_body_class = "pulse-home-os pulse-social-os pulse-live-shell-mode" if live_shell_mode else "pulse-home-os pulse-social-os"
     shell_layout_class = "layout pulse-live-shell-layout" if live_shell_mode else "layout"
     shell_side_html = "" if live_shell_mode and not side_html else f"<aside>{default_side}</aside>"
@@ -50870,7 +47684,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     shell_intro_html = ""
     if show_intro and not live_shell_mode:
         shell_intro_html = f"<section class=\"card\"><span class=\"pill\">PulseSoc Social Ecosystem</span><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(description))}</p><p>{html_escape(clean_html(PULSE_DISCLAIMER))}</p></section>"
-    create_sheet_html = f"""
+    create_sheet_html = """
 <section class="create-sheet" id="createSheet" aria-hidden="true" role="dialog" aria-modal="false" aria-label="Create PulseSoc content">
   <h3>Create Signal</h3>
   <div class="create-sheet-grid">
@@ -50881,13 +47695,13 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     <a class="button" href="/pulse/live">Live</a>
     <a class="button" href="/pulse?create_status=1">Status</a>
     <a class="button" href="/pulse/music">Music</a>
-    <a class="button" href="{app_first_href('marketplace_create')}">Marketplace</a>
+    <a class="button" href="/pulse/marketplace/create">Marketplace</a>
     <a class="button" href="/pulse/events">Event</a>
     <a class="button" href="/pulse/communities">Community</a>
   </div>
 </section>
 """
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=cache-sweep-20260930a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=apps-menu-width-20260927a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=cache-sweep-20260930a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css?v=bare-asset-tokens-20260930a"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css?v=reels-desktop-create-20260929a"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=desktop-dock-20260927a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=video-action-fit-20260927i"><link rel="stylesheet" href="/static/css/pulse-commerce-attachment.css?v=commerce-attachment-20260928a">{app_promotion.assets_html()}<style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:var(--text-primary)}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}{app_promotion.marketplace_note_html()}<div class="toast" id="toast"></div><script src="/static/js/time.js?v=bare-asset-tokens-20260930a"></script><script src="/static/js/pulseshell_bridge.js?v=cache-sweep-20260930a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script><script data-pulse-reaction-catalog>window.PULSE_REACTION_CATALOG={json.dumps(pulse_reactions.catalog_payload())};window.PULSE_REACTION_TRAY_SIZE={pulse_reactions.TRAY_SIZE};</script><script src="/static/js/pulse_reaction_system.js?v=cache-sweep-20260928a"></script><script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script><script src="/static/js/pulse_media_renderer.js?v=cache-sweep-20260930a"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script src="/static/js/pulse_commerce_card.js?v=commerce-i18n-20260929a"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=status-v3-20260629b"><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:var(--text-primary)}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script><script src="/static/js/pulse_reaction_system.js?v=feed-actions-v2-20260629a"></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -51328,7 +48142,7 @@ def pulse_reels_page():
       <section class='reels-empty' id='reelsEmpty'><div class='card'><h2>Reels are warming up.</h2><p>Post the first short clip, add a sound, or turn a livestream highlight into a Reel.</p><div class='actions'><button class='button primary' type='button' data-open-reel-camera>Open Camera</button><button class='button' type='button' data-open-upload>Upload Reel</button></div></div></section>
       <div class='reels-toolbar'><button class='button primary' type='button' data-open-reel-camera>Camera</button><button class='button' type='button' data-open-upload>Upload</button><button class='button' type='button' data-open-sounds>Add Music</button><button class='button' type='button' data-open-live-camera>Live</button></div>
     </section>
-    <section class='reel-comments' id='reelComments' aria-label='Reel comments'><header><h2>Comments</h2><p class='muted'>Creator-safe replies with moderation and realtime-ready updates.</p></header><div class='reel-comments-list' id='reelCommentsList'></div><form class='reel-comment-form' id='reelCommentForm'><span class='pulse-emoji-field' data-emoji-scope><input id='reelCommentBody' placeholder='Add a comment...'><button class='pulse-emoji-trigger' type='button' data-emoji-for aria-haspopup='dialog' aria-expanded='false' aria-label='Add emoji'>☺</button></span><button class='primary'>➤</button></form></section>
+    <section class='reel-comments' id='reelComments' aria-label='Reel comments'><header><h2>Comments</h2><p class='muted'>Creator-safe replies with moderation and realtime-ready updates.</p></header><div class='reel-comments-list' id='reelCommentsList'></div><form class='reel-comment-form' id='reelCommentForm'><input id='reelCommentBody' placeholder='Add a comment...'><button class='primary'>➤</button></form></section>
     <section class='reels-modal' id='reelUploadModal'><div class='reels-sheet'><h2>Upload Reel</h2><form id='reelUploadForm'><input id='reelUploadTitle' placeholder='Title' required><textarea id='reelUploadCaption' placeholder='Caption'></textarea><label class='reel-upload-zone' id='reelUploadZone' for='reelUploadFile'><input id='reelUploadFile' type='file' accept='video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm' required><strong>Upload Reel Video</strong><span>Choose a video from your device</span><small>MP4, MOV, or WEBM · Max size: __REEL_MAX_UPLOAD_MB__ MB</small><span class='reel-upload-select-button'>Choose Video</span></label><article class='reel-upload-preview' id='reelUploadPreview' aria-live='polite'><div class='reel-upload-thumb' id='reelUploadThumb'></div><div class='reel-upload-info'><strong id='reelUploadName'>No video selected</strong><div class='reel-upload-meta'><span id='reelUploadDuration'>--:--</span><span id='reelUploadResolution'>Resolution pending</span><span id='reelUploadSize'>0 MB</span><span id='reelUploadMime'>Type pending</span></div><div class='reel-upload-actions'><button type='button' id='reelReplaceVideo'>Replace</button><button type='button' id='reelRemoveVideo'>Remove</button></div></div></article><p class='reel-upload-state' id='reelUploadState'></p><select id='reelUploadCategory'><option>Community</option><option>Educational</option><option>Music</option><option>AI</option><option>Crypto Education</option><option>Market PulseSoc</option><option>Live Clips</option></select><select id='reelUploadVisibility'><option value='public'>Public</option><option value='followers'>Followers</option></select><div class='grid two'><input id='soundStart' type='number' min='0' step='.1' placeholder='Sound starts at 0s'><input id='soundEnd' type='number' min='0' step='.1' placeholder='Sound ends at'></div><p class='muted' id='selectedSoundLabel'>No sound selected.</p><div class='actions'><button type='button' data-open-sounds>Choose Sound</button><button class='primary reel-upload-publish' id='reelPublishBtn' type='submit' disabled>Publish Reel</button><button type='button' data-close-reel-modal>Cancel</button></div></form></div></section>
     <section class='reels-modal' id='reelSoundModal'><div class='reels-sheet'><h2>Add Music</h2><p class='muted'>Trending, saved, original, educational, local, and creator sounds. Preview, save, trim, or use one in your Reel.</p><form id='soundSearchForm'><input name='q' placeholder='Search sounds'><button class='primary'>Search</button></form><div class='sound-categories' id='soundCategories'><button data-sound-category=''>All</button><button data-sound-category='Trending'>Trending</button><button data-sound-category='original'>Original PulseSoc</button><button data-sound-category='uploaded'>Uploaded</button><button data-sound-category='saved'>Saved</button><button data-sound-category='educational'>Educational</button><button data-sound-category='local'>Local</button><button data-sound-category='creator'>Creator</button></div><form id='soundUploadForm'><input id='soundUploadFile' type='file' accept='audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/m4a,.mp3,.wav,.m4a,.aac'><div class='grid two'><input id='soundUploadTitle' placeholder='Original audio title'><input id='soundUploadArtist' placeholder='Artist / creator'></div><label class='music-rights'><input id='soundUploadRights' type='checkbox' required> I confirm that I own this music or have the legal right to upload it.</label><button type='submit'>Upload Original Sound</button></form><div class='sound-list' id='soundList'></div><div class='actions'><a class='button' href='/pulse/music'>Open PulseSoc Music</a><button type='button' data-close-reel-modal>Close</button></div></div></section>
     <section class='reel-creator-overlay' id='reelCameraOverlay' aria-label='Reels camera'>
@@ -51351,33 +48165,9 @@ def pulse_reels_page():
         count=1,
     )
     main = re.sub(r"<div class='reels-sidebar-section reels-sidebar-actions' aria-label='Quick actions'>.*?</div>", "", main, count=1, flags=re.S)
-    # Names the affordance by role, not by position. The old copy read "Use the
-    # bottom navigation plus button", which is only true below 1024 -- above it
-    # the dock is hidden and the sentence pointed at nothing on screen. An empty
-    # state that names a control the reader cannot see is worse than no
-    # instruction, because it reads as a broken page rather than an empty one.
-    main = main.replace("<div class='actions'><button class='button primary' type='button' data-open-reel-camera>Open Camera</button><button class='button' type='button' data-open-upload>Upload Reel</button></div>", "<p class='muted'>No Reels yet. Use the create button to record or upload the first one.</p>")
-    # Kept in the DOM and hidden by width, rather than deleted outright.
-    #
-    # Deleting it was right when the phone dock was on every screen: the dock's
-    # plus button owned creation, and a second set of controls beside it was
-    # noise. The desktop re-architecture hides that dock above 1024, which
-    # turned the same line into a dead end -- measured on the rendered page at
-    # 1440, /pulse/reels offered zero visible ways to create a Reel, while at
-    # 390 the dock's plus was still there. A member on a laptop could watch
-    # Reels and had no way to make one.
-    #
-    # So the same handoff shape as the messenger dock: below 1024 the dock
-    # creates, at and above it this toolbar does. Never both, never neither.
-    # `.reels-desktop-create` carries the width condition in
-    # pulse_reels_experience.css, because a breakpoint belongs in a stylesheet
-    # where it can be read next to the rules it competes with -- not in a
-    # server-side string replacement that no CSS guard can see.
-    main = main.replace(
-        "<div class='reels-toolbar'>",
-        "<div class='reels-toolbar reels-desktop-create'>",
-    )
-    main += pulse_reel_management_modals_html() + pulse_promotion_modal_html() + '<link rel="stylesheet" href="/static/css/pulsesoc_promotions.css?v=bare-asset-tokens-20260930a"><script src="/static/js/pulsesoc_promotions.js?v=bare-asset-tokens-20260930a" defer></script>'
+    main = main.replace("<div class='actions'><button class='button primary' type='button' data-open-reel-camera>Open Camera</button><button class='button' type='button' data-open-upload>Upload Reel</button></div>", "<p class='muted'>Use the bottom navigation plus button to create the first Reel.</p>")
+    main = main.replace("<div class='reels-toolbar'><button class='button primary' type='button' data-open-reel-camera>Camera</button><button class='button' type='button' data-open-upload>Upload</button><button class='button' type='button' data-open-sounds>Add Music</button><button class='button' type='button' data-open-live-camera>Live</button></div>", "")
+    main += pulse_reel_management_modals_html() + pulse_promotion_modal_html() + '<link rel="stylesheet" href="/static/css/pulsesoc_promotions.css"><script src="/static/js/pulsesoc_promotions.js" defer></script>'
     side = "<article class='card'><h2>Reel Intelligence</h2><p>Ranking blends retention, trust, originality, educational value, report history, and creator loyalty. Ragebait stays below quality.</p></article><article class='card'><h2>Creator Tools</h2><p>Camera, filters, sound reuse, caption AI, hook ideas, and thumbnail selection are wired into the Reels creation flow.</p></article>"
     script = """
 	    const reelsFeed=document.getElementById('reelsFeed'),reelsEmpty=document.getElementById('reelsEmpty'),rail=document.getElementById('reelsRail'),reelsLoading=document.getElementById('reelsLoading'),comments=document.getElementById('reelComments'),commentList=document.getElementById('reelCommentsList'),commentBody=document.getElementById('reelCommentBody'),uploadModal=document.getElementById('reelUploadModal'),soundModal=document.getElementById('reelSoundModal'),soundList=document.getElementById('soundList'),cameraOverlay=document.getElementById('reelCameraOverlay'),cameraPreview=document.getElementById('reelCameraPreview'),liveOverlay=document.getElementById('reelLiveOverlay'),reelsInfoPanel=document.getElementById('reelsInfoPanel'),upNextPanel=document.getElementById('reelsUpNextPanel'),upNextList=document.getElementById('reelsUpNextList'),autoplayNext=document.getElementById('reelsAutoplayNext');const REELS_SOUND_KEY='pulseReelsSoundEnabled',PULSE_MEDIA_SOUND_KEY='pulseMediaSoundEnabled';function pulseSoundPreference(){const saved=localStorage.getItem(PULSE_MEDIA_SOUND_KEY);if(saved==='true')return true;if(saved==='false')return false;const legacy=localStorage.getItem(REELS_SOUND_KEY);if(legacy==='false')return false;if(legacy==='true')return true;return true}let reelsSoundEnabled=pulseSoundPreference(),reelsMuted=!reelsSoundEnabled,currentCommentReel=0,currentParentComment=0,currentLane='for_you',selectedSoundId=0,selectedSoundLabel='',soundCategory='',reelCameraStream=null,reelFacing='user',reelRecorder=null,reelChunks=[],cameraBlob=null,cameraMime='image/jpeg',lowLight=false,reelsCache=[],reelsOffset=0,reelsLoadingMore=false,reelsLoadVersion=0;
@@ -51430,7 +48220,7 @@ def pulse_reels_page():
       const mediaList=Array.isArray(reel.media)?reel.media:[],videoMedia=mediaList.find(m=>String(m?.media_type||m?.type||'').toLowerCase()==='video'&&(m?.playback_url||m?.valid_url||m?.cdn_url||m?.media_url||m?.mux_playback_id))||mediaList[0]||{};
       const author=reel.author||{},media=videoMedia,processing=String(media.processing_status||reel.processing_status||'').toLowerCase()==='mux_processing'||!!media.mux_processing,muxHls=media.mux_playback_id?`https://stream.mux.com/${media.mux_playback_id}.m3u8`:(media.mux_hls_url||''),src=(media.is_available===false?'':(muxHls||media.playback_url||media.valid_url||media.cdn_url||media.media_url||reel.video_url||'')),posterRaw=media.poster_url||media.mux_thumbnail_url||media.thumbnail_url||reel.poster_url||'',id=reel.reel_id||reel.id;
       const tags=(reel.ai_tags||reel.tags||[]).slice(0,5),audio=reel.audio||{},music=audio.title?`${audio.title}${audio.artist?' · '+audio.artist:''}`:'Original PulseSoc sound';
-      const insight=(reel.body||reel.ai_summary||reel.why_this_matters||reel.category||tags[0]||'Creator signal').toString().slice(0,88);
+      const insight=(reel.ai_summary||reel.why_this_matters||reel.category||tags[0]||'Creator signal').toString().slice(0,88);
       const avatar=author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1));
       const mt=(media.media_type||reel.media_type||(/\\.(jpg|jpeg|png|webp|gif)(\\?|$)/i.test(src)?'image':'video')).toLowerCase();
       const mime=/\\.m3u8(\\?|#|$)/i.test(src)?'application/vnd.apple.mpegurl':media.playback_mime_type||media.mime_type||(/\\.webm(\\?|$)/i.test(src)?'video/webm':/\\.mp4(\\?|$)/i.test(src)?'video/mp4':/\\.mov(\\?|$)/i.test(src)?'video/quicktime':'');
@@ -51453,7 +48243,7 @@ def pulse_reels_page():
       const mediaEl=src&&window.PulseMediaRenderer?window.PulseMediaRenderer.renderMedia({...media,media_url:media.media_url||src,valid_url:media.valid_url||src,playback_url:src,poster_url:poster,thumbnail_url:media.thumbnail_url||media.mux_thumbnail_url||poster,media_type:mt,mime_type:mime,playback_mime_type:mime,title:reel.title||'PulseSoc Reel',audio_id:media.audio_id||reel.audio_id||audio.track_id||audio.id||'',music_id:media.music_id||reel.music_id||audio.track_id||audio.id||'',attached_audio_url:attachedAudioUrl,audio_title:media.audio_title||reel.audio_title||audio.title||'',audio_artist:media.audio_artist||reel.audio_artist||audio.artist||'',audio_duration:media.audio_duration||reel.audio_duration||audio.audio_duration||audio.duration||0,audio_start_time:media.audio_start_time||reel.audio_start_time||audio.audio_start_time||0,audio_volume:media.audio_volume||reel.audio_volume||audio.audio_volume||1,original_audio_muted:!!attachedAudioUrl,is_available:media.is_available!==false},{surface:'reels',className:'reel-media pulse-reel-media-shell',controls:false,attrs:commonData}):'';
       const blurEl='';
       const ratio=Number(media.aspect_ratio||0),orientation=media.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'unknown');
-		      return `<article class="reel-card smart ${src&&!processing?'':'is-broken'}" data-reel-id="${id}" data-author-id="${author.user_id||reel.user_id||''}" data-orientation="${esc(orientation)}" data-reel-has-audio="${hasAudio?'true':'false'}" data-comments-disabled="${commentsDisabled?'1':'0'}" data-reactions-disabled="${reactionsDisabled?'1':'0'}" data-reel-preload-priority="${esc(preloadPriority)}"><div class="reels-media-stage" data-reels-media-stage>${blurEl}${mediaEl}<div class="reel-fallback"><span class="reel-chip">${processing?'Video is processing.':'Media could not load. Tap to retry.'}</span></div><div class="reel-scrim"></div><button class="reel-center-play" type="button" data-toggle-reel-play="${id}" aria-label="Play or pause"><span data-reel-play-label="${id}">Play</span></button><button class="reel-sound-float ${reelsSoundEnabled&&hasAudio?'active':''}" type="button" data-toggle-reel-sound="${id}" aria-label="Mute or unmute"><span data-reel-sound-label="${id}">${hasAudio?'Audio':'Silent'}</span></button><button class="reel-quality-pill" type="button" data-reel-quality="${id}" aria-label="Video quality">${esc(qualityLabel)}</button><aside class="reels-action-rail reel-actions pulse-reaction-bar" data-reels-action-rail><button class="reel-action ${reelReactActive?'active':''}" data-reel-react="${id}" aria-label="Like" aria-pressed="${reelReactActive?'true':'false'}" ${reactionsDisabled&&!canManage?'disabled':''}><span class="reel-action-icon" aria-hidden="true">❤️</span><span class="reel-action-label">Like</span><small data-fire-count="${id}">${reel.reactions_count||0}</small></button><button class="reel-action" data-open-comments="${id}" aria-label="Comment"><span class="reel-action-icon" aria-hidden="true">💬</span><span class="reel-action-label">Comment</span><small data-comment-count="${id}">${reel.comments_count||0}</small></button><button class="reel-action" data-share-reel="${id}" aria-label="Share"><span class="reel-action-icon" aria-hidden="true">↗️</span><span class="reel-action-label">Share</span><small>${reel.share_count||0}</small></button><button class="reel-action" data-reel-save="${id}" aria-label="Save"><span class="reel-action-icon" aria-hidden="true">🔖</span><span class="reel-action-label">Save</span><small>Save</small></button><button class="reel-action" data-reel-repost="${id}" aria-label="Repost"><span class="reel-action-icon" aria-hidden="true">🔁</span><span class="reel-action-label">Repost</span><small>Repost</small></button></aside><section class="reels-caption-overlay reel-caption" data-reels-caption-overlay><div class="reel-creator reel-caption-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'PulseSoc creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · ${esc(reel.human_time||'Recently')}</small></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></div><h2>${esc(reel.title||'PulseSoc Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}</div><div class="reel-music"><button class="button" data-open-sound-track="${audio.track_id||audio.id||''}">♪ ${esc(music)}</button></div>${window.PulseCommerceCard?.html?.(reel.commerce,{surface:'reel'})||''}</section><div class="reel-sound-badge is-hidden" data-reel-sound-badge aria-live="polite">${hasAudio?(reelsSoundEnabled?'Sound on':'Muted'):'No audio track'}</div><div class="reel-progress"><span data-reel-progress="${id}"></span></div></div><aside class="reel-details-panel reels-desktop-intel" data-reel-details-panel><div class="reel-details-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'PulseSoc creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · verified creator</small></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></div><div class="reel-details-copy"><span class="reel-ai-hint">AI trust score ${reel.safety_score||100} · ${esc(insight)}</span><h2>${esc(reel.title||'PulseSoc Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}<span>${Number(reel.replay_count||0)} views</span><span>Safety clear</span><span>${esc(qualityLabel)}</span>${commentsDisabled?'<span>Comments off</span>':''}${reactionsDisabled?'<span>Reactions off</span>':''}</div></div><div class="reel-details-stats"><span><strong>${reel.reactions_count||0}</strong> likes</span><span><strong>${reel.comments_count||0}</strong> comments</span><span><strong>${reel.share_count||0}</strong> shares</span><span><strong data-reel-view-count="${id}">${reel.replay_count||0}</strong> views</span></div>${ownerTools}<div class="reel-comments-preview" data-reel-comment-preview="${id}"><strong>Live comments</strong>${previewHtml}</div><form class="reel-inline-comment" data-inline-comment-form="${id}" ${commentsDisabled&&!canManage?'hidden':''}><span class="pulse-emoji-field" data-emoji-scope><input placeholder="Add a comment..." aria-label="Add a comment"><button class="pulse-emoji-trigger" type="button" data-emoji-for aria-haspopup="dialog" aria-expanded="false" aria-label="Add emoji">☺</button></span><button class="primary" type="submit">Send</button></form></aside></article>`;
+		      return `<article class="reel-card smart ${src&&!processing?'':'is-broken'}" data-reel-id="${id}" data-author-id="${author.user_id||reel.user_id||''}" data-orientation="${esc(orientation)}" data-reel-has-audio="${hasAudio?'true':'false'}" data-comments-disabled="${commentsDisabled?'1':'0'}" data-reactions-disabled="${reactionsDisabled?'1':'0'}" data-reel-preload-priority="${esc(preloadPriority)}"><div class="reels-media-stage" data-reels-media-stage>${blurEl}${mediaEl}<div class="reel-fallback"><span class="reel-chip">${processing?'Video is processing.':'Media could not load. Tap to retry.'}</span></div><div class="reel-scrim"></div><button class="reel-center-play" type="button" data-toggle-reel-play="${id}" aria-label="Play or pause"><span data-reel-play-label="${id}">Play</span></button><button class="reel-sound-float ${reelsSoundEnabled&&hasAudio?'active':''}" type="button" data-toggle-reel-sound="${id}" aria-label="Mute or unmute"><span data-reel-sound-label="${id}">${hasAudio?'Audio':'Silent'}</span></button><button class="reel-quality-pill" type="button" data-reel-quality="${id}" aria-label="Video quality">${esc(qualityLabel)}</button><aside class="reels-action-rail reel-actions pulse-reaction-bar" data-reels-action-rail><button class="reel-action ${reelReactActive?'active':''}" data-reel-react="${id}" aria-label="Like" aria-pressed="${reelReactActive?'true':'false'}" ${reactionsDisabled&&!canManage?'disabled':''}><span class="reel-action-icon" aria-hidden="true">❤️</span><span class="reel-action-label">Like</span><small data-fire-count="${id}">${reel.reactions_count||0}</small></button><button class="reel-action" data-open-comments="${id}" aria-label="Comment"><span class="reel-action-icon" aria-hidden="true">💬</span><span class="reel-action-label">Comment</span><small data-comment-count="${id}">${reel.comments_count||0}</small></button><button class="reel-action" data-share-reel="${id}" aria-label="Share"><span class="reel-action-icon" aria-hidden="true">↗️</span><span class="reel-action-label">Share</span><small>${reel.share_count||0}</small></button><button class="reel-action" data-reel-save="${id}" aria-label="Save"><span class="reel-action-icon" aria-hidden="true">🔖</span><span class="reel-action-label">Save</span><small>Save</small></button><button class="reel-action" data-reel-repost="${id}" aria-label="Repost"><span class="reel-action-icon" aria-hidden="true">🔁</span><span class="reel-action-label">Repost</span><small>Repost</small></button></aside><section class="reels-caption-overlay reel-caption" data-reels-caption-overlay><div class="reel-creator reel-caption-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'PulseSoc creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · ${esc(reel.human_time||'Recently')}</small></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></div><h2>${esc(reel.title||'PulseSoc Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}</div><div class="reel-music"><button class="button" data-open-sound-track="${audio.track_id||audio.id||''}">♪ ${esc(music)}</button></div></section><div class="reel-sound-badge is-hidden" data-reel-sound-badge aria-live="polite">${hasAudio?(reelsSoundEnabled?'Sound on':'Muted'):'No audio track'}</div><div class="reel-progress"><span data-reel-progress="${id}"></span></div></div><aside class="reel-details-panel reels-desktop-intel" data-reel-details-panel><div class="reel-details-creator"><span class="reel-avatar">${avatar}</span><div><strong>${esc(author.display_name||'PulseSoc creator')} ${author.premium_mark?'✦':''}</strong><small>${esc(author.primary_label||'Creator')} · verified creator</small></div><button class="reel-follow" data-follow-creator="${author.user_id||reel.user_id||''}">Follow</button></div><div class="reel-details-copy"><span class="reel-ai-hint">AI trust score ${reel.safety_score||100} · ${esc(insight)}</span><h2>${esc(reel.title||'PulseSoc Reel')}</h2><p>${esc(reel.caption||reel.body||'')}</p><div class="reel-tags">${tags.map(t=>`<span>#${esc(t)}</span>`).join('')}<span>${Number(reel.replay_count||0)} views</span><span>Safety clear</span><span>${esc(qualityLabel)}</span>${commentsDisabled?'<span>Comments off</span>':''}${reactionsDisabled?'<span>Reactions off</span>':''}</div></div><div class="reel-details-stats"><span><strong>${reel.reactions_count||0}</strong> likes</span><span><strong>${reel.comments_count||0}</strong> comments</span><span><strong>${reel.share_count||0}</strong> shares</span><span><strong data-reel-view-count="${id}">${reel.replay_count||0}</strong> views</span></div>${ownerTools}<div class="reel-comments-preview" data-reel-comment-preview="${id}"><strong>Live comments</strong>${previewHtml}</div><form class="reel-inline-comment" data-inline-comment-form="${id}" ${commentsDisabled&&!canManage?'hidden':''}><input placeholder="Add a comment..." aria-label="Add a comment"><button class="primary" type="submit">Send</button></form></aside></article>`;
     }
     function reelMediaWrap(video){return video?.closest?.('[data-reel-media]')||video}
     function reelDebugEnabled(){try{return localStorage.getItem('pulseDebugMedia')==='1'||['localhost','127.0.0.1'].includes(location.hostname)}catch(_){return false}}
@@ -51608,7 +48398,7 @@ def pulse_reels_page():
     async function markReelViewed(card){const id=card?.dataset?.reelId;if(!id||card.dataset.viewRecorded==='1')return;if(card.dataset.contentType==='live'||card.dataset.liveReelId){card.dataset.viewRecorded='1';await recordLiveReelAudience(card);return}card.dataset.viewRecorded='1';try{const d=await pulseApi(`/api/pulse/reels/${id}/view`,{method:'POST',body:JSON.stringify({watch_ms:0,source:'autoplay'})});document.querySelectorAll(`[data-reel-view-count="${CSS.escape(String(id))}"]`).forEach(n=>n.textContent=Number(d.view_count||n.textContent||0))}catch(_){card.dataset.viewRecorded=''}}
     async function playReelVideo(video,withSound){if(!video)return;const card=video.closest('.reel-card');const wantsSound=withSound===true&&refreshReelsSoundPreference();const startedAt=performance.now();video.playsInline=true;video.autoplay=true;video.preload='auto';window.PulseMediaRenderer?.bindAttachedAudioPriority?.(video.closest('[data-reel-media]')||video.closest('.pulse-media-wrap'),video);if(video.readyState===0){logReelAudioState(card,video,'restore_state',{action:'load-empty'});video.load()}const muted=!wantsSound||!reelHasAudio(card);setReelVideoMuted(card,video,muted,'restore_state',false);if(wantsSound&&!window.PulseMediaRenderer?.hasAttachedAudio?.(video))video.volume=1;try{await video.play();if(window.PulseMediaRenderer?.hasAttachedAudio?.(video)){const attachedPlayed=wantsSound?await window.PulseMediaRenderer.playAttachedAudio(video,true):false;if(wantsSound&&!attachedPlayed&&card)card.dataset.reelAutoplayBlocked='1'}if(card&&!(wantsSound&&window.PulseMediaRenderer?.hasAttachedAudio?.(video)&&card.dataset.reelAutoplayBlocked==='1'))card.dataset.reelAutoplayBlocked='';updateReelMediaHealth(card,video,'playing');markReelViewed(card);if(!wantsSound)showReelSoundPrompt(card);updateReelControls(card);if(card)card.dataset.reelStartupMs=String(Math.round(performance.now()-startedAt));if(reelDebugEnabled())console.info('PulseSoc Reel startup',{reel_id:card?.dataset.reelId||'',ms:Math.round(performance.now()-startedAt),muted:video.muted,readyState:video.readyState,attachedAudio:!!window.PulseMediaRenderer?.hasAttachedAudio?.(video)});}catch(error){reelVideoDiagnostics(video,'play-blocked');if(updateReelMediaHealth(card,video,'play-blocked')&&!video.paused)return;if(withSound){if(card)card.dataset.reelAutoplayBlocked='1';const userUnlocked=card?.dataset?.reelUserSoundUnlocked==='1'||localStorage.getItem(REELS_SOUND_KEY)==='true'||localStorage.getItem(PULSE_MEDIA_SOUND_KEY)==='true';if(userUnlocked){showReelSoundPrompt(card,true);updateReelControls(card);return}setReelVideoMuted(card,video,true,'browser_policy_fallback',false);try{await video.play();updateReelMediaHealth(card,video,'playing');markReelViewed(card);showReelSoundPrompt(card,true);updateReelControls(card);if(card)card.dataset.reelStartupMs=String(Math.round(performance.now()-startedAt));return}catch(second){reelVideoDiagnostics(video,'browser_policy_fallback')}}}}
     function scheduleReelRetry(video){if(!video||video.dataset.reelRetryScheduled==='1')return;video.dataset.reelRetryScheduled='1';setTimeout(()=>{video.dataset.reelRetryScheduled='';if(video.readyState<2&&!video.paused)window.retryPulseReelMedia?.(video,video.closest('.reel-card')?.dataset.reelId||'')},900)}
-    function bindReelDiagnostics(scope=document){const root=scope||document;root.querySelectorAll('[data-reel-media]:not([data-reel-bound])').forEach(wrap=>{wrap.dataset.reelBound='1';const video=wrap.matches('video')?wrap:wrap.querySelector('video');if(!video)return;const card=video.closest('.reel-card');const priority=wrap.dataset.reelPreloadPriority||card?.dataset.reelPreloadPriority||'lazy';video.dataset.reelsManaged='1';video.dataset.reelBindAt=String(Math.round(performance.now()));if(card&&window.__pulseReelsLastApiMs)card.dataset.firstReelApiMs=String(Math.round(window.__pulseReelsLastApiMs));video.preload=priority==='current'?'auto':'metadata';window.PulseMediaRenderer?.bindAttachedAudioPriority?.(wrap,video);if(priority==='current'&&video.readyState===0){try{video.load()}catch(_){}}['loadedmetadata','canplay','canplaythrough','playing','pause','stalled','waiting','error'].forEach(eventName=>video.addEventListener(eventName,()=>{const card=video.closest('.reel-card');const elapsed=Math.max(0,Math.round(performance.now()-Number(video.dataset.reelBindAt||performance.now())));if(card){if(eventName==='loadedmetadata'&&!card.dataset.videoMetadataMs)card.dataset.videoMetadataMs=String(elapsed);if((eventName==='canplay'||eventName==='canplaythrough')&&!card.dataset.videoCanplayMs)card.dataset.videoCanplayMs=String(elapsed);if(eventName==='playing'&&!card.dataset.firstFrameMs)card.dataset.firstFrameMs=String(elapsed)}reelVideoDiagnostics(video,eventName);if(['loadedmetadata','canplay','canplaythrough','playing','timeupdate'].includes(eventName))updateReelMediaHealth(card,video,eventName);if(['stalled','waiting'].includes(eventName))scheduleReelRetry(video);if(eventName==='error')updateReelMediaHealth(card,video,'media_error');if(eventName==='canplay'||eventName==='canplaythrough')scheduleReelsPlayback('canplay');updateReelControls(card)}));video.addEventListener('timeupdate',()=>{updateReelProgress(video);updateReelMediaHealth(video.closest('.reel-card'),video,'timeupdate')});video.addEventListener('volumechange',()=>{if(video.dataset.pulseSoundChangeReason)return;const card=video.closest('.reel-card');if(window.PulseMediaRenderer?.hasAttachedAudio?.(video)){window.PulseMediaRenderer.forceOriginalAudioMuted?.(video,'reels-volumechange-attached');updateReelControls(card);return}const enabled=!(video.muted||Number(video.volume||0)===0);const userUnlocked=card?.dataset?.reelUserSoundUnlocked==='1'||localStorage.getItem(REELS_SOUND_KEY)==='true'||localStorage.getItem(PULSE_MEDIA_SOUND_KEY)==='true';if(!enabled&&userUnlocked&&reelHasAudio(card)){setReelVideoMuted(card,video,false,'restore_state',false);logReelAudioState(card,video,'restore_state',{source:'volumechange-auto-remute'});updateReelControls(card);return}reelsSoundEnabled=enabled;reelsMuted=!enabled;localStorage.setItem(REELS_SOUND_KEY,String(enabled));localStorage.setItem(PULSE_MEDIA_SOUND_KEY,String(enabled));logReelAudioState(card,video,enabled?'user_unmuted':'user_muted',{source:'volumechange'});if(enabled&&card){card.dataset.reelUserSoundUnlocked='1';card.dataset.reelSuppressMutedFallbackUntil=String(Date.now()+90000);clearTimeout(card._reelAutoplayFallbackTimer)}updateReelControls(card);});if((wrap.dataset.reelUrl||wrap.dataset.mediaUrl||'').match(/r2\\.cloudflarestorage\\.com/i))console.warn('PulseSoc Reel blocked private R2 render candidate',{reel_id:wrap.dataset.reelId,src:wrap.dataset.reelUrl||wrap.dataset.mediaUrl});});window.PulseMediaRenderer?.hydrate(root);window.PulseCommerceCard?.localize?.(root);document.querySelectorAll('.reel-card').forEach(card=>{updateReelMediaHealth(card,primaryReelVideo(card),'bind');updateReelControls(card)});}
+    function bindReelDiagnostics(scope=document){const root=scope||document;root.querySelectorAll('[data-reel-media]:not([data-reel-bound])').forEach(wrap=>{wrap.dataset.reelBound='1';const video=wrap.matches('video')?wrap:wrap.querySelector('video');if(!video)return;const card=video.closest('.reel-card');const priority=wrap.dataset.reelPreloadPriority||card?.dataset.reelPreloadPriority||'lazy';video.dataset.reelsManaged='1';video.dataset.reelBindAt=String(Math.round(performance.now()));if(card&&window.__pulseReelsLastApiMs)card.dataset.firstReelApiMs=String(Math.round(window.__pulseReelsLastApiMs));video.preload=priority==='current'?'auto':'metadata';window.PulseMediaRenderer?.bindAttachedAudioPriority?.(wrap,video);if(priority==='current'&&video.readyState===0){try{video.load()}catch(_){}}['loadedmetadata','canplay','canplaythrough','playing','pause','stalled','waiting','error'].forEach(eventName=>video.addEventListener(eventName,()=>{const card=video.closest('.reel-card');const elapsed=Math.max(0,Math.round(performance.now()-Number(video.dataset.reelBindAt||performance.now())));if(card){if(eventName==='loadedmetadata'&&!card.dataset.videoMetadataMs)card.dataset.videoMetadataMs=String(elapsed);if((eventName==='canplay'||eventName==='canplaythrough')&&!card.dataset.videoCanplayMs)card.dataset.videoCanplayMs=String(elapsed);if(eventName==='playing'&&!card.dataset.firstFrameMs)card.dataset.firstFrameMs=String(elapsed)}reelVideoDiagnostics(video,eventName);if(['loadedmetadata','canplay','canplaythrough','playing','timeupdate'].includes(eventName))updateReelMediaHealth(card,video,eventName);if(['stalled','waiting'].includes(eventName))scheduleReelRetry(video);if(eventName==='error')updateReelMediaHealth(card,video,'media_error');if(eventName==='canplay'||eventName==='canplaythrough')scheduleReelsPlayback('canplay');updateReelControls(card)}));video.addEventListener('timeupdate',()=>{updateReelProgress(video);updateReelMediaHealth(video.closest('.reel-card'),video,'timeupdate')});video.addEventListener('volumechange',()=>{if(video.dataset.pulseSoundChangeReason)return;const card=video.closest('.reel-card');if(window.PulseMediaRenderer?.hasAttachedAudio?.(video)){window.PulseMediaRenderer.forceOriginalAudioMuted?.(video,'reels-volumechange-attached');updateReelControls(card);return}const enabled=!(video.muted||Number(video.volume||0)===0);const userUnlocked=card?.dataset?.reelUserSoundUnlocked==='1'||localStorage.getItem(REELS_SOUND_KEY)==='true'||localStorage.getItem(PULSE_MEDIA_SOUND_KEY)==='true';if(!enabled&&userUnlocked&&reelHasAudio(card)){setReelVideoMuted(card,video,false,'restore_state',false);logReelAudioState(card,video,'restore_state',{source:'volumechange-auto-remute'});updateReelControls(card);return}reelsSoundEnabled=enabled;reelsMuted=!enabled;localStorage.setItem(REELS_SOUND_KEY,String(enabled));localStorage.setItem(PULSE_MEDIA_SOUND_KEY,String(enabled));logReelAudioState(card,video,enabled?'user_unmuted':'user_muted',{source:'volumechange'});if(enabled&&card){card.dataset.reelUserSoundUnlocked='1';card.dataset.reelSuppressMutedFallbackUntil=String(Date.now()+90000);clearTimeout(card._reelAutoplayFallbackTimer)}updateReelControls(card);});if((wrap.dataset.reelUrl||wrap.dataset.mediaUrl||'').match(/r2\\.cloudflarestorage\\.com/i))console.warn('PulseSoc Reel blocked private R2 render candidate',{reel_id:wrap.dataset.reelId,src:wrap.dataset.reelUrl||wrap.dataset.mediaUrl});});window.PulseMediaRenderer?.hydrate(root);document.querySelectorAll('.reel-card').forEach(card=>{updateReelMediaHealth(card,primaryReelVideo(card),'bind');updateReelControls(card)});}
     let reelsPlaybackBootTimer=0;function scheduleReelsPlayback(reason='render'){clearTimeout(reelsPlaybackBootTimer);const run=()=>{syncPlayback();setTimeout(syncPlayback,80);setTimeout(syncPlayback,260)};requestAnimationFrame(()=>requestAnimationFrame(run));reelsPlaybackBootTimer=setTimeout(run,420)}
     function reelCards(){return [...document.querySelectorAll('.reel-card')]}
     function warmReelPoster(card){const poster=card?.querySelector('[data-reel-media]')?.dataset.reelPoster||card?.querySelector('video')?.poster||card?.querySelector('img[loading="lazy"]')?.src||'';if(!poster||card.dataset.reelPosterWarmed==='1')return;card.dataset.reelPosterWarmed='1';try{const img=new Image();img.decoding='async';img.src=poster}catch(_){}}
@@ -51642,12 +48432,8 @@ def pulse_reels_page():
 	    function fireBurst(x,y){['🔥','💚','✨','⚡'].forEach((emoji,i)=>setTimeout(()=>spawnFloatingEmoji(x+(i-1.5)*12,y-(i%2)*10,emoji),i*45))}
 	    async function fireReel(id,origin){const card=document.querySelector(`[data-reel-id="${CSS.escape(String(id))}"]`);if(card?.dataset.contentType==='live'||card?.dataset.liveReelId||String(id||'').startsWith('live-'))return reactToLiveReel(card||id,'🔥',origin);const button=document.querySelector(`[data-reel-react="${CSS.escape(String(id))}"]`);if(card?.dataset.reactionsDisabled==='1'){toast('Reactions are disabled for this Reel.');return {ok:false}}if(button?.dataset.busy==='1')return {ok:false,busy:true};if(button){button.dataset.busy='1';button.classList.add('is-pending')}const wasActive=button?.classList.contains('active');button?.classList.toggle('active',!wasActive);button?.setAttribute('aria-pressed',!wasActive?'true':'false');button?.classList.add('is-popping');setTimeout(()=>button?.classList.remove('is-popping'),320);document.querySelectorAll(`[data-fire-count="${CSS.escape(String(id))}"]`).forEach(n=>n.textContent=Math.max(0,Number(n.textContent||0)+(wasActive?-1:1)));if(origin)fireBurst(origin.clientX||innerWidth/2,origin.clientY||innerHeight/2);try{const d=await pulseApi(`/api/pulse/reels/${id}/react`,{method:'POST',body:JSON.stringify({reaction_type:'fire'})});button?.classList.toggle('active',!d.removed);button?.setAttribute('aria-pressed',d.removed?'false':'true');const counts=d.reaction_counts||d.reactions||{};document.querySelectorAll(`[data-fire-count="${CSS.escape(String(id))}"]`).forEach(n=>n.textContent=Number(counts.fire||d.fire_count||0));return d}catch(err){button?.classList.toggle('active',wasActive);button?.setAttribute('aria-pressed',wasActive?'true':'false');document.querySelectorAll(`[data-fire-count="${CSS.escape(String(id))}"]`).forEach(n=>n.textContent=Math.max(0,Number(n.textContent||0)+(wasActive?1:-1)));throw err}finally{if(button){button.classList.remove('is-pending');delete button.dataset.busy}}}
 	    document.addEventListener('click',async e=>{const join=e.target.closest('[data-live-join-reel]'),react=e.target.closest('[data-live-reaction]'),share=e.target.closest('[data-live-share-reel]'),more=e.target.closest('[data-live-more-reel]');if(!join&&!react&&!share&&!more)return;e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();if(join){await joinLiveReel(join);return}if(react){await reactToLiveReel(react,react.dataset.reactionType||'🔥',e);return}if(share){const url=new URL(share.dataset.liveUrl||(`/pulse/reels?live=${share.dataset.liveShareReel}`),location.origin).href;try{if(navigator.share)await navigator.share({title:'PulseSoc Live',url});else{await navigator.clipboard.writeText(url);toast('Live link copied.')}}catch(err){toast('Live share was cancelled.')}return}if(more){location.href=more.dataset.liveUrl||(`/pulse/reels?live=${more.dataset.liveMoreReel}`);return}},true);
-	    /* The button below POSTs reaction_type:'like', so it has to show the glyph
-	       the catalogue assigns to `like`. It used to be hardcoded to a grinning
-	       face, which told the sender their like had been recorded as a grin. */
-	    const reelCommentLikeGlyph=((Array.isArray(window.PULSE_REACTION_CATALOG)?window.PULSE_REACTION_CATALOG:[]).find(e=>e&&e.key==='like')||{}).emoji||'';
 	    function commentAvatar(a){return a.avatar_url?`<span class="reel-comment-avatar"><img src="${esc(a.avatar_url)}" alt=""></span>`:`<span class="reel-comment-avatar">${esc((a.display_name||a.name||'P').slice(0,1))}</span>`}
-	    function renderComment(c,depth=0){const a=c.author||{},replies=(c.replies||[]).map(r=>renderComment(r,depth+1)).join(''),actions=`<div class="reel-comment-actions"><button type="button" data-reel-comment-like="${esc(c.id||'')}">${reelCommentLikeGlyph} ${c.like_count?`(${esc(c.like_count)})`:''}</button><button type="button" data-reel-comment-reply="${esc(c.id||'')}">Reply</button>${c.can_edit?`<button type="button" data-reel-comment-edit="${esc(c.id||'')}">Edit</button>`:''}${c.can_delete?`<button type="button" data-reel-comment-delete="${esc(c.id||'')}">Delete</button>`:''}</div>`;return `<article class="reel-comment ${depth?'reply':''}" data-reel-comment="${esc(c.id||'')}">${commentAvatar(a)}<div><strong>${esc(a.display_name||a.name||'PulseSoc user')}</strong><p>${esc(c.body||'')}</p><small>${esc(c.human_time||c.created_at||'Recently')}${c.edited_at?' · edited':''}</small>${actions}${replies}</div></article>`}
+	    function renderComment(c,depth=0){const a=c.author||{},replies=(c.replies||[]).map(r=>renderComment(r,depth+1)).join(''),actions=`<div class="reel-comment-actions"><button type="button" data-reel-comment-like="${esc(c.id||'')}">😀 ${c.like_count?`(${esc(c.like_count)})`:''}</button><button type="button" data-reel-comment-reply="${esc(c.id||'')}">Reply</button>${c.can_edit?`<button type="button" data-reel-comment-edit="${esc(c.id||'')}">Edit</button>`:''}${c.can_delete?`<button type="button" data-reel-comment-delete="${esc(c.id||'')}">Delete</button>`:''}</div>`;return `<article class="reel-comment ${depth?'reply':''}" data-reel-comment="${esc(c.id||'')}">${commentAvatar(a)}<div><strong>${esc(a.display_name||a.name||'PulseSoc user')}</strong><p>${esc(c.body||'')}</p><small>${esc(c.human_time||c.created_at||'Recently')}${c.edited_at?' · edited':''}</small>${actions}${replies}</div></article>`}
 		    function updatePreviewAfterComment(id,comment){const boxes=document.querySelectorAll(`[data-reel-comment-preview="${CSS.escape(String(id))}"]`);if(!boxes.length||!comment)return;const a=comment.author||{};const mini=`<button class="reel-comment-mini is-new" type="button" data-open-comment-thread="${id}" data-comment-id="${esc(comment.id||'')}">${commentAvatar(a)}<span><strong>${esc(a.display_name||a.name||'You')}</strong><small>${esc(comment.body||'')}</small></span></button>`;boxes.forEach(box=>{const first=box.querySelector('.reel-comment-mini');if(first)first.insertAdjacentHTML('beforebegin',mini);else box.insertAdjacentHTML('beforeend',mini);box.querySelectorAll('.reel-comment-mini').forEach((node,i)=>{if(i>2)node.remove()})})}
     async function openComments(id,focusCommentId=''){currentCommentReel=id;commentList.innerHTML='<p class="muted">Loading comments...</p>';comments.classList.add('open');try{const d=await pulseApi(`/api/pulse/reels/${id}/comments`);const list=d.comments||[];commentList.innerHTML=list.map(c=>renderComment(c)).join('')||'<p class="muted">No comments yet. Add the first reply.</p>';if(focusCommentId){commentList.querySelector(`[data-reel-comment="${CSS.escape(String(focusCommentId))}"]`)?.scrollIntoView({block:'center'})}}catch(err){commentList.innerHTML=`<p class="muted">${esc(err.message)}</p>`}commentBody.focus()}
     async function updateReelCard(id,payload){const d=await pulseApi(`/api/pulse/reels/${id}`,{method:'PATCH',body:JSON.stringify(payload)});if(d.reel){document.querySelector(`[data-reel-id="${CSS.escape(String(id))}"]`)?.insertAdjacentHTML('afterend',reelHtml(d.reel));document.querySelector(`[data-reel-id="${CSS.escape(String(id))}"]`)?.remove();bindReelDiagnostics(reelsFeed);scheduleReelsPlayback('updateReelCard')}return d}
@@ -51669,11 +48455,11 @@ def pulse_reels_page():
     async function startInlineLive(){const status=document.getElementById('inlineLiveStatus');if(status)status.textContent='Opening Live Studio...';location.href=liveStudioUrlFromReels()}
     document.addEventListener('dblclick',e=>{const card=e.target.closest('[data-reel-id]');if(card)fireReel(card.dataset.reelId,e).then(()=>toast('Fire added.')).catch(err=>toast(err.message))});
 	    document.addEventListener('submit',async e=>{const form=e.target.closest('[data-inline-comment-form]');if(!form)return;e.preventDefault();const id=form.dataset.inlineCommentForm,input=form.querySelector('input'),body=(input?.value||'').trim();if(!body){openComments(id);return}const optimistic={id:'pending-'+Date.now(),body,author:{display_name:'You'},human_time:'Now'};input.value='';currentCommentReel=id;updatePreviewAfterComment(id,optimistic);document.querySelectorAll(`[data-comment-count="${CSS.escape(String(id))}"]`).forEach(n=>n.textContent=Number(n.textContent||0)+1);try{const d=await pulseApi(`/api/pulse/reels/${id}/comments`,{method:'POST',body:JSON.stringify({body,parent_comment_id:0})});const comment=d.comment||{...optimistic,id:d.comment_id||optimistic.id};const pending=document.querySelector(`[data-reel-comment-preview="${CSS.escape(String(id))}"] [data-comment-id="${CSS.escape(String(optimistic.id))}"]`);if(pending){pending.dataset.commentId=comment.id||optimistic.id;pending.classList.remove('is-new')}toast(d.message||'Comment posted.')}catch(err){document.querySelector(`[data-reel-comment-preview="${CSS.escape(String(id))}"] [data-comment-id="${CSS.escape(String(optimistic.id))}"]`)?.remove();document.querySelectorAll(`[data-comment-count="${CSS.escape(String(id))}"]`).forEach(n=>n.textContent=Math.max(0,Number(n.textContent||0)-1));input.value=body;toast(err.message)}});
-	    document.addEventListener('click',async e=>{const quality=e.target.closest('[data-reel-quality]');if(quality){toast('Adaptive HD is active. Mux selects the best available stream for this screen.');return}const toolbar=document.querySelector('.reels-toolbar');const jump=e.target.closest('[data-jump-reel]');if(jump){document.querySelector(`[data-reel-id="${CSS.escape(String(jump.dataset.jumpReel))}"]`)?.scrollIntoView({block:'center',behavior:'smooth'});return}const tab=e.target.closest('[data-reel-lane]');if(tab){document.querySelectorAll('[data-reel-lane]').forEach(b=>{b.classList.toggle('active',b===tab);b.setAttribute('aria-pressed',b===tab?'true':'false')});loadReels(tab.dataset.reelLane||'for_you');return}const thread=e.target.closest('[data-open-comment-thread]');if(thread){openComments(thread.dataset.openCommentThread,thread.dataset.commentId||'');return}const reply=e.target.closest('[data-reel-comment-reply]');if(reply){currentParentComment=reply.dataset.reelCommentReply;commentBody.placeholder='Replying...';commentBody.focus();return}const likeComment=e.target.closest('[data-reel-comment-like]');if(likeComment){try{const d=await pulseApi(`/api/pulse/reels/comments/${likeComment.dataset.reelCommentLike}/react`,{method:'POST',body:JSON.stringify({reaction_type:'like'})});likeComment.textContent=reelCommentLikeGlyph+' '+(d.like_count?`(${d.like_count})`:'');toast(d.removed?'Comment reaction removed.':'Comment reacted.')}catch(err){toast(err.message)}return}const editComment=e.target.closest('[data-reel-comment-edit]');if(editComment){const article=editComment.closest('[data-reel-comment]'),body=prompt('Edit comment',article?.querySelector('p')?.textContent||'');if(body!==null){try{await pulseApi(`/api/pulse/reels/comments/${editComment.dataset.reelCommentEdit}`,{method:'PATCH',body:JSON.stringify({body})});await openComments(currentCommentReel,editComment.dataset.reelCommentEdit);toast('Comment updated.')}catch(err){toast(err.message)}}return}const deleteComment=e.target.closest('[data-reel-comment-delete]');if(deleteComment){if(confirm('Delete this comment?')){try{await pulseApi(`/api/pulse/reels/comments/${deleteComment.dataset.reelCommentDelete}`,{method:'DELETE'});deleteComment.closest('[data-reel-comment]')?.remove();document.querySelectorAll(`[data-comment-count="${currentCommentReel}"]`).forEach(n=>n.textContent=Math.max(0,Number(n.textContent||0)-1));toast('Comment deleted.')}catch(err){toast(err.message)}}return}const reelEdit=e.target.closest('[data-reel-edit]');if(reelEdit){try{await editReel(reelEdit.dataset.reelEdit)}catch(err){toast(err.message)}return}const reelPin=e.target.closest('[data-reel-pin]');if(reelPin){try{const d=await pulseApi(`/api/pulse/reels/${reelPin.dataset.reelPin}/pin`,{method:'POST'});reelPin.textContent=d.pinned?'Unpin':'Pin';toast(d.message||'Pin updated.')}catch(err){toast(err.message)}return}const toggleComments=e.target.closest('[data-reel-toggle-comments]');if(toggleComments){try{const disabled=toggleComments.dataset.current!=='1';await updateReelCard(toggleComments.dataset.reelToggleComments,{comments_disabled:disabled});toast(disabled?'Comments disabled.':'Comments enabled.')}catch(err){toast(err.message)}return}const toggleReactions=e.target.closest('[data-reel-toggle-reactions]');if(toggleReactions){try{const disabled=toggleReactions.dataset.current!=='1';await updateReelCard(toggleReactions.dataset.reelToggleReactions,{reactions_disabled:disabled});toast(disabled?'Reactions disabled.':'Reactions enabled.')}catch(err){toast(err.message)}return}const reelDelete=e.target.closest('[data-reel-delete]');if(reelDelete){if(confirm('Delete this Reel?')){try{await pulseApi(`/api/pulse/reels/${reelDelete.dataset.reelDelete}`,{method:'DELETE'});document.querySelector(`[data-reel-id="${CSS.escape(String(reelDelete.dataset.reelDelete))}"]`)?.remove();toast('Reel deleted.')}catch(err){toast(err.message)}}return}const react=e.target.closest('[data-reel-react]');if(react){try{await fireReel(react.dataset.reelReact,e);toast('Fire updated.')}catch(err){toast(err.message)}return}const remix=e.target.closest('[data-reel-remix]');if(remix){e.preventDefault();e.stopPropagation();toast(remix.dataset.unavailableReason||'Remix is not available for this Reel yet.');return}const open=e.target.closest('[data-open-comments]');if(open){openComments(open.dataset.openComments);return}if(e.target.closest('#reelComments')&&e.target.id==='reelComments'){comments.classList.remove('open');currentParentComment=0;commentBody.placeholder='Add a comment...';return}const follow=e.target.closest('[data-follow-creator]');if(follow&&follow.dataset.followCreator){try{const d=await pulseApi('/api/pulse/follows/toggle',{method:'POST',body:JSON.stringify({followed_user_id:follow.dataset.followCreator})});follow.textContent=d.following===false?'Follow':'Following';toast(d.following===false?'Unfollowed.':'Creator followed.')}catch(err){toast(err.message)}return}const repost=e.target.closest('[data-reel-repost]');if(repost){try{repost.classList.add('active','is-popping');setTimeout(()=>repost.classList.remove('is-popping'),320);const d=await pulseApi(`/api/pulse/reels/${repost.dataset.reelRepost}/repost`,{method:'POST',body:JSON.stringify({})});toast(d.message||'Reposted.')}catch(err){repost.classList.remove('active');toast(err.message)}return}const save=e.target.closest('[data-reel-save]');if(save){const was=save.classList.contains('active');save.classList.toggle('active',!was);save.classList.add('is-popping');setTimeout(()=>save.classList.remove('is-popping'),320);try{const d=await pulseApi(`/api/pulse/reels/${save.dataset.reelSave}/save`,{method:'POST',body:JSON.stringify({})});save.classList.toggle('active',!!d.saved);toast(d.message||'Saved.')}catch(err){save.classList.toggle('active',was);toast(err.message)}return}const sound=e.target.closest('[data-save-sound]');if(sound&&sound.dataset.saveSound){try{await pulseApi('/api/pulse/reels/sounds/save',{method:'POST',body:JSON.stringify({track_id:sound.dataset.saveSound})});toast('Sound saved.')}catch(err){toast(err.message)}return}const soundOpen=e.target.closest('[data-open-sound-track]');if(soundOpen){soundModal.classList.add('open');loadSounds('',soundOpen.dataset.openSoundTrack||'');return}const share=e.target.closest('[data-share-reel]');if(share){try{const d=await pulseApi(`/api/pulse/reels/${share.dataset.shareReel}/share`,{method:'POST',body:JSON.stringify({channel:navigator.share?'native':'copy'})});const url=d.share_url||location.origin+'/pulse/reels/'+share.dataset.shareReel;if(navigator.share)await navigator.share({title:'PulseSoc Reel',url}).catch(()=>{});else await navigator.clipboard?.writeText(url);toast(navigator.share?'Share opened.':'Reel link copied.')}catch(err){toast(err.message)}return}if(e.target.closest('[data-open-reel-camera]')){toolbar?.classList.remove('is-open');location.href='/pulse/camera/reel';return}if(e.target.closest('[data-open-live-camera]')){toolbar?.classList.remove('is-open');openInlineLive();return}if(e.target.closest('[data-close-creator-overlay]')){stopReelCamera();return}if(e.target.closest('[data-close-live-overlay]')){closeInlineLive();return}if(e.target.closest('[data-flip-reel-camera]')){reelFacing=reelFacing==='user'?'environment':'user';openReelCamera();return}if(e.target.closest('[data-toggle-reel-mic]')){reelCameraStream?.getAudioTracks().forEach(t=>t.enabled=!t.enabled);toast('Microphone toggled.');return}if(e.target.closest('[data-toggle-low-light]')){lowLight=!lowLight;updateCameraFilter();toast(lowLight?'Low-light boost on.':'Low-light boost off.');return}if(e.target.closest('#reelRecordBtn')){toggleReelRecording();return}if(e.target.closest('[data-post-camera-reel]')){postCameraReel();return}if(e.target.closest('[data-start-inline-live]')){startInlineLive();return}const chip=e.target.closest('.reel-filter-chip');if(chip){document.querySelectorAll('.reel-filter-chip').forEach(x=>x.classList.remove('active'));chip.classList.add('active');updateCameraFilter();return}const cat=e.target.closest('[data-sound-category]');if(cat){soundCategory=cat.dataset.soundCategory||'';loadSounds(document.querySelector('#soundSearchForm input')?.value||'');return}if(e.target.closest('[data-open-upload]')){toolbar?.classList.remove('is-open');uploadModal.classList.add('open');return}if(e.target.closest('[data-open-sounds]')){toolbar?.classList.remove('is-open');soundModal.classList.add('open');loadSounds();return}if(toolbar?.classList.contains('is-open')&&!e.target.closest('.reels-toolbar')){toolbar.classList.remove('is-open')}if(e.target.closest('[data-close-reel-modal]')||e.target.classList.contains('reels-modal')){document.querySelectorAll('.reels-modal.open').forEach(m=>m.classList.remove('open'));return}const useSound=e.target.closest('[data-use-sound]');if(useSound){selectedSoundId=Number(useSound.dataset.useSound||0);selectedSoundLabel=useSound.dataset.soundLabel||'Selected sound';document.getElementById('selectedSoundLabel').textContent='Sound: '+selectedSoundLabel;soundModal.classList.remove('open');uploadModal.classList.add('open');return}});
+	    document.addEventListener('click',async e=>{const quality=e.target.closest('[data-reel-quality]');if(quality){toast('Adaptive HD is active. Mux selects the best available stream for this screen.');return}const toolbar=document.querySelector('.reels-toolbar');const jump=e.target.closest('[data-jump-reel]');if(jump){document.querySelector(`[data-reel-id="${CSS.escape(String(jump.dataset.jumpReel))}"]`)?.scrollIntoView({block:'center',behavior:'smooth'});return}const tab=e.target.closest('[data-reel-lane]');if(tab){document.querySelectorAll('[data-reel-lane]').forEach(b=>{b.classList.toggle('active',b===tab);b.setAttribute('aria-pressed',b===tab?'true':'false')});loadReels(tab.dataset.reelLane||'for_you');return}const thread=e.target.closest('[data-open-comment-thread]');if(thread){openComments(thread.dataset.openCommentThread,thread.dataset.commentId||'');return}const reply=e.target.closest('[data-reel-comment-reply]');if(reply){currentParentComment=reply.dataset.reelCommentReply;commentBody.placeholder='Replying...';commentBody.focus();return}const likeComment=e.target.closest('[data-reel-comment-like]');if(likeComment){try{const d=await pulseApi(`/api/pulse/reels/comments/${likeComment.dataset.reelCommentLike}/react`,{method:'POST',body:JSON.stringify({reaction_type:'like'})});likeComment.textContent='😀 '+(d.like_count?`(${d.like_count})`:'');toast(d.removed?'Comment reaction removed.':'Comment reacted.')}catch(err){toast(err.message)}return}const editComment=e.target.closest('[data-reel-comment-edit]');if(editComment){const article=editComment.closest('[data-reel-comment]'),body=prompt('Edit comment',article?.querySelector('p')?.textContent||'');if(body!==null){try{await pulseApi(`/api/pulse/reels/comments/${editComment.dataset.reelCommentEdit}`,{method:'PATCH',body:JSON.stringify({body})});await openComments(currentCommentReel,editComment.dataset.reelCommentEdit);toast('Comment updated.')}catch(err){toast(err.message)}}return}const deleteComment=e.target.closest('[data-reel-comment-delete]');if(deleteComment){if(confirm('Delete this comment?')){try{await pulseApi(`/api/pulse/reels/comments/${deleteComment.dataset.reelCommentDelete}`,{method:'DELETE'});deleteComment.closest('[data-reel-comment]')?.remove();document.querySelectorAll(`[data-comment-count="${currentCommentReel}"]`).forEach(n=>n.textContent=Math.max(0,Number(n.textContent||0)-1));toast('Comment deleted.')}catch(err){toast(err.message)}}return}const reelEdit=e.target.closest('[data-reel-edit]');if(reelEdit){try{await editReel(reelEdit.dataset.reelEdit)}catch(err){toast(err.message)}return}const reelPin=e.target.closest('[data-reel-pin]');if(reelPin){try{const d=await pulseApi(`/api/pulse/reels/${reelPin.dataset.reelPin}/pin`,{method:'POST'});reelPin.textContent=d.pinned?'Unpin':'Pin';toast(d.message||'Pin updated.')}catch(err){toast(err.message)}return}const toggleComments=e.target.closest('[data-reel-toggle-comments]');if(toggleComments){try{const disabled=toggleComments.dataset.current!=='1';await updateReelCard(toggleComments.dataset.reelToggleComments,{comments_disabled:disabled});toast(disabled?'Comments disabled.':'Comments enabled.')}catch(err){toast(err.message)}return}const toggleReactions=e.target.closest('[data-reel-toggle-reactions]');if(toggleReactions){try{const disabled=toggleReactions.dataset.current!=='1';await updateReelCard(toggleReactions.dataset.reelToggleReactions,{reactions_disabled:disabled});toast(disabled?'Reactions disabled.':'Reactions enabled.')}catch(err){toast(err.message)}return}const reelDelete=e.target.closest('[data-reel-delete]');if(reelDelete){if(confirm('Delete this Reel?')){try{await pulseApi(`/api/pulse/reels/${reelDelete.dataset.reelDelete}`,{method:'DELETE'});document.querySelector(`[data-reel-id="${CSS.escape(String(reelDelete.dataset.reelDelete))}"]`)?.remove();toast('Reel deleted.')}catch(err){toast(err.message)}}return}const react=e.target.closest('[data-reel-react]');if(react){try{await fireReel(react.dataset.reelReact,e);toast('Fire updated.')}catch(err){toast(err.message)}return}const remix=e.target.closest('[data-reel-remix]');if(remix){e.preventDefault();e.stopPropagation();toast(remix.dataset.unavailableReason||'Remix is not available for this Reel yet.');return}const open=e.target.closest('[data-open-comments]');if(open){openComments(open.dataset.openComments);return}if(e.target.closest('#reelComments')&&e.target.id==='reelComments'){comments.classList.remove('open');currentParentComment=0;commentBody.placeholder='Add a comment...';return}const follow=e.target.closest('[data-follow-creator]');if(follow&&follow.dataset.followCreator){try{const d=await pulseApi('/api/pulse/follows/toggle',{method:'POST',body:JSON.stringify({followed_user_id:follow.dataset.followCreator})});follow.textContent=d.following===false?'Follow':'Following';toast(d.following===false?'Unfollowed.':'Creator followed.')}catch(err){toast(err.message)}return}const repost=e.target.closest('[data-reel-repost]');if(repost){try{repost.classList.add('active','is-popping');setTimeout(()=>repost.classList.remove('is-popping'),320);const d=await pulseApi(`/api/pulse/reels/${repost.dataset.reelRepost}/repost`,{method:'POST',body:JSON.stringify({})});toast(d.message||'Reposted.')}catch(err){repost.classList.remove('active');toast(err.message)}return}const save=e.target.closest('[data-reel-save]');if(save){const was=save.classList.contains('active');save.classList.toggle('active',!was);save.classList.add('is-popping');setTimeout(()=>save.classList.remove('is-popping'),320);try{const d=await pulseApi(`/api/pulse/reels/${save.dataset.reelSave}/save`,{method:'POST',body:JSON.stringify({})});save.classList.toggle('active',!!d.saved);toast(d.message||'Saved.')}catch(err){save.classList.toggle('active',was);toast(err.message)}return}const sound=e.target.closest('[data-save-sound]');if(sound&&sound.dataset.saveSound){try{await pulseApi('/api/pulse/reels/sounds/save',{method:'POST',body:JSON.stringify({track_id:sound.dataset.saveSound})});toast('Sound saved.')}catch(err){toast(err.message)}return}const soundOpen=e.target.closest('[data-open-sound-track]');if(soundOpen){soundModal.classList.add('open');loadSounds('',soundOpen.dataset.openSoundTrack||'');return}const share=e.target.closest('[data-share-reel]');if(share){try{const d=await pulseApi(`/api/pulse/reels/${share.dataset.shareReel}/share`,{method:'POST',body:JSON.stringify({channel:navigator.share?'native':'copy'})});const url=d.share_url||location.origin+'/pulse/reels/'+share.dataset.shareReel;if(navigator.share)await navigator.share({title:'PulseSoc Reel',url}).catch(()=>{});else await navigator.clipboard?.writeText(url);toast(navigator.share?'Share opened.':'Reel link copied.')}catch(err){toast(err.message)}return}if(e.target.closest('[data-open-reel-camera]')){toolbar?.classList.remove('is-open');location.href='/pulse/camera/reel';return}if(e.target.closest('[data-open-live-camera]')){toolbar?.classList.remove('is-open');openInlineLive();return}if(e.target.closest('[data-close-creator-overlay]')){stopReelCamera();return}if(e.target.closest('[data-close-live-overlay]')){closeInlineLive();return}if(e.target.closest('[data-flip-reel-camera]')){reelFacing=reelFacing==='user'?'environment':'user';openReelCamera();return}if(e.target.closest('[data-toggle-reel-mic]')){reelCameraStream?.getAudioTracks().forEach(t=>t.enabled=!t.enabled);toast('Microphone toggled.');return}if(e.target.closest('[data-toggle-low-light]')){lowLight=!lowLight;updateCameraFilter();toast(lowLight?'Low-light boost on.':'Low-light boost off.');return}if(e.target.closest('#reelRecordBtn')){toggleReelRecording();return}if(e.target.closest('[data-post-camera-reel]')){postCameraReel();return}if(e.target.closest('[data-start-inline-live]')){startInlineLive();return}const chip=e.target.closest('.reel-filter-chip');if(chip){document.querySelectorAll('.reel-filter-chip').forEach(x=>x.classList.remove('active'));chip.classList.add('active');updateCameraFilter();return}const cat=e.target.closest('[data-sound-category]');if(cat){soundCategory=cat.dataset.soundCategory||'';loadSounds(document.querySelector('#soundSearchForm input')?.value||'');return}if(e.target.closest('[data-open-upload]')){toolbar?.classList.remove('is-open');uploadModal.classList.add('open');return}if(e.target.closest('[data-open-sounds]')){toolbar?.classList.remove('is-open');soundModal.classList.add('open');loadSounds();return}if(toolbar?.classList.contains('is-open')&&!e.target.closest('.reels-toolbar')){toolbar.classList.remove('is-open')}if(e.target.closest('[data-close-reel-modal]')||e.target.classList.contains('reels-modal')){document.querySelectorAll('.reels-modal.open').forEach(m=>m.classList.remove('open'));return}const useSound=e.target.closest('[data-use-sound]');if(useSound){selectedSoundId=Number(useSound.dataset.useSound||0);selectedSoundLabel=useSound.dataset.soundLabel||'Selected sound';document.getElementById('selectedSoundLabel').textContent='Sound: '+selectedSoundLabel;soundModal.classList.remove('open');uploadModal.classList.add('open');return}});
     document.getElementById('reelCommentForm').addEventListener('submit',async e=>{e.preventDefault();const body=commentBody.value.trim();if(!body||!currentCommentReel)return;try{const d=await pulseApi(`/api/pulse/reels/${currentCommentReel}/comments`,{method:'POST',body:JSON.stringify({body,parent_comment_id:currentParentComment||0})});const comment=d.comment||{body,author:{display_name:'You'},created_at:'Just now',id:d.comment_id};if(currentParentComment){await openComments(currentCommentReel,comment.id||currentParentComment)}else{commentList.insertAdjacentHTML('beforeend',renderComment(comment));updatePreviewAfterComment(currentCommentReel,comment)}document.querySelectorAll(`[data-comment-count="${currentCommentReel}"]`).forEach(n=>n.textContent=Number(n.textContent||0)+1);commentBody.value='';currentParentComment=0;commentBody.placeholder='Add a comment...';toast(d.message||'Comment posted.')}catch(err){toast(err.message)}});
     async function loadSounds(q='',focusId=''){soundList.innerHTML='<p class="muted">Loading sounds...</p>';try{const url='/api/pulse/reels/sounds?q='+encodeURIComponent(q)+'&category='+encodeURIComponent(soundCategory||'');const d=await pulseApi(url);soundList.innerHTML=(d.sounds||[]).map(s=>`<div class="sound-row ${String(s.id)===String(focusId)?'active':''}"><button class="sound-preview" type="button" data-preview-sound="${esc(s.audio_url||'')}">▶</button><div><strong>${esc(s.title)}</strong><p class="muted">${esc(s.artist)} · ${esc(s.category||'Sound')} · ${Math.round(s.duration||0)}s · ${s.usage_count||0} uses</p></div><div class="actions"><button data-save-sound="${s.id}">${s.saved?'Saved':'Save'}</button><button class="primary" data-use-sound="${s.id}" data-sound-label="${esc(s.title)}">Use</button></div></div>`).join('')||'<p class="muted">No sounds found yet.</p>'}catch(err){soundList.innerHTML=`<p class="muted">${esc(err.message)}</p>`}}
 	    document.getElementById('soundSearchForm').addEventListener('submit',e=>{e.preventDefault();loadSounds(e.target.q.value.trim())});
-	    document.addEventListener('click',async e=>{const likeComment=e.target.closest('[data-reel-comment-like]');if(!likeComment)return;e.preventDefault();e.stopImmediatePropagation();if(likeComment.dataset.busy)return;likeComment.dataset.busy='1';const oldText=likeComment.textContent;const oldActive=likeComment.classList.contains('active');const oldCount=Number((oldText.match(/\\((\\d+)\\)/)||[])[1]||0);const next=Math.max(0,oldCount+(oldActive?-1:1));likeComment.classList.toggle('active',!oldActive);likeComment.setAttribute('aria-pressed',!oldActive?'true':'false');likeComment.classList.add('is-popping','is-pending');likeComment.textContent=reelCommentLikeGlyph+' '+(next?`(${next})`:'');fireBurst(innerWidth*.78,innerHeight*.52);try{const d=await pulseApi(`/api/pulse/reels/comments/${likeComment.dataset.reelCommentLike}/react`,{method:'POST',body:JSON.stringify({reaction_type:'like'})});likeComment.classList.toggle('active',!d.removed);likeComment.setAttribute('aria-pressed',d.removed?'false':'true');likeComment.textContent=reelCommentLikeGlyph+' '+(d.like_count?`(${d.like_count})`:'');toast(d.removed?'Comment reaction removed.':'Comment reacted.')}catch(err){likeComment.textContent=oldText;likeComment.classList.toggle('active',oldActive);likeComment.setAttribute('aria-pressed',oldActive?'true':'false');toast(err.message)}finally{likeComment.classList.remove('is-popping','is-pending');delete likeComment.dataset.busy}},true);
+	    document.addEventListener('click',async e=>{const likeComment=e.target.closest('[data-reel-comment-like]');if(!likeComment)return;e.preventDefault();e.stopImmediatePropagation();if(likeComment.dataset.busy)return;likeComment.dataset.busy='1';const oldText=likeComment.textContent;const oldActive=likeComment.classList.contains('active');const oldCount=Number((oldText.match(/\\((\\d+)\\)/)||[])[1]||0);const next=Math.max(0,oldCount+(oldActive?-1:1));likeComment.classList.toggle('active',!oldActive);likeComment.setAttribute('aria-pressed',!oldActive?'true':'false');likeComment.classList.add('is-popping','is-pending');likeComment.textContent='😀 '+(next?`(${next})`:'');fireBurst(innerWidth*.78,innerHeight*.52);try{const d=await pulseApi(`/api/pulse/reels/comments/${likeComment.dataset.reelCommentLike}/react`,{method:'POST',body:JSON.stringify({reaction_type:'like'})});likeComment.classList.toggle('active',!d.removed);likeComment.setAttribute('aria-pressed',d.removed?'false':'true');likeComment.textContent='😀 '+(d.like_count?`(${d.like_count})`:'');toast(d.removed?'Comment reaction removed.':'Comment reacted.')}catch(err){likeComment.textContent=oldText;likeComment.classList.toggle('active',oldActive);likeComment.setAttribute('aria-pressed',oldActive?'true':'false');toast(err.message)}finally{likeComment.classList.remove('is-popping','is-pending');delete likeComment.dataset.busy}},true);
 	    let previewAudio=null;document.addEventListener('click',e=>{const p=e.target.closest('[data-preview-sound]');if(!p)return;const url=p.dataset.previewSound;if(!url){toast('This sound has no preview yet.');return}if(previewAudio){previewAudio.pause();previewAudio=null}previewAudio=new Audio(url);previewAudio.play().catch(()=>toast('Sound preview is unavailable.'))});
     document.getElementById('soundUploadForm').addEventListener('submit',async e=>{e.preventDefault();const file=document.getElementById('soundUploadFile').files[0];const rights=document.getElementById('soundUploadRights');if(!file){toast('Choose an audio file.');return}if(!rights?.checked){toast('Confirm that you own this music or have the legal right to upload it.');rights?.focus();return}try{const fd=new FormData();fd.append('file',file);fd.append('title',document.getElementById('soundUploadTitle').value);fd.append('artist',document.getElementById('soundUploadArtist').value);fd.append('rights_confirmed','1');const d=await fetch('/api/pulse/reels/sounds/upload',{method:'POST',credentials:'same-origin',body:fd}).then(async r=>{const data=await r.json();if(!r.ok||data.ok===false)throw new Error(data.message||'Sound upload failed.');return data});selectedSoundId=d.track_id;document.getElementById('selectedSoundLabel').textContent='Sound: '+(d.sound?.title||'Original sound');toast('Original sound uploaded.');loadSounds()}catch(err){toast(err.message)}});
     document.addEventListener('input',e=>{if(e.target.closest('[data-camera-control]'))updateCameraFilter()});
@@ -51820,61 +48606,9 @@ def pulse_reel_detail_page(reel_id):
     video = clean_html(mux_video or media.get("mux_hls_url") or media.get("playback_url") or media.get("valid_url") or media.get("media_url") or reel.get("video_url") or "")
     video_type = "application/vnd.apple.mpegurl" if video.endswith(".m3u8") else clean_html(media.get("playback_mime_type") or media.get("mime_type") or "")
     video_html = f'<video autoplay playsinline webkit-playsinline loop preload="metadata" controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture style="width:100%;max-height:72dvh;border-radius:18px;background:#020712"><source src="{video}" type="{video_type}"></video>' if video else "<div class='card'><p class='muted'>This Reel is waiting for media processing.</p></div>"
-    # ``pulse_reel_payload`` builds on ``get_post``, which already ran
-    # ``_attach_commerce``, so a PulseDrop Reel arrives here with its live
-    # overlay. Rendered server-side for the same reason the single post page is:
-    # this URL is the reel's share target and its deep link.
-    reel_commerce_html = pulse_commerce_card.post_card_html(reel, surface="reel")
-    main = f"<section class='card'>{video_html}<h1>{html_escape(clean_html(reel.get('title') or 'PulseSoc Reel'))}</h1><p>{html_escape(clean_html(reel.get('body') or reel.get('caption') or ''))}</p>{reel_commerce_html}<p><span class='pill'>{html_escape(clean_html((reel.get('author') or {}).get('primary_label') or 'Member'))}</span> <span class='pill'>Score {safe_int(reel.get('reel_score'), 0)}</span></p><div class='actions'><button class='button' id='reelReact'>🔥 React</button><a class='button primary' href='/pulse/reels'>More Reels</a>{app_cta_html('reel', reel_id, source='web')}</div></section>"
+    main = f"<section class='card'>{video_html}<h1>{html_escape(clean_html(reel.get('title') or 'PulseSoc Reel'))}</h1><p>{html_escape(clean_html(reel.get('body') or reel.get('caption') or ''))}</p><p><span class='pill'>{html_escape(clean_html((reel.get('author') or {}).get('primary_label') or 'Member'))}</span> <span class='pill'>Score {safe_int(reel.get('reel_score'), 0)}</span></p><div class='actions'><button class='button' id='reelReact'>🔥 React</button><a class='button primary' href='/pulse/reels'>More Reels</a>{app_cta_html('reel', reel_id, source='web')}</div></section>"
     script = f"document.getElementById('reelReact')?.addEventListener('click',()=>pulseApi('/api/pulse/reels/react',{{method:'POST',body:JSON.stringify({{reel_id:{int(reel_id)},reaction_type:'fire'}})}}).then(()=>toast('Reaction added.')).catch(e=>toast(e.message)));"
     return pulse_social_shell("PulseSoc Reel", "Vertical PulseSoc clip with live social actions.", main, "", script)
-
-
-def pulse_reel_mark_audio_unavailable(reel, removed_state):
-    """Blank a reel's audio in place, keeping everything else the reel is.
-
-    A takedown stops the sound; it does not touch the video, the caption, the
-    likes or the comments. Three things this must get right:
-
-    * The reel dict starts life as the feed engine's post, which carries its own
-      copies of ``attached_audio_url`` and friends, and each media item carries a
-      third copy. Blanking only the nested ``audio`` dict would leave a live url
-      in two other places.
-    * ``original_audio_muted`` is carried over unchanged. Flipping it to False
-      would unmute the camera audio the creator chose to silence -- a takedown
-      removes the track, not the creator's decision.
-    * ``audio_unavailable`` is set so the client can render "Audio unavailable"
-      rather than spinning forever on an empty url.
-
-    Shared by both reel read paths deliberately: they build the same payload and
-    a fix applied to only one of them is how this leaked in the first place.
-    """
-    muted = bool((reel.get("audio") or {}).get("original_audio_muted"))
-    reel["audio"] = {**(reel.get("audio") or {}),
-                     **music_authority.unavailable_audio_payload(removed_state),
-                     "original_audio_muted": muted}
-    reel["audio_unavailable"] = True
-    reel["audio_unavailable_state"] = reel["audio"]["audio_unavailable_state"]
-    reel["audio_id"] = 0
-    reel["music_id"] = 0
-    reel["attached_audio_url"] = ""
-    reel["audio_title"] = ""
-    reel["audio_artist"] = ""
-    reel["original_audio_muted"] = muted
-    reel["media"] = [
-        {
-            **media_item,
-            "audio_id": 0,
-            "music_id": 0,
-            "attached_audio_url": "",
-            "audio_title": "",
-            "audio_artist": "",
-            "audio_unavailable": True,
-            "original_audio_muted": muted,
-        }
-        for media_item in (reel.get("media") or [])
-    ]
-    return reel
 
 
 def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0, include_preview_comments=True):
@@ -51945,13 +48679,6 @@ def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0, include_preview_c
         conn.close()
     except Exception:
         audio = {}
-    # A reel whose track has been taken down keeps its video, caption and
-    # engagement; only the sound stops. That is why this strips the audio after
-    # building it rather than filtering the JOIN: the reel must still render, and
-    # the client needs to be told *why* it is silent so it shows "Audio
-    # unavailable" instead of retrying a dead url forever.
-    audio_unavailable = bool(audio.get("id")) and not music_authority.is_servable(audio)
-    removed_state = music_authority.normalize_state(audio.get("lifecycle_state")) if audio_unavailable else ""
     merged["audio"] = {
         "id": int(audio.get("id") or 0),
         "track_id": int(audio.get("id") or 0),
@@ -51996,116 +48723,12 @@ def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0, include_preview_c
             }
             for media_item in (merged.get("media") or [])
         ]
-    if audio_unavailable:
-        merged = pulse_reel_mark_audio_unavailable(merged, removed_state)
     merged.update(reel_ranking_engine.score_reel({
         **merged,
         "premium_mark": bool((post.get("author") or {}).get("premium_mark")),
         "engagement_score": post.get("engagement_score") or post.get("reactions_count") or 0,
     }))
     return reel_prioritize_video_media(merged)
-
-
-# Fields of a media record that are a way to *fetch the video*, as opposed to a
-# way to describe it. A share preview is shown inside other people's
-# conversations and is forwarded onward, so none of these may appear in one:
-# `mux_asset_id` and `mux_playback_id` address the asset at Mux directly,
-# `storage_key` and `storage_provider` name its object in the bucket, and the
-# url fields are the CDN or signed origins a player is handed once it has been
-# authorized.
-#
-# Written down rather than inferred so the leak test can assert on it by name.
-# It is the deny half; `pulse_reel_share_preview` is an allowlist and would not
-# emit these anyway -- the pair is deliberate, because an allowlist that
-# quietly grows a field is exactly how the first of these gets back in.
-PULSE_REEL_PREVIEW_FORBIDDEN_FIELDS = (
-    "media_url",
-    "valid_url",
-    "cdn_url",
-    "playback_url",
-    "mux_playback_id",
-    "mux_asset_id",
-    "mux_hls_url",
-    "storage_key",
-    "storage_provider",
-    "source_url",
-    "fallback_url",
-    "attached_audio_url",
-    "audio_url",
-    "preview_url",
-)
-
-
-def pulse_reel_share_preview(reel):
-    """The little a rich share card needs, and nothing else.
-
-    ## Why this is a projection and not a query
-
-    It takes an already-built `pulse_reel_payload` rather than a reel id, and
-    that is the whole security argument. `pulse_reel_payload` is the read the
-    Reels experience itself performs: it drops deleted reels, drops blocked
-    ones, and hands the post through `pulse_feed_engine.get_post(...,
-    include_private=False)` so a reel the viewer may not see never
-    materialises. A preview built from its output cannot be more permissive
-    than that, because it is not a second read -- there is no query here at all.
-
-    Had this taken a reel id it would have had to fetch, and a fetch is a place
-    where someone eventually writes a slightly different WHERE clause. The
-    caller authorizes; this only forgets things.
-
-    ## What it forgets
-
-    Everything that is a means of playback. A card shows a still frame, a name,
-    an avatar and a line of caption -- it never plays, so it has no use for a
-    playback url, a Mux id or a storage key, and shipping one would put a
-    durable handle on the asset inside a message that can be forwarded to
-    anyone. `PULSE_REEL_PREVIEW_FORBIDDEN_FIELDS` above names them.
-
-    The poster is chosen from the still fields only, in the order the feed
-    renderer uses, and a candidate that is itself a video url is skipped: an
-    `<Image>` handed an `.m3u8` draws a black rectangle and reports no error,
-    which is how a video badge once sat over nothing at all.
-    """
-    reel = dict(reel or {})
-    author = dict(reel.get("author") or {})
-    reel_id = safe_int(reel.get("reel_id") or reel.get("id"), 0)
-    poster = ""
-    for item in (reel.get("media") or []):
-        item = dict(item or {})
-        for field in ("poster_url", "thumbnail_url", "mux_thumbnail_url"):
-            candidate = str(item.get(field) or "").strip()
-            if candidate and not media_service.is_video_url(candidate):
-                poster = candidate
-                break
-        if poster:
-            break
-    if not poster:
-        candidate = str(reel.get("thumbnail_url") or reel.get("cover_url") or reel.get("image_url") or "").strip()
-        poster = "" if media_service.is_video_url(candidate) else candidate
-    # The handle is the identity and the display name the courtesy, so both go
-    # and the card decides. `public_player_id` backs up `username` because an
-    # account that never chose a handle still has the machine one, and a card
-    # with an empty author row reads as a rendering fault.
-    handle = str(author.get("username") or author.get("public_player_id") or "").strip().lstrip("@")
-    return {
-        "reel_id": reel_id,
-        # Absolute, because this is also what an external share sends. A
-        # site-relative path in somebody's SMS is not a link.
-        "canonical_url": f"{APP_BASE_URL}/pulse/reels/{reel_id}",
-        "path": f"/pulse/reels/{reel_id}",
-        "caption": clean_html(reel.get("caption") or reel.get("body") or reel.get("title") or "")[:280],
-        "poster_url": clean_html(poster),
-        # Constant rather than read off the media record: a reel is a reel. A
-        # record whose type is missing or wrong must not make the card stop
-        # drawing its play indicator over a video that is really there.
-        "media_type": "video",
-        "duration_seconds": round(float(reel.get("duration_seconds") or reel.get("duration") or 0) or 0, 2),
-        "author": {
-            "display_name": clean_html(author.get("display_name") or "")[:80],
-            "username": clean_html(handle)[:64],
-            "avatar_url": clean_html(author.get("avatar_url") or ""),
-        },
-    }
 
 
 def pulse_reel_comment_payload(post_id, viewer_user_id=0, owner_user_id=0, limit=80):
@@ -52708,10 +49331,6 @@ def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0, l
                 }
                 for media_item in (reel.get("media") or [])
             ]
-        if audio and not music_authority.is_servable(audio):
-            reel = pulse_reel_mark_audio_unavailable(
-                reel, music_authority.normalize_state(audio.get("lifecycle_state"))
-            )
         reel = reel_prioritize_video_media(reel)
         reel.update(reel_ranking_engine.score_reel(reel))
         if not pulse_reel_matches_lane(reel, lane, viewer_user_id, category):
@@ -52807,69 +49426,11 @@ def pulse_friends_page():
     cur = conn.cursor()
     graph = pulse_friend_graph(cur, user["user_id"])
 
-    # Every person card on this page carried the literal string
-    # "Mutual spaces: Scam Watch, Alpha Arena". Neither slug exists in
-    # PULSE_SPACES, so it named two communities that cannot be joined, and it
-    # named them identically for every human on the page -- including on the
-    # viewer's own friends, where "mutual" is a claim about a relationship. The
-    # Home rail now links here ("See all suggestions"), so this is a destination
-    # that has to tell the truth.
-    #
-    # Two queries for the whole page rather than two per card: the viewer's own
-    # memberships once, then every membership row for the people being rendered.
-    # `pulse_space_members` is small and the alternative is N round trips inside
-    # a render loop.
-    viewer_spaces = set()
-    try:
-        cur.execute("SELECT space_slug FROM pulse_space_members WHERE user_id=?", (int(user["user_id"]),))
-        viewer_spaces = {str(dict(row).get("space_slug") or "") for row in cur.fetchall()}
-        viewer_spaces.discard("")
-    except Exception:
-        viewer_spaces = set()
-    space_names = {str(space.get("slug")): str(space.get("name") or "") for space in PULSE_SPACES}
-    member_spaces = {}
-    if viewer_spaces:
-        candidate_ids = set()
-        for key in ("incoming", "friends", "following", "followers", "suggested"):
-            for entry in graph.get(key) or []:
-                candidate_ids.add(safe_int(entry.get("requester_user_id"), 0) if isinstance(entry, dict) else safe_int(entry, 0))
-        candidate_ids.discard(0)
-        if candidate_ids:
-            try:
-                ids = sorted(candidate_ids)
-                cur.execute(
-                    "SELECT user_id, space_slug FROM pulse_space_members "
-                    f"WHERE user_id IN ({','.join('?' * len(ids))})",
-                    tuple(ids),
-                )
-                for row in cur.fetchall():
-                    item = dict(row)
-                    member_spaces.setdefault(safe_int(item.get("user_id"), 0), set()).add(str(item.get("space_slug") or ""))
-            except Exception:
-                member_spaces = {}
-
-    def mutual_spaces_html(person_id):
-        """The shared spaces, or nothing at all.
-
-        There is no honest filler here. "No mutual spaces" is a sentence about
-        an absence that the reader did not ask about, and the old string was a
-        fabrication, so the module collapses instead: a person card with no
-        shared context is simply a person card.
-        """
-        shared = viewer_spaces & (member_spaces.get(safe_int(person_id, 0)) or set())
-        labels = sorted(space_names.get(slug) or slug for slug in shared)
-        if not labels:
-            return ""
-        shown = ", ".join(labels[:2])
-        if len(labels) > 2:
-            shown += f" +{len(labels) - 2}"
-        return f"<p>Mutual spaces: {html_escape(clean_html(shown))}</p>"
-
     def person_card(person_id, mode="suggested", request_id=""):
         ident = pulse_person_public_payload(cur, person_id)
         avatar = f"<img src='{html_escape(clean_html(ident['avatar_url']))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("display_name") or "P")[:1])
         username = f"<span class='pill'>@{html_escape(clean_html(ident['username']))}</span>" if ident.get("username") else ""
-        mutual = mutual_spaces_html(person_id)
+        mutual = "Mutual spaces: Scam Watch, Alpha Arena"
         actions = ""
         if mode == "incoming":
             actions = f"<button class='primary' data-accept='{html_escape(clean_html(request_id))}'>Accept</button><button data-decline='{html_escape(clean_html(request_id))}'>Decline</button>"
@@ -52878,7 +49439,7 @@ def pulse_friends_page():
         else:
             actions = f"<button class='primary' data-friend-public='{html_escape(clean_html(ident['public_player_id']))}'>Add Friend</button><button data-follow-public='{html_escape(clean_html(ident['public_player_id']))}'>Follow</button>"
         actions += f"<button data-message-public='{html_escape(clean_html(ident['public_player_id']))}'>Message</button>"
-        return f"<article class='card friend-card'><div class='person'><span class='avatar'>{avatar}</span><div><h3>{html_escape(clean_html(ident['display_name']))}{pulse_premium_mark_html(ident.get('premium_mark'))}</h3><div class='actions'>{username}<span class='pill'>{html_escape(clean_html(ident['rank']))}</span></div>{mutual}</div></div><div class='actions friend-actions'>{actions}</div></article>"
+        return f"<article class='card friend-card'><div class='person'><span class='avatar'>{avatar}</span><div><h3>{html_escape(clean_html(ident['display_name']))}{pulse_premium_mark_html(ident.get('premium_mark'))}</h3><div class='actions'>{username}<span class='pill'>{html_escape(clean_html(ident['rank']))}</span></div><p>{mutual}</p></div></div><div class='actions friend-actions'>{actions}</div></article>"
 
     incoming_html = "".join(person_card(int(row.get("requester_user_id") or 0), "incoming", row.get("id")) for row in graph["incoming"])
     friends_html = "".join(person_card(fid, "friend") for fid in graph["friends"])
@@ -52989,7 +49550,7 @@ def pulse_live_page():
         live_card = "<section class='card'><h2>Live Suspended</h2><p>Your Live access is paused. Review the safety reason and contact support to appeal.</p><a class='button' href='/support'>Appeal</a></section>"
     elif privileges["can_go_live"]:
         live_card = f"""
-        <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=cache-sweep-20260928a'>
+        <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=live-studio-destination-20260702a'>
         <section class='card live-ready'>
           <h2>Go Live Setup</h2>
           <input id='liveTitle' placeholder='Live title' value='{studio_title}'>
@@ -53279,7 +49840,7 @@ def pulse_live_studio_page(stream_id):
           </div>
         """
     main = f"""
-    <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=cache-sweep-20260928a'>
+    <link rel='stylesheet' href='/static/css/pulse_live_studio.css?v=live-studio-owner-20260702d'>
     <section class='pulse-live-surface live-command-shell studio-pro-shell' data-pulse-live-shell data-live-id='{stream_id}' data-live-poll-ms='3500' data-live-role='host' data-live-camera-owner='LiveStudioCameraOwner' data-studio-desktop-layout='command-center' data-studio-mobile-layout='vertical-cockpit'>
       <aside class='studio-sidebar' aria-label='Live Studio navigation'>
         <div class='studio-brand'><span class='studio-brand-mark'>P</span><strong>PulseSoc Studio</strong></div>
@@ -53381,7 +49942,7 @@ def pulse_live_studio_page(stream_id):
             <div class='live-mode-row' aria-label='Quick reactions'>
               <button type='button' data-live-reaction='❤️'>❤️</button><button type='button' data-live-reaction='🔥'>🔥</button><button type='button' data-live-reaction='😂'>😂</button><button type='button' data-live-reaction='👏'>👏</button><button type='button' data-live-reaction='🎉'>🎉</button><button type='button' data-live-reaction='👍'>👍</button>
             </div>
-            <div class='live-chat-composer'><span class='pulse-emoji-field' data-emoji-scope><textarea data-live-chat-input placeholder='Send a chat message'></textarea><button class='pulse-emoji-trigger' type='button' data-emoji-for aria-haspopup='dialog' aria-expanded='false' aria-label='Add emoji'>☺</button></span><button class='primary' data-live-chat-send type='button'>Send</button></div>
+            <div class='live-chat-composer'><textarea data-live-chat-input placeholder='Send a chat message'></textarea><button class='primary' data-live-chat-send type='button'>Send</button></div>
             <section class='live-backstage-panel' id='studioBackstage' data-live-backstage-panel>
               <div class='studio-chat-head'><div><h2>Co-host Backstage</h2><p class='muted'><span data-live-request-count>{len(pending_requests)}</span> pending requests</p></div><span class='pill'>Host only</span></div>
               <div class='live-join-request-list' data-live-join-request-list>{request_rows_html or "<p class='muted'>No co-host requests. Viewers can request camera/mic access from the Live room.</p>"}</div>
@@ -57781,6 +54342,8 @@ def pulse_creator_camera_page():
 #: is not universal, and where it is missing the browser falls back and the
 #: backdrop silently disappears. Inline *style* is not the XSS vector inline
 #: *script* is; the requirement was always scoped to script-src.
+from services.route_auth import admin_required, auth_required, public_route
+
 PULSE_WEB_APP_CSP = (
     "default-src 'self'; "
     "script-src 'self'; "
@@ -57799,684 +54362,6 @@ PULSE_WEB_APP_CSP = (
 )
 
 PULSE_WEB_APP_SHELL = Path(__file__).resolve().parent / "static" / "app" / "index.html"
-
-
-# ---------------------------------------------------------------------------
-# Owner music takedown authority
-#
-# These sit here rather than beside the other `/api/admin/pulse/music` routes
-# because `admin_required` is imported above and the declaration gate reads the
-# decorator, not the body.
-#
-# The policy -- who may act, what each action may do -- lives in
-# `services/music_authority.py`. What lives here is the Flask edge: resolving
-# the caller, counting the blast radius, and applying one transition inside one
-# transaction. Keeping the decisions out of the request handler is what lets the
-# tests exercise them without a request context.
-# ---------------------------------------------------------------------------
-
-from services import music_authority
-
-
-def music_authority_request_id():
-    return (
-        (request.headers.get("X-Request-Id") or request.headers.get("X-Request-ID") or "").strip()[:64]
-        or secrets.token_hex(8)
-    )
-
-
-def music_authority_actor(permission):
-    """Resolve the caller and check ``permission``.
-
-    Returns ``(actor, None)`` or ``(None, response)``. Both identity legs are
-    server-side: an existing admin session, or an account id proven by a signed
-    bearer token / session cookie and matched against the stored
-    ``admin_users.account_user_id`` link. Nothing the request *sends* selects an
-    identity, so a body carrying ``role``, ``is_owner`` or ``admin_user_id`` is
-    inert here.
-    """
-    init_db()
-    actor = None
-    session_admin = admin_current_user()
-    # A browser driving these endpoints supplies ambient authority, so the
-    # cookie leg needs CSRF and the bearer leg does not. `enforce_admin_form_csrf`
-    # does not cover this: its scope is form-encoded bodies, and these routes take
-    # JSON. That was harmless while the only caller was the native app, which
-    # sends a bearer token and no cookie; it stops being harmless the moment an
-    # admin page posts here with a session. Narrowed to the cookie leg and to
-    # state-changing methods so the native client's requests are unaffected.
-    if session_admin and request.method not in ("GET", "HEAD", "OPTIONS"):
-        if not verify_csrf():
-            return None, api_error(
-                "Security check failed. Reload the page and try again.",
-                403,
-                error_code="csrf_failed",
-            )
-    try:
-        actor = music_authority.resolve_actor(
-            session_admin,
-            account_user_id(),
-            admin_user_by_account_user_id,
-        )
-        music_authority.require_permission(actor, permission, admin_has_permission)
-    except music_authority.AuthorityError as exc:
-        if exc.status == 403 and actor:
-            log_admin_audit(
-                actor.get("id"), "music_permission_denied", "permission", permission,
-                {"path": request.path},
-            )
-        return None, api_error(exc.message, exc.status, error_code=exc.error_code)
-    return actor, None
-
-
-MUSIC_REFERENCE_TABLES = (
-    ("pulse_reel_audio", "audio_track_id", "reels"),
-    ("pulse_content_music", "audio_track_id", "content"),
-    ("pulse_status_music", "audio_track_id", "statuses"),
-)
-
-
-class MusicReferenceCountUnavailable(RuntimeError):
-    """A reference count could not be read, so the blast radius is unknown.
-
-    Unknown is not zero. This exists so the difference survives the trip to the
-    owner: the panel has an error state, and showing it is honest where showing
-    "0 attached" next to a failed query is an invitation to purge.
-    """
-
-    def __init__(self, table):
-        super().__init__("Could not count %s references for this track." % table)
-        self.table = table
-
-
-def music_reference_counts(cur, track_id):
-    """How much existing content would be affected by removing this track.
-
-    Counted per table and summed. `pulse_content_music.audio_track_id` is TEXT
-    while `pulse_audio_tracks.id` is INTEGER -- a live mismatch the repo already
-    works around elsewhere -- so each id is compared as text on both sides. A
-    count that silently returned 0 because of that would tell the owner a
-    takedown was harmless when it was not.
-
-    So a failed count raises `MusicReferenceCountUnavailable` rather than
-    contributing 0 to the total. Swallowing it bought no resilience anyway: on
-    Postgres the failed statement aborts the transaction, and the next table's
-    query raises InFailedSqlTransaction regardless.
-    """
-    counts = {}
-    total = 0
-    for table, column, label in MUSIC_REFERENCE_TABLES:
-        try:
-            cur.execute(
-                f"SELECT COUNT(*) AS total FROM {table} WHERE CAST({column} AS TEXT)=CAST(? AS TEXT)",
-                (track_id,),
-            )
-            value = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
-        except Exception as exc:
-            raise MusicReferenceCountUnavailable(table) from exc
-        counts[label] = value
-        total += value
-    counts["total"] = total
-    return counts
-
-
-def music_audit_write(cur, *, track_id, action, previous_state, new_state, actor,
-                      reason_code="", reason_note="", affected=0, request_id="",
-                      related_action_id=None):
-    """Append one row to the immutable takedown trail.
-
-    No foreign key to `pulse_audio_tracks`: the trail has to outlive the asset,
-    and a purge that cascaded its own audit away would destroy the only record
-    that it happened.
-    """
-    cur.execute(
-        """
-        INSERT INTO music_takedown_audit
-        (track_id, action, previous_state, new_state, actor_user_id, actor_role,
-         reason_code, reason_note, affected_reference_count, request_id, created_at,
-         restored_at, related_action_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-        """,
-        (
-            safe_int(track_id, 0),
-            action,
-            previous_state,
-            new_state,
-            safe_int((actor or {}).get("id"), 0),
-            music_authority.actor_role(actor),
-            reason_code,
-            reason_note,
-            safe_int(affected, 0),
-            request_id,
-            datetime.utcnow().isoformat(timespec="seconds"),
-            safe_int(related_action_id, 0) or None,
-        ),
-    )
-    return safe_int(getattr(cur, "lastrowid", 0), 0)
-
-
-def music_step_up_is_valid(cur, admin_id):
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    cur.execute(
-        """
-        SELECT id FROM music_owner_stepups
-        WHERE admin_user_id=? AND COALESCE(consumed_at,'')='' AND expires_at > ?
-        ORDER BY id DESC LIMIT 1
-        """,
-        (safe_int(admin_id, 0), now),
-    )
-    row = cur.fetchone()
-    return safe_int(dict(row or {}).get("id"), 0)
-
-
-def music_track_row(cur, track_id):
-    cur.execute("SELECT * FROM pulse_audio_tracks WHERE id=? LIMIT 1", (safe_int(track_id, 0),))
-    row = cur.fetchone()
-    return dict(row) if row else None
-
-
-def music_apply_transition(cur, *, track, action, actor, reason_code, reason_note,
-                           expected_state, request_id, now):
-    """Apply one lifecycle transition and record it. Caller owns the transaction.
-
-    Returns ``(new_state, changed, action_id, affected)``. When the action was
-    already applied, nothing is written -- no state update and no audit row -- so
-    a client retrying a request whose response it never saw does not manufacture
-    a second entry in the trail for work that happened once.
-    """
-    track_id = safe_int(track.get("id"), 0)
-    previous_state = music_authority.normalize_state(track.get("lifecycle_state"))
-    new_state, changed = music_authority.plan_transition(
-        action,
-        previous_state,
-        expected_state=expected_state,
-        legal_hold=bool(safe_int(track.get("legal_hold"), 0)),
-    )
-    affected = music_reference_counts(cur, track_id)["total"]
-    if not changed:
-        return new_state, False, 0, affected
-
-    legacy = music_authority.legacy_columns_for_state(
-        new_state, now=now, actor_admin_id=safe_int((actor or {}).get("id"), 0)
-    )
-    cur.execute(
-        """
-        UPDATE pulse_audio_tracks
-        SET lifecycle_state=?,
-            takedown_reason_code=?,
-            takedown_reason_note=?,
-            active=?,
-            approved_by_admin=?,
-            safety_status=?,
-            removed_at=?,
-            removed_by_admin=?,
-            updated_at=?
-        WHERE id=?
-        """,
-        (
-            new_state,
-            reason_code,
-            reason_note,
-            legacy["active"],
-            legacy["approved_by_admin"],
-            legacy["safety_status"],
-            legacy["removed_at"],
-            legacy["removed_by_admin"],
-            now,
-            track_id,
-        ),
-    )
-    if action == music_authority.ACTION_SCHEDULE_PURGE:
-        cur.execute("UPDATE pulse_audio_tracks SET purge_scheduled_at=? WHERE id=?", (now, track_id))
-    elif action == music_authority.ACTION_CANCEL_PURGE:
-        cur.execute("UPDATE pulse_audio_tracks SET purge_scheduled_at='' WHERE id=?", (track_id,))
-    elif action == music_authority.ACTION_PURGE:
-        cur.execute("UPDATE pulse_audio_tracks SET purged_at=?, audio_url='', cover_art_url='' WHERE id=?", (now, track_id))
-
-    related_action_id = None
-    if action == music_authority.ACTION_RESTORE:
-        cur.execute(
-            """
-            SELECT action_id FROM music_takedown_audit
-            WHERE track_id=? AND COALESCE(restored_at,'')=''
-              AND action IN (?, ?, ?)
-            ORDER BY action_id DESC LIMIT 1
-            """,
-            (
-                track_id,
-                music_authority.ACTION_TAKEDOWN,
-                music_authority.ACTION_QUARANTINE,
-                music_authority.ACTION_SCHEDULE_PURGE,
-            ),
-        )
-        related_action_id = safe_int(dict(cur.fetchone() or {}).get("action_id"), 0) or None
-
-    action_id = music_audit_write(
-        cur,
-        track_id=track_id,
-        action=action,
-        previous_state=previous_state,
-        new_state=new_state,
-        actor=actor,
-        reason_code=reason_code,
-        reason_note=reason_note,
-        affected=affected,
-        request_id=request_id,
-        related_action_id=related_action_id,
-    )
-    if related_action_id:
-        # The one permitted mutation of an existing audit row: closing the
-        # takedown this restore undid, so the trail reads as a pair rather than
-        # two unrelated events.
-        cur.execute(
-            "UPDATE music_takedown_audit SET restored_at=? WHERE action_id=?",
-            (now, related_action_id),
-        )
-
-    pulse_music_event(
-        cur,
-        track_id=track_id,
-        user_id=safe_int((actor or {}).get("account_user_id"), 0),
-        event_type="owner_%s" % action,
-        surface="owner_music_authority",
-        metadata={
-            "previous_state": previous_state,
-            "new_state": new_state,
-            "reason_code": reason_code,
-            "affected_reference_count": affected,
-            "request_id": request_id,
-        },
-    )
-    return new_state, True, action_id, affected
-
-
-def music_authority_payload():
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        payload = request.form.to_dict() if request.form else {}
-    return payload or {}
-
-
-def music_requested_track_ids(track_id, payload):
-    """The tracks this call acts on: the path id, plus any ``track_ids`` batch.
-
-    Bulk is the same code path as single so the two cannot drift -- a bulk
-    takedown that skipped a guard the single one applied would be the obvious way
-    to lose this. Capped, de-duplicated, order preserved.
-    """
-    ids = [safe_int(track_id, 0)]
-    for value in (payload.get("track_ids") or []) if isinstance(payload.get("track_ids"), list) else []:
-        ids.append(safe_int(value, 0))
-    seen = set()
-    ordered = []
-    for value in ids:
-        if value and value not in seen:
-            seen.add(value)
-            ordered.append(value)
-    return ordered[:100]
-
-
-def music_mutation_route(track_id, *, action, permission, require_step_up=False):
-    """Shared body for the five lifecycle mutations.
-
-    One transaction for the whole batch: a bulk takedown that half-applied would
-    leave the owner with no way to tell which half.
-    """
-    actor, denied = music_authority_actor(permission)
-    if denied:
-        return denied
-    payload = music_authority_payload()
-    request_id = music_authority_request_id()
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    try:
-        reason_code, reason_note = music_authority.validate_reason(
-            action, payload.get("reason_code"), payload.get("reason_note") or payload.get("note")
-        )
-    except music_authority.AuthorityError as exc:
-        return api_error(exc.message, exc.status, error_code=exc.error_code)
-
-    track_ids = music_requested_track_ids(track_id, payload)
-    if not track_ids:
-        return api_error("Choose at least one track.", 400, error_code="music_track_required")
-
-    conn = db()
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    try:
-        step_up_id = 0
-        if require_step_up:
-            step_up_id = music_step_up_is_valid(cur, (actor or {}).get("id"))
-            if not step_up_id:
-                raise music_authority.AuthorityError(
-                    "music_step_up_required",
-                    "Confirm your password before purging.",
-                    403,
-                )
-        results = []
-        purge_keys = []
-        for one_id in track_ids:
-            track = music_track_row(cur, one_id)
-            if not track:
-                raise music_authority.AuthorityError(
-                    "music_track_not_found", "Track %s was not found." % one_id, 404
-                )
-            if action == music_authority.ACTION_PURGE:
-                confirm = str(payload.get("confirm_track_id") or "").strip()
-                if len(track_ids) > 1 or confirm != str(one_id):
-                    raise music_authority.AuthorityError(
-                        "music_purge_confirmation_required",
-                        "Purge acts on one track at a time and needs confirm_track_id to match.",
-                        400,
-                    )
-                purge_keys = music_storage_keys_for_track(track)
-            new_state, changed, action_id, affected = music_apply_transition(
-                cur,
-                track=track,
-                action=action,
-                actor=actor,
-                reason_code=reason_code,
-                reason_note=reason_note,
-                expected_state=payload.get("expected_state"),
-                request_id=request_id,
-                now=now,
-            )
-            results.append({
-                "track_id": one_id,
-                "previous_state": music_authority.normalize_state(track.get("lifecycle_state")),
-                "state": new_state,
-                "changed": changed,
-                "action_id": action_id,
-                "affected_reference_count": affected,
-            })
-        if step_up_id:
-            cur.execute(
-                "UPDATE music_owner_stepups SET consumed_at=? WHERE id=?", (now, step_up_id)
-            )
-        conn.commit()
-    except music_authority.AuthorityError as exc:
-        conn.rollback()
-        conn.close()
-        return api_error(exc.message, exc.status, error_code=exc.error_code)
-    except MusicReferenceCountUnavailable as exc:
-        # The rollback is the point: `affected_reference_count` goes into an
-        # immutable trail, and a transition recorded as touching 0 items when
-        # the count behind that 0 failed is a permanent false record.
-        conn.rollback()
-        conn.close()
-        app.logger.exception("music transition reference count failed for %s", track_ids)
-        return api_error(str(exc), 503, error_code="music_reference_count_unavailable")
-    except Exception:
-        conn.rollback()
-        conn.close()
-        raise
-    conn.close()
-
-    # Storage deletion happens after the commit, deliberately. The database is
-    # the record of what was decided; deleting bytes for a transaction that then
-    # rolled back would be unrecoverable, while a commit whose delete fails is
-    # merely retryable.
-    deleted_keys = []
-    if action == music_authority.ACTION_PURGE:
-        deleted_keys = music_delete_storage_keys(purge_keys)
-
-    log_admin_audit(
-        (actor or {}).get("id"), "music_%s" % action, "music_track", str(track_ids[0]),
-        {"request_id": request_id, "reason_code": reason_code, "tracks": track_ids},
-    )
-    return jsonify({
-        "ok": True,
-        "action": action,
-        "request_id": request_id,
-        "results": results,
-        "changed": any(item["changed"] for item in results),
-        "deleted_object_count": len(deleted_keys),
-    })
-
-
-def music_storage_keys_for_track(track):
-    """The R2 object keys this track owns, and only those.
-
-    Derived from the track's own stored urls -- never from anything the request
-    sent -- so a purge cannot be steered into deleting another track's audio or
-    an unrelated user's upload.
-    """
-    keys = []
-    for field in ("audio_url", "cover_art_url"):
-        key = media_storage.storage_key_from_public_url((track or {}).get(field) or "")
-        if key:
-            keys.append(key)
-    return keys
-
-
-def music_delete_storage_keys(keys):
-    deleted = []
-    for key in keys or []:
-        try:
-            if media_storage.delete_object_key(key):
-                deleted.append(key)
-        except Exception as exc:
-            logging.warning("MUSIC_PURGE_OBJECT_FAILED key=%s error_type=%s", str(key)[:200], type(exc).__name__)
-    return deleted
-
-
-@webhook_app.route("/api/admin/music/capabilities", methods=["GET"])
-@auth_required
-def api_admin_music_capabilities():
-    """What music authority the *caller* holds, so the client never guesses.
-
-    Declared `auth_required` rather than `admin_required` on purpose, and the
-    difference is the point of the route: it answers 200 for any signed-in
-    account, telling most of them they hold nothing. The native Music screen
-    calls this once and draws its owner section from the answer. Were this a 403
-    for non-admins the client would have to treat a refusal as a UI state, and
-    the first network error or expired token would render identically to "you
-    are not an owner" -- the failure mode being that a real owner quietly loses
-    the surface with no way to tell why.
-
-    It grants nothing. Every mutation re-resolves the actor and re-checks its own
-    permission server-side, so a client that lies to itself about this response
-    reaches exactly the same refusals it would have reached anyway. That is why
-    it is safe for this to be the one music route an ordinary user may call.
-    """
-    init_db()
-    viewer_id = safe_int(account_user_id(), 0)
-    if not viewer_id and not admin_current_user():
-        return api_error("Sign in to continue.", 401, error_code="auth_required")
-    actor = None
-    try:
-        actor = music_authority.resolve_actor(
-            admin_current_user(), viewer_id, admin_user_by_account_user_id
-        )
-    except Exception:
-        actor = None
-    permissions = music_authority.granted_permissions(actor, admin_has_permission)
-    return jsonify({
-        "ok": True,
-        # One boolean for "draw the section at all". Derived from the permission
-        # map rather than from the role, so an admin granted a single music
-        # permission gets the surface and an owner-by-name with none does not.
-        "music_authority": any(permissions.values()),
-        "permissions": permissions,
-        "states": list(music_authority.LIFECYCLE_STATES),
-        "reason_codes": list(music_authority.REASON_CODES),
-        "step_up_ttl_seconds": music_authority.STEP_UP_TTL_SECONDS,
-    })
-
-
-@webhook_app.route("/api/admin/music/step-up", methods=["POST"])
-@admin_required
-def api_admin_music_step_up():
-    """Re-prove the password before a purge.
-
-    A separate grant rather than a flag on the purge call: the purge endpoint is
-    also the one a script would retry, and a password travelling with every retry
-    is a password in more logs than it needs to be. The grant is a server-side
-    row, not a session value, because the native app authenticates with a bearer
-    token and carries no Flask session.
-    """
-    actor, denied = music_authority_actor("music.purge")
-    if denied:
-        return denied
-    payload = music_authority_payload()
-    password = str(payload.get("password") or "")
-    stored_hash = (actor or {}).get("password_hash") or ""
-    if not stored_hash:
-        return api_error(
-            "Set an admin password before using purge.", 403, error_code="music_step_up_unavailable"
-        )
-    if not password or not check_password_hash(stored_hash, password):
-        log_admin_audit((actor or {}).get("id"), "music_step_up_failed", "admin", str((actor or {}).get("id") or ""), {})
-        return api_error("That password did not match.", 403, error_code="music_step_up_failed")
-    now = datetime.utcnow()
-    expires = now + timedelta(seconds=music_authority.STEP_UP_TTL_SECONDS)
-    request_id = music_authority_request_id()
-    conn = db()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO music_owner_stepups (admin_user_id, granted_at, expires_at, request_id, consumed_at)
-        VALUES (?, ?, ?, ?, '')
-        """,
-        (
-            safe_int((actor or {}).get("id"), 0),
-            now.isoformat(timespec="seconds"),
-            expires.isoformat(timespec="seconds"),
-            request_id,
-        ),
-    )
-    conn.commit()
-    conn.close()
-    log_admin_audit((actor or {}).get("id"), "music_step_up_granted", "admin", str((actor or {}).get("id") or ""), {"request_id": request_id})
-    return jsonify({
-        "ok": True,
-        "expires_in_seconds": music_authority.STEP_UP_TTL_SECONDS,
-        "request_id": request_id,
-    })
-
-
-@webhook_app.route("/api/admin/music/tracks/<int:track_id>/impact", methods=["GET"])
-@admin_required
-def api_admin_music_track_impact(track_id):
-    """What removing this track would touch, before anything is removed."""
-    actor, denied = music_authority_actor("music.view_all")
-    if denied:
-        return denied
-    conn = db()
-    try:
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        track = music_track_row(cur, track_id)
-        if not track:
-            return api_error("Track not found.", 404, error_code="music_track_not_found")
-        try:
-            counts = music_reference_counts(cur, track_id)
-        except MusicReferenceCountUnavailable as exc:
-            # Refusing to answer is the safe answer. This number is the one the
-            # owner reads before an irreversible purge, and a 200 carrying a
-            # fabricated 0 would read as permission to proceed.
-            app.logger.exception("music impact reference count failed for track %s", track_id)
-            return api_error(str(exc), 503, error_code="music_reference_count_unavailable")
-        cur.execute(
-            "SELECT COUNT(*) AS total FROM pulse_music_reports WHERE audio_track_id=? AND status='open'",
-            (track_id,),
-        )
-        open_reports = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
-    finally:
-        conn.close()
-    state = music_authority.normalize_state(track.get("lifecycle_state"))
-    return jsonify({
-        "ok": True,
-        "track": {
-            "id": safe_int(track.get("id"), 0),
-            "title": track.get("title") or "",
-            "artist": track.get("artist") or "",
-            "uploader_user_id": safe_int(track.get("uploader_user_id"), 0),
-            "state": state,
-            "legal_hold": bool(safe_int(track.get("legal_hold"), 0)),
-            "reason_code": track.get("takedown_reason_code") or "",
-            "reason_note": track.get("takedown_reason_note") or "",
-            "purge_scheduled_at": track.get("purge_scheduled_at") or "",
-            "purged_at": track.get("purged_at") or "",
-        },
-        "references": counts,
-        "open_reports": open_reports,
-        "play_count": safe_int(track.get("play_count"), 0),
-        "usage_count": safe_int(track.get("usage_count"), 0),
-        # Said plainly rather than implied: the bucket is public and the CDN was
-        # told the object is immutable for a year, so a takedown stops the server
-        # handing the url out but does not reach a client that already has it.
-        # Quarantine is the action that also deletes the bytes.
-        "cached_copies_remain_until_purge": state != music_authority.STATE_PURGED,
-        "reason_codes": list(music_authority.REASON_CODES),
-    })
-
-
-@webhook_app.route("/api/admin/music/tracks/<int:track_id>/takedown", methods=["POST"])
-@admin_required
-def api_admin_music_track_takedown(track_id):
-    payload = music_authority_payload()
-    quarantine = str(payload.get("quarantine") or "").strip().lower() in {"1", "true", "yes", "on"}
-    return music_mutation_route(
-        track_id,
-        action=music_authority.ACTION_QUARANTINE if quarantine else music_authority.ACTION_TAKEDOWN,
-        permission="music.takedown",
-    )
-
-
-@webhook_app.route("/api/admin/music/tracks/<int:track_id>/restore", methods=["POST"])
-@admin_required
-def api_admin_music_track_restore(track_id):
-    return music_mutation_route(
-        track_id, action=music_authority.ACTION_RESTORE, permission="music.restore"
-    )
-
-
-@webhook_app.route("/api/admin/music/tracks/<int:track_id>/schedule-purge", methods=["POST"])
-@admin_required
-def api_admin_music_track_schedule_purge(track_id):
-    return music_mutation_route(
-        track_id, action=music_authority.ACTION_SCHEDULE_PURGE, permission="music.purge"
-    )
-
-
-@webhook_app.route("/api/admin/music/tracks/<int:track_id>/cancel-purge", methods=["POST"])
-@admin_required
-def api_admin_music_track_cancel_purge(track_id):
-    return music_mutation_route(
-        track_id, action=music_authority.ACTION_CANCEL_PURGE, permission="music.purge"
-    )
-
-
-@webhook_app.route("/api/admin/music/tracks/<int:track_id>/purge", methods=["POST"])
-@admin_required
-def api_admin_music_track_purge(track_id):
-    return music_mutation_route(
-        track_id,
-        action=music_authority.ACTION_PURGE,
-        permission="music.purge",
-        require_step_up=True,
-    )
-
-
-@webhook_app.route("/api/admin/music/tracks/<int:track_id>/audit", methods=["GET"])
-@admin_required
-def api_admin_music_track_audit(track_id):
-    actor, denied = music_authority_actor("music.view_all")
-    if denied:
-        return denied
-    conn = db()
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT * FROM music_takedown_audit
-        WHERE track_id=? ORDER BY action_id DESC LIMIT 200
-        """,
-        (safe_int(track_id, 0),),
-    )
-    entries = [dict(row) for row in cur.fetchall()]
-    conn.close()
-    return jsonify({"ok": True, "track_id": track_id, "entries": entries})
 
 
 @webhook_app.route("/pulse/app", methods=["GET"])
@@ -58549,74 +54434,6 @@ def pulse_web_app_shell(spa_path: str = ""):
     return response
 
 
-@webhook_app.route("/open/<destination>", methods=["GET"])
-@webhook_app.route("/open/<destination>/<resource_id>", methods=["GET"])
-@public_route(
-    reason=(
-        "A handoff page. It names a destination and renders two links -- the "
-        "App Store listing and, on iOS, a pulsesoc:// button -- and reads no "
-        "member data of any kind, so there is nothing here for a gate to "
-        "protect. Gating it would be actively harmful: the people who reach "
-        "this URL are the ones who do not yet have the app, and bouncing them "
-        "to /login first is how the destination gets lost."
-    )
-)
-def open_destination_interstitial(destination: str, resource_id: str = ""):
-    """The `/open/...` compatibility surface. Deliberately NOT a universal link.
-
-    Every binary in the App Store today claims a fixed component list that does
-    not include `/open/...` (`services/native_app_links.py`), so iOS hands these
-    URLs to Safari no matter who is asking. The two obvious shortcuts are both
-    worse than doing nothing:
-
-    - A 302 to the canonical `/pulse/...` universal link does not open the app.
-      iOS does not re-evaluate associated domains on a redirect target, and it
-      never opens the app for a same-domain navigation. It would also actively
-      punish members who DO have the app, by bouncing them to the App Store.
-    - An automatic `pulsesoc://` navigation shows an OS "cannot open" sheet to
-      every visitor without the app -- which, on this page, is most of them.
-
-    So it renders, and the member chooses. `/open/...` becomes a real universal
-    link in Phase 2, once a binary that declares those routes has shipped and
-    the association has been updated; see
-    `docs/routing/PULSESOC_WEBSITE_TO_NATIVE_ROUTING.md`.
-
-    The canonical `/pulse/...?pulse_app=1` links stay the production authority
-    throughout. Nothing here supersedes them.
-    """
-    source = app_links.app_link_source(request.args)
-    key = (destination or "").strip().lower()
-    spec = app_links.DESTINATIONS.get(key)
-    if spec is None or not spec.native_supported:
-        # Never a redirect assembled from the path, and never a page promising
-        # a destination the shipped binary cannot resolve.
-        logging.info(
-            "%s destination=%s source=%s surface=open",
-            app_links.EVENT_UNKNOWN_DESTINATION,
-            key or "(empty)",
-            source,
-        )
-        abort(404)
-
-    try:
-        path = app_links.resolve_destination_path(key, resource_id or None)
-    except app_links.AppLinkError as exc:
-        logging.info("%s error=%s surface=open", app_links.EVENT_LINK_INVALID, exc)
-        abort(404)
-
-    is_ios = is_ios_user_agent(request.headers.get("User-Agent", ""))
-    logging.info(
-        "%s destination=%s source=%s client=%s surface=open",
-        app_links.EVENT_OPEN_REQUESTED,
-        key,
-        source,
-        "ios" if is_ios else "other",
-    )
-    return render_app_only_destination(
-        key, source, can_open_app=is_ios, scheme_path=path, web_path=path
-    )
-
-
 @webhook_app.route("/pulse/spaces", methods=["GET"])
 def pulse_spaces_page():
     init_db()
@@ -58631,22 +54448,9 @@ def pulse_spaces_page():
     conn.close()
     cards = ""
     for space in PULSE_SPACES:
-        # `counts` is the real count from `pulse_space_members`. It used to fall
-        # back to `space["member_count"]`, a literal in the catalogue -- 304 for
-        # Haiti Crypto Community, 298 for USA Crypto Intelligence -- so on an
-        # install where nobody has joined anything, every card on this page
-        # advertised a crowd of about 270 people who do not exist. Home's
-        # Communities rail links here ("Browse all spaces"), so this is a
-        # destination that has to agree with the rail, and the rail counts rows.
-        #
-        # A space with no members says so by omission rather than by printing
-        # "0 members", which is a number nobody needs to read; region and
-        # category still give the card something true to say.
-        members = counts.get(space["slug"], 0)
-        metrics = space_discovery_engine.score_space(space, members)
+        metrics = space_discovery_engine.score_space(space, counts.get(space["slug"], space.get("member_count", 0)))
         featured = " featured-space" if space.get("featured") else ""
-        member_pill = f" <span class='pill'>{members} member{'' if members == 1 else 's'}</span>" if members else ""
-        cards += f"<article class='card{featured}'><span class='pill'>{html_escape(clean_html(space.get('category') or 'Community'))}</span><h2>{html_escape(clean_html(space['name']))}</h2><p>{html_escape(clean_html(space['description']))}</p><p><span class='pill'>{html_escape(clean_html(space.get('region') or 'Global'))}</span>{member_pill} <span class='pill'>Trust {metrics['trust_score']}%</span> <span class='pill'>Energy {metrics['activity_score']}%</span></p><div class='mini-chart'><span style='width:{int(metrics['score'])}%'></span></div><div class='actions'><a class='button primary' href='/pulse/spaces/{space['slug']}'>Open Space</a><button data-join-space='{space['slug']}'>Join</button><a class='button' href='/pulse?topic={space['slug']}'>Preview</a></div></article>"
+        cards += f"<article class='card{featured}'><span class='pill'>{html_escape(clean_html(space.get('category') or 'Community'))}</span><h2>{html_escape(clean_html(space['name']))}</h2><p>{html_escape(clean_html(space['description']))}</p><p><span class='pill'>{html_escape(clean_html(space.get('region') or 'Global'))}</span> <span class='pill'>{counts.get(space['slug'], space.get('member_count',0))} members</span> <span class='pill'>Trust {metrics['trust_score']}%</span> <span class='pill'>Energy {metrics['activity_score']}%</span></p><div class='mini-chart'><span style='width:{int(metrics['score'])}%'></span></div><div class='actions'><a class='button primary' href='/pulse/spaces/{space['slug']}'>Open Space</a><button data-join-space='{space['slug']}'>Join</button><a class='button' href='/pulse?topic={space['slug']}'>Preview</a></div></article>"
     script = "document.addEventListener('click',async e=>{const b=e.target.closest('[data-join-space]');if(!b)return;try{await pulseApi('/api/pulse/spaces/join',{method:'POST',body:JSON.stringify({space_slug:b.dataset.joinSpace})});toast('Joined space.')}catch(err){toast(err.message)}});"
     return pulse_social_shell("PulseSoc Spaces", "Global intelligence communities for countries, crypto, cybersecurity, creators, sports, AI, business, and education.", f"<style>.featured-space{{border-color:rgba(255,209,102,.4);box-shadow:0 0 34px rgba(255,209,102,.14)}}.mini-chart{{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}}.mini-chart span{{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#36e58f,#6edff6,#ffd166)}}</style><section class='grid'>{cards}</section>", "", script)
 
@@ -58799,7 +54603,7 @@ def pulse_camera_studio_page():
         else "<a class='button' href='/pulse/messages'>Messenger</a>"
     )
     main = f"""
-    <link rel="stylesheet" href="/static/css/pulse_camera_engine.css?v=bare-asset-tokens-20260930a">
+    <link rel="stylesheet" href="/static/css/pulse_camera_engine.css">
     <section class="pulse-camera-engine is-front" data-pulse-camera-engine data-banuba-foundation data-device-file-picker-fallback data-camera-provider="{html_escape(clean_html(public_camera_config['provider']))}" data-camera-kit-ready data-mediapipe-ready data-tensorflow-fallback-ready data-webrtc-get-user-media data-webgl-effects>
       <video class="pulse-camera-preview" id="pulseCameraPreview" autoplay muted playsinline></video>
       <canvas class="pulse-camera-canvas" id="pulseCameraCanvas" hidden></canvas>
@@ -58882,7 +54686,7 @@ def pulse_camera_studio_page():
         </section>
       </div>
       <script id="pulseCameraConfig" type="application/json">{camera_config_json}</script>
-      <script src="/static/js/pulse_camera_engine.js?v=bare-asset-tokens-20260930a" defer></script>
+      <script src="/static/js/pulse_camera_engine.js" defer></script>
     </section>
     """
     return pulse_social_shell("PulseSoc Camera", "Snap-style mirrored capture, gesture controls, beauty modes, lenses, and instant PulseSoc publishing.", main, "", "")
@@ -58924,433 +54728,17 @@ def pulse_camera_studio_page():
     return pulse_social_shell("Camera Creator Studio", "Capture photos and videos, apply premium filters, and publish safely across PulseSoc.", main, "", script)
 
 
-
-# ---------------------------------------------------------------------------
-# The member storefront
-# ---------------------------------------------------------------------------
-#
-# Two layers behind these helpers, deliberately kept out of this file:
-#
-#   services/marketplace_web.py         rows  -> facts
-#   services/marketplace_storefront.py  facts -> markup
-#
-# Neither imports Flask or `bot`, which is why the route below holds SQL and HTTP
-# concerns only, and why the renderer is tested without booting the app.
-#
-# Scope is the signed-in reader. The anonymous reader is answered by
-# `marketplace_seo` and the two public templates in this section, and that path is
-# left exactly as it is: it is indexed, and Merchant Center compares the product
-# feed against what it fetches from it.
-# ---------------------------------------------------------------------------
-
-#: How many eligible listings one storefront request will read.
-#:
-#: Filtering, sorting and paging happen in Python rather than SQL, which is the
-#: right trade at the catalogue's real size -- 15 eligible listings out of 47
-#: rows, so a round trip per facet would cost more than the work it saves. This
-#: constant is where that trade-off stops being true. Past a few hundred rows
-#: the facets belong in the query (a `WHERE` on category, an `ORDER BY`, a
-#: `LIMIT/OFFSET`) and the taxonomy belongs in its own `GROUP BY`. The limit is
-#: here rather than implicit so the ceiling is visible and a page can never
-#: become unbounded work.
-MARKETPLACE_STOREFRONT_SCAN_LIMIT = 600
-
-#: The columns the storefront needs on top of `marketplace_listings.*`.
-#:
-#: `seller_username` is what makes "Message seller" work without JavaScript --
-#: it is the query the messenger's people search takes. `seller_avatar_url` is
-#: the store avatar on the seller card. Both come from `users`, whose primary
-#: key is `user_id`, not `id`.
-MARKETPLACE_STOREFRONT_SELLER_COLUMNS = """
-                   COALESCE(u.username,'') AS seller_username,
-                   COALESCE(u.avatar_url,'') AS seller_avatar_url,
-                   COALESCE(ms.status,'missing') AS seller_status"""
-
-
-def marketplace_storefront_viewer(user):
-    """The `Viewer` for this request.
-
-    Viewer state gates *rendering* only. Every affordance it hides -- Promote,
-    Save, Report -- is re-authorized by the API route behind it, because a hidden
-    button is a courtesy and never a permission.
-    """
-
-    if not user:
-        return marketplace_storefront.Viewer()
-    return marketplace_storefront.Viewer(
-        user_id=safe_int(user.get("user_id"), 0),
-        signed_in=True,
-        is_admin=bool(user.get("is_admin") or user.get("is_owner")),
-    )
-
-
-def marketplace_storefront_variants(cur, listing_ids):
-    """`{listing_id: [variant rows]}` for the given listings, in one query.
-
-    Not `pulse_marketplace_supplier_facts_for_listings`: that function is keyed
-    on a row in the supplier *source* table and returns nothing at all for a
-    listing without one, which is correct for a provenance verdict and wrong
-    here. A merchant-authored listing with hand-entered variants still has a
-    price range and a size selector, and the storefront has to show them.
-
-    Variants are the storefront's price authority. A supplier-imported listing
-    carries its money in `marketplace_listing_variants.price_cents` and its
-    availability in that table's `stock_state`; `marketplace_listings.price_label`
-    is only written at publish time. Reading the listing alone told 31 correctly
-    priced production products that they had no price.
-    """
-
-    safe_ids = [int(item_id or 0) for item_id in listing_ids if int(item_id or 0)]
-    if not safe_ids:
-        return {}
-    from services import marketplace_variants as _variants
-
-    by_listing = {}
-    try:
-        placeholders = ",".join(["?"] * len(safe_ids))
-        cur.execute(
-            f"""SELECT * FROM {_variants.VARIANT_TABLE}
-                 WHERE listing_id IN ({placeholders})
-                   AND COALESCE(status,'active') NOT IN ('archived','deleted')
-                 ORDER BY listing_id ASC, position ASC, id ASC""",
-            safe_ids,
-        )
-        for row in cur.fetchall():
-            item = dict(row)
-            by_listing.setdefault(int(item.get("listing_id") or 0), []).append(item)
-    except Exception:
-        # A deployment whose variant table has not been created yet is not a
-        # broken Marketplace. Every consumer of this mapping treats a missing
-        # entry as "this listing has no variants", which is the pre-variant
-        # behaviour: one price from `price_label`, no option controls.
-        app.logger.warning("marketplace storefront variants unavailable", exc_info=True)
-        return {}
-    return by_listing
-
-
-def marketplace_cart_table_exists(cur):
-    """Whether `marketplace_cart_items` has been created yet.
-
-    Asked of the engine's catalogue rather than of the table itself. The
-    obvious probe -- `SELECT 1 FROM marketplace_cart_items LIMIT 1` -- aborts
-    the surrounding transaction on Postgres when the table is missing, and this
-    runs part-way through a page render that still has queries to make; the
-    product page would go from a missing cart badge to a 500.
-
-    A probe that cannot answer reports `True`, which sends the caller down the
-    read it would have attempted anyway. An unreadable cart is the one case
-    `None` is for.
-    """
-    from services import db as db_service
-
-    catalogue = (
-        "SELECT 1 FROM pg_class WHERE relname='marketplace_cart_items' LIMIT 1"
-        if db_service.IS_POSTGRES else
-        "SELECT 1 FROM sqlite_master WHERE type='table'"
-        " AND name='marketplace_cart_items' LIMIT 1"
-    )
-    try:
-        cur.execute(catalogue)
-        return cur.fetchone() is not None
-    except Exception:
-        app.logger.warning("marketplace cart table probe failed", exc_info=True)
-        return True
-
-
-def marketplace_storefront_cart_count(cur, user_id):
-    """How many items this buyer's cart holds, as the cart API counts them.
-
-    Computed by `marketplace_cart_routes` and not by a `SELECT SUM(qty)` here.
-    The badge counts only the lines a buyer could actually pay for, and which
-    lines those are is `_line_state`'s answer -- it needs the listing join and
-    today's price to tell `available` from `sold`, `restricted` or `removed`. A
-    sum over `marketplace_cart_items` would count a withdrawn line, so the
-    header would promise more than the cart page lists, and the two numbers are
-    visible one click apart.
-
-    Deliberately does *not* call the module's `_ensure_schema`: this is a GET
-    page render, and running DDL from one is how a read path acquires a lock it
-    has no business holding. The table's absence is answered below instead.
-    """
-
-    buyer_id = safe_int(user_id, 0)
-    if not buyer_id:
-        return None
-    if not marketplace_cart_table_exists(cur):
-        # Zero, not `None`, and the distinction is load-bearing. `None` means
-        # "the cart could not be read", and `render_product` treats that as the
-        # caller withholding the whole cart UI -- including Add to cart.
-        #
-        # `marketplace_cart_items` is created by the cart API's own
-        # `_ensure_schema` and by nothing else, so before anyone has ever added
-        # an item the table is absent on every deployment. Answering `None`
-        # there hid Add to cart from precisely the state in which no other
-        # request could create the table, so the page that tells a visitor
-        # "Sign in to add to cart" offered them no way to -- and the POST the
-        # button makes would have worked, because it creates the table itself.
-        #
-        # A table that does not exist holds nothing for anybody. Zero is the
-        # fact here, not the guess the `except` below refuses to make.
-        return 0
-    try:
-        from services import marketplace_cart_routes as _cart
-
-        return _cart.badge_count(_cart._serialize_lines(sys.modules[__name__], cur, buyer_id))
-    except Exception:
-        # `None` and not `0`: zero is the claim "your cart is empty", and a read
-        # that failed has not earned it. The renderer omits the cart link
-        # entirely for `None`, which is the one honest answer available here.
-        app.logger.warning("marketplace storefront cart count unavailable", exc_info=True)
-        return None
-
-
-def marketplace_storefront_payloads(cur, rows):
-    """Run listing rows through the same serializer the app reads.
-
-    `pulse_marketplace_listing_payload` is what strips the reviewer-only columns,
-    normalizes every media URL through `pulse_media_url`, orders the gallery
-    cover-first and drops media whose moderation status removed it. The renderer
-    reads `payload["media"]` first when building a gallery, so passing raw rows
-    here would have put a moderation-removed cover back on the page -- and would
-    have let the web and the app disagree about the same product's price label
-    and store name, which is the class of bug this serializer exists to prevent.
-    """
-
-    ordered = [dict(row) for row in rows]
-    media_by_listing = pulse_marketplace_media_rows_for_listings(
-        cur, [int(item.get("id") or 0) for item in ordered]
-    )
-    return [
-        pulse_marketplace_listing_payload(item, media_by_listing.get(int(item.get("id") or 0), []))
-        for item in ordered
-    ]
-
-
-#: How many products the related rail asks for. Four, because that is one full
-#: row of `.mkt-grid` at the width the product page gives it; a fifth would wrap
-#: to a row of one under a heading that promised a set.
-MARKETPLACE_STOREFRONT_RELATED_LIMIT = 4
-
-
-def marketplace_storefront_product_context(cur, row):
-    """`(related, related_variants, seller_listing_count)` for one product page.
-
-    Three reads that are all about *this* listing's neighbourhood, kept
-    together because they share a connection and a failure mode: none of them is
-    the product, so the caller treats the whole tuple as optional.
-
-    The related rail is the same department, not a recommendation. Ranking
-    belongs to `services/commerce_discovery`, which owns the exposure ledger and
-    the frequency rules; a `SELECT ... ORDER BY id DESC` here that called itself
-    "Recommended for you" would be a second, unaccountable curator saying so.
-    "More from this department" is a claim `l.category = ?` actually supports.
-
-    `seller_listing_count` is counted under the same visibility predicates the
-    grid applies, so the number a buyer reads is the number of products they can
-    actually reach. Counting the seller's rows outright would advertise drafts,
-    paused listings and anything a review removed.
-    """
-
-    from services.discovery_visibility import discovery_visible_sql
-
-    listing_id = int(row.get("id") or 0)
-    seller_id = int(row.get("seller_user_id") or 0)
-    category = (row.get("category") or "").strip()
-
-    related = []
-    related_variants = {}
-    if category:
-        cur.execute(
-            f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}
-                  FROM marketplace_listings l
-                  LEFT JOIN users u ON u.user_id=l.seller_user_id
-                  LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-                 WHERE l.category=? AND l.id<>?
-                   AND {marketplace_listing_lifecycle.public_sql('l', 'ms')}
-                   AND {discovery_visible_sql('u')}
-                 ORDER BY l.featured DESC, l.id DESC
-                 LIMIT {int(MARKETPLACE_STOREFRONT_RELATED_LIMIT)}""",
-            (category, listing_id),
-        )
-        related = marketplace_storefront_payloads(cur, cur.fetchall())
-        # The rail prices from variants exactly as the grid does. Without this
-        # the same product would carry one price on the grid and another in the
-        # rail beneath its neighbour, which is the disagreement
-        # `marketplace_storefront_variants` exists to prevent.
-        related_variants = marketplace_storefront_variants(
-            cur, [int(item.get("id") or 0) for item in related]
-        )
-
-    seller_listing_count = 0
-    if seller_id:
-        cur.execute(
-            f"""SELECT COUNT(*) FROM marketplace_listings l
-                  LEFT JOIN users u ON u.user_id=l.seller_user_id
-                  LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-                 WHERE l.seller_user_id=?
-                   AND {marketplace_listing_lifecycle.public_sql('l', 'ms')}
-                   AND {discovery_visible_sql('u')}""",
-            (seller_id,),
-        )
-        counted = cur.fetchone()
-        seller_listing_count = safe_int(db_service.row_values(counted)[0] if counted else 0, 0)
-
-    return related, related_variants, seller_listing_count
-
-
-def marketplace_storefront_app_cta(destination, resource_id=None):
-    """The "Open in PulseSoc" affordance, as an addition and never a redirect.
-
-    The website is the canonical, indexable surface for a product now, so this is
-    a link a visitor may take -- not a gate in front of the page. The href is
-    built by `app_links` rather than hand-written, because that module validates
-    the destination against what the released binary actually resolves; a
-    hand-made link is how a button reading "Open this listing" ends up landing on
-    the app's Home tab.
-
-    `open_interstitial_url`, and NOT `app_first_href`, which is what this used to
-    call and is the whole of the reported defect. Those two answer different
-    questions. `app_first_href` answers "where should a link to this destination
-    point on the web", and since `product` became web-first its answer is
-    `/pulse/marketplace/<id>` -- correct for a breadcrumb or a card, and for this
-    button it is the page the visitor is already standing on. So the CTA was an
-    anchor to itself. On a phone it did not open the app, did not go Home and did
-    not error; it re-rendered the same listing, which is why it was reported as a
-    button that does nothing.
-
-    Routing it through `/open/...` instead of the canonical
-    `/pulse/marketplace/<id>?pulse_app=1` universal link is deliberate and is not
-    a workaround. That link is tapped from the same origin it addresses, and iOS
-    does not consult associated domains for a same-domain navigation, so it could
-    never have opened the app from this page either. `/open/...` is already
-    `exclude: true` in the shipped association file, so Safari keeps it by
-    design and the member is offered the choice -- which means this fix needs no
-    AASA change, and so cannot disturb the Stripe onboarding paths that share
-    that file.
-    """
-
-    href = app_links.open_interstitial_url(destination, resource_id, "web")
-    label = app_links.destination_label(destination, "Open in PulseSoc")
-    return (
-        '<aside class="mkt-appcta">'
-        f'<p>Prefer the app? <a href="{html_escape(href)}"'
-        f' data-app-link="{html_escape(destination)}">{html_escape(label)}</a></p>'
-        "</aside>"
-    )
-
-
-
-def _marketplace_member_storefront_reply(page, status=200, extra_html=""):
-    """One `RenderedPage`, wrapped in the member shell.
-
-    `extra_html` is appended after the body, for markup that belongs to the
-    page but not inside it -- the promotion modal and its bundle on the product
-    page. The renderer has no parameter for it and should not: a dialog that
-    positions itself against the viewport is not part of a purchase panel, and
-    threading it through `promote_html` would nest it inside one.
-
-    Member-only by design. The anonymous reader never reaches this function --
-    `_marketplace_public_index_response` and `_marketplace_public_product_response`
-    answer that reader, and they are the documents Google and Merchant Center
-    fetch. An earlier draft of this storefront served both audiences from one
-    `RenderedPage` through a public document of its own; that half was withdrawn
-    on integration rather than landed, because the public half already exists, is
-    indexed, and is the page the product feed is compared against. Two
-    implementations of one indexable page is how a feed and a page begin
-    disagreeing about a price, and that disagreement is a Merchant Center
-    misrepresentation finding rather than a rendering bug.
-    """
-
-    # `pulse_social_shell` returns a `Response` already -- wrapping it in a second
-    # one puts a Response object in the body and werkzeug fails at send time, not
-    # here. Take the one it built and set status on it.
-    response = pulse_social_shell(
-        page.title,
-        page.meta_description,
-        f"{page.assets_html}{page.body_html}{extra_html}",
-        "",
-        "",
-        show_intro=False,
-    )
-    if response.status_code in (301, 302, 303, 307, 308):
-        # The session evaporated between `require_account()` and the shell's own
-        # call. Honour the redirect rather than dressing it up.
-        return response
-    response.status_code = status
-    # Personalised: the member's own avatar, nav and merchant state are on it, so
-    # nothing shared may store it.
-    response.headers["Cache-Control"] = "private, no-store"
-    response.headers["Content-Type"] = "text/html; charset=utf-8"
-    # One URL, two documents, chosen by the session cookie. Without this a shared
-    # cache may hand an anonymous reader the member frame -- which for a crawler
-    # means being served the `noindex` copy of an indexable page.
-    response.headers["Vary"] = "Cookie"
-    return response
-
-
-def _marketplace_public_index_response(listings):
-    """The marketplace grid for a reader with no session -- including Googlebot.
-
-    Short for the same reason its product-page twin is short: every value on
-    every card comes from ``marketplace_seo.index_card``, which derives it from
-    the same payload the product page renders. Nothing is formatted twice.
-
-    The only judgement here is about search -- whether this page is worth asking
-    to be ranked at all.
-    """
-
-    cards = [marketplace_seo.index_card(listing) for listing in listings]
-
-    # An empty catalogue keeps its page and stops asking to be ranked. A URL that
-    # answers 200 with nothing on it is the soft-404 pattern Google names, and on
-    # a new deployment this is a real state rather than a hypothetical one.
-    # `follow`, not `nofollow`: the outbound links are the help pages and the
-    # sign-in path, which stay crawlable.
-    robots = (search_visibility.robots_meta(request.path) if cards
-              else search_visibility.NOINDEX_FOLLOW)
-
-    response = webhook_app.make_response(render_template(
-        "marketplace_index_public.html",
-        page=marketplace_seo.index_page_meta(listings),
-        robots=robots,
-        schema_json=marketplace_seo.index_page_graph(listings),
-        index_path=marketplace_seo.INDEX_PATH,
-        cards=cards,
-    ))
-    # Same five minutes as the product page, and the same reason for the flag:
-    # `add_pwa_headers` stamps `no-store` on every `/pulse/` response, so setting
-    # the header without the flag would be overwritten on the way out. This page
-    # carries prices too, and it is the URL a crawler re-fetches most often.
-    g.pulse_public_cacheable = True
-    response.headers["Cache-Control"] = "public, max-age=300"
-    return response
-
-
 @webhook_app.route("/pulse/marketplace", methods=["GET"])
-@public_route(reason="Public marketplace grid. Anonymous visitors and Googlebot get the public index -- the only internal crawl path to the product pages -- and signed-in members fall through to the member grid, which reads its own account state.")
 def pulse_marketplace_page():
     init_db()
-    # Not a gate. The product pages became public first, and that left them
-    # reachable only from a sitemap: Google treats a sitemap as a hint it may
-    # ignore, while a linked page in the site's own navigation is how a crawler
-    # finds a URL and decides how often to return. A catalogue whose only inbound
-    # path is a sitemap gets crawled late and shallowly.
-    #
-    # Same rule as the product page and `/app`: the branch is on authentication,
-    # never on user-agent, and the visibility predicates below are untouched.
     user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    seller = {}
-    if user:
-        # Only a signed-in reader has a seller row to look up, and the public
-        # index has nowhere to put one -- Apply as Merchant and Create Listing
-        # both need an account before they mean anything. Skipping the query
-        # rather than guarding its result keeps the anonymous page one query
-        # cheaper, on the one page a crawler fetches most often.
-        cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
-        seller = dict(cur.fetchone() or {})
+    cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
+    seller = dict(cur.fetchone() or {})
     # `discovery_visible_sql` is applied here as well as the lifecycle rule.
     # Without it this grid was the one buyer-side surface in the product that
     # showed listings from QA and deactivated sellers: the search endpoint below
@@ -59363,242 +54751,70 @@ def pulse_marketplace_page():
     # `/pulse/marketplace/<id>`, which applies both predicates, so a grid that
     # applied fewer would have rendered its own links as 404s.
     from services.discovery_visibility import discovery_visible_sql
-    if not user:
-        # Scoped to the anonymous branch rather than run for everyone. The member
-        # branch below reads the same two predicates but needs a wider row -- the
-        # seller columns the storefront's seller card and "Message seller" are built
-        # from -- and a higher ceiling than 40, so it issues its own query. Leaving
-        # this one above the branch meant every signed-in visitor paid for a
-        # 40-row read whose result was then discarded.
-        cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
-            FROM marketplace_listings l
-            LEFT JOIN users u ON u.user_id=l.seller_user_id
-            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-            WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
-              AND {discovery_visible_sql('u')}
-            ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
-        listings = [dict(row) for row in cur.fetchall()]
-        # The public grid is built from `pulse_marketplace_listing_payload`, the
-        # same shaping function the mobile API and the public product page use,
-        # rather than from raw rows formatted here. That costs one extra query for
-        # the media rows and buys the thing that matters on a page Google reads: a
-        # card cannot disagree with the product page it links to about the title,
-        # the image or the price.
-        listing_ids = [int(row.get("id") or 0) for row in listings]
-        media_by_listing = pulse_marketplace_media_rows_for_listings(cur, listing_ids)
-        conn.close()
-        return _marketplace_public_index_response([
-            pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), []))
-            for row in listings
-        ])
-    # The member grid that used to live here is replaced, not extended. It built
-    # its own cards from raw rows -- a hand-rolled price pill, a seller line, an
-    # empty state reading "Marketplace is warming up." and a caption promising
-    # that "Payments are coming later after compliance readiness", which stopped
-    # being true when Connect went live. None of it could filter, sort, page or
-    # search, so the catalogue had exactly one view.
-    #
-    # What replaces it reads the same two visibility predicates and renders through
-    # the storefront engine, so the member sees the catalogue the app sees, with
-    # the facets in the query string where they can be shared and bookmarked.
-    load_error = False
-    listings = []
-    variants_by_listing = {}
-    cart_count = None
-    try:
-        cur.execute(
-            f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}
-                  FROM marketplace_listings l
-                  LEFT JOIN users u ON u.user_id=l.seller_user_id
-                  LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-                 WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
-                   AND {discovery_visible_sql('u')}
-                 ORDER BY l.featured DESC, l.id DESC
-                 LIMIT {int(MARKETPLACE_STOREFRONT_SCAN_LIMIT)}"""
-        )
-        listings = marketplace_storefront_payloads(cur, cur.fetchall())
-        variants_by_listing = marketplace_storefront_variants(
-            cur, [int(item.get("id") or 0) for item in listings]
-        )
-        # Inside the `try` because it needs this connection, which the `finally`
-        # closes; safe here because the helper swallows its own failures and
-        # answers `None`, so a cart it could not read cannot turn the whole
-        # catalogue into an error page.
-        cart_count = marketplace_storefront_cart_count(cur, user.get("user_id"))
-    except Exception:
-        # A failed read is an error state, never an empty one. "No products are
-        # listed yet" is a claim about the catalogue, and a page that could not
-        # read the catalogue has not earned the right to make it. The renderer
-        # takes `load_error` and says so instead.
-        app.logger.exception("marketplace discovery read failed")
-        load_error = True
-    finally:
-        conn.close()
+    cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
+        FROM marketplace_listings l
+        LEFT JOIN users u ON u.user_id=l.seller_user_id
+        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+        WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+          AND {discovery_visible_sql('u')}
+        ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
+    listings = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    def marketplace_card(row):
+        listing_id = int(row.get("id") or 0)
+        seller_id = int(row.get("seller_user_id") or 0)
+        promote = ""
+        if seller_id == int(user.get("user_id") or 0):
+            promote = f"<button data-promote-content='marketplace_listing' data-content-id='{listing_id}' data-content-label='{html_escape(clean_html(row.get('title') or 'Marketplace listing'))}'>Promote Listing</button>"
+        # A listing with no price gets no price pill, rather than a pill filled
+        # with prose. `pulse_marketplace_listing_payload` stopped inventing
+        # "Request access" for the clients; this page builds its own HTML from
+        # the row and so kept saying it, which left an unpriced listing -- a
+        # dropship draft, say -- priced on the web and unpriced in the app, for
+        # the same product. The empty pill is not the alternative either: it
+        # reads as a price the seller set to nothing.
+        price_label = clean_html(row.get("price_label"))
+        price_pill = f"<span class='pill'>{price_label}</span> " if price_label else ""
+        # No "Safety N" pill. `marketplace_listings.safety_score` is written by
+        # the submit-for-review route as the *risk* score `score_text` returns
+        # (`safety_score=int(review["risk_score"])`), where 0 is clean and 100 is
+        # "guaranteed profit, risk free, 100x". Printed as safety it was exactly
+        # inverted: the worst listing the engine can score advertised
+        # "Safety 100" and every honest one read "Safety 0". Measured over the
+        # real engine, not inferred from the name.
+        #
+        # Restored polarity is not the fix. A raw moderation integer is not a
+        # buyer concept in either direction, and a listing is only on this page
+        # because moderation approved it -- that approval is the signal. The
+        # reviewer's working number stays with the reviewer (§27/§95); the admin
+        # queue reads the same column as risk and is already correct.
+        return f"<article class='card'><h2><a href='/pulse/marketplace/{listing_id}'>{html_escape(clean_html(row.get('title')))}</a></h2><p>{html_escape(clean_html(row.get('description')))}</p><p><span class='pill'>{html_escape(clean_html(row.get('category') or 'Education'))}</span> {price_pill}</p><p>Seller: {html_escape(clean_html(marketplace_seller_identity.display_store_name(row)))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
 
-    # The merchant panel is real functionality or it is absent. Each branch links
-    # to a surface that exists, and the wording states the visitor's actual
-    # position -- no merchant record, an application under review, or approved --
-    # rather than a generic invitation that is wrong for two of the three.
-    # No `if user` guard: the anonymous branch above has already returned, so
-    # every reader reaching this line has an account and all three states below
-    # are reachable.
-    merchant_actions = [
-        f'<a class="mkt-ghost" href="{html_escape(app_first_href("seller_dashboard"))}">'
-        f"Merchant dashboard</a>"
-    ]
+    listing_html = "".join(marketplace_card(row) for row in listings)
+    seller_form = "<section class='card'><h2>Merchant Access</h2><p class='muted'>Apply, verify, and wait for approval before listing products.</p><div class='actions'><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a><a class='button' href='/pulse/merchant/dashboard'>Merchant Dashboard</a></div></section>"
+    listing_form = ""
     if seller and seller.get("status") == "approved":
-        merchant_actions.insert(
-            0,
-            f'<a class="mkt-cta" href="{html_escape(app_first_href("marketplace_create"))}">'
-            f"Create a product</a>",
-        )
-        merchant_note = "You are an approved merchant."
+        listing_form = "<section class='card'><h2>Create Listing</h2><p class='muted'>Approved merchants can create reviewed products.</p><a class='button primary' href='/pulse/marketplace/create'>Create Product</a></section>"
     elif seller:
-        merchant_note = (
-            "Your merchant application is "
-            f"{html_escape(clean_html(seller.get('status') or 'pending_review'))}. "
-            "Products unlock after approval."
-        )
-    else:
-        merchant_actions.insert(
-            0,
-            f'<a class="mkt-cta" href="{html_escape(app_first_href("seller_apply"))}">'
-            f"Apply as a merchant</a>",
-        )
-        merchant_note = (
-            "Sell on PulseSoc. Applications are reviewed before a store can list products."
-        )
-    merchant_html = (
-        '<section class="mkt-merchant" aria-labelledby="mkt-merchant-h">'
-        '<h2 id="mkt-merchant-h">Sell on PulseSoc</h2>'
-        f"<p>{merchant_note}</p>"
-        f'<div class="mkt-actions">{"".join(merchant_actions)}</div>'
-        "</section>"
-    )
-
-    page = marketplace_storefront.render_discovery(
-        listings=listings,
-        variants_by_listing=variants_by_listing,
-        # Every facet is read from the query string and nowhere else, which is
-        # what makes a filtered view shareable, bookmarkable and crawlable.
-        # `Filters.from_args` parses and clamps; it never trusts.
-        filters=marketplace_storefront.Filters.from_args(request.args),
-        viewer=marketplace_storefront_viewer(user),
-        app_cta_html=marketplace_storefront_app_cta("marketplace"),
-        merchant_html=merchant_html,
-        load_error=load_error,
-        # Turns on the cart link and the per-card Add to cart buttons. `None`
-        # keeps both off, which is what the error path above leaves it as: a page
-        # that could not read the catalogue must not invite a purchase.
-        cart_count=cart_count,
-    )
-    # 503, not 200, when the catalogue could not be read. Nothing indexes this
-    # page, but a member-facing 200 over an apology is still a page claiming to
-    # be the Marketplace, and the browser cache would keep it.
-    response = _marketplace_member_storefront_reply(page, status=503 if load_error else 200)
-    if load_error:
-        # Two headers the success path must not carry and the failure path must.
-        # `Retry-After` is the half of a 503 that says "come back" -- without it a
-        # crawler is free to treat the failure as indefinite. And the short shared
-        # TTL that makes the good page cheap would, here, pin the apology in front
-        # of every visitor who follows the same link for two minutes.
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Retry-After"] = "120"
-    return response
-
-
-def _marketplace_public_product_response(listing_id, listing):
-    """The product page for a reader with no session -- including Googlebot.
-
-    Everything rendered here comes out of ``listing``, which is
-    ``pulse_marketplace_listing_payload``'s output -- the same dict the mobile
-    API returns and the same one the member page renders. That is deliberate and
-    it is the whole reason this function is short: a public page that re-derived
-    the title, image or price from the row would be a second opinion about one
-    product, and the copy Google indexes would drift from the copy a buyer sees.
-
-    The only judgements made here are about *search*, not about content: whether
-    this row is substantial enough to ask to be ranked, and what robots
-    directive follows from that.
-    """
-
-    meta = marketplace_seo.product_page_meta(listing)
-    verdict = marketplace_seo.eligibility(listing)
-
-    # A thin or imageless listing keeps its page and stops asking to be ranked.
-    # `noindex,follow` rather than `nofollow`: the page's outbound links are the
-    # marketplace index and the help pages, which are real crawl paths, and
-    # `search_visibility.robots_disallow_prefixes` only ever disallows
-    # `noindex,nofollow`, so this choice also keeps the section crawlable.
-    robots = (search_visibility.robots_meta(request.path) if verdict.indexable
-              else search_visibility.NOINDEX_FOLLOW)
-
-    price = marketplace_seo.parse_price(listing.get("price_label"), listing.get("currency"))
-    images = [entry.get("media_url") for entry in (listing.get("media") or [])
-              if (entry.get("media_type") or "image") == "image" and entry.get("media_url")]
-    # Paragraphs, not one blob. Supplier descriptions arrive with blank-line
-    # breaks in them and collapsing those into a single <p> is what turns a
-    # readable spec list into a wall.
-    description = [para.strip() for para
-                   in re.split(r"\n\s*\n", str(listing.get("description")
-                                                or listing.get("short_description") or ""))
-                   if para.strip()]
-
-    # The delivery line, from the cache only and with no visitor destination.
-    #
-    # `shared_cache=True` is not a hint: this response carries
-    # `Cache-Control: public, max-age=300`, so one rendering is served to every
-    # reader behind the same cache, and a window resolved from the first reader's
-    # country would be served to the rest as though it were theirs. The flag makes
-    # `delivery.web` refuse a per-visitor destination -- it raises if handed one --
-    # and fall back to the corridor implied by `MARKETPLACE_SHIPPING_COUNTRIES`
-    # naming a single country, which is a fact about PulseSoc's checkout rather
-    # than about the reader and is therefore the same for all of them.
-    #
-    # Nothing here can call CJ: `cache_only` is set inside `delivery.web`, so a
-    # cold corridor costs this render nothing and is filled in by the page's own
-    # fetch to `/api/pulse/delivery/estimate`.
-    # Imported in the function, matching `pulse_snapshot_delivery_promise` below:
-    # the delivery package reaches `marketplace_fulfillment` and the supplier
-    # connection layer, and a module-scope import here would add that chain to
-    # every boot of this monolith for the sake of one page.
-    from services.delivery import web as delivery_web
-
-    delivery_line = delivery_web.context(str(listing_id), shared_cache=True)
-
-    response = webhook_app.make_response(render_template(
-        "marketplace_product_public.html",
-        page=meta,
-        robots=robots,
-        schema_json=marketplace_seo.product_page_graph(listing),
-        listing_id=listing_id,
-        # The markup, not the dict. `delivery.web.html` is the one renderer for
-        # this block, shared with the signed-in page below, which is built as an
-        # f-string and has no template to extend -- two renderers would be two
-        # sets of hooks for one script to keep working with.
-        delivery_html=delivery_web.html(delivery_line),
-        product_path=marketplace_seo.PRODUCT_PATH.format(listing_id=listing_id),
-        index_path=marketplace_seo.INDEX_PATH,
-        price=price,
-        in_stock=marketplace_seo.availability(listing) == marketplace_seo.IN_STOCK,
-        category=clean_html(listing.get("category") or ""),
-        images=images,
-        description=description,
-    ))
-    # Short rather than long. The page is identical for every anonymous reader,
-    # but price and availability are on it, and a stale price is the one thing
-    # this page must not serve -- Merchant Center compares the feed against what
-    # it fetches from this URL.
-    #
-    # The flag is what makes the header survive. `add_pwa_headers` stamps
-    # `no-store` on every `/pulse/` response, which is right for the signed-in
-    # app and wrong for this one page; setting the header alone would be
-    # overwritten on the way out. Set here and not in the route, because it is
-    # true of *this* response -- the same URL with a session renders the member
-    # shell and must keep `no-store`.
-    g.pulse_public_cacheable = True
-    response.headers["Cache-Control"] = "public, max-age=300"
-    return response
+        listing_form = f"<section class='card'><h2>Application Status</h2><p class='metric'>{html_escape(clean_html(seller.get('status') or 'pending_review'))}</p><p>Products unlock after approval.</p></section>"
+    script = """
+    const marketplaceResults=document.querySelector('[data-marketplace-results]');
+    const marketplaceSearch=document.querySelector('[data-marketplace-search]');
+    const marketplaceCurrentUserId=%d;
+    const marketplaceEsc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';const priceText=String(row.price_label||'').trim();return `<article class="card"><h2><a href="/pulse/marketplace/${listingId}">${marketplaceEsc(row.title||'Marketplace listing')}</a></h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> ${priceText?`<span class="pill">${marketplaceEsc(priceText)}</span> `:''}</p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
+    let marketplaceSearchTimer=0;
+    async function runMarketplaceSearch(query=''){if(!marketplaceResults)return;marketplaceResults.innerHTML='<article class="card"><p class="muted">Searching marketplace...</p></article>';try{const d=await pulseApi('/api/pulse/marketplace/search?q='+encodeURIComponent(query||''));marketplaceResults.innerHTML=(d.items||[]).map(marketplaceListingHtml).join('')||'<article class="card"><h2>No marketplace matches.</h2><p class="muted">Try another item, category, or seller.</p></article>'}catch(err){marketplaceResults.innerHTML=`<article class="card"><p class="muted">${marketplaceEsc(err.message||'Marketplace search failed.')}</p></article>`}}
+    marketplaceSearch?.addEventListener('submit',e=>{e.preventDefault();runMarketplaceSearch(e.target.q.value.trim())});
+    marketplaceSearch?.q?.addEventListener('input',e=>{clearTimeout(marketplaceSearchTimer);marketplaceSearchTimer=setTimeout(()=>runMarketplaceSearch(e.target.value.trim()),320)});
+    document.getElementById('sellerApply')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/seller/apply',{method:'POST',body:JSON.stringify({display_name:document.getElementById('sellerName').value,bio:document.getElementById('sellerBio').value})});toast('Seller application saved.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
+    document.getElementById('listingCreate')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/listings/create',{method:'POST',body:JSON.stringify({title:document.getElementById('listingTitle').value,category:document.getElementById('listingCategory').value,description:document.getElementById('listingDescription').value,price_label:document.getElementById('listingPrice').value})});toast('Listing created.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
+    document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
+    """ % int(user.get("user_id") or 0)
+    search_bar = "<section class='card'><form data-marketplace-search role='search'><div class='actions'><input name='q' type='search' placeholder='Search marketplace items, categories, or sellers' autocomplete='off' aria-label='Search marketplace'><button class='primary' type='submit'>Search</button></div></form></section>"
+    listing_empty = '<article class="card"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'
+    main = f"{seller_form}{listing_form}{search_bar}<section class='grid' data-marketplace-results>{listing_html or listing_empty}</section>{pulse_promotion_modal_html()}<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'><script src='/static/js/pulsesoc_promotions.js' defer></script>"
+    return pulse_social_shell("PulseSoc Marketplace", "Creator products, educational services, templates, books, scam-prevention guides, and coaching foundations. No risky financial products.", main, "", script)
 
 
 # --- A shared marketplace listing link ---------------------------------------
@@ -59635,76 +54851,20 @@ def _marketplace_public_product_response(listing_id, listing):
 # search hides. A deep link is reached from search on native, so it inherits the
 # stricter pair; matching the looser grid would have made a shared link show
 # something the app would not.
-@webhook_app.route("/pulse/cart", methods=["GET"])
-@auth_required
-def pulse_marketplace_cart_page():
-    """The web Marketplace cart.
-
-    Not a second cart. `marketplace_cart_items` is keyed on the buyer and lives
-    on the server, so this page and `MarketplaceCartScreen` in the app are two
-    views of one row set -- a line added in a browser is already in the app's
-    cart with nothing to sync. That is why a web cart is worth having before the
-    web can take a card: "add it here, pay in the app" is a real path.
-
-    No new API. `templates/marketplace_cart.html` and
-    `static/js/pulsesoc_cart.js` drive the seven endpoints in
-    `services/marketplace_cart_routes.py` that have answered the native app all
-    along -- including `/checkout`, whose hosted-Stripe-session lane returns
-    `success_url` and `cancel_url` pointing at *web* routes and so was built for
-    a browser before there was a browser calling it. Its `_require_user()`
-    resolves through `api_account_user()`, which accepts the web session cookie,
-    so the browser is already an authenticated caller; that module's own
-    `_error()` docstring says its messages stay human "because web and admin
-    surfaces render it directly", and this is the surface it was anticipating.
-    """
-    init_db()
-    main = render_template(
-        "marketplace_cart.html",
-        app_href=app_links.open_interstitial_url("cart", source="web"),
-        # The registry's template form, with `__RESOURCE_ID__` where the listing
-        # id goes. Passed instead of letting the script concatenate a path,
-        # because `app_links` is the only thing that decides where a product
-        # lives and a literal in a script would keep working through a change to
-        # it while every other surface moved.
-        product_href=app_links.website_href_template("product", source="web"),
-    )
-    # The page's script tag rides in `main_html`, which is the precedent set by
-    # `pulse_marketplace_listing_page` and its promotions bundle. `script_html`
-    # cannot carry it: the shell interpolates that parameter *inside* a
-    # `<script>` element, so a `<script src>` passed there would be nested and
-    # never fetched.
-    return pulse_social_shell(
-        "Your cart",
-        "The items you have saved to buy on PulseSoc.",
-        main,
-        show_intro=False,
-    )
-
-
 @webhook_app.route("/pulse/marketplace/<int:listing_id>", methods=["GET"])
-@public_route(reason="Public product page. Anonymous visitors and Googlebot get the public product shell; signed-in members fall through to the member page, which reads its own account state.")
 def pulse_marketplace_listing_page(listing_id):
     init_db()
-    # Not a gate any more. The branch on this value is below, once the listing
-    # has been read: an anonymous reader gets the public product page, a member
-    # gets the app shell they had before.
-    #
-    # The precedent is `/app`, and its rule is the one that matters here too --
-    # the branch is on authentication, never on user-agent. Googlebot sees
-    # exactly what a logged-out person sees, because serving a crawler something
-    # a visitor cannot get is cloaking, and the point of this change is that the
-    # product pages are genuinely public rather than merely visible to Google.
-    #
-    # The visibility predicates below are unchanged and still decide what may be
-    # shown at all. Nothing about being logged out widens them; a listing that
-    # 404ed for a member 404s here.
     user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
     from services.discovery_visibility import discovery_visible_sql
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     cur.execute(
-        f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}
+        f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},
+                   COALESCE(ms.status,'missing') AS seller_status,
+                   COALESCE(u.username,'') AS seller_username
             FROM marketplace_listings l
             LEFT JOIN users u ON u.user_id=l.seller_user_id
             LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
@@ -59723,138 +54883,63 @@ def pulse_marketplace_listing_page(listing_id):
         abort(404)
     row = dict(row)
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [listing_id])
-    seller_id = int(row.get("seller_user_id") or 0)
-
-    # Everything the member page needs beyond the row itself, read on this
-    # connection before the `close()` below. Gated on `user` because the
-    # anonymous reader never uses any of it -- that branch renders from
-    # `listing` alone -- and four extra queries per crawl of a public page is a
-    # cost with nothing on the other side of it.
-    variants = []
-    related = []
-    related_variants = {}
-    cart_count = None
-    seller_listing_count = 0
-    if user:
-        try:
-            variants = marketplace_storefront_variants(cur, [listing_id]).get(listing_id, [])
-            cart_count = marketplace_storefront_cart_count(cur, user.get("user_id"))
-            related, related_variants, seller_listing_count = (
-                marketplace_storefront_product_context(cur, row)
-            )
-        except Exception:
-            # None of these is the product. A related rail that could not be
-            # read is an absent rail; a cart that could not be read is a page
-            # with no cart link, which `render_product` already treats as the
-            # caller's opt-out. The listing itself is in hand, so there is
-            # nothing here worth turning into an error page.
-            app.logger.warning("marketplace product context unavailable", exc_info=True)
     conn.close()
     listing = pulse_marketplace_listing_payload(row, media_by_listing.get(listing_id, []))
 
-    if not user:
-        return _marketplace_public_product_response(listing_id, listing)
+    seller_id = int(row.get("seller_user_id") or 0)
     owned = seller_id == int(user.get("user_id") or 0)
-
-    # Promote stays exactly where it was -- owner-only, same three data
-    # attributes, same modal, same bundle -- because `pulsesoc_promotions.js`
-    # binds on `[data-promote-content]` and knows nothing about which page it is
-    # on. Only the container moved: the button rides in the purchase panel via
-    # `promote_html`, and the dialog and its assets go after the body, which is
-    # where a viewport-positioned dialog belongs.
-    from services.delivery import web as delivery_web
-
-    promote_html = ""
-    # The delivery rules and the one script that fills in a pending sentence.
-    #
-    # The rules are inlined from `delivery.web` rather than written a second time
-    # into a stylesheet -- see `web.CSS` for why a hand-copied duplicate drifts
-    # silently: a page missing a rule still renders a correct sentence, just
-    # unstyled, so nothing fails.
-    #
-    # Bump the `?v=` here AND in `marketplace_product_public.html` together.
-    # /static is served with a one-year immutable cache, so a one-sided bump
-    # ships two different versions of this file to the two product pages;
-    # `tests/delivery/test_delivery_web.py` fails if the tokens diverge.
-    extra_html = (
-        f"{delivery_web.style_tag()}"
-        f"<script src='/static/js/pulse_delivery.js?v=1' defer></script>"
-    )
+    gallery = "".join(
+        f"<img src='{html_escape(clean_html(entry.get('media_url')))}' alt='' loading='lazy'>"
+        if (entry.get("media_type") or "image") == "image"
+        else f"<video src='{html_escape(clean_html(entry.get('media_url')))}' controls preload='none'"
+             f" poster='{html_escape(clean_html(entry.get('poster_url') or ''))}'></video>"
+        for entry in (listing.get("media") or []))
+    gallery_block = f"<div class='grid'>{gallery}</div>" if gallery else ""
+    promote = ""
     if owned:
-        promote_html = (
-            f"<div class='mkt-owner-tools'>"
-            f"<button class='mkt-ghost' data-promote-content='marketplace_listing' "
-            f"data-content-id='{listing_id}' "
-            f"data-content-label='{html_escape(clean_html(row.get('title') or 'Marketplace listing'))}'>"
-            f"Promote listing</button></div>"
-        )
-        # Appended, not assigned. The seller's own view of the listing is still a
-        # product page and still needs the delivery assets above; an assignment
-        # here would drop them for exactly the reader most likely to notice the
-        # line is unstyled and never fills in.
-        extra_html += (
-            f"{pulse_promotion_modal_html()}"
-            f"<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css?v=bare-asset-tokens-20260930a'>"
-            f"<script src='/static/js/pulsesoc_promotions.js?v=bare-asset-tokens-20260930a' defer></script>"
-        )
-
-    # The delivery line, and this is the one product surface that may print a
-    # window resolved from the reader.
-    #
-    # `_marketplace_member_storefront_reply` sets `private, no-store` and
-    # `Vary: Cookie` on this response, so one rendering reaches exactly one
-    # member. That is why `buyer_user_id` and `headers` are passed here and
-    # deliberately are *not* passed by `_marketplace_public_product_response`,
-    # which answers the same URL with `public, max-age=300` and so may only state
-    # the corridor the platform's own checkout configuration implies. Same
-    # estimate, same sentences, different destination tier -- and the tier is a
-    # property of the response's cacheability rather than of the page.
-    #
-    # `cache_only` is set inside `delivery.web`, so this costs no supplier call
-    # and no part of it is on this render's critical path: a cold product ships
-    # the pending sentence and `pulse_delivery.js` fills it in from the endpoint.
-    delivery_line = delivery_web.context(
-        str(listing_id), buyer_user_id=user.get("user_id"), headers=request.headers)
-
-    # The storefront renderer, the same one the grid runs through. It was built
-    # with this page in it and shipped without a caller, which is why following a
-    # link out of the grid used to leave the design system behind: matched cards
-    # and a real gallery on one side of the click, an unstyled `.card` with every
-    # image stacked full-height on the other.
-    #
-    # What it adds that the block it replaced could not: the variant picker. The
-    # grid deliberately withholds quick-add from a listing with options and sends
-    # the buyer here instead -- see `mw.CART_HIDDEN_NEEDS_CHOICE` -- and until now
-    # "here" was a page with no options on it and an unconditional Add to cart,
-    # so the escape hatch led straight back into the unnamed-variant guess it
-    # exists to prevent. `render_product` renders the options and withholds the
-    # add for exactly the listings the grid withheld it for.
-    page = marketplace_storefront.render_product(
-        listing=listing,
-        variants=variants,
-        related=related,
-        related_variants=related_variants,
-        # Read from the query string and nowhere else, which is what makes a
-        # chosen variant a shareable URL. The renderer honours only values that
-        # exist in a real variant row, so a crafted query cannot inject one.
-        selected_options=request.args,
-        viewer=marketplace_storefront_viewer(user),
-        app_cta_html=marketplace_storefront_app_cta("product", listing_id),
-        promote_html=promote_html,
-        # Rendered markup rather than the estimate itself, for the same reason
-        # `app_cta_html` is: the renderer stays unable to hold a second opinion
-        # about what a delivery window says. `delivery_web.html` is the only
-        # renderer of this markup on either web surface, and every sentence
-        # inside it comes from `services/delivery/copy.py`, which
-        # `tests/delivery/test_delivery_copy.py` pins to the app's copy table.
-        delivery_html=delivery_web.html(delivery_line),
-        seller_listing_count=seller_listing_count,
-        # Turns on the cart link and Add to cart. `None` -- what the failed read
-        # above leaves it as -- keeps both off rather than printing a confident
-        # "0" over an order in progress.
-        cart_count=cart_count,
-    )
-    return _marketplace_member_storefront_reply(page, extra_html=extra_html)
+        promote = (f"<button data-promote-content='marketplace_listing' "
+                   f"data-content-id='{listing_id}' "
+                   f"data-content-label='{html_escape(clean_html(row.get('title') or 'Marketplace listing'))}'>"
+                   f"Promote Listing</button>")
+    # Same rule as the grid card: no price, no pill. This page and that one show
+    # the same listing, so a phrase here would reappear as a disagreement
+    # between browsing and following a shared link.
+    price_label = clean_html(row.get("price_label"))
+    price_pill = f"<span class='pill'>{price_label}</span> " if price_label else ""
+    main = (
+        f"<section class='card'>"
+        f"<p><a href='/pulse/marketplace'>&larr; Marketplace</a></p>"
+        f"<h1>{html_escape(clean_html(row.get('title')))}</h1>"
+        f"<p><span class='pill'>{html_escape(clean_html(row.get('category') or 'Education'))}</span> "
+        # No "Safety N" pill here either -- see `marketplace_card` on the grid
+        # for the measurement. The two surfaces printed the same inverted number
+        # for the same row, so fixing one would have moved the lie rather than
+        # removed it.
+        f"{price_pill}</p>"
+        f"<p>Seller: {html_escape(clean_html(marketplace_seller_identity.display_store_name(row)))}</p>"
+        f"{gallery_block}"
+        f"<p>{html_escape(clean_html(row.get('description') or row.get('short_description') or ''))}</p>"
+        f"<p>Safety notice: educational products only. Payments and payout release "
+        f"are staged for compliance.</p>"
+        f"<div class='actions'>"
+        f"<button data-contact-seller='{seller_id}'>Contact Seller</button>"
+        f"<button data-save-listing='{listing_id}'>Save</button>"
+        f"<button data-report-listing='{listing_id}'>Report</button>{promote}"
+        f"</div></section>"
+        f"{pulse_promotion_modal_html()}"
+        f"<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'>"
+        f"<script src='/static/js/pulsesoc_promotions.js' defer></script>")
+    # The same three buyer actions the grid card offers, bound the same way, so a
+    # member who arrives by link is not on a page with fewer verbs than the one
+    # they would have reached by browsing.
+    script = """
+    document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
+    """
+    return pulse_social_shell(
+        clean_html(row.get("title") or "Marketplace listing"),
+        clean_html(row.get("short_description") or row.get("category") or
+                   "PulseSoc Marketplace listing"),
+        main, "", script)
 
 
 def pulse_marketplace_gallery_urls(value):
@@ -59896,61 +54981,6 @@ def pulse_marketplace_media_rows_for_listings(cur, listing_ids):
         item = dict(row)
         media_by_listing.setdefault(int(item.get("product_id") or 0), []).append(item)
     return media_by_listing
-
-
-def pulse_marketplace_supplier_facts_for_listings(cur, listing_ids):
-    """Supplier provenance and variants per listing, for the readiness verdict.
-
-    ``{listing_id: {"source": <marketplace_product_sources row>, "variants":
-    [<marketplace_listing_variants rows>]}}``, and no entry at all for a listing
-    with no source row -- which is what tells `listing_readiness` to stay in its
-    merchant-authored mode.
-
-    Batched for the same reason the media loader is: the seller Store screen
-    lists up to a few hundred rows in one request, and a per-row pair of queries
-    there is the shape that emptied the connection pool once already.
-
-    Why the verdict needs these at all: a supplier draft's price lives in
-    ``marketplace_listing_variants.price_cents`` and its stock in that table's
-    ``stock_state``. ``marketplace_listings.price_label`` and ``quantity`` are
-    written by ``drafts.publish``, so an unpublished draft has neither, and a
-    verdict reading only those columns told 31 correctly-priced products in
-    production that they had no price.
-    """
-    safe_ids = [int(item_id or 0) for item_id in listing_ids if int(item_id or 0)]
-    if not safe_ids:
-        return {}
-    from services import marketplace_variants as _variants
-
-    placeholders = ",".join(["?"] * len(safe_ids))
-    facts = {}
-    try:
-        cur.execute(
-            f"SELECT * FROM {_variants.SOURCE_TABLE} WHERE listing_id IN ({placeholders})",
-            safe_ids)
-        for row in cur.fetchall():
-            item = dict(row)
-            facts[int(item.get("listing_id") or 0)] = {"source": item, "variants": []}
-        if facts:
-            # Bound as integers: both columns are declared INTEGER, and Postgres
-            # -- unlike SQLite -- refuses the comparison against a text literal.
-            owned = [int(listing_id) for listing_id in facts]
-            marks = ",".join(["?"] * len(owned))
-            cur.execute(
-                f"SELECT * FROM {_variants.VARIANT_TABLE} WHERE listing_id IN ({marks}) "
-                f"ORDER BY position ASC, id ASC", owned)
-            for row in cur.fetchall():
-                item = dict(row)
-                bucket = facts.get(int(item.get("listing_id") or 0))
-                if bucket is not None:
-                    bucket["variants"].append(item)
-    except Exception:
-        # A store with no supplier tables yet is not a broken Store screen. The
-        # verdict falls back to its merchant-authored reading, which is what
-        # every listing got before this function existed.
-        app.logger.warning("supplier readiness facts unavailable", exc_info=True)
-        return {}
-    return facts
 
 
 def pulse_marketplace_media_payload(row):
@@ -60179,79 +55209,6 @@ def api_pulse_marketplace_search():
     return jsonify({"ok": True, "items": items, "query": query, "limit": limit})
 
 
-@webhook_app.route("/api/pulse/marketplace/listings/<int:listing_id>", methods=["GET"])
-@auth_required
-def api_pulse_marketplace_listing_detail(listing_id):
-    """One listing, by id, for a buyer who arrived holding only the id.
-
-    Every other buyer-facing read returns a *list* — search, the seller store,
-    the commerce discovery placements. That was survivable while the only way to
-    open a product was to tap a row of one of those lists, because the row could
-    hand the whole listing to the product screen in its navigation params. It
-    stopped being survivable the moment anything navigated with an id alone: all
-    four commerce discovery surfaces do (feed, reels, messenger, marketplace
-    shelves), and all four landed on "This item is no longer available" for
-    listings that were on sale — the screen had no way to turn an id into a
-    listing and said the only thing it could. The Page block and the seller
-    store hand over the whole listing, which is why neither ever showed it.
-
-    It is also the precondition for a product link being openable at all. A URL,
-    a push notification and a shared card all carry an id and nothing else, so a
-    product deep link is not implementable without this route.
-
-    Visibility is `public_sql` — the same gate search uses, and the same one
-    commerce discovery is a strict subset of — so this cannot surface anything a
-    buyer could not already reach by searching for it. The one addition is the
-    owner: a seller opening their own paused or pending listing gets the listing
-    rather than a headstone, which is the difference between "your shop is
-    hidden" and "your shop is gone". Reviewer-only columns never reach either of
-    them; `pulse_marketplace_listing_payload` strips those for every caller.
-    """
-    init_db()
-    user = api_account_user()
-    if not user:
-        return api_error("Login required.", 401)
-    listing_id = max(0, safe_int(listing_id, 0))
-    if not listing_id:
-        return api_error("That listing could not be found.", 404, error_code="LISTING_UNAVAILABLE")
-
-    from services.discovery_visibility import discovery_visible_sql
-
-    viewer_id = safe_int(user.get("user_id"), 0)
-    conn = db()
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    cur.execute(
-        f"""
-        SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
-               l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
-               l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
-               COALESCE(ms.status,'missing') AS seller_status,
-               {marketplace_seller_identity.store_name_select('ms')},
-               COALESCE(u.username,'') AS seller_username
-        FROM marketplace_listings l
-        LEFT JOIN users u ON u.user_id=l.seller_user_id
-        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-        WHERE l.id=?
-          AND (
-                ({marketplace_listing_lifecycle.public_sql("l", "ms")} AND {discovery_visible_sql("u")})
-                OR (? <> 0 AND COALESCE(l.seller_user_id,0)=?)
-              )
-        LIMIT 1
-        """,
-        (listing_id, viewer_id, viewer_id),
-    )
-    row = cur.fetchone()
-    if not row:
-        conn.close()
-        return api_error("That listing could not be found.", 404, error_code="LISTING_UNAVAILABLE")
-    row = dict(row)
-    media_rows = pulse_marketplace_media_rows_for_listings(cur, [listing_id]).get(listing_id, [])
-    item = pulse_marketplace_listing_payload(row, media_rows)
-    conn.close()
-    return jsonify({"ok": True, "item": item, "listing": item})
-
-
 @webhook_app.route("/api/pulse/marketplace/seller/listings", methods=["GET"])
 def api_pulse_marketplace_seller_listings():
     init_db()
@@ -60296,87 +55253,15 @@ def api_pulse_marketplace_seller_listings():
     )
     rows = [dict(row) for row in cur.fetchall()]
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [row.get("id") for row in rows])
-    supplier_by_listing = pulse_marketplace_supplier_facts_for_listings(
-        cur, [row.get("id") for row in rows])
     items = []
     for row in rows:
         media_rows = media_by_listing.get(int(row.get("id") or 0), [])
-        items.append(pulse_marketplace_seller_listing_payload(
-            row, media_rows, supplier=supplier_by_listing.get(int(row.get("id") or 0))))
+        items.append(pulse_marketplace_seller_listing_payload(row, media_rows))
     conn.close()
     return jsonify({"ok": True, "items": items, "limit": limit})
 
 
-@webhook_app.route("/api/pulse/marketplace/seller/metrics", methods=["GET"])
-@auth_required
-def api_pulse_marketplace_seller_metrics():
-    """The seller's numbers, counted once, for every screen that shows them.
-
-    Business OS and the Store screen were each handed the same two raw lists and
-    each did its own arithmetic on them. Business OS did none at all: it
-    rendered `listings.length` under the label "Live listings" and
-    `orders.length` under "Orders", so seller 1 was told they had 43 live
-    listings (13) and 32 orders (0). Those were not rendering faults and could
-    not be fixed on the phone — `.length` is a correct count of the list it was
-    given, and the list was never the answer to the question the label asked.
-
-    So the question is answered here instead. `seller_metrics` owns both
-    predicates; this route owns nothing but the two queries and the seller
-    identity. Any surface that needs a seller count reads this and does not
-    count for itself.
-
-    Unbounded on purpose. Both the listing route and the order route take a
-    LIMIT — 80 and 100 — which is right for a list a human scrolls and wrong for
-    a total: a seller with 120 listings would be told they had 80. A COUNT over
-    a seller's own rows is cheap, and being wrong above a threshold is the
-    failure mode a metrics endpoint exists to not have.
-
-    No cache. Recomputed per request from the rows themselves, so there is no
-    stale value to invalidate after a publish, a pause, a payment or a refund —
-    §16 satisfied by not having the problem. If this ever needs a cache, the
-    write paths that must clear it are the ones listed there.
-    """
-    init_db()
-    user = api_account_user()
-    if not user:
-        return api_error("Login required.", 401)
-    from services.business_os.marketplace import seller_metrics as _metrics
-
-    seller_id = int(user["user_id"])
-    conn = db()
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    try:
-        cur.execute(
-            "SELECT id, status, approval_status, quantity, product_type, price_label "
-            "FROM marketplace_listings WHERE seller_user_id=?",
-            (seller_id,),
-        )
-        listing_rows = [dict(row) for row in cur.fetchall()]
-        cur.execute(
-            "SELECT id, status, amount_cents, currency, item_id, item_type, "
-            "stripe_payment_intent_id, metadata_json, created_at "
-            "FROM seller_transactions WHERE seller_user_id=?",
-            (seller_id,),
-        )
-        order_rows = [dict(row) for row in cur.fetchall()]
-    finally:
-        conn.close()
-
-    # The seven-day window is the caller's clock, resolved here rather than in
-    # `compute` so the aggregate stays pure and testable.
-    today = datetime.utcnow().date()
-    metrics = _metrics.compute(
-        listing_rows,
-        order_rows,
-        today=today.isoformat(),
-        recent_days=[(today - timedelta(days=offset)).isoformat() for offset in range(7)],
-        baseline_day=(today - timedelta(days=7)).isoformat(),
-    )
-    return jsonify({"ok": True, "metrics": metrics})
-
-
-def pulse_marketplace_seller_listing_payload(row, media_rows, *, supplier=None):
+def pulse_marketplace_seller_listing_payload(row, media_rows):
     """A listing as its own merchant sees it: the public payload plus the verdicts.
 
     Every seller-facing route that hands back a listing goes through here, and
@@ -60392,14 +55277,6 @@ def pulse_marketplace_seller_listing_payload(row, media_rows, *, supplier=None):
     has to see the NULL that separates "no stock tracked" from "none left".
     Losing exactly that distinction is what the phone's own derivation did.
 
-    `supplier` is this listing's entry from
-    `pulse_marketplace_supplier_facts_for_listings`, when the caller has a
-    cursor to load it with. Without it a supplier-imported draft is judged on
-    `price_label` and `quantity`, which `drafts.publish` writes and an
-    unpublished draft therefore has neither of -- so the verdict says "Add
-    price" about a product whose every variant is priced. Passing None is not a
-    compatibility shim: a merchant-authored listing genuinely has no such row.
-
     Not folded into `pulse_marketplace_listing_payload` because that serializer
     also feeds the buyer endpoints, and what a product still needs before it can
     go live is the merchant's own business -- SS27. Every caller of this function
@@ -60411,7 +55288,7 @@ def pulse_marketplace_seller_listing_payload(row, media_rows, *, supplier=None):
     from services.business_os.marketplace import listing_review as _review
 
     payload = pulse_marketplace_listing_payload(row, media_rows)
-    verdict = _readiness.evaluate(row, media=media_rows, supplier=supplier)
+    verdict = _readiness.evaluate(row, media=media_rows)
     payload["readiness"] = verdict
     # What a BULK action would do to this row, decided by the same function the
     # batch route decides with. SS34's preview -- "Publish 14 - 4 blocked" -- is
@@ -60443,19 +55320,6 @@ def pulse_marketplace_seller_listing_payload(row, media_rows, *, supplier=None):
     # back only the structured code and its canonical sentence — never the
     # reviewer's note, which `seller_verdict` does not read.
     payload["review"] = _review.seller_verdict(row)
-    # The one canonical word for what this listing is: live, draft,
-    # pending_review, suppressed or removed. Same function the seller metrics
-    # aggregate counts with, so the Store screen's Active tab and Business OS's
-    # "Live listings" tile cannot draw the line in two different places.
-    #
-    # Stamped here rather than derived on the phone because the phone's version
-    # (`listingHealth`) answers a question about *stock* -- in_stock,
-    # low_stock, out_of_stock -- and was being read as an answer about
-    # publication. A listing can be published with nothing left in it, and it is
-    # still live.
-    from services.business_os.marketplace import seller_metrics as _seller_metrics
-
-    payload["listing_state"] = _seller_metrics.listing_state(row)
     return payload
 
 
@@ -60472,7 +55336,7 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
                -- told about their own listing without widening the row.
                -- `moderation_reason` is deliberately not among them.
                l.moderation_category, l.review_version, l.reviewed_at,
-               NULLIF(TRIM(ms.display_name),'') AS seller_store_name,
+               COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
                -- Selected for `seller_label`, which answers "Live" from the
                -- publication rules and not from the merchant's own two columns.
                -- The seller-listings query beside this one already joined it;
@@ -60492,10 +55356,8 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
     if not listing:
         return {}
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [listing.get("id")])
-    supplier_by_listing = pulse_marketplace_supplier_facts_for_listings(cur, [listing.get("id")])
     return pulse_marketplace_seller_listing_payload(
-        listing, media_by_listing.get(int(listing.get("id") or 0), []),
-        supplier=supplier_by_listing.get(int(listing.get("id") or 0))
+        listing, media_by_listing.get(int(listing.get("id") or 0), [])
     )
 
 
@@ -60631,10 +55493,6 @@ def pulse_emit_payment_checkout_event(
         "dispute_opened": "Dispute opened",
         "dispute_updated": "Dispute updated",
         "dispute_resolved": "Dispute resolved",
-        # Buyer and seller are sent identical copy below, so an outcome is worded
-        # by who the issuer decided for rather than as a win or a loss.
-        "dispute_won": "Dispute closed in the seller's favour",
-        "dispute_lost": "Dispute closed in the buyer's favour",
         "order_cancelled": "Order cancelled",
     }
     note_bodies = {
@@ -60650,8 +55508,6 @@ def pulse_emit_payment_checkout_event(
         "dispute_opened": "A payment dispute was opened for this order.",
         "dispute_updated": "A payment dispute changed state.",
         "dispute_resolved": "A payment dispute was resolved or closed.",
-        "dispute_won": "The card issuer decided this payment dispute for the seller. The payment stands.",
-        "dispute_lost": "The card issuer decided this payment dispute for the buyer. The payment has been reversed.",
         "order_cancelled": "This order was cancelled.",
     }
     recipients = [
@@ -60722,79 +55578,7 @@ def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now="", prov
          tx.get("created_at") or timestamp, timestamp, timestamp))
 
 
-def pulse_snapshot_delivery_promise(tx, now=""):
-    """Write down the delivery window this buyer was shown, once, at payment.
-
-    Read out of the transaction's own ``metadata_json`` under ``delivery_quote``,
-    the same way :func:`marketplace_order_line` reads ``commercial_quote``. The
-    reason it is read rather than recomputed is the whole of §36-37: recomputing
-    it here would answer a different question than the one the buyer agreed to,
-    because every input to it — supplier aging, route availability, the operator's
-    handling time — has moved since the page they bought from.
-
-    **An absent key is the normal case today and records nothing.** Checkout does
-    not yet attach a quote, so most orders get no promise row, and that is the
-    correct outcome rather than a gap to paper over: ``promise.read`` answers
-    ``None``, and ``promise.accuracy`` excludes it with ``no_promise_recorded``
-    instead of scoring it. There is deliberately no fallback that quotes the
-    variant now and calls the result a promise — that would put a number in the
-    accuracy ledger that no buyer ever saw, which is worse than an empty ledger
-    because it looks like data.
-
-    Never raises. A settlement must not fail over a record that is, by design,
-    optional.
-    """
-    tx = dict(tx or {})
-    transaction_id = int(tx.get("id") or 0)
-    if transaction_id <= 0:
-        return None
-    try:
-        details = json.loads(tx.get("metadata_json") or "{}")
-    except Exception:
-        details = {}
-    quoted = details.get("delivery_quote") if isinstance(details, dict) else None
-    if not isinstance(quoted, dict):
-        return None
-    try:
-        from services.delivery import promise as delivery_promise
-        conn = db(); cur = conn.cursor()
-        try:
-            delivery_promise.create_schema(cur)
-            conn.commit()
-        finally:
-            cur.close(); conn.close()
-        quantity, _unit = marketplace_order_line(details, int(tx.get("amount_cents") or 0))
-        return delivery_promise.snapshot(
-            seller_transaction_id=transaction_id,
-            listing_id=tx.get("item_id"),
-            variant_ref=str(quoted.get("variant_ref") or ""),
-            quantity=quantity,
-            destination=quoted.get("destination") or {},
-            result=quoted.get("result") or quoted,
-            # The moment of payment, not the moment the estimate was computed. A
-            # promise is dated by when it became binding.
-            promised_at=now or datetime.utcnow().isoformat(timespec="seconds"),
-        )
-    except Exception:  # noqa: BLE001 - an unrecorded promise must not lose a sale
-        logging.exception("DELIVERY_PROMISE_SNAPSHOT_FAILED seller_transaction_id=%s",
-                          transaction_id)
-        return None
-
-
-def marketplace_transfer_group(metadata):
-    """Recover the transfer group the charge carried, from its own metadata.
-
-    One cart charge can back several seller transactions. They all take the
-    group of the first, so every transfer that later pays those sellers
-    reconciles back to the single charge the buyer actually made.
-    """
-    meta = dict(metadata or {})
-    raw = str(meta.get("seller_transaction_ids") or meta.get("seller_transaction_id") or "")
-    first = next((part.strip() for part in raw.split(",") if part.strip().isdigit()), "")
-    return f"marketplace_order:{first}" if first else ""
-
-
-def pulse_finalize_marketplace_settlement(tx, provider_payment_id="", transfer_group=""):
+def pulse_finalize_marketplace_settlement(tx, provider_payment_id=""):
     """Create the idempotent post-payment seller and fee effects."""
     tx = dict(tx or {})
     if str(tx.get("item_type") or "") != "marketplace_product":
@@ -60807,79 +55591,29 @@ def pulse_finalize_marketplace_settlement(tx, provider_payment_id="", transfer_g
                             (payout or {}).get("charges_enabled"))
     finally:
         conn.close()
-    # The card lane's fulfillment record opens here rather than at checkout: a
-    # `created` transaction is an abandoned Stripe sheet more often than it is an
-    # order, and a record opened then would show the seller an obligation that
-    # never existed. Payment landing is the first moment the buyer is owed
-    # anything. Idempotent, so a redelivered webhook opens nothing twice.
-    marketplace_order_fulfillment.ensure_schema()
-    conn = db(); conn.row_factory = sqlite3.Row
-    try:
-        marketplace_order_fulfillment.open_from_transaction(conn.cursor(), tx)
-        conn.commit()
-    except Exception:  # noqa: BLE001 - never lose a settlement over this
-        # Was `log_error(...)`, which is defined nowhere in this repository. The
-        # handler written to make sure a fulfillment problem could not lose a
-        # settlement raised `NameError` from inside itself the moment it fired, so
-        # the one failure it existed to absorb was the one it propagated. Found
-        # while wiring the promise snapshot below it, which had copied the idiom.
-        logging.exception("MARKETPLACE_FULFILLMENT_OPEN_FAILED seller_transaction_id=%s",
-                          tx.get("id"))
-    finally:
-        conn.close()
-    # Alongside the fulfillment record, and for the same reason it opens here: this
-    # is the first moment the buyer is owed something, which is the moment the
-    # window they were shown becomes a promise. Insert-only, so a redelivered
-    # webhook re-reads it rather than rewriting it.
-    pulse_snapshot_delivery_promise(tx)
     from services import marketplace_settlement_service
     return marketplace_settlement_service.settle_paid_transaction(
         tx, payout_ready=payout_ready, provider_payment_id=provider_payment_id,
-        transfer_group=transfer_group, actor="stripe_webhook")
+        actor="stripe_webhook")
 
 
-def pulse_marketplace_reversal_transaction_ids(obj):
-    """The seller transactions a refund or dispute event takes money back from.
+def pulse_apply_marketplace_charge_refund(obj):
+    """Allocate Stripe's cumulative charge refund across its Marketplace rows.
 
-    A Charge carries the ids in its own metadata, because this server put them
-    there at checkout. A Dispute does not: Stripe hands over a Dispute object
-    whose `metadata` is its own and empty, so reading `seller_transaction_id`
-    off it — which is all the webhook used to do — finds nothing and the
-    chargeback silently affects no settlement at all. The payment intent is the
-    one identifier both object shapes carry, and `provider_payment_id` on the
-    settlement is where it was recorded, so that is the fallback.
+    Stripe does not provide commercial components. We consume the original
+    immutable settlement snapshot in merchandise, shipping, tax order and use
+    a cumulative provider key, so retries and alternate Stripe event types
+    cannot reverse the same money twice.
     """
-    obj = dict(obj or {})
-    metadata = dict(obj.get("metadata") or {})
-    raw = str(metadata.get("seller_transaction_ids") or metadata.get("seller_transaction_id") or "")
-    tx_ids = [v for v in (safe_int(part, 0) for part in raw.split(",")) if v]
-    if tx_ids:
-        return tx_ids
-    payment_intent = obj.get("payment_intent")
-    if isinstance(payment_intent, dict):
-        payment_intent = payment_intent.get("id")
-    from services import marketplace_settlement_service
-    return [int(row["seller_transaction_id"])
-            for row in marketplace_settlement_service.settlements_for_payment(payment_intent or "")]
-
-
-def pulse_allocate_marketplace_reversal(tx_ids, cumulative_minor, provider_key, actor="stripe_webhook"):
-    """Split one cumulative reversal figure across its Marketplace settlements.
-
-    Stripe reports money coming back as a running total against the charge, never
-    as commercial components, and one charge can back several sellers. We consume
-    each settlement's immutable snapshot in merchandise, shipping, tax order and
-    subtract what has already been reversed, so a $40 refund followed by a
-    cumulative $60 event reverses $20 and not $100.
-
-    Shared by the refund and lost-dispute paths deliberately: a chargeback the
-    platform loses is the same money leaving by a different door, and a second
-    allocator would be free to disagree with this one about where it came from.
-    """
-    tx_ids = [int(v) for v in (tx_ids or []) if int(v or 0)]
-    cumulative_minor = int(cumulative_minor or 0)
-    if not tx_ids or cumulative_minor <= 0:
+    metadata = dict((obj or {}).get("metadata") or {})
+    tx_ids = [safe_int(v, 0) for v in str(metadata.get("seller_transaction_ids") or metadata.get("seller_transaction_id") or "").split(",")]
+    tx_ids = [v for v in tx_ids if v]
+    cumulative_refunded = int((obj or {}).get("amount_refunded") or 0)
+    if not tx_ids or cumulative_refunded <= 0:
         return []
+    # ``amount_refunded`` is cumulative on a Charge. Subtract reversals already
+    # recorded for these rows or a $40 refund followed by a cumulative $60
+    # event would incorrectly reverse $100.
     conn = db(); conn.row_factory = sqlite3.Row
     try:
         placeholders = ",".join(["?"] * len(tx_ids))
@@ -60890,9 +55624,10 @@ def pulse_allocate_marketplace_reversal(tx_ids, cumulative_minor, provider_key, 
         already_refunded = 0
     finally:
         conn.close()
-    remaining = max(0, cumulative_minor - already_refunded)
+    remaining = max(0, cumulative_refunded - already_refunded)
     if remaining <= 0:
         return []
+    provider_key = f"{(obj or {}).get('id') or 'charge'}:{cumulative_refunded}"
     from services import marketplace_settlement_service
     results = []
     for tx_id in tx_ids:
@@ -60919,290 +55654,8 @@ def pulse_allocate_marketplace_reversal(tx_ids, cumulative_minor, provider_key, 
             results.append(marketplace_settlement_service.apply_refund(
                 tx_id, provider_refund_id=f"{provider_key}:{tx_id}",
                 merchandise_refund_minor=merchandise, shipping_refund_minor=shipping,
-                tax_refund_minor=tax, other_refund_minor=other, actor=actor))
+                tax_refund_minor=tax, other_refund_minor=other, actor="stripe_webhook"))
     return results
-
-
-def pulse_apply_marketplace_charge_refund(obj):
-    """Reverse a Marketplace charge's refunded amount on the seller ledger."""
-    obj = dict(obj or {})
-    return pulse_allocate_marketplace_reversal(
-        pulse_marketplace_reversal_transaction_ids(obj),
-        int(obj.get("amount_refunded") or 0),
-        f"{obj.get('id') or 'charge'}:{int(obj.get('amount_refunded') or 0)}")
-
-
-#: What a human is expected to do with a won dispute that cannot be released.
-#: Recorded on the incident rather than executed: the settlement is in one of
-#: two unresolved positions (already transferred, or frozen mid-schedule), and
-#: which one it is decides whether anything is owed at all. Nothing here moves
-#: money — reconciliation has to prove the correct action first.
-MARKETPLACE_DISPUTE_WON_REMEDIATION = (
-    "Do not transition this settlement automatically. Confirm against Stripe "
-    "that the disputed funds were returned to the platform balance, then "
-    "compare the seller ledger: if the seller was already paid, the won "
-    "dispute owes nothing further and the incident is resolved with that note; "
-    "if the settlement is frozen short of payout, release it to the payout "
-    "state its own event log shows the hold interrupted."
-)
-
-
-def pulse_open_dispute_review_incident(tx_id, dispute_id, event_id, status,
-                                       origin, settlement):
-    """Record a won dispute whose settlement cannot be released, for a human.
-
-    Reuses the canonical financial-incident engine — the same append-only table
-    the reconciliation sweep and the payout applier write to, and the one the
-    admin `/api/pulse/finance/incidents` surface reads — so this lands in the
-    operator's existing channel instead of a log line nobody greps. It is typed
-    `PAYOUT_STATE_CONFLICT` for the same reason
-    `reconcile_marketplace_settlements` types its stranded-settlement findings
-    that way: the dispute outcome and the payout state disagree and only a human
-    can say which is right.
-
-    Never raises. A failure to *describe* a stuck settlement must not abort the
-    dispute handler mid-loop, which would skip the remaining transactions, the
-    order-row update and the buyer/seller notifications — and would cost Stripe
-    a 200.
-    """
-    settlement = dict(settlement or {})
-    try:
-        from services.business_os.payments import incidents as _incidents
-
-        return _incidents.open_incident(
-            _incidents.PAYOUT_STATE_CONFLICT,
-            domain="seller_payments",
-            severity="critical",
-            summary=(
-                f"Marketplace settlement {tx_id} closed dispute {dispute_id} as "
-                f"'{status}' but sits in payout state "
-                f"{settlement.get('payout_state') or 'unknown'!r} with no "
-                f"releasable origin state ({origin or 'none recorded'}); the "
-                "recovered funds have no resolved position."
-            ),
-            details={
-                "seller_transaction_id": tx_id,
-                "dispute_id": dispute_id,
-                "stripe_event_id": event_id,
-                "dispute_status": status,
-                "hold_origin_state": origin or "",
-                "payout_state": settlement.get("payout_state") or "",
-                "blocker_code": settlement.get("blocker_code") or "",
-                "seller_id": settlement.get("seller_id") or "",
-                "order_id": settlement.get("order_id") or "",
-                "currency": settlement.get("currency") or "",
-                "net_seller_earnings_minor":
-                    settlement.get("net_seller_earnings_minor"),
-                "seller_reversed_minor": settlement.get("seller_reversed_minor"),
-                "automatic_action_taken": "none",
-                "remediation": MARKETPLACE_DISPUTE_WON_REMEDIATION,
-            },
-            related_object=f"marketplace_settlement:{tx_id}",
-            stripe_ref=str(dispute_id or ""),
-            # Keyed on the row and this dispute, not on the event: a Stripe
-            # redelivery refreshes one incident, while a second chargeback on
-            # the same order is a genuinely new finding.
-            incident_key=(
-                f"{_incidents.PAYOUT_STATE_CONFLICT}:marketplace_settlement:"
-                f"{tx_id}:dispute_won_unreleasable:{dispute_id}"
-            ),
-        )
-    except Exception:
-        logging.exception(
-            "MARKETPLACE_DISPUTE_REVIEW_INCIDENT_FAILED tx_id=%s dispute_id=%s",
-            tx_id, dispute_id)
-        return None
-
-
-def pulse_apply_marketplace_dispute(obj, event_type, event_id=""):
-    """Freeze, release or reverse a Marketplace settlement for a chargeback.
-
-    A disputed order used to move only the `seller_transactions.status` string —
-    and, because a Dispute carries no seller metadata, usually not even that. The
-    settlement kept no `blocker_code`, so `transition_payout` was free to take a
-    chargeback straight through `eligible` and `scheduled` to `paid`: PulseSoc
-    would transfer the seller their earnings on money Stripe was in the middle of
-    taking back, and then lose the dispute with nothing to claw it from.
-
-    Opening a dispute therefore places a real hold. Winning releases it back to
-    the state the hold interrupted. Losing is not a release — the money is gone
-    from the platform balance for good, so it is reversed through the same
-    allocator a refund uses, which is what leaves the seller ledger telling the
-    truth about what PulseSoc still owes.
-    """
-    obj = dict(obj or {})
-    event_type = str(event_type or "")
-    tx_ids = pulse_marketplace_reversal_transaction_ids(obj)
-    if not tx_ids:
-        return []
-    from services import marketplace_settlement_service as settlements
-    dispute_id = str(obj.get("id") or event_id or "dispute")
-    # Stripe's terminal statuses. `warning_closed` is an inquiry that never
-    # became a real dispute, so the money was never at risk.
-    status = str(obj.get("status") or "")
-    outcomes = []
-    for tx_id in tx_ids:
-        settlement = settlements.get_settlement(tx_id)
-        if not settlement:
-            continue
-        try:
-            if event_type == "charge.dispute.created":
-                outcomes.append(settlements.place_hold(
-                    tx_id, actor="stripe_webhook", reason_code="dispute",
-                    idempotency_key=f"dispute:{dispute_id}:{tx_id}", disputed=True))
-            elif event_type == "charge.dispute.closed" and status in {"won", "warning_closed"}:
-                origin = settlements.hold_origin_state(tx_id)
-                if origin not in {"pending_onboarding", "pending_fulfillment", "protection_hold", "eligible"}:
-                    # The seller had already been paid before the chargeback, so
-                    # there is no state to hand the settlement back to. Never
-                    # invent one: this needs the owner, not an automatic
-                    # transition that would relabel a paid order as unpaid.
-                    #
-                    # But a log line is not an operational state. PulseSoc has
-                    # won money back and the settlement it belongs to is in an
-                    # unresolved position, so the finding is persisted as a
-                    # critical financial incident carrying its own remediation
-                    # for a human to execute. The log stays — it is what you
-                    # grep when you already know to look.
-                    logging.warning(
-                        "MARKETPLACE_DISPUTE_WON_NEEDS_REVIEW tx_id=%s dispute_id=%s origin_state=%s",
-                        tx_id, dispute_id, origin or "unknown")
-                    incident = pulse_open_dispute_review_incident(
-                        tx_id, dispute_id, event_id, status, origin, settlement)
-                    outcomes.append({
-                        "seller_transaction_id": tx_id,
-                        "dispute_id": dispute_id,
-                        "action": "needs_review",
-                        "hold_origin_state": origin or "",
-                        "payout_state": settlement.get("payout_state") or "",
-                        "incident_id": (incident or {}).get("id"),
-                        "incident_key": (incident or {}).get("incident_key"),
-                        "remediation": MARKETPLACE_DISPUTE_WON_REMEDIATION,
-                    })
-                    continue
-                outcomes.append(settlements.release_hold(
-                    tx_id, to_state=origin, actor="stripe_webhook",
-                    reason=f"dispute {status}", idempotency_key=f"dispute:{dispute_id}:{tx_id}:released"))
-        except settlements.SettlementError:
-            # Already held, already released, or the state machine refused the
-            # move. Idempotent by design — a Stripe redelivery must not raise.
-            logging.info("MARKETPLACE_DISPUTE_TRANSITION_SKIPPED tx_id=%s dispute_id=%s type=%s",
-                         tx_id, dispute_id, event_type)
-    if event_type == "charge.dispute.closed" and status == "lost":
-        # A dispute freezes and then takes its own `amount`, which is the whole
-        # disputed figure rather than a running total across reversals; the
-        # allocator subtracts what has already come back.
-        outcomes.extend(pulse_allocate_marketplace_reversal(
-            tx_ids, int(obj.get("amount") or 0), f"dispute:{dispute_id}"))
-    # The order row the seller and the admin panel read. It kept saying "paid"
-    # through a chargeback, for the same reason the hold never landed.
-    row_status = {"charge.dispute.created": "dispute_opened",
-                  "charge.dispute.updated": "dispute_updated",
-                  "charge.dispute.closed": "dispute_lost" if status == "lost" else "dispute_resolved"}.get(event_type)
-    if row_status:
-        # A won dispute whose settlement could not be handed back to a prior
-        # state is NOT resolved, whatever the dispute's own status says. The
-        # branch above already refused the transition and opened a critical
-        # incident; writing "dispute_resolved" over the top of that would put
-        # "Dispute resolved" in front of the seller and the admin panel while
-        # the money sits unreconciled, which is the one reading that stops
-        # anyone from going and looking. Those rows get their own status so the
-        # order row agrees with the incident instead of contradicting it.
-        stranded = {
-            o.get("seller_transaction_id")
-            for o in outcomes
-            if isinstance(o, dict) and o.get("action") == "needs_review"
-        }
-        groups = [(row_status, [t for t in tx_ids if t not in stranded])]
-        if stranded:
-            groups.append(
-                ("dispute_won_review", [t for t in tx_ids if t in stranded])
-            )
-        conn = db()
-        try:
-            now = datetime.utcnow().isoformat(timespec="seconds")
-            for value, ids in groups:
-                if not ids:
-                    continue
-                placeholders = ",".join(["?"] * len(ids))
-                conn.execute(
-                    f"UPDATE seller_transactions SET status=?, updated_at=? WHERE id IN ({placeholders})",
-                    tuple([value, now] + ids),
-                )
-            conn.commit()
-        finally:
-            conn.close()
-    return outcomes
-
-
-def pulse_apply_marketplace_fraud_warning(obj, event_id=""):
-    """Freeze a payout on Stripe's warning, before the chargeback arrives.
-
-    An early fraud warning is the issuer telling Stripe the card was used
-    fraudulently, days ahead of the dispute that usually follows. It is the only
-    signal that arrives while the money is still recoverable: by the time
-    `charge.dispute.created` lands, a settlement that cleared its protection
-    window has already been transferred, and PulseSoc eats the loss because the
-    funds are in the seller's Stripe balance and on the way to their bank.
-
-    Held rather than reversed — a warning is not an outcome. The hold lifts when
-    a dispute closes in PulseSoc's favour, or by an owner decision if none ever
-    opens.
-    """
-    obj = dict(obj or {})
-    tx_ids = pulse_marketplace_reversal_transaction_ids(obj)
-    if not tx_ids:
-        return []
-    from services import marketplace_settlement_service as settlements
-    warning_id = str(obj.get("id") or event_id or "efw")
-    held = []
-    for tx_id in tx_ids:
-        if not settlements.get_settlement(tx_id):
-            continue
-        try:
-            held.append(settlements.place_hold(
-                tx_id, actor="stripe_webhook", reason_code="fraud_warning",
-                idempotency_key=f"fraud_warning:{warning_id}:{tx_id}"))
-        except settlements.SettlementError:
-            # Already held, already paid, or otherwise refused by the state
-            # machine. A redelivery must not raise.
-            logging.info("MARKETPLACE_FRAUD_WARNING_SKIPPED tx_id=%s warning_id=%s", tx_id, warning_id)
-    return held
-
-
-def pulse_disconnect_seller_payout_account(connected_account_id, event_id=""):
-    """Stop routing money to a Connect account the seller has disconnected.
-
-    `account.application.deauthorized` is the seller revoking PulseSoc's access.
-    Stripe sends no `account.updated` alongside it, so `charges_enabled` and
-    `payouts_enabled` stay 1 in our copy forever: `seller_destination_account_id`
-    keeps reporting the account as a valid transfer destination, new sales keep
-    opening `payout_ready`, and every transfer to it fails at the provider with
-    nothing explaining why.
-
-    The connected account id arrives as the event's `account` field, not inside
-    `data.object` — that object is the deauthorized Application.
-    """
-    account = str(connected_account_id or "").strip()
-    if not account:
-        return 0
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    conn = db()
-    try:
-        cursor = conn.execute(
-            "UPDATE seller_payout_accounts SET onboarding_status='disconnected', "
-            "payouts_enabled=0, charges_enabled=0, last_checked_at=?, updated_at=? "
-            "WHERE connected_account_id=?", (now, now, account))
-        conn.commit()
-        changed = int(getattr(cursor, "rowcount", 0) or 0)
-    finally:
-        conn.close()
-    if changed:
-        # Re-onboarding is the seller's move, not ours; settlements already past
-        # `pending_onboarding` stay where they are and need an owner decision.
-        logging.warning("MARKETPLACE_CONNECT_DEAUTHORIZED account=%s rows=%s event_id=%s",
-                        account, changed, event_id)
-    return changed
 
 
 def pulse_emit_comms_safety_event(
@@ -61336,10 +55789,10 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    refusal = seller_access_refusal(cur, user["user_id"])
-    if refusal:
+    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
+    if not seller:
         conn.close()
-        return refusal
+        return api_error("Merchant approval is required before editing listings.", 403)
     cur.execute("SELECT * FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1", (int(listing_id), int(user["user_id"])))
     existing = dict(cur.fetchone() or {})
     if not existing:
@@ -61522,7 +55975,7 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
         """
         UPDATE marketplace_listings
         SET title=?, short_description=?, description=?, category=?, subcategory=?, tags_json=?,
-            price_label=?, price_minor=?, currency=?, quantity=?,
+            price_label=?, currency=?, quantity=?,
             refund_policy=?, estimated_delivery=?, seller_notes=?,
             status=?, approval_status=?, safety_score=?, safety_flags_json=?,
             review_version=CASE WHEN ?=1 THEN COALESCE(review_version,0)+1 ELSE review_version END,
@@ -61540,7 +55993,6 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
             subcategory,
             tags_json,
             price,
-            parse_price_label_to_cents(price, currency)[0],
             currency,
             quantity,
             refund_policy,
@@ -61598,10 +56050,6 @@ def api_pulse_marketplace_seller_listing_pause(listing_id):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    refusal = seller_access_refusal(cur, user["user_id"])
-    if refusal:
-        conn.close()
-        return refusal
     cur.execute("SELECT id FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1", (int(listing_id), int(user["user_id"])))
     if not cur.fetchone():
         conn.close()
@@ -61633,10 +56081,10 @@ def api_pulse_marketplace_seller_listing_resume(listing_id):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    refusal = seller_access_refusal(cur, user["user_id"])
-    if refusal:
+    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
+    if not seller:
         conn.close()
-        return refusal
+        return api_error("Merchant approval is required before resuming listings.", 403)
     cur.execute("SELECT * FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1", (int(listing_id), int(user["user_id"])))
     listing = dict(cur.fetchone() or {})
     if not listing:
@@ -61675,10 +56123,6 @@ def api_pulse_marketplace_seller_listing_delete(listing_id):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    refusal = seller_access_refusal(cur, user["user_id"])
-    if refusal:
-        conn.close()
-        return refusal
     cur.execute("SELECT id FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1", (int(listing_id), int(user["user_id"])))
     if not cur.fetchone():
         conn.close()
@@ -61790,9 +56234,9 @@ def _marketplace_batch_apply_price(cur, listing, user_id, now, plan):
     next_approval = outcome["next_approval"]
 
     cur.execute(
-        "UPDATE marketplace_listings SET price_label=?, price_minor=?, currency=?, status=?, approval_status=?, "
+        "UPDATE marketplace_listings SET price_label=?, currency=?, status=?, approval_status=?, "
         "updated_at=? WHERE id=? AND seller_user_id=?",
-        (label, int(cents), currency, next_status, next_approval, now, listing_id, int(user_id)),
+        (label, currency, next_status, next_approval, now, listing_id, int(user_id)),
     )
 
     try:
@@ -61973,8 +56417,7 @@ def _marketplace_batch_decide(cur, normalized, user_id):
             owned.values(), normalized["payload"], costs, currents)
 
     decided = _batch.evaluate_rows(
-        owned.values(), normalized["action"], media_by_listing, plans,
-        pulse_marketplace_supplier_facts_for_listings(cur, list(owned)))
+        owned.values(), normalized["action"], media_by_listing, plans)
     blocks = {int(row["id"]): block for row, block in decided}
     return owned, blocks, plans
 
@@ -62077,14 +56520,9 @@ def api_pulse_marketplace_seller_listings_batch():
     # fields, and the single-listing edit route already refuses an unapproved
     # seller. Leaving either out would make the bulk endpoint the one way to edit
     # a listing without merchant approval.
-    # `hide` is deliberately absent: taking a listing down reduces exposure, and
-    # a suspended seller must keep the ability to withdraw their own goods.
-    # Every other action puts something in front of a buyer.
-    if normalized["action"] in ("publish", "price", "category"):
-        refusal = seller_access_refusal(cur, user["user_id"])
-        if refusal:
-            conn.close()
-            return refusal
+    if normalized["action"] in ("publish", "price", "category") and not approved_marketplace_seller_for_user(cur, user["user_id"]):
+        conn.close()
+        return api_error("Merchant approval is required before publishing listings.", 403)
 
     # §34. Answered here, *above the claim*, so the structure of the function is
     # the guarantee: a preview returns before a key can be spent and before the
@@ -62865,39 +57303,6 @@ def pulse_merchant_apply_page():
     return pulse_social_shell("Merchant Application", "A serious, trust-first application before marketplace selling unlocks.", main)
 
 
-@webhook_app.route("/business", methods=["GET"])
-@auth_required
-def business_hub_page():
-    """The web Business hub -- the browser counterpart of the app's Business tile.
-
-    Answers the question the website could not previously answer: of the fourteen
-    things the Business tile does, which ones can I do in a browser? Every card's
-    state is derived in `services/business_web_sections.resolve()` from
-    `services/app_links.py` and this app's own url_map, so the page cannot claim
-    a capability the codebase does not have.
-
-    `/business-os` is a different page and stays where it is. It renders the
-    newer `/api/business-os/*` surface, whose commerce tables are live but empty,
-    and its own taxonomy (Overview / Advertising / Commerce) does not correspond
-    to the app's sections -- which is precisely why nobody could tell what was
-    covered. This page is about the sections a member actually sees on their
-    phone, and it links to `/business-os` from no card because no app section
-    corresponds to it either.
-    """
-    init_db()
-    app_obj = webhook_app
-    main = render_template(
-        "business_hub.html",
-        cards=business_web_sections.hub_cards(app_obj),
-        coverage=business_web_sections.coverage(app_obj),
-    )
-    return pulse_social_shell(
-        "Business",
-        "Run your business on PulseSoc, and see what the website can do today.",
-        main,
-    )
-
-
 @webhook_app.route("/pulse/merchant/dashboard", methods=["GET"])
 def pulse_merchant_dashboard_page():
     init_db()
@@ -62918,22 +57323,9 @@ def pulse_merchant_dashboard_page():
             msg = "Your merchant application is still under review."
         else:
             msg = "Apply and complete verification before merchant tools unlock."
-        return pulse_social_shell("Merchant Dashboard", "Merchant approval is required before seller tools unlock.", f"<section class='card'><h2>{status_text}</h2><p>{html_escape(clean_html(msg))}</p><a class='button primary' href='{app_first_href('seller_apply')}'>Open Merchant Application</a></section>")
+        return pulse_social_shell("Merchant Dashboard", "Merchant approval is required before seller tools unlock.", f"<section class='card'><h2>{status_text}</h2><p>{html_escape(clean_html(msg))}</p><a class='button primary' href='/pulse/merchant/apply'>Open Merchant Application</a></section>")
     rows = "".join(f"<tr><td>{l.get('id')}</td><td>{html_escape(clean_html(l.get('title') or ''))}</td><td>{html_escape(clean_html(l.get('status') or ''))}</td><td>{int(l.get('safety_score') or 0)}</td></tr>" for l in listings)
-    # "Payouts" stays on the web here, but no longer for the reason this comment
-    # used to give. The old reasoning was that `/pulse/merchant/payouts` is what
-    # Stripe Connect comes back to, so the button had to match or the flow would
-    # be split across two surfaces. Stripe now returns to
-    # `/pulse/merchant/payouts/return`, which re-reads the account and hands the
-    # seller to the app — so the flow ends in the app by design, and "keep the
-    # button on the web to match Stripe" describes a constraint that no longer
-    # exists.
-    #
-    # What survives is narrower: this page is the merchant *web* dashboard, and
-    # a member reading it in a browser is telling us which surface they want.
-    # `app_first_href` is used by its siblings because those destinations have no
-    # production-ready web page; this one does.
-    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{html_escape(clean_html(seller.get('status') or 'not applied'))}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='{app_first_href('marketplace_create')}'>Create Product</a><a class='button' href='/pulse/merchant/payouts'>Payouts</a><a class='button' href='{app_first_href('seller_apply')}'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Review risk</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
+    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{html_escape(clean_html(seller.get('status') or 'not applied'))}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='/pulse/marketplace/create'>Create Product</a><a class='button' href='/pulse/merchant/payouts'>Payouts</a><a class='button' href='/pulse/merchant/apply'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Review risk</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
     return pulse_social_shell("Merchant Dashboard", "Manage approved listings, safety review, buyer messages, and merchant readiness.", main)
 
 
@@ -62943,25 +57335,7 @@ def seller_payouts_page(seller_type):
     if not user:
         return redirect(url_for("login_page", next=request.path))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    if seller_type == "teacher":
-        approved = bool(approved_teacher_for_user(cur, user["user_id"]))
-    else:
-        # The same authority `/api/pulse/payouts/connect` asks before it issues
-        # the onboarding link. This page used to read `marketplace_sellers.status`
-        # directly, which is a *different* question: `seller_access_state` also
-        # considers the application row, so a seller it cleared to start Connect
-        # could be refused by this page on the way back. That is the "Approval
-        # Required / Open Application" page an approved seller was shown after
-        # completing Stripe onboarding — an approval they had, offering an
-        # application they had already submitted.
-        #
-        # `seller_access_refusal` returns a JSON 403 and this is an HTML page, so
-        # the underlying state is read directly rather than through that helper.
-        from services import seller_access_state as _seller_access
-
-        approved = bool(
-            _seller_access.get_seller_access_state(cur, user["user_id"]).get("seller_approved")
-        )
+    approved = approved_teacher_for_user(cur, user["user_id"]) if seller_type == "teacher" else approved_marketplace_seller_for_user(cur, user["user_id"])
     account = seller_payout_account(cur, user["user_id"], seller_type)
     fee_bps = seller_fee_bps(cur, seller_type)
     cur.execute("SELECT * FROM seller_transactions WHERE seller_user_id=? AND seller_type=? ORDER BY id DESC LIMIT 30", (user["user_id"], seller_type))
@@ -62994,307 +57368,15 @@ def pulse_teacher_payouts_page():
     return seller_payouts_page("teacher")
 
 
-def _connect_return_snapshot(user_id, seller_type):
-    """Re-read this seller's account from Stripe and persist what comes back.
-
-    Called on the return leg, never from the query string. Stripe appends
-    nothing to `return_url` — no status, no account id, no signature — and even
-    if it did, a URL the seller's browser just followed is a value the seller
-    can edit. The only trustworthy source for "did onboarding actually finish"
-    is a fresh `Account.retrieve`, so that is what this does.
-
-    Returns the snapshot `stripe_onboarding_return` classifies. An unreadable
-    account returns `{"ok": False}`, which that module renders as the one state
-    that neither promises anything nor writes anything.
-    """
-    from services import payment_provider as _provider
-
-    conn = db()
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    try:
-        account = seller_payout_account(cur, user_id, seller_type) or {}
-    finally:
-        conn.close()
-    account_id = str(
-        account.get("connected_account_id") or account.get("provider_account_id") or ""
-    ).strip()
-    if not account_id:
-        # No connected account on file. Stripe cannot have returned them from an
-        # onboarding flow we never started, so this is a stale or forged link.
-        return {"ok": False, "reason": "no_connected_account"}
-    try:
-        status = _provider.get_account_status(account_id)
-    except Exception:
-        logging.exception("CONNECT_RETURN_RETRIEVE_FAILED user_id=%s", user_id)
-        return {"ok": False, "reason": "retrieve_failed"}
-    if not status.get("ok"):
-        return {"ok": False, "reason": str(status.get("code") or "retrieve_failed")}
-
-    # Persist through the one writer that lands in both tables in the same
-    # transaction. This is also what refreshes `charges_enabled` /
-    # `payouts_enabled` / `requirements_json`, so the seller's next page load
-    # reads Stripe's answer rather than the row onboarding left behind.
-    try:
-        from services.business_os.payments import connect_accounts as _bos_connect
-
-        _bos_connect.record_account_snapshot(user_id, status)
-    except Exception:
-        logging.exception("CONNECT_RETURN_SNAPSHOT_FAILED user_id=%s", user_id)
-
-    # The status word itself is this mission's fix. `record_account_snapshot`
-    # deliberately leaves `onboarding_status` alone unless Stripe named a
-    # `disabled_reason` — sound for the buyer-facing card gate, which reads the
-    # capability flags, but the money path refuses on the *word* regardless of
-    # those flags. That is how a live account kept `onboarding_started` and
-    # every sale booked `ledger_pending_onboarding`.
-    _persist_onboarding_status(user_id, seller_type, status)
-    return status
-
-
-def _persist_onboarding_status(user_id, seller_type, snapshot):
-    """Write the `onboarding_status` this snapshot actually implies.
-
-    Separate from the snapshot write above because it is the one column the
-    canonical projection will not touch, and because an empty verdict must be a
-    no-op rather than a blank. `stripe_onboarding_return.onboarding_status_for`
-    returns "" when it could not establish the state, and overwriting a good
-    stored status with a guess is how a transient Stripe timeout would demote a
-    live seller.
-    """
-    from services import stripe_onboarding_return as _return
-
-    status_word = _return.onboarding_status_for(snapshot)
-    if not status_word:
-        return
-    conn = db()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE seller_payout_accounts SET onboarding_status=?, updated_at=? "
-            "WHERE user_id=? AND seller_type=?",
-            (status_word, datetime.now(timezone.utc).isoformat(), int(user_id), seller_type),
-        )
-        conn.commit()
-    except Exception:
-        logging.exception("CONNECT_RETURN_STATUS_WRITE_FAILED user_id=%s", user_id)
-    finally:
-        conn.close()
-
-
-#: Which money layer a returning seller should land on, by return state.
-#:
-#: A seller whose account is live wants the overview — the figures and the
-#: status, nothing to do. A seller with steps left wants the setup surface,
-#: which is where `cardPaymentState` renders the specific next step. Sending
-#: everyone to the same layer would either ask a finished seller to "set up
-#: payments" or hide the remaining work from one who has some.
-_RETURN_LAYER = {
-    "ready": "payout_overview",
-    "under_review": "payout_overview",
-    "more_info": "payout_onboarding",
-    "incomplete": "payout_onboarding",
-}
-
-
-def seller_payout_return_page(seller_type, *, expired=False):
-    """Where Stripe Connect onboarding hands the seller back.
-
-    Split from `refresh_url` on purpose. Stripe uses the two for opposite
-    events — a link that went stale before it was used, and a flow the seller
-    actually completed — and this system had them set to the same string, which
-    threw away the only signal that distinguishes them. A seller who finished
-    and a seller whose link expired landed on the same page and were told the
-    same thing.
-    """
-    from services import app_links as _links
-    from services import stripe_onboarding_return as _return
-
-    init_db()
-    user = require_account()
-    if not user:
-        return redirect(url_for("login_page", next=request.path))
-
-    snapshot = {"ok": False, "reason": "link_expired"} if expired else _connect_return_snapshot(
-        user["user_id"], seller_type
-    )
-    page = _return.return_presentation(snapshot)
-
-    payouts_path = f"/pulse/{seller_type}/payouts"
-    layer = _RETURN_LAYER.get(page["state"], "payout_overview")
-    # The handoff is the custom scheme, not a pulsesoc.com link. iOS treats a
-    # tap on a same-domain link as ordinary in-site navigation and never
-    # consults the associated-domains file, so a universal link from this page
-    # would simply reload this page. `app_scheme_url` refuses any path the
-    # shipped binary cannot resolve, so this raising would mean the app route
-    # went missing rather than the link quietly opening nothing.
-    try:
-        app_url = f"{_links.app_scheme_url(payouts_path)}?layer={layer}"
-    except _links.AppLinkError:
-        logging.exception("CONNECT_RETURN_APP_LINK_UNRESOLVABLE path=%s", payouts_path)
-        app_url = ""
-
-    auto = bool(page["auto_handoff"]) and bool(app_url)
-    note = html_escape(page["auto_note"]) if auto else ""
-    # Nothing Stripe-specific reaches the browser: no account id, no keys, no
-    # provider metadata, no requirement names. The page says what state the
-    # seller is in and offers one link into the app, which is where the
-    # authenticated detail lives.
-    body = (
-        f"<section class='card'>"
-        f"<h2>{html_escape(page['headline'])}</h2>"
-        f"<p>{html_escape(page['body'])}</p>"
-        f"<div class='actions'>"
-        + (f"<a class='button primary' id='openApp' href='{html_escape(app_url)}'>{html_escape(page['cta'])}</a>" if app_url else "")
-        + f"<a class='button' href='{payouts_path}'>Stay on the web</a>"
-        f"</div>"
-        + (f"<p class='muted' id='autoNote'>{note}</p>" if note else "")
-        + f"</section>"
-    )
-    script = ""
-    if auto:
-        # ~1.2s: long enough for the seller to read the headline and see that
-        # the handoff is deliberate, short enough that it does not read as a
-        # page that failed to do anything. `location.href` rather than a
-        # synthetic click so a blocked scheme surfaces as the page staying put
-        # with the button still there, which is the honest fallback.
-        script = (
-            "setTimeout(function(){try{location.href=document.getElementById('openApp').href;}"
-            "catch(e){}},1200);"
-        )
-    return pulse_social_shell(
-        "Stripe Setup",
-        "Returning you to PulseSoc.",
-        body,
-        "",
-        script,
-    )
-
-
-@webhook_app.route("/pulse/merchant/payouts/return", methods=["GET"])
-@auth_required
-def pulse_merchant_payouts_return_page():
-    return seller_payout_return_page("merchant")
-
-
-@webhook_app.route("/pulse/teacher/payouts/return", methods=["GET"])
-@auth_required
-def pulse_teacher_payouts_return_page():
-    return seller_payout_return_page("teacher")
-
-
-@webhook_app.route("/pulse/merchant/payouts/refresh", methods=["GET"])
-@auth_required
-def pulse_merchant_payouts_refresh_page():
-    return seller_payout_return_page("merchant", expired=True)
-
-
-@webhook_app.route("/pulse/teacher/payouts/refresh", methods=["GET"])
-@auth_required
-def pulse_teacher_payouts_refresh_page():
-    return seller_payout_return_page("teacher", expired=True)
-
-
-def _marketplace_order_return(transaction_id):
-    """Whether this Stripe return belongs to a Marketplace order of the viewer's.
-
-    Both Stripe result pages are shared: the cart lane, the buy-now lane and
-    every course, ad and Premium session land on the same two URLs with a
-    `transaction_id`. So the copy can only be specialised for the flow it can
-    *prove* it is looking at, and it proves it from the row rather than from the
-    query string -- `?transaction_id=` is attacker-controlled and the only thing
-    stopping this from confirming a stranger's order is the buyer check below.
-
-    Returns True only for a Marketplace product transaction whose buyer is the
-    signed-in account. Anything else -- another flow, a transaction that is not
-    the viewer's, a signed-out visitor, a malformed id, a database that will not
-    answer -- falls through to the generic wording, which has been correct for
-    every flow since before the cart existed.
-    """
-    try:
-        tx_id = int(str(transaction_id or "").strip())
-    except (TypeError, ValueError):
-        return False
-    if tx_id <= 0:
-        return False
-    viewer = require_account()
-    if not viewer:
-        return False
-    conn = None
-    try:
-        conn = db()
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT buyer_user_id, item_type FROM seller_transactions WHERE id=? LIMIT 1",
-            (tx_id,),
-        )
-        row = cur.fetchone()
-        if not row:
-            return False
-        return (int(row["buyer_user_id"] or 0) == int(viewer["user_id"])
-                and str(row["item_type"] or "") == "marketplace_product")
-    except Exception:
-        # A result page that 500s after a real charge is worse than one that
-        # prints the generic sentence, which is true of a Marketplace order too.
-        logging.getLogger(__name__).exception("PAYMENT_RESULT_LOOKUP_FAILED tx=%s", tx_id)
-        return False
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-
 @webhook_app.route("/pulse/payments/success", methods=["GET"])
 @webhook_app.route("/payments/success", methods=["GET"])
 def pulse_payment_success_page():
-    if _marketplace_order_return(request.args.get("transaction_id")):
-        # Deliberately not "your order is confirmed". Stripe has taken the
-        # payment, but the order becomes an order in PulseSoc when
-        # `checkout.session.completed` arrives, and the cart's own lines are
-        # cleared by that webhook and not by this page. Saying "confirmed" here
-        # would be the page claiming something it has not been told.
-        return pulse_social_shell(
-            "Payment Complete",
-            "Stripe received your payment. Your order appears in your orders once the confirmation reaches PulseSoc.",
-            "<section class='card'><h2>Payment received</h2>"
-            "<p>Stripe has taken your payment. Your order shows up in your orders as soon as "
-            "the confirmation reaches PulseSoc &mdash; usually within a few seconds. The seller "
-            "is notified at the same time.</p>"
-            "<p class='muted'>Items stay in your cart until that confirmation lands, so do not be "
-            "surprised to see them there for a moment.</p>"
-            "<div class='actions'><a class='button primary' href='/pulse/orders'>View your orders</a>"
-            # `app_first_href` and not the literal, even though the literal is the
-            # right URL today: the registry owns whether `marketplace` is a web page
-            # or an `/open/...` handoff, and a button written here would be the one
-            # place on the site still pointing at the old answer after that flips.
-            f"<a class='button' href='{app_first_href('marketplace')}'>Keep browsing</a>"
-            "</div></section>")
     return pulse_social_shell("Payment Complete", "Your payment was received. Access and seller payout status update through Stripe webhooks.", "<section class='card'><h2>Payment received</h2><p>Thank you. If this was a course or product, access will update shortly.</p><a class='button primary' href='/pulse'>Back to PulseSoc</a></section>")
 
 
 @webhook_app.route("/pulse/payments/cancel", methods=["GET"])
 @webhook_app.route("/payments/cancel", methods=["GET"])
 def pulse_payment_cancel_page():
-    if _marketplace_order_return(request.args.get("transaction_id")):
-        # The cart is the one thing a buyer who just backed out of a payment
-        # wants, and the generic page sent them to the feed instead. Nothing was
-        # lost: `cart_checkout` empties no line, and the reservation it took is
-        # released by the sweeper on its own deadline.
-        return pulse_social_shell(
-            "Checkout Canceled",
-            "No card was charged and your cart is exactly as you left it.",
-            "<section class='card'><h2>Checkout canceled</h2>"
-            "<p>No payment was taken. Everything is still in your cart &mdash; nothing was removed "
-            "and nothing was charged.</p>"
-            "<div class='actions'><a class='button primary' href='/pulse/cart'>Back to your cart</a>"
-            # Through the registry for the same reason as the success page above:
-            # this button's destination is the registry's to decide, not this
-            # route's.
-            f"<a class='button' href='{app_first_href('marketplace')}'>Keep browsing</a>"
-            "</div></section>")
     return pulse_social_shell("Payment Canceled", "No card was charged.", "<section class='card'><h2>Checkout canceled</h2><p>No payment was completed.</p><a class='button primary' href='/pulse'>Back to PulseSoc</a></section>")
 
 
@@ -63339,7 +57421,7 @@ def pulse_merchant_profile_page(username):
         listings = [dict(row) for row in cur.fetchall()]
     conn.close()
     if not seller:
-        return pulse_social_shell("Merchant", "Merchant profile not found.", f"<section class='card'><a class='button' href='{app_first_href('marketplace')}'>Back to Marketplace</a></section>")
+        return pulse_social_shell("Merchant", "Merchant profile not found.", "<section class='card'><a class='button' href='/pulse/marketplace'>Back to Marketplace</a></section>")
     cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(l.get('title') or ''))}</h2><p>{html_escape(clean_html(l.get('short_description') or l.get('description') or ''))}</p><span class='pill'>{html_escape(clean_html(l.get('price_label') or ''))}</span></article>" for l in listings)
     cards_empty = '<article class="card"><h2>No public products yet.</h2></article>'
     main = f"<section class='card'><h2>{html_escape(clean_html(seller.get('display_name') or 'Merchant'))}</h2><p><span class='pill'>Verified merchant</span> <span class='pill'>Trust {100-int(seller.get('risk_score') or 0)}</span></p><p>{html_escape(clean_html(seller.get('bio') or ''))}</p></section><section class='grid'>{cards or cards_empty}</section>"
@@ -63357,7 +57439,7 @@ def pulse_marketplace_create_page():
     seller = dict(cur.fetchone() or {})
     conn.close()
     if seller.get("status") != "approved":
-        return pulse_social_shell("Create Product", "Merchant approval is required before listing products.", f"<section class='card'><h2>Approval Required</h2><p>Apply and complete review before creating products.</p><a class='button primary' href='{app_first_href('seller_apply')}'>Apply as Merchant</a></section>")
+        return pulse_social_shell("Create Product", "Merchant approval is required before listing products.", "<section class='card'><h2>Approval Required</h2><p>Apply and complete review before creating products.</p><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a></section>")
     categories = ["AI Tools","Cybersecurity","Crypto Education","Trading Education","Coding","Business","Marketing","Design","Ebooks","Courses","Templates","Coaching","Livestream Access","Premium Communities","Creator Resources","Productivity","Investing Education","Scam Prevention"]
     opts = "".join(f"<option>{html_escape(clean_html(c))}</option>" for c in categories)
     main = f"""
@@ -63437,7 +57519,7 @@ def pulse_creator_monetization_page():
     steps = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in readiness.get("next_steps", []))
     body = f"""
     <section class='grid'><div class='card'><h2>Creator Readiness</h2><p class='metric'>{readiness['readiness_score']}%</p><p>{'Ready to prepare monetized tools.' if readiness['ready'] else 'Keep building trust before paid tools unlock.'}</p></div><div class='card'><h2>Audience Growth</h2><p class='metric'>{counts['posts']}</p><p>PulseSoc posts published.</p></div><div class='card'><h2>Revenue Placeholder</h2><p class='metric'>$0</p><p>Real payout release stays off until compliance is ready.</p></div></section>
-    <section class='card'><h2>Your Next Unlock</h2><ul>{steps}</ul><div class='actions'><a class='button primary' href='{app_first_href('marketplace')}'>Prepare Marketplace Product</a><a class='button' href='/pulse/teacher-dashboard'>Open Teacher Tools</a><a class='button' href='/pulse/live'>Livestream Readiness</a></div></section>
+    <section class='card'><h2>Your Next Unlock</h2><ul>{steps}</ul><div class='actions'><a class='button primary' href='/pulse/marketplace'>Prepare Marketplace Product</a><a class='button' href='/pulse/teacher-dashboard'>Open Teacher Tools</a><a class='button' href='/pulse/live'>Livestream Readiness</a></div></section>
     <section class='grid'>{product_cards}</section>
     """
     return pulse_social_shell("Creator Monetization", "Trust-first creator revenue readiness for premium tools, courses, marketplace products, and livestream monetization placeholders.", body)
@@ -87930,7 +82012,7 @@ def pulse_creator_dashboard_page():
         <section class='card' id='content'><h2>Content Studio</h2><div class='studio-shortcuts'>{shortcut_html}</div></section>
         <section class='card' id='creator-ai'><h2>Creator AI Tools</h2><p>Paste an idea and choose a tool.</p><textarea id='creatorAiText' placeholder='Post idea, Reel caption, lesson topic, live title, or marketplace product...'></textarea><div class='studio-tool-row'>{tool_html}</div><pre class='card studio-output' id='creatorAiOutput'>Creator AI output appears here.</pre></section>
         <section class='studio-section-grid' id='analytics'><article class='card'><h2>Analytics</h2><div>{top_html}</div></article><article class='card'><h2>Growth Tools</h2><p>Trending topics, creator challenges, recommended rooms, collaboration suggestions, audience questions, and content calendar.</p><a class='button primary' href='/pulse/groups'>Find Rooms</a></article></section>
-        <section class='studio-section-grid'><article class='card' id='monetization'><h2>Monetization / Marketplace</h2><p>Creator products, services, digital downloads, paid rooms, paid lessons, premium content readiness, and payout checklist.</p><a class='button primary' href='{app_first_href('marketplace_create')}'>Create Product</a></article><article class='card' id='live'><h2>Live Studio</h2><p>Mux Live setup, protected stream key, live status, replay library, and upcoming schedule.</p><a class='button primary' href='/pulse/live/studio?context_type=creator_studio'>Open Live Studio</a></article></section>
+        <section class='studio-section-grid'><article class='card' id='monetization'><h2>Monetization / Marketplace</h2><p>Creator products, services, digital downloads, paid rooms, paid lessons, premium content readiness, and payout checklist.</p><a class='button primary' href='/pulse/marketplace/create'>Create Product</a></article><article class='card' id='live'><h2>Live Studio</h2><p>Mux Live setup, protected stream key, live status, replay library, and upcoming schedule.</p><a class='button primary' href='/pulse/live/studio?context_type=creator_studio'>Open Live Studio</a></article></section>
         <section class='card' id='media'><h2>Media Library</h2><div class='studio-media-grid'>{media_html}</div></section>
         <section class='studio-section-grid'><article class='card'><h2>Safety / Trust</h2><p>Scam Shield score, flagged content, moderation guidance, trust signals, and creator safety checklist.</p><button type='button' data-ai-tool='virality'>Run Trust Check</button></article><article class='card' id='resources'><h2>Resources</h2><p>Creator guides, better Reels, audience growth, safe selling, live setup, and PulseSoc AI playbooks.</p><a class='button' href='/pulse/teachers'>Open Guides</a></article></section>
       </main>
@@ -87982,7 +82064,7 @@ def pulse_discover_page():
             ],
         )
         + "<section class='card' id='apps'><h2>Apps</h2><div class='actions'>"
-        f"<a class='button' href='/pulse/communities'>Communities</a><a class='button' href='{app_first_href('marketplace')}'>Marketplace</a>"
+        "<a class='button' href='/pulse/communities'>Communities</a><a class='button' href='/pulse/marketplace'>Marketplace</a>"
         "<a class='button' href='/pulse/music'>Music</a><a class='button' href='/pulse/events'>Events</a>"
         "<a class='button' href='/pulse/creator-studio'>Creator Studio</a><a class='button' href='/pulse/promote'>Promote</a>"
         "<a class='button' href='/business-os'>Business OS</a>"
@@ -88045,7 +82127,7 @@ def pulse_promote_page():
     main = pulse_gateway_card_html(
         "Promote",
         "Start promotion from owned content only. Campaign launch remains gated by growth readiness, billing, and review.",
-        [("My Posts", "/pulse/my-posts"), ("Marketplace", app_first_href("marketplace")), ("Creator Studio", "/pulse/creator-studio")],
+        [("My Posts", "/pulse/my-posts"), ("Marketplace", "/pulse/marketplace"), ("Creator Studio", "/pulse/creator-studio")],
         [("Launch Without Content", "Choose an owned post, Reel, or listing first."), ("Estimated Reach", "Forecasting provider is not configured; fake reach is not shown.")],
     )
     return pulse_social_shell("Promote", "A safe gateway to owner-only PulseSoc promotion tools.", main)
@@ -88088,7 +82170,7 @@ def pulse_seller_tools_gateway_page():
     main = pulse_gateway_card_html(
         "Seller Tools",
         "Seller tools use marketplace and dashboard seller APIs. Revenue, orders, and billing are not fabricated.",
-        [("Seller Dashboard", app_first_href("seller_dashboard")), ("Create Product", app_first_href("marketplace_create")), ("Marketplace", app_first_href("marketplace"))],
+        [("Seller Dashboard", "/pulse/dashboard/seller-tools"), ("Create Product", "/pulse/marketplace/create"), ("Marketplace", "/pulse/marketplace")],
         [("Synthetic Sales Demo", "Fake sales and order data are not shown.")],
     )
     return pulse_social_shell("Seller Tools", "Seller storefront, product, and promotion readiness tools.", main)
@@ -89540,15 +83622,6 @@ PULSE_SELLER_STORE_MODES = {
     "create": "/pulse/marketplace/create",
     "payouts": "/pulse/merchant/payouts",
     "orders": "/pulse/merchant/payouts",
-    # `product` is the app's single-product editor (`PANELS_BY_MODE.product` is
-    # `["inventory"]` and nothing else). The web has no equivalent: `create` is
-    # create-only and takes no listing id, and there is no other listing editor.
-    # So this is the dashboard, which is where a merchant's listings are, and it
-    # is the same answer the app's own `sellerStoreWebUrl` already gives by
-    # falling through. Named rather than left to the `.get` default so that the
-    # *next* mode someone adds fails the parity test instead of silently landing
-    # here too. If a web single-product editor is ever built, this is the line.
-    "product": "/pulse/merchant/dashboard",
     # `profile` is the one mode that depends on a parameter; see below.
     "profile": "/pulse/merchant/dashboard",
 }
@@ -89567,31 +83640,6 @@ def pulse_seller_store_router():
         return redirect("/pulse/merchant/" + quote(seller_id, safe=""), code=302)
     return redirect(PULSE_SELLER_STORE_MODES.get(mode, "/pulse/merchant/dashboard"),
                     code=302)
-
-
-# `linking.ts` gained `Dropshipping: "pulse/dropshipping"` so merchants could
-# finally reach a hub that had been registered in `AppNavigator` and linked from
-# nowhere. Because `prefixes` includes https://pulsesoc.com, adding it there also
-# minted a public URL -- and the web had no rule for it at all, so it answered
-# Werkzeug's stock 404.
-#
-# This is the same answer `product` gets above, for the same reason and with the
-# same limits. The web has no supplier browser, no import cart and no import
-# action; those live under `/api/business-os/dropshipping/*` and have no page.
-# What it does have is the half the hub was added to provide: imported products
-# become ordinary marketplace listings once released, so the merchant dashboard
-# is where they appear. A merchant following this link finds what they imported.
-#
-# Named on its own rather than folded into the mode map above, because this is
-# not a `seller-store` mode -- it is a destination the app publishes in its own
-# right. If a web supplier/import surface is ever built, this is the line.
-@webhook_app.route("/pulse/dropshipping", methods=["GET"])
-@auth_required
-def pulse_dropshipping_hub_alias():
-    user = require_account()
-    if not user:
-        return redirect(url_for("login_page", next=request.path))
-    return redirect("/pulse/merchant/dashboard", code=302)
 
 
 # --- Start a chat -----------------------------------------------------------
@@ -91219,7 +85267,7 @@ def pulse_profile_edit_page():
         <label>Website or social links<input id='socialLinks' value='{html_escape(clean_html(row.get('social_links_json') or ''))}' placeholder='https://... or @handle'></label>
         <label>Expertise tags<input id='expertiseTags' value='{html_escape(clean_html(row.get('expertise_tags_json') or ''))}' placeholder='Crypto, AI, security'></label>
       </div>
-      <label>Bio<span class='pulse-emoji-field' data-emoji-scope><textarea id='bio' placeholder='Bio'>{html_escape(clean_html(row.get('bio') or ''))}</textarea><button class='pulse-emoji-trigger' type='button' data-emoji-for aria-haspopup='dialog' aria-expanded='false' aria-label='Add emoji'>☺</button></span></label>
+      <label>Bio<textarea id='bio' placeholder='Bio'>{html_escape(clean_html(row.get('bio') or ''))}</textarea></label>
       <label>Profile privacy<select id='profileVisibility'><option value='public'>Public profile</option><option value='private'>Private profile</option></select></label>
       <p class='muted' id='profileEditState' aria-live='polite'></p>
       <div class='profile-save-row'><button class='primary' id='profileSave'>Save Profile</button><a class='button' href='/pulse/profile'>Preview Profile</a></div>
@@ -91299,7 +85347,7 @@ def account_security_payload(user_id):
     cur.execute("SELECT COUNT(*) AS total FROM user_security_events WHERE user_id=? AND event_type IN ('suspicious_login','failed_login_burst')", (user_id,))
     suspicious_count = int((dict(cur.fetchone() or {}).get("total") or 0))
     try:
-        ensure_mobile_security_session_schema_once(cur)
+        ensure_mobile_security_session_schema(cur)
         cur.execute("SELECT COUNT(*) AS total FROM mobile_security_sessions WHERE user_id=? AND status='active' AND COALESCE(revoked_at,'')=''", (user_id,))
         active_session_count = int((dict(cur.fetchone() or {}).get("total") or 0))
     except Exception:
@@ -91864,7 +85912,7 @@ def pulse_message_thread_page(conversation_id):
         <nav class='messenger-tabs'><a href='/pulse/messages'>Conversations</a><a class='active' href='/pulse/messages/{conversation_id}'>Chat Room</a><a href='/pulse/messages#group-chat'>Group Chat</a></nav>
       </header>
       <section class='message-list' id='messages'>{message_html or '<article class="msg theirs"><p>No messages yet. Start the conversation with text, media, or a PulseSoc share.</p></article>'}</section>
-      <form class='message-composer' id='replyForm'><button id='attachBtn' type='button'>+</button><a class='button' href='/pulse/camera?target=message&conversation_id={conversation_id}' aria-label='Camera'>📷</a><span class='pulse-emoji-field' data-emoji-scope><input id='replyBody' placeholder='Message...' autocomplete='off'><button class='pulse-emoji-trigger' type='button' data-emoji-for aria-haspopup='dialog' aria-expanded='false' aria-label='Add emoji'>☺</button></span><button class='primary' id='replyBtn'>➤</button></form>
+      <form class='message-composer' id='replyForm'><button id='attachBtn' type='button'>+</button><a class='button' href='/pulse/camera?target=message&conversation_id={conversation_id}' aria-label='Camera'>📷</a><input id='replyBody' placeholder='Message...' autocomplete='off'><button class='primary' id='replyBtn'>➤</button></form>
     </section>
     <section class='attachment-sheet' id='attachmentSheet'><a class='button' href='/pulse/camera?target=message&conversation_id={conversation_id}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=message&conversation_id={conversation_id}'>Record Video</a><button type='button' data-pick-media='image/*'>Upload Photo</button><button type='button' data-pick-media='video/*'>Upload Video</button><button type='button' data-pick-media='image/gif'>Upload GIF</button><button type='button' data-pick-media='audio/*' data-voice='1'>Voice Note</button><button type='button' data-pick-media='audio/*'>Audio Clip</button><button type='button' data-pick-media='.pdf,.txt,.doc,.docx'>File</button><button type='button' data-share-kind='post_share'>Share PulseSoc Post</button><button type='button' data-share-kind='reel_share'>Share Reel</button><button type='button' data-share-kind='marketplace_share'>Share Marketplace Item</button></section><input id='messageMediaFile' type='file' accept='image/*,video/*,audio/*,.pdf,.txt,.doc,.docx' hidden>
     """
@@ -91985,7 +86033,7 @@ def pulse_group_detail_page(group_slug):
         author_avatar = f"<img src='{html_escape(clean_html(ident.get('avatar_url')))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("name") or "P")[:1])
         pinned_badge = "<span class='pill pinned-pill'>Pinned</span> " if is_pinned else ""
         interaction_html = (
-            f"<div class='group-reaction-row'>{reaction_buttons}</div><div class='group-comments' data-comments-for='{post_id}'>{preview_html}</div><form class='group-comment-form' data-group-comment-form='{post_id}'><span class='pulse-emoji-field' data-emoji-scope><input name='body' placeholder='Write a comment...' autocomplete='off'><button class='pulse-emoji-trigger' type='button' data-emoji-for aria-haspopup='dialog' aria-expanded='false' aria-label='Add emoji'>☺</button></span><button class='primary'>Comment</button></form>"
+            f"<div class='group-reaction-row'>{reaction_buttons}</div><div class='group-comments' data-comments-for='{post_id}'>{preview_html}</div><form class='group-comment-form' data-group-comment-form='{post_id}'><input name='body' placeholder='Write a comment...' autocomplete='off'><button class='primary'>Comment</button></form>"
             if groups_advanced
             else "<p class='muted'>Group interactions are temporarily paused while this area is stabilized.</p>"
         )
@@ -92120,7 +86168,7 @@ def pulse_profile_page_for_user(target_user_id):
     premium_html = pulse_premium_mark_html(ident.get("premium_mark"))
     if is_owner:
         action_html = "<a class='button primary' href='/pulse/profile/edit'>Edit Profile</a><button type='button' data-share-profile>Share Profile</button><a class='button' href='/account'>Settings</a>"
-        more_tools_html = f"<a href='/pulse/profile/edit'>Profile Controls</a><a href='/account'>Account</a><a href='/privacy-center'>Privacy</a><a href='/pulse/teachers'>Teacher Status</a><a href='{app_first_href('marketplace')}'>Marketplace</a><a href='/pulse/music'>PulseSoc Music</a><a href='/pulse/creator/dashboard'>Creator Tools</a><a href='/pulse/live'>Livestream Studio</a><a href='/arena'>Arena Call Signs</a>"
+        more_tools_html = "<a href='/pulse/profile/edit'>Profile Controls</a><a href='/account'>Account</a><a href='/privacy-center'>Privacy</a><a href='/pulse/teachers'>Teacher Status</a><a href='/pulse/marketplace'>Marketplace</a><a href='/pulse/music'>PulseSoc Music</a><a href='/pulse/creator/dashboard'>Creator Tools</a><a href='/pulse/live'>Livestream Studio</a><a href='/arena'>Arena Call Signs</a>"
     else:
         action_html = f"<button class='primary profile-action-primary' data-follow-public='{html_escape(clean_html(ident['public_player_id']))}'><span aria-hidden='true'>＋</span> Follow</button><button class='profile-action-message' data-message-public='{html_escape(clean_html(ident['public_player_id']))}'><span aria-hidden='true'>◇</span> Message</button><button class='profile-action-more' type='button' data-profile-more-toggle aria-label='More actions' aria-expanded='false'>•••</button>"
         more_tools_html = f"<button class='profile-sheet-action' data-friend-public='{html_escape(clean_html(ident['public_player_id']))}'><span class='profile-sheet-icon' aria-hidden='true'>＋</span><span><strong>Add Friend</strong><small>Send a connection request</small></span></button><button class='profile-sheet-action' data-share-profile><span class='profile-sheet-icon' aria-hidden='true'>↗</span><span><strong>Share Profile</strong><small>Send this profile securely</small></span></button><div class='profile-sheet-divider' role='separator'></div><button class='profile-sheet-action profile-sheet-safety' data-open-report-profile><span class='profile-sheet-icon' aria-hidden='true'>!</span><span><strong>Report Profile</strong><small>Alert the PulseSoc safety team</small></span></button><button class='profile-sheet-action profile-sheet-danger' data-open-block-profile><span class='profile-sheet-icon' aria-hidden='true'>⊘</span><span><strong>Block User</strong><small>Stop contact and hide their activity</small></span></button>"
@@ -92202,23 +86250,9 @@ def pulse_post_page(post_id):
     post = pulse_feed_engine.get_post(post_id, viewer_user_id=(user or {}).get("user_id"), include_private=bool(user))
     if not post:
         return Response("PulseSoc post not found.", status=404)
-    # The route no longer decides this for itself. It used to check visibility
-    # and moderation inline, which was right as far as it went and silently
-    # disagreed with the sitemap, which checked the same two fields in SQL and
-    # nothing else. Both now ask the same module, so a creator's search opt-out
-    # or a takedown reaches the page and the sitemap at the same moment.
-    robots_directive = search_visibility.content_eligibility(post).directive
+    is_public_indexable = post.get("visibility") == "public" and post.get("moderation_status") == "approved"
     title = post.get("title") or (post.get("body") or "PulseSoc Post")[:72]
-    # ``body`` is the authoritative caption, so the description is derived from
-    # it rather than read out of ``ai_summary``. That column holds a stored copy
-    # of the caption for every post that has one, and a stored copy outlives a
-    # correction to the original: post 2500 was fixed in ``body`` while the meta
-    # and og:description kept serving the withdrawn text to crawlers and link
-    # unfurls. ``ai_summary`` is still consulted for a post with no body at all,
-    # which is the one case it carries something of its own (a live post's
-    # "Live now: ..."). The slice now applies to whichever branch wins; it used
-    # to bind to the fallback alone, so a present ai_summary shipped uncapped.
-    description = (post.get("body") or post.get("ai_summary") or "Community post on PulseSoc.")[:155]
+    description = post.get("ai_summary") or (post.get("body") or "Community post on PulseSoc.")[:155]
     media = (post.get("media") or [{}])[0]
     image = media.get("thumbnail_url") or media.get("media_url") or "/static/brand/pulsesoc-og-20260913.png"
     comments = pulse_feed_engine.list_comments(post_id).get("comments", [])
@@ -92262,14 +86296,7 @@ def pulse_post_page(post_id):
     # navigation, which stays: someone reading this page on a desktop wants the
     # rest of the site, not the App Store.
     post_app_cta = app_cta_html("post", post_id, source="web")
-    # The commerce attachment, when this post has one. ``get_post`` already ran
-    # ``_attach_commerce``, so the overlay is on the post here and is read fresh
-    # from ``marketplace_listings`` -- this page had been receiving it and
-    # dropping it since PulseDrop shipped. Server-rendered rather than hydrated
-    # in the browser because this page is the SEO and link-unfurl target: a card
-    # assembled by JavaScript is a card a crawler never sees.
-    commerce_html = pulse_commerce_card.post_card_html(post)
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name='description' content='{html_escape(clean_html(description))}'><meta name='robots' content='{robots_directive}'><link rel='canonical' href='{search_visibility.canonical_url(f"/pulse/post/{post_id}")}'><meta property='og:title' content='{html_escape(clean_html(title))}'><meta property='og:description' content='{html_escape(clean_html(description))}'><meta property='og:image' content='{html_escape(clean_html(image))}'><meta name='twitter:card' content='summary_large_image'><link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=cache-sweep-20260930a'><link rel='stylesheet' href='/static/css/pulse-commerce-attachment.css?v=commerce-attachment-20260928a'><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:max(20px,env(safe-area-inset-top)) 0 calc(98px + env(safe-area-inset-bottom))}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:14px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);position:relative;overflow:hidden}}a{{color:var(--cyan)}}p,.muted,small{{color:var(--muted);line-height:1.55}}.smart-time{{font-size:.82rem;color:rgba(217,247,255,.62);white-space:nowrap}}.time-dot{{opacity:.42;margin:0 4px}}h1{{font-size:clamp(30px,7vw,56px);line-height:1;margin:8px 0 12px}}img,video{{width:100%;max-height:min(74vh,760px);object-fit:contain;border-radius:12px;background:#020817;border:1px solid rgba(255,255,255,.08)}}.pulse-media-wrap{{position:relative;isolation:isolate;overflow:hidden;border-radius:14px;background:radial-gradient(circle at 50% 20%,rgba(110,223,246,.14),transparent 32%),#020817;border:1px solid rgba(110,223,246,.18);margin:12px 0;box-shadow:0 18px 70px rgba(0,0,0,.34),0 0 46px rgba(54,229,143,.08)}}.pulse-cinematic-media-shell:before,.pulse-cinematic-media-shell:after,.pulse-media-backdrop,.pulse-media-depth-layer,.pulse-media-aura{{position:absolute;inset:0;pointer-events:none}}.pulse-media-backdrop{{z-index:0;inset:-12%;background-image:var(--media-backdrop);background-size:cover;background-position:center;filter:blur(34px) saturate(1.32) brightness(.62);opacity:.86;transform:scale(1.08)}}.pulse-media-depth-layer{{z-index:1;background:radial-gradient(circle at var(--pulse-media-x,50%) var(--pulse-media-y,42%),rgba(var(--pulse-media-rgb,110,223,246),.3),transparent 35%),radial-gradient(circle at 12% 18%,rgba(54,229,143,.16),transparent 36%),radial-gradient(circle at 86% 80%,rgba(166,88,255,.15),transparent 38%),linear-gradient(180deg,rgba(2,8,17,.18),rgba(2,8,17,.58));mix-blend-mode:screen;opacity:.74}}.pulse-media-aura{{z-index:2;border-radius:inherit;box-shadow:inset 0 0 54px rgba(var(--pulse-media-rgb,110,223,246),.16),inset 0 -34px 72px rgba(0,0,0,.28),0 0 52px rgba(var(--pulse-media-rgb,110,223,246),.1);background:linear-gradient(115deg,transparent 10%,rgba(255,255,255,.06) 48%,transparent 62%);opacity:.8}}.pulse-cinematic-media-shell:before{{content:"";z-index:3;background:radial-gradient(1px 1px at 18% 22%,rgba(110,223,246,.55),transparent),radial-gradient(1px 1px at 77% 26%,rgba(54,229,143,.45),transparent),radial-gradient(1px 1px at 66% 72%,rgba(166,88,255,.42),transparent);background-size:150px 150px,190px 190px,230px 230px;opacity:.28}}.pulse-cinematic-media-shell:after{{content:"";z-index:4;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,.06),transparent 22%,transparent 76%,rgba(0,0,0,.18));box-shadow:inset 0 0 0 1px rgba(255,255,255,.045)}}.pulse-media-wrap img,.pulse-media-wrap video{{position:relative;z-index:5;display:block;border:0;width:100%;height:auto;object-fit:contain;object-position:center;background:transparent!important;filter:drop-shadow(0 18px 44px rgba(0,0,0,.42))}}.pulse-media-fallback{{position:absolute;z-index:7;inset:0;display:none;place-items:center;text-align:center;padding:18px;background:linear-gradient(145deg,rgba(8,19,35,.92),rgba(4,9,17,.96));color:#dffcff}}.pulse-media-fallback strong{{display:block;margin-bottom:5px}}.pulse-media-wrap.is-broken .pulse-media-fallback{{display:grid}}button,.button,input{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:9px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.actions,.tags{{display:flex;gap:8px;flex-wrap:wrap}}.pulse-post-actions-old,.pulse-action-wall,.reaction-stack{{display:none!important}}.tag{{font-size:12px;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:5px 9px;text-decoration:none}}.author{{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}.menu-btn{{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0;font-size:20px}}.post-sheet{{display:none;position:fixed;left:12px;right:12px;bottom:calc(110px + env(safe-area-inset-bottom));z-index:20;border:1px solid var(--line);border-radius:18px;background:#071321;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,.5)}}.post-sheet.open{{display:grid;gap:7px}}.post-sheet .button,.post-sheet button{{width:100%;justify-content:flex-start}}.reactions{{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}}.reaction-pill{{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px}}.reaction-pill.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.5);box-shadow:0 0 24px rgba(54,229,143,.15)}}.comment{{border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.04);margin:7px 0}}.comment p{{margin:3px 0}}.comment-box{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:7px;align-items:center}}.comment-box input{{border-radius:999px;min-height:40px}}.comment-box button{{width:42px;min-height:40px;border-radius:999px;padding:0}}@media(max-width:720px){{.wrap{{width:100%;padding:max(24px,env(safe-area-inset-top)) 10px calc(160px + env(safe-area-inset-bottom))}}.actions{{overflow-x:auto;flex-wrap:nowrap}}.actions .button,.actions button{{white-space:nowrap}}}}</style></head><body><main class='wrap'><nav class='actions'>{post_app_cta}<a class='button' href='/pulse'>Back to PulseSoc</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/pulse#create'>Create</a><button id='shareBtn' type='button'>Share</button></nav><article class='card'><div class='author'><p><strong>{html_escape(clean_html(author.get('display_name') or 'PulseSoc creator'))}{author_mark}</strong><br><span class='badge'>{html_escape(clean_html(author_label or 'Member'))}</span><br><small>{smart_time_html(post.get('created_at'))}</small></p><button class='menu-btn' id='moreBtn' type='button'>⋯</button></div><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(post.get('body') or ''))}</p>{media_html}{commerce_html}<div class='tags'>{tags_html}</div><p class='muted'>Type: {html_escape(clean_html(post.get('post_type') or 'post'))} · Status: {html_escape(clean_html(post.get('moderation_status') or 'approved'))} · Risk score: {int(post.get('risk_score') or 0)}</p><div class='reactions'>{reaction_buttons}</div><p>{PULSE_DISCLAIMER}</p></article><section class='card'><h2>Comments</h2><div id='comments'>{comment_html or '<p>No comments yet.</p>'}</div><form class='comment-box' id='commentForm'><span class='pulse-emoji-field' data-emoji-scope><input name='body' placeholder='Write a comment...'><button class='pulse-emoji-trigger' type='button' data-emoji-for aria-haspopup='dialog' aria-expanded='false' aria-label='Add emoji'>☺</button></span><button class='primary'>➤</button></form></section><section class='post-sheet' id='postSheet'><a class='button primary' href='/pulse/post/{post_id}'>View post</a><a class='button' href='{author_profile_url}'>View profile</a><button id='sheetShare' type='button'>Share</button><a class='button' href='/pulse/my-posts'>My Posts</a></section></main><script src='/static/js/time.js?v=bare-asset-tokens-20260930a'></script><script src='/static/js/pulse_emoji.js?v=emoji-primitive-20260927b' defer></script><script src='/static/js/pulse_media_renderer.js?v=cache-sweep-20260930a'></script><script>async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false)throw new Error(d.error||d.message||'Request failed.');return d}}const share=async()=>{{const url=location.href;if(navigator.share){{await navigator.share({{title:document.title,url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});alert('Post link copied.')}}}};document.getElementById('shareBtn').addEventListener('click',share);document.getElementById('sheetShare').addEventListener('click',share);document.getElementById('moreBtn').addEventListener('click',()=>document.getElementById('postSheet').classList.toggle('open'));document.querySelectorAll('[data-react]').forEach(btn=>btn.addEventListener('click',async()=>{{try{{await api('/api/pulse/posts/{post_id}/react',{{method:'POST',body:JSON.stringify({{reaction_type:btn.dataset.react}})}});btn.classList.add('active')}}catch(e){{alert(e.message)}}}}));document.getElementById('commentForm').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.body;if(!input.value.trim())return;try{{await api('/api/pulse/posts/{post_id}/comments',{{method:'POST',body:JSON.stringify({{body:input.value}})}});location.reload()}}catch(err){{alert(err.message)}}}});window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name='description' content='{html_escape(clean_html(description))}'><meta name='robots' content='{"index,follow,max-image-preview:large" if is_public_indexable else "noindex,nofollow"}'><link rel='canonical' href='https://pulsesoc.com/pulse/post/{post_id}'><meta property='og:title' content='{html_escape(clean_html(title))}'><meta property='og:description' content='{html_escape(clean_html(description))}'><meta property='og:image' content='{html_escape(clean_html(image))}'><meta name='twitter:card' content='summary_large_image'><link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:max(20px,env(safe-area-inset-top)) 0 calc(98px + env(safe-area-inset-bottom))}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:14px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);position:relative;overflow:hidden}}a{{color:var(--cyan)}}p,.muted,small{{color:var(--muted);line-height:1.55}}.smart-time{{font-size:.82rem;color:rgba(217,247,255,.62);white-space:nowrap}}.time-dot{{opacity:.42;margin:0 4px}}h1{{font-size:clamp(30px,7vw,56px);line-height:1;margin:8px 0 12px}}img,video{{width:100%;max-height:min(74vh,760px);object-fit:contain;border-radius:12px;background:#020817;border:1px solid rgba(255,255,255,.08)}}.pulse-media-wrap{{position:relative;isolation:isolate;overflow:hidden;border-radius:14px;background:radial-gradient(circle at 50% 20%,rgba(110,223,246,.14),transparent 32%),#020817;border:1px solid rgba(110,223,246,.18);margin:12px 0;box-shadow:0 18px 70px rgba(0,0,0,.34),0 0 46px rgba(54,229,143,.08)}}.pulse-cinematic-media-shell:before,.pulse-cinematic-media-shell:after,.pulse-media-backdrop,.pulse-media-depth-layer,.pulse-media-aura{{position:absolute;inset:0;pointer-events:none}}.pulse-media-backdrop{{z-index:0;inset:-12%;background-image:var(--media-backdrop);background-size:cover;background-position:center;filter:blur(34px) saturate(1.32) brightness(.62);opacity:.86;transform:scale(1.08)}}.pulse-media-depth-layer{{z-index:1;background:radial-gradient(circle at var(--pulse-media-x,50%) var(--pulse-media-y,42%),rgba(var(--pulse-media-rgb,110,223,246),.3),transparent 35%),radial-gradient(circle at 12% 18%,rgba(54,229,143,.16),transparent 36%),radial-gradient(circle at 86% 80%,rgba(166,88,255,.15),transparent 38%),linear-gradient(180deg,rgba(2,8,17,.18),rgba(2,8,17,.58));mix-blend-mode:screen;opacity:.74}}.pulse-media-aura{{z-index:2;border-radius:inherit;box-shadow:inset 0 0 54px rgba(var(--pulse-media-rgb,110,223,246),.16),inset 0 -34px 72px rgba(0,0,0,.28),0 0 52px rgba(var(--pulse-media-rgb,110,223,246),.1);background:linear-gradient(115deg,transparent 10%,rgba(255,255,255,.06) 48%,transparent 62%);opacity:.8}}.pulse-cinematic-media-shell:before{{content:"";z-index:3;background:radial-gradient(1px 1px at 18% 22%,rgba(110,223,246,.55),transparent),radial-gradient(1px 1px at 77% 26%,rgba(54,229,143,.45),transparent),radial-gradient(1px 1px at 66% 72%,rgba(166,88,255,.42),transparent);background-size:150px 150px,190px 190px,230px 230px;opacity:.28}}.pulse-cinematic-media-shell:after{{content:"";z-index:4;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,.06),transparent 22%,transparent 76%,rgba(0,0,0,.18));box-shadow:inset 0 0 0 1px rgba(255,255,255,.045)}}.pulse-media-wrap img,.pulse-media-wrap video{{position:relative;z-index:5;display:block;border:0;width:100%;height:auto;object-fit:contain;object-position:center;background:transparent!important;filter:drop-shadow(0 18px 44px rgba(0,0,0,.42))}}.pulse-media-fallback{{position:absolute;z-index:7;inset:0;display:none;place-items:center;text-align:center;padding:18px;background:linear-gradient(145deg,rgba(8,19,35,.92),rgba(4,9,17,.96));color:#dffcff}}.pulse-media-fallback strong{{display:block;margin-bottom:5px}}.pulse-media-wrap.is-broken .pulse-media-fallback{{display:grid}}button,.button,input{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:9px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.actions,.tags{{display:flex;gap:8px;flex-wrap:wrap}}.pulse-post-actions-old,.pulse-action-wall,.reaction-stack{{display:none!important}}.tag{{font-size:12px;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:5px 9px;text-decoration:none}}.author{{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}.menu-btn{{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0;font-size:20px}}.post-sheet{{display:none;position:fixed;left:12px;right:12px;bottom:calc(110px + env(safe-area-inset-bottom));z-index:20;border:1px solid var(--line);border-radius:18px;background:#071321;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,.5)}}.post-sheet.open{{display:grid;gap:7px}}.post-sheet .button,.post-sheet button{{width:100%;justify-content:flex-start}}.reactions{{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}}.reaction-pill{{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px}}.reaction-pill.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.5);box-shadow:0 0 24px rgba(54,229,143,.15)}}.comment{{border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.04);margin:7px 0}}.comment p{{margin:3px 0}}.comment-box{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:7px;align-items:center}}.comment-box input{{border-radius:999px;min-height:40px}}.comment-box button{{width:42px;min-height:40px;border-radius:999px;padding:0}}@media(max-width:720px){{.wrap{{width:100%;padding:max(24px,env(safe-area-inset-top)) 10px calc(160px + env(safe-area-inset-bottom))}}.actions{{overflow-x:auto;flex-wrap:nowrap}}.actions .button,.actions button{{white-space:nowrap}}}}</style></head><body><main class='wrap'><nav class='actions'>{post_app_cta}<a class='button' href='/pulse'>Back to PulseSoc</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/pulse#create'>Create</a><button id='shareBtn' type='button'>Share</button></nav><article class='card'><div class='author'><p><strong>{html_escape(clean_html(author.get('display_name') or 'PulseSoc creator'))}{author_mark}</strong><br><span class='badge'>{html_escape(clean_html(author_label or 'Member'))}</span><br><small>{smart_time_html(post.get('created_at'))}</small></p><button class='menu-btn' id='moreBtn' type='button'>⋯</button></div><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(post.get('body') or ''))}</p>{media_html}<div class='tags'>{tags_html}</div><p class='muted'>Type: {html_escape(clean_html(post.get('post_type') or 'post'))} · Status: {html_escape(clean_html(post.get('moderation_status') or 'approved'))} · Risk score: {int(post.get('risk_score') or 0)}</p><div class='reactions'>{reaction_buttons}</div><p>{PULSE_DISCLAIMER}</p></article><section class='card'><h2>Comments</h2><div id='comments'>{comment_html or '<p>No comments yet.</p>'}</div><form class='comment-box' id='commentForm'><input name='body' placeholder='Write a comment...'><button class='primary'>➤</button></form></section><section class='post-sheet' id='postSheet'><a class='button primary' href='/pulse/post/{post_id}'>View post</a><a class='button' href='{author_profile_url}'>View profile</a><button id='sheetShare' type='button'>Share</button><a class='button' href='/pulse/my-posts'>My Posts</a></section></main><script src='/static/js/time.js'></script><script src='/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g'></script><script>async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false)throw new Error(d.error||d.message||'Request failed.');return d}}const share=async()=>{{const url=location.href;if(navigator.share){{await navigator.share({{title:document.title,url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});alert('Post link copied.')}}}};document.getElementById('shareBtn').addEventListener('click',share);document.getElementById('sheetShare').addEventListener('click',share);document.getElementById('moreBtn').addEventListener('click',()=>document.getElementById('postSheet').classList.toggle('open'));document.querySelectorAll('[data-react]').forEach(btn=>btn.addEventListener('click',async()=>{{try{{await api('/api/pulse/posts/{post_id}/react',{{method:'POST',body:JSON.stringify({{reaction_type:btn.dataset.react}})}});btn.classList.add('active')}}catch(e){{alert(e.message)}}}}));document.getElementById('commentForm').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.body;if(!input.value.trim())return;try{{await api('/api/pulse/posts/{post_id}/comments',{{method:'POST',body:JSON.stringify({{body:input.value}})}});location.reload()}}catch(err){{alert(err.message)}}}});window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);</script></body></html>""")
 
 
 def pulse_attach_video_detail_links(posts):
@@ -92352,22 +86379,6 @@ def api_pulse_feed():
     try:
         result = pulse_feed_engine.list_feed(user["user_id"], feed, request.args.get("topic") or "", request.args.get("profile") or "", request.args.get("limit") or 20, request.args.get("offset") or 0)
         pulse_attach_video_detail_links(result.get("posts") or [])
-        # Per-post "may commerce sit beside this?", so `injectCommerceRows` can
-        # decline a position next to a bereavement. The feed's commerce row is a
-        # sibling row *between* posts, so the request that fetched the products
-        # never knew which posts it would land between — only this response does.
-        # Free: the payload already carries every field the check reads, so it is
-        # string work over a dict in memory, no query.
-        #
-        # Guarded separately from the handler's own `except`, which answers 503.
-        # A commerce annotation failing must leave the feed exactly as it was,
-        # not take it down: the post has to render even when every commerce layer
-        # is broken.
-        try:
-            from services.commerce_discovery import suitability as _cd_suitability
-            _cd_suitability.annotate(result.get("posts"))
-        except Exception:
-            logging.exception("PULSE_FEED_COMMERCE_SUITABILITY_FAILED user_id=%s", user["user_id"])
         result.setdefault("intelligence", {})
         if isinstance(result.get("intelligence"), dict):
             result["intelligence"]["status_activity"] = pulse_status_discovery_signal(user["user_id"])
@@ -92628,13 +86639,17 @@ def pulse_video_hydrate_attached_music(cur, videos):
                     SELECT pcm.content_type, pcm.content_id, pcm.audio_track_id, pcm.title, pcm.artist, pcm.source,
                            pcm.license_snapshot_json, pcm.created_at, pcm.audio_start_time, pcm.audio_volume, pcm.original_audio_muted,
                            at.audio_url AS current_audio_url,
-                           at.duration_seconds AS current_duration_seconds,
-                           at.lifecycle_state, at.removed_at, at.safety_status, at.active, at.approved_by_admin
+                           at.duration_seconds AS current_duration_seconds
                     FROM pulse_content_music pcm
                     JOIN pulse_audio_tracks at ON CAST(at.id AS TEXT)=CAST(pcm.audio_track_id AS TEXT)
                     WHERE pcm.content_type=? AND pcm.content_id=?
+                      AND COALESCE(at.safety_status,'approved')='approved'
+                      AND COALESCE(at.active,1)=1
+                      AND COALESCE(at.approved_by_admin,0)=1
                       AND COALESCE(at.commercial_use_allowed,0)=1
                       AND COALESCE(at.remix_edit_allowed,0)=1
+                      AND COALESCE(at.removed_at,'')=''
+                      AND COALESCE(at.audio_url,'')!=''
                     ORDER BY pcm.created_at DESC
                     LIMIT 1
                     """,
@@ -92650,19 +86665,8 @@ def pulse_video_hydrate_attached_music(cur, videos):
                 snapshot = json.loads(music_row.get("license_snapshot_json") or "{}")
             except Exception:
                 snapshot = {}
-            # Mirrors the batch hydration in `services/pulse_feed_engine.py`: the
-            # takedown state no longer removes the row from the JOIN, because a
-            # post that comes back with no `music` reads to the client as "no
-            # attached track", and the client's audio policy answers that by
-            # playing the original camera audio. Silencing a song must not unmute
-            # the creator's video. The licensing predicates still drop the row --
-            # a different question, decided elsewhere, deliberately untouched.
-            music_unavailable = not music_authority.is_servable(music_row) or not (
-                safe_int(music_row.get("active") if music_row.get("active") is not None else 1, 1)
-                and safe_int(music_row.get("approved_by_admin"), 0)
-            )
-            audio_url = "" if music_unavailable else pulse_media_url(music_row.get("current_audio_url") or snapshot.get("audio_url") or snapshot.get("preview_url") or "")
-            if audio_url or music_unavailable:
+            audio_url = pulse_media_url(music_row.get("current_audio_url") or snapshot.get("audio_url") or snapshot.get("preview_url") or "")
+            if audio_url:
                 def music_text(value, fallback, limit):
                     return str(value or fallback or "").replace("\x00", "").strip()[:limit]
                 duration = int(float(music_row.get("current_duration_seconds") or snapshot.get("duration_seconds") or snapshot.get("duration") or 0) or 0)
@@ -92671,13 +86675,11 @@ def pulse_video_hydrate_attached_music(cur, videos):
                 music = {
                     "audio_id": str(music_row.get("audio_track_id") or snapshot.get("track_id") or ""),
                     "track_id": str(music_row.get("audio_track_id") or snapshot.get("track_id") or ""),
-                    "title": "" if music_unavailable else music_text(music_row.get("title") or snapshot.get("title"), "Approved track", 180),
-                    "artist": "" if music_unavailable else music_text(music_row.get("artist") or snapshot.get("artist"), "PulseSoc Music", 180),
+                    "title": music_text(music_row.get("title") or snapshot.get("title"), "Approved track", 180),
+                    "artist": music_text(music_row.get("artist") or snapshot.get("artist"), "PulseSoc Music", 180),
                     "attached_audio_url": audio_url,
                     "audio_url": audio_url,
                     "preview_url": audio_url,
-                    "audio_unavailable": music_unavailable,
-                    "audio_unavailable_state": music_authority.normalize_state(music_row.get("lifecycle_state")) if music_unavailable else "",
                     "duration_seconds": duration,
                     "audio_duration": duration,
                     "audio_start_time": max(0.0, start_time),
@@ -92698,7 +86700,6 @@ def pulse_video_hydrate_attached_music(cur, videos):
                         "audio_start_time": music["audio_start_time"],
                         "audio_volume": volume,
                         "original_audio_muted": True,
-                        "audio_unavailable": music_unavailable,
                     }
                 )
         hydrated.append(item)
@@ -92919,10 +86920,10 @@ def pulse_videos_page():
     .videos-rail-link{{min-height:40px;border-radius:12px;display:flex;align-items:center;gap:9px;padding:8px 10px;color:#eaffff;text-decoration:none;font-weight:900;border:1px solid transparent}}.videos-rail-link:hover,.videos-rail-link.active{{background:rgba(110,223,246,.09);border-color:rgba(110,223,246,.2)}}
     .videos-title-row{{display:flex;justify-content:space-between;gap:16px;align-items:flex-end}}.videos-title-row h1{{font-size:clamp(34px,3vw,54px);line-height:.96;margin:0}}.videos-title-row p{{margin:6px 0 0;color:#a8b8c8}}.video-search-bar{{display:flex;gap:8px;align-items:center;min-width:280px}}.video-search-bar input{{min-height:44px;border-radius:999px}}.video-toolbar{{justify-content:space-between}}.video-toolbar select{{width:auto;min-height:42px;border-radius:12px}}
     .featured-video-hero{{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:0;padding:0;overflow:hidden;background:linear-gradient(145deg,rgba(13,31,52,.95),rgba(5,11,20,.94))}}.featured-video-media{{position:relative;display:block;min-height:430px;background:#020817;overflow:hidden;text-decoration:none}}.featured-video-media img,.featured-video-media video{{width:100%;height:100%;object-fit:cover;display:block}}.featured-video-media .pulse-video-hub-media,.video-thumb .pulse-video-hub-media{{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;min-width:0!important;min-height:0!important;aspect-ratio:auto!important;display:block!important;contain:layout paint!important}}.featured-video-media .pulse-video-hub-media video,.featured-video-media .pulse-video-hub-media img,.video-thumb .pulse-video-hub-media video,.video-thumb .pulse-video-hub-media img{{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;object-fit:cover!important}}.featured-video-copy{{padding:22px;display:grid;align-content:center;gap:12px}}.featured-video-copy h2{{font-size:clamp(26px,2vw,38px);line-height:1.05;margin:0}}.video-play-orb{{position:absolute;left:50%;top:50%;z-index:3;transform:translate(-50%,-50%);width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.92);color:#06101b;font-size:16px;box-shadow:0 12px 34px rgba(0,0,0,.38)}}
-    .videos-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:14px}}.videos-grid.list{{grid-template-columns:1fr}}.videos-grid.list .video-card{{display:grid;grid-template-columns:280px minmax(0,1fr)}}.video-card{{padding:0;overflow:hidden;margin:0;position:relative}}.video-thumb{{position:relative;display:grid;place-items:center;aspect-ratio:16/9;min-height:0;background:#020817;overflow:hidden;border-radius:8px 8px 0 0;text-decoration:none}}.video-thumb img,.video-thumb video{{width:100%;height:100%;object-fit:cover}}.video-card-body{{padding:13px}}.video-card h3{{font-size:16px;line-height:1.22;margin:0 0 5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;padding-right:34px}}.video-card p{{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:#a8b8c8;min-height:38px}}.video-meta,.featured-stats{{display:flex;gap:8px;flex-wrap:wrap;color:#b6c7d5;font-size:13px}}.video-duration{{position:absolute;right:8px;bottom:8px;z-index:8;border-radius:7px;background:rgba(0,0,0,.72);color:#fff;padding:3px 7px;font-weight:900;font-size:12px}}.video-status-badge{{position:absolute;left:8px;top:8px;z-index:8;border-radius:999px;border:1px solid rgba(255,255,255,.18);background:rgba(5,11,20,.82);padding:5px 8px;font-size:12px;font-weight:900}}.video-owner-trigger{{position:absolute;right:9px;top:calc(100% - 132px);z-index:9;width:34px;height:34px;padding:0;border-radius:50%;background:rgba(5,11,20,.9)}}
+    .videos-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.videos-grid.list{{grid-template-columns:1fr}}.videos-grid.list .video-card{{display:grid;grid-template-columns:280px minmax(0,1fr)}}.video-card{{padding:0;overflow:hidden;margin:0;position:relative}}.video-thumb{{position:relative;display:grid;place-items:center;aspect-ratio:16/9;min-height:0;background:#020817;overflow:hidden;border-radius:8px 8px 0 0;text-decoration:none}}.video-thumb img,.video-thumb video{{width:100%;height:100%;object-fit:cover}}.video-card-body{{padding:13px}}.video-card h3{{font-size:16px;line-height:1.22;margin:0 0 5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;padding-right:34px}}.video-card p{{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:#a8b8c8;min-height:38px}}.video-meta,.featured-stats{{display:flex;gap:8px;flex-wrap:wrap;color:#b6c7d5;font-size:13px}}.video-duration{{position:absolute;right:8px;bottom:8px;z-index:8;border-radius:7px;background:rgba(0,0,0,.72);color:#fff;padding:3px 7px;font-weight:900;font-size:12px}}.video-status-badge{{position:absolute;left:8px;top:8px;z-index:8;border-radius:999px;border:1px solid rgba(255,255,255,.18);background:rgba(5,11,20,.82);padding:5px 8px;font-size:12px;font-weight:900}}.video-owner-trigger{{position:absolute;right:9px;top:calc(100% - 132px);z-index:9;width:34px;height:34px;padding:0;border-radius:50%;background:rgba(5,11,20,.9)}}
     .featured-creator,.video-card-creator,.creator-row,.ranked-video{{display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:10px;align-items:center}}.creator-initial,.featured-creator img,.video-card-creator img,.creator-row img{{width:42px;height:42px;border-radius:13px;object-fit:cover;background:rgba(110,223,246,.14);display:grid;place-items:center;font-weight:950;color:#eaffff}}.verified-mark{{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#6edff6;color:#06101b;font-size:12px;font-weight:950;margin-left:4px}}.creator-row,.ranked-video{{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07)}}.ranked-video{{grid-template-columns:24px 74px minmax(0,1fr)}}.ranked-video img,.ranked-video video{{width:74px;height:42px;object-fit:cover;border-radius:8px;background:#020817}}.ranked-video a,.creator-row a{{color:#f2fbff;text-decoration:none;font-weight:900}}.ranked-video small,.creator-row small{{display:block;color:#9fb5c0;margin-top:2px}}
-    .video-owner-sheet,.video-manage-modal{{position:fixed;inset:0;z-index:1500;display:none;padding:18px;background:rgba(1,7,16,.78)}}.video-owner-sheet.open{{display:flex;align-items:end;justify-content:center}}.video-manage-modal.open{{display:grid;place-items:center}}.video-owner-sheet-panel,.video-manage-panel{{width:min(560px,100%);max-height:90dvh;overflow:auto;padding:20px}}.video-manage-panel label{{display:grid;gap:6px;margin:12px 0}}.video-manage-actions{{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}}.video-empty-state{{border:1px dashed rgba(110,223,246,.3);border-radius:16px;background:rgba(110,223,246,.055);padding:22px;display:grid;gap:10px}}.videos-skeleton{{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:14px}}.videos-skeleton span{{height:220px;border-radius:14px;background:linear-gradient(90deg,rgba(255,255,255,.05),rgba(110,223,246,.12),rgba(255,255,255,.05));background-size:220% 100%;animation:pulseVideoSkeleton 1.2s infinite}}@keyframes pulseVideoSkeleton{{to{{background-position:-220% 0}}}}
-    @media(min-width:1024px) and (max-width:1320px){{.pulse-videos-desktop-page{{grid-template-columns:220px minmax(0,1fr)}}.videos-right-sidebar{{display:none}}.featured-video-hero{{grid-template-columns:1fr}}.featured-video-media{{min-height:360px}}}}
+    .video-owner-sheet,.video-manage-modal{{position:fixed;inset:0;z-index:1500;display:none;padding:18px;background:rgba(1,7,16,.78)}}.video-owner-sheet.open{{display:flex;align-items:end;justify-content:center}}.video-manage-modal.open{{display:grid;place-items:center}}.video-owner-sheet-panel,.video-manage-panel{{width:min(560px,100%);max-height:90dvh;overflow:auto;padding:20px}}.video-manage-panel label{{display:grid;gap:6px;margin:12px 0}}.video-manage-actions{{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}}.video-empty-state{{border:1px dashed rgba(110,223,246,.3);border-radius:16px;background:rgba(110,223,246,.055);padding:22px;display:grid;gap:10px}}.videos-skeleton{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.videos-skeleton span{{height:220px;border-radius:14px;background:linear-gradient(90deg,rgba(255,255,255,.05),rgba(110,223,246,.12),rgba(255,255,255,.05));background-size:220% 100%;animation:pulseVideoSkeleton 1.2s infinite}}@keyframes pulseVideoSkeleton{{to{{background-position:-220% 0}}}}
+    @media(min-width:1660px){{.videos-grid{{grid-template-columns:repeat(4,minmax(0,1fr))}}}}@media(min-width:1024px) and (max-width:1320px){{.pulse-videos-desktop-page{{grid-template-columns:220px minmax(0,1fr)}}.videos-right-sidebar{{display:none}}.videos-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}.featured-video-hero{{grid-template-columns:1fr}}.featured-video-media{{min-height:360px}}}}
     @media(max-width:680px){{body:has([data-videos-desktop-page]) .wrap{{width:100%;max-width:100vw;padding:0 0 calc(88px + env(safe-area-inset-bottom))}}body:has([data-videos-desktop-page]) .layout{{display:block}}body:has([data-videos-desktop-page]) .layout>aside,body:has([data-videos-desktop-page]) .nav,body:has([data-videos-desktop-page]) .mobile-topbar,body:has([data-videos-desktop-page]) .pulse-fab{{display:none}}body:has([data-videos-desktop-page]) .mobile-bottom-nav{{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;background:rgba(5,11,20,.94)!important}}body:has([data-videos-desktop-page]) .mobile-bottom-nav a[href="/pulse/videos"]{{display:grid!important;color:#fff!important;background:rgba(255,255,255,.1)!important}}body:has([data-videos-desktop-page]) .mobile-bottom-nav a[href="/pulse/messages"]{{display:grid!important;position:relative}}body:has([data-videos-desktop-page]) .mobile-bottom-nav a[href="/pulse/messages"]::after{{content:"";position:absolute;right:18px;top:8px;width:9px;height:9px;border-radius:50%;background:#ff2f5f;box-shadow:0 0 12px rgba(255,47,95,.85)}}.pulse-videos-desktop-page{{display:block;padding:0;background:#02050b;min-height:100dvh}}.videos-discovery-sidebar,.videos-right-sidebar,.videos-main>header.videos-title-row,.video-toolbar{{display:none!important}}.videos-mobile-header{{position:sticky;top:0;z-index:28;display:block;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;background:rgba(2,5,11,.92);backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,.08)}}.videos-mobile-topline{{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;justify-content:space-between;gap:10px;min-width:0}}.videos-mobile-left,.videos-mobile-actions{{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;gap:8px;min-width:0}}.videos-mobile-left{{flex:1 1 auto;overflow:hidden}}.videos-mobile-actions{{flex:0 0 auto;justify-content:flex-end}}.videos-mobile-header h1{{font-size:24px!important;line-height:1!important;margin:0!important;white-space:nowrap!important;overflow:hidden;text-overflow:ellipsis;letter-spacing:0}}.videos-mobile-header p{{font-size:12px;line-height:1.25;margin:5px 0 0;color:#a8b8c8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.videos-mobile-icon,.videos-mobile-avatar{{position:relative;width:36px;height:36px;min-width:36px;min-height:36px;border-radius:50%;display:grid;place-items:center;padding:0;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:#f2fbff;text-decoration:none;font-weight:950;overflow:hidden}}.videos-mobile-avatar img{{width:100%;height:100%;object-fit:cover}}.videos-mobile-alert::after{{content:"";position:absolute;right:6px;top:6px;width:8px;height:8px;border-radius:50%;background:#ff2f5f;box-shadow:0 0 12px rgba(255,47,95,.85)}}.videos-mobile-drawer-backdrop{{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.48);opacity:0;pointer-events:none;transition:opacity .18s ease}}.videos-mobile-drawer{{position:fixed;left:0;top:0;bottom:0;z-index:81;width:min(84vw,340px);padding:calc(16px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom));background:linear-gradient(180deg,rgba(7,18,31,.98),rgba(4,10,19,.98));border-right:1px solid rgba(110,223,246,.22);box-shadow:24px 0 80px rgba(0,0,0,.38);transform:translateX(-105%);transition:transform .2s ease;display:grid;align-content:start;gap:16px}}.videos-mobile-drawer.open{{transform:translateX(0)}}.videos-mobile-drawer-backdrop.open{{opacity:1;pointer-events:auto}}.videos-drawer-head{{display:flex;align-items:center;justify-content:space-between;gap:10px}}.videos-drawer-head strong{{font-size:22px}}.videos-drawer-close{{width:42px;height:42px;border-radius:50%;padding:0}}.videos-drawer-nav{{display:grid;gap:8px}}.videos-drawer-nav a{{display:flex;align-items:center;gap:10px;min-height:46px;border-radius:14px;padding:10px 12px;color:#eaffff;text-decoration:none;font-weight:900;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.045)}}.videos-drawer-nav a[aria-current="page"],.videos-drawer-nav a:hover{{border-color:rgba(110,223,246,.32);background:rgba(110,223,246,.1)}}body.videos-drawer-open{{overflow:hidden}}.videos-main{{display:grid;grid-template-columns:minmax(0,1fr)!important;gap:8px;padding:8px 12px 0;overflow:hidden!important;inline-size:100%!important;max-inline-size:100%!important;box-sizing:border-box!important}}.videos-main>*{{min-width:0!important;max-width:100%!important;inline-size:100%!important;box-sizing:border-box!important}}.video-category-chips{{display:flex;gap:8px;overflow-x:auto;flex-wrap:nowrap;margin:0 -12px;padding:0 12px 0;scrollbar-width:none}}.video-category-chips button{{min-height:32px;border-radius:999px;padding:6px 12px;background:rgba(255,255,255,.06)}}.featured-video-hero{{display:grid!important;grid-template-columns:minmax(0,1fr)!important;width:100%!important;inline-size:100%!important;max-width:100%!important;max-inline-size:100%!important;min-width:0!important;justify-self:stretch!important;align-self:start!important;border-radius:16px;overflow:hidden;padding:0;background:rgba(8,15,28,.9);box-shadow:0 18px 54px rgba(0,0,0,.28)}}.featured-video-hero>*,.featured-video-copy{{min-width:0!important;max-width:100%!important}}.featured-video-media{{min-height:0!important;height:auto!important;width:100%!important;inline-size:100%!important;max-width:100%!important;max-inline-size:100%!important;aspect-ratio:16/9!important;justify-self:stretch!important}}.featured-video-media .pulse-media-wrap{{position:absolute!important;inset:0!important;width:100%!important;height:100%!important}}.featured-video-media video,.featured-video-media img{{width:100%!important;height:100%!important;object-fit:cover!important}}.featured-video-copy{{padding:10px;gap:6px}}.featured-video-copy h2{{font-size:18px;line-height:1.08}}.featured-video-copy p,.featured-stats span:nth-child(n+3){{display:none}}.videos-main section>.videos-title-row{{display:block}}.videos-main section>.videos-title-row h2{{font-size:20px;margin:0 0 2px}}.videos-main section>.videos-title-row p{{font-size:12px;margin:0 0 8px}}.videos-grid{{display:flex;gap:12px;overflow-x:auto;margin:0 -12px;padding:0 12px 4px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}}.videos-grid .video-card{{flex:0 0 78vw;scroll-snap-align:start;border-radius:16px;background:rgba(8,15,28,.9)}}.videos-grid .video-thumb{{height:auto;min-height:0;max-height:none;aspect-ratio:16/10;border-radius:16px 16px 0 0}}.video-card-body{{padding:11px}}.video-card h3{{font-size:15px;padding-right:28px}}.video-card p{{display:none}}.video-meta .pill:nth-child(n+4){{display:none}}.video-owner-trigger{{top:calc(78vw * .625 + 8px);width:34px;height:34px}}.videos-mobile-section{{display:grid;gap:9px;padding:2px 0}}.videos-mobile-section h2{{font-size:20px;line-height:1;margin:0}}.videos-mobile-carousel{{display:flex;gap:10px;overflow-x:auto;margin:0 -12px;padding:0 12px 4px;scroll-snap-type:x proximity}}.videos-mobile-carousel .creator-row{{flex:0 0 170px;display:grid;grid-template-columns:1fr;justify-items:start;align-content:start;gap:8px;border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(255,255,255,.055);padding:12px;scroll-snap-align:start}}.videos-mobile-carousel .creator-row .creator-initial,.videos-mobile-carousel .creator-row img{{width:52px;height:52px;border-radius:50%}}.videos-mobile-carousel .creator-row button{{min-height:32px;border-radius:999px;padding:6px 11px}}.videos-mobile-ranked{{display:grid;gap:8px}}.videos-mobile-ranked .ranked-video{{grid-template-columns:28px 92px minmax(0,1fr);gap:9px;padding:8px;border:1px solid rgba(255,255,255,.09);border-radius:14px;background:rgba(255,255,255,.045)}}.videos-mobile-ranked .ranked-video img,.videos-mobile-ranked .ranked-video video,.videos-mobile-ranked .ranked-video .pulse-media-wrap{{width:92px;height:58px;border-radius:10px;overflow:hidden}}.video-manage-modal{{padding:0;align-items:end}}.video-owner-sheet{{padding:0}}.video-owner-sheet-panel,.video-manage-panel{{border-radius:8px 8px 0 0;padding-bottom:calc(18px + env(safe-area-inset-bottom))}}}}
     </style>
     <section class='pulse-videos-desktop-page' data-videos-desktop-page>
@@ -92935,7 +86936,7 @@ def pulse_videos_page():
       <main class='videos-main videos-mobile-fallback'>
         <header class='videos-mobile-header' aria-label='Mobile Videos header'><div class='videos-mobile-topline'><div class='videos-mobile-left'><button class='videos-mobile-icon videos-mobile-menu' type='button' data-videos-drawer-open aria-label='Open navigation'>☰</button><h1>Videos</h1></div><div class='videos-mobile-actions'><button class='videos-mobile-icon' type='button' data-mobile-video-search aria-label='Search videos'>⌕</button><a class='videos-mobile-icon videos-mobile-alert' data-header-notifications href='/pulse/notifications' aria-label='Notifications'>{PULSE_NOTIFICATION_BELL_ICON}<span class='pulse-notification-badge' data-alert-unread data-notification-unread hidden>0</span></a><a class='videos-mobile-avatar' href='/pulse/profile' aria-label='Profile'>{mobile_avatar}</a></div></div><p>Discover high-quality videos from creators</p></header>
         <div class='videos-mobile-drawer-backdrop' data-videos-drawer-backdrop aria-hidden='true'></div>
-        <aside class='videos-mobile-drawer' data-videos-mobile-drawer aria-hidden='true' aria-label='PulseSoc navigation'><div class='videos-drawer-head'><strong>PulseSoc</strong><button class='videos-drawer-close' type='button' data-videos-drawer-close aria-label='Close navigation'>×</button></div><nav class='videos-drawer-nav'><a href='/pulse'>Home</a><a href='/pulse/videos' aria-current='page'>Videos</a><a href='/pulse/reels'>Reels</a><a href='/pulse/music'>Music</a><a href='/pulse/live'>Live</a><a href='/pulse/messages'>Messages</a><a href='/pulse/notifications'>Alerts</a><a href='{app_first_href('marketplace')}'>Marketplace</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/pulse/premium'>Premium</a><a href='/pulse/profile'>Profile</a></nav></aside>
+        <aside class='videos-mobile-drawer' data-videos-mobile-drawer aria-hidden='true' aria-label='PulseSoc navigation'><div class='videos-drawer-head'><strong>PulseSoc</strong><button class='videos-drawer-close' type='button' data-videos-drawer-close aria-label='Close navigation'>×</button></div><nav class='videos-drawer-nav'><a href='/pulse'>Home</a><a href='/pulse/videos' aria-current='page'>Videos</a><a href='/pulse/reels'>Reels</a><a href='/pulse/music'>Music</a><a href='/pulse/live'>Live</a><a href='/pulse/messages'>Messages</a><a href='/pulse/notifications'>Alerts</a><a href='/pulse/marketplace'>Marketplace</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/pulse/premium'>Premium</a><a href='/pulse/profile'>Profile</a></nav></aside>
         <header class='videos-title-row'><div><h1>Videos</h1><p>Discover high-quality videos from creators around the world.</p></div><form class='video-search-bar' data-video-search><input type='search' data-video-search-input placeholder='Search videos or creators' autocomplete='off' aria-label='Search videos'><button type='submit'>Search</button></form></header>
         <nav class='video-category-chips' aria-label='Video categories'>{category_html}</nav>
         <section class='video-toolbar'><div><label class='sr-only' for='videoSort'>Sort videos</label><select id='videoSort' data-video-sort><option value='recent'>Most Recent</option><option value='trending'>Trending</option><option value='most_viewed'>Most Viewed</option><option value='top_rated'>Top Rated</option></select></div><div class='video-view-toggle' aria-label='Video view mode'><button type='button' class='active' data-video-view='grid'>Grid</button><button type='button' data-video-view='list'>List</button></div></section>
@@ -92973,7 +86974,7 @@ def pulse_videos_page():
     function videoDuration(seconds){seconds=Math.max(0,Math.floor(Number(seconds||0)));const h=Math.floor(seconds/3600),m=Math.floor((seconds%3600)/60),s=String(seconds%60).padStart(2,'0');return h?`${h}:${String(m).padStart(2,'0')}:${s}`:`${m}:${s}`}
     function videoState(v){const p=String(v.processing_status||'').toLowerCase(),m=String(v.mux_status||'').toLowerCase();if(['failed','error','errored'].includes(p)||['failed','error','errored'].includes(m))return'failed';if(v.ready&&(v.playback_url||v.media_url))return'ready';return'processing'}
     function videoMedia(v){const state=videoState(v),src=v.playback_url||v.media_url||'',poster=v.thumbnail_url||'',mime=src.includes('.m3u8')?'application/vnd.apple.mpegurl':'video/mp4',backdrop=poster||src,music=v.music||{},audioUrl=v.attached_audio_url||music.attached_audio_url||music.audio_url||music.preview_url||'',audioAttrs=audioUrl?` data-audio-id="${videoEsc(v.audio_id||music.audio_id||music.track_id||'')}" data-music-id="${videoEsc(v.music_id||music.track_id||music.audio_id||'')}" data-attached-audio-url="${videoEsc(audioUrl)}" data-audio-title="${videoEsc(v.audio_title||music.title||'Approved track')}" data-audio-artist="${videoEsc(v.audio_artist||music.artist||'PulseSoc Music')}" data-audio-duration="${videoEsc(v.audio_duration||music.audio_duration||music.duration_seconds||0)}" data-audio-start-time="${videoEsc(v.audio_start_time||music.audio_start_time||0)}" data-audio-volume="${videoEsc(v.audio_volume||music.audio_volume||1)}" data-original-audio-muted="true"`:'';if(state==='ready'&&src){return `<span class="pulse-media-wrap pulse-video-hub-media pulse-cinematic-media-shell media-kind-video" data-media-type="video" data-media-src="${videoEsc(src)}" data-media-url="${videoEsc(src)}" data-media-hls="${videoEsc(v.mux_playback_id?`https://stream.mux.com/${v.mux_playback_id}.m3u8`:src.includes('.m3u8')?src:'')}" data-media-poster="${videoEsc(poster)}" data-media-thumb="${videoEsc(poster)}" data-media-backdrop="${videoEsc(backdrop)}" data-media-processing-status="${videoEsc(v.processing_status||'ready')}" data-media-mux-playback-id="${videoEsc(v.mux_playback_id||'')}"${audioAttrs}><video playsinline webkit-playsinline preload="metadata" ${audioUrl?'muted data-original-audio-muted="true" ':''}${poster?`poster="${videoEsc(poster)}"`:''}><source src="${videoEsc(src)}" type="${mime}"></video></span>`}if(poster)return `<img src="${videoEsc(poster)}" alt="" loading="lazy" decoding="async">`;return `<div class="video-processing">${state==='failed'?'Video processing failed.':'Preparing video...'}</div>`}
-    function videoCard(v){const state=videoState(v),title=videoTitle(v),ownerName=videoOwnerName(v),description=videoDescription(v);const live=v.source_type==='live';const owner=v.is_owner&&v.id?`<button class="post-card-menu-button video-owner-trigger" type="button" data-video-menu="${Number(v.id)}" aria-label="Manage ${videoEsc(title)}">•••</button>`:'';const badge=state==='ready'?'':`<span class="video-status-badge ${state}">${state==='failed'?'Failed':'Preparing'}</span>`;const avatar=videoAvatar(v);const verified=videoVerified(v);const follow=videoFollowButton(v);const views=videoNum(v.view_count);const likes=videoNum(v.reaction_count||v.like_count);const comments=videoNum(v.comment_count);const shares=videoNum(v.share_count);const save=!v.is_owner&&v.id?`<button class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" type="button" data-action="save" data-save-video="${Number(v.id)}" aria-label="Save video" aria-pressed="false"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">🔖</span><span>Save</span></button>`:`<button class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" type="button" data-action="save" aria-label="Save video unavailable" aria-disabled="true" disabled><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">🔖</span><span>Save</span></button>`;return `<article class="card video-card video-card-modern post-card-modern post-card-video" data-video-card="${Number(v.id||0)}"><header class="post-card-header"><div class="post-card-creator">${avatar}<div class="post-card-identity"><div class="post-card-name-row"><a class="post-card-name" href="${videoEsc(v.owner_profile_url||'#')}">${videoEsc(ownerName)}</a>${verified}</div><div class="post-card-creator-line">${videoEsc(v.owner_bio||v.category||'PulseSoc creator')}</div><div class="post-card-meta"><a href="${videoEsc(v.permalink||'#')}">${videoEsc(live?'Live now':v.uploaded_at||v.created_at||'Recently')}</a><span>•</span><span class="post-visibility-icon">${videoEsc(v.visibility||'public')}</span></div></div></div><div class="post-card-controls">${follow}${owner||`<button class="post-card-menu-button" type="button" data-video-menu="${Number(v.id||0)}" aria-label="Video actions">•••</button>`}</div></header><section class="post-caption"><h2>${videoEsc(title)}</h2>${description?`<p>${videoEsc(description)}</p>`:''}</section><a class="video-thumb post-card-media-frame is-video" href="${videoEsc(v.permalink||'#')}" aria-label="Open ${videoEsc(title)}">${videoMedia(v)}${badge}<span class="video-duration">${videoEsc(videoDuration(v.duration_seconds))}</span><span class="video-play-orb" aria-hidden="true">▶</span></a><div class="post-engagement-summary"><span class="post-reaction-emojis">👍 ❤️ 🔥 ${likes}</span><span class="post-summary-metric">${comments} comments</span><span class="post-summary-metric">0 reposts</span><span class="post-summary-metric">${shares} shares</span><span class="post-summary-metric">${views} views</span></div><div class="post-action-row pulse-reaction-bar"><a class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" data-action="like" href="${videoEsc(v.permalink||'#')}" aria-label="Open video to like"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">👍</span><span>Like</span></a><a class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" data-action="comment" href="${videoEsc(v.permalink||'#')}#comments" aria-label="Comment on video"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">💬</span><span>Comment</span></a><button class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" type="button" data-action="repost" data-video-repost="${Number(v.id||0)}" aria-label="Repost video" aria-pressed="false"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">🔁</span><span>Repost</span></button><button class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" type="button" data-action="share" data-share-video="${Number(v.id||0)}" aria-label="Share video"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">↗</span><span>Share</span></button>${save}</div><section class="post-comment-composer">${avatar}<span class="pulse-emoji-field" data-emoji-scope><input type="text" placeholder="Write a comment..." aria-label="Write a comment" data-video-comment-input="${Number(v.id||0)}"><button class="pulse-emoji-trigger" type="button" data-emoji-for aria-haspopup="dialog" aria-expanded="false" aria-label="Add emoji">☺</button></span><a class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" data-action="media" href="${videoEsc(v.permalink||'#')}" aria-label="Open video media tools"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">📷</span><span></span></a><a class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" data-action="comment" href="${videoEsc(v.permalink||'#')}#comments" aria-label="Add emoji comment"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">☺</span><span></span></a><a class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" data-action="comment" href="${videoEsc(v.permalink||'#')}#comments" aria-label="Send comment"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">➤</span><span></span></a></section></article>`}
+    function videoCard(v){const state=videoState(v),title=videoTitle(v),ownerName=videoOwnerName(v),description=videoDescription(v);const live=v.source_type==='live';const owner=v.is_owner&&v.id?`<button class="post-card-menu-button video-owner-trigger" type="button" data-video-menu="${Number(v.id)}" aria-label="Manage ${videoEsc(title)}">•••</button>`:'';const badge=state==='ready'?'':`<span class="video-status-badge ${state}">${state==='failed'?'Failed':'Preparing'}</span>`;const avatar=videoAvatar(v);const verified=videoVerified(v);const follow=videoFollowButton(v);const views=videoNum(v.view_count);const likes=videoNum(v.reaction_count||v.like_count);const comments=videoNum(v.comment_count);const shares=videoNum(v.share_count);const save=!v.is_owner&&v.id?`<button class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" type="button" data-action="save" data-save-video="${Number(v.id)}" aria-label="Save video" aria-pressed="false"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">🔖</span><span>Save</span></button>`:`<button class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" type="button" data-action="save" aria-label="Save video unavailable" aria-disabled="true" disabled><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">🔖</span><span>Save</span></button>`;return `<article class="card video-card video-card-modern post-card-modern post-card-video" data-video-card="${Number(v.id||0)}"><header class="post-card-header"><div class="post-card-creator">${avatar}<div class="post-card-identity"><div class="post-card-name-row"><a class="post-card-name" href="${videoEsc(v.owner_profile_url||'#')}">${videoEsc(ownerName)}</a>${verified}</div><div class="post-card-creator-line">${videoEsc(v.owner_bio||v.category||'PulseSoc creator')}</div><div class="post-card-meta"><a href="${videoEsc(v.permalink||'#')}">${videoEsc(live?'Live now':v.uploaded_at||v.created_at||'Recently')}</a><span>•</span><span class="post-visibility-icon">${videoEsc(v.visibility||'public')}</span></div></div></div><div class="post-card-controls">${follow}${owner||`<button class="post-card-menu-button" type="button" data-video-menu="${Number(v.id||0)}" aria-label="Video actions">•••</button>`}</div></header><section class="post-caption"><h2>${videoEsc(title)}</h2>${description?`<p>${videoEsc(description)}</p>`:''}</section><a class="video-thumb post-card-media-frame is-video" href="${videoEsc(v.permalink||'#')}" aria-label="Open ${videoEsc(title)}">${videoMedia(v)}${badge}<span class="video-duration">${videoEsc(videoDuration(v.duration_seconds))}</span><span class="video-play-orb" aria-hidden="true">▶</span></a><div class="post-engagement-summary"><span class="post-reaction-emojis">👍 ❤️ 🔥 ${likes}</span><span class="post-summary-metric">${comments} comments</span><span class="post-summary-metric">0 reposts</span><span class="post-summary-metric">${shares} shares</span><span class="post-summary-metric">${views} views</span></div><div class="post-action-row pulse-reaction-bar"><a class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" data-action="like" href="${videoEsc(v.permalink||'#')}" aria-label="Open video to like"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">👍</span><span>Like</span></a><a class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" data-action="comment" href="${videoEsc(v.permalink||'#')}#comments" aria-label="Comment on video"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">💬</span><span>Comment</span></a><button class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" type="button" data-action="repost" data-video-repost="${Number(v.id||0)}" aria-label="Repost video" aria-pressed="false"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">🔁</span><span>Repost</span></button><button class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" type="button" data-action="share" data-share-video="${Number(v.id||0)}" aria-label="Share video"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">↗</span><span>Share</span></button>${save}</div><section class="post-comment-composer">${avatar}<input type="text" placeholder="Write a comment..." aria-label="Write a comment" data-video-comment-input="${Number(v.id||0)}"><a class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" data-action="media" href="${videoEsc(v.permalink||'#')}" aria-label="Open video media tools"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">📷</span><span></span></a><a class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" data-action="comment" href="${videoEsc(v.permalink||'#')}#comments" aria-label="Add emoji comment"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">☺</span><span></span></a><a class="post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button" data-action="comment" href="${videoEsc(v.permalink||'#')}#comments" aria-label="Send comment"><span class="post-action-icon reel-action-icon action-icon" aria-hidden="true">➤</span><span></span></a></section></article>`}
     function renderFeaturedVideo(){if(!featuredHero)return;const v=videoRows.find(row=>videoState(row)==='ready')||videoRows[0];if(!v){featuredHero.hidden=true;featuredHero.innerHTML='';return}const title=videoTitle(v),ownerName=videoOwnerName(v),description=videoDescription(v);featuredHero.hidden=false;featuredHero.innerHTML=`<a class="featured-video-media" href="${videoEsc(v.permalink||'#')}" aria-label="Play ${videoEsc(title)}">${videoMedia(v)}<span class="pill" style="position:absolute;left:14px;top:14px;z-index:4">Featured</span><span class="video-duration">${videoEsc(videoDuration(v.duration_seconds))}</span><span class="video-play-orb" aria-hidden="true">▶</span></a><div class="featured-video-copy"><span class="pill">High-quality creator video</span><h2>${videoEsc(title)}</h2><p>${videoEsc(description)}</p><div class="featured-creator">${videoAvatar(v)}<div><strong>${videoEsc(ownerName)} ${videoVerified(v)}</strong><small>${videoNum(v.owner_follower_count)} followers</small></div>${videoFollowButton(v)}</div><div class="featured-stats"><span>${videoNum(v.view_count)} views</span><span>${videoNum(v.reaction_count||v.like_count)} likes</span><span>${videoNum(v.comment_count)} comments</span><span>${videoNum(v.share_count)} shares</span></div></div>`;window.PulseMediaRenderer?.hydrate(featuredHero)}
     function renderVideoSidebars(){const creators=[];const seen=new Set();videoRows.forEach(v=>{const key=Number(v.owner_user_id||0)||videoOwnerName(v);if(seen.has(key))return;seen.add(key);creators.push(v)});const creatorsHtml=creators.slice(0,5).map(v=>`<div class="creator-row">${videoAvatar(v)}<div><a href="${videoEsc(v.owner_profile_url||'#')}">${videoEsc(videoOwnerName(v))} ${videoVerified(v)}</a><small>${videoNum(v.owner_follower_count)} followers</small></div>${videoFollowButton(v)}</div>`).join('')||'<p class="muted">Creators appear here after real videos are available.</p>';const rankedHtml=[...videoRows].sort((a,b)=>Number(b.view_count||0)-Number(a.view_count||0)).slice(0,5).map((v,i)=>`<div class="ranked-video"><strong>${i+1}</strong><a href="${videoEsc(v.permalink||'#')}" aria-label="Open ${videoEsc(videoTitle(v))}">${v.thumbnail_url?`<img src="${videoEsc(v.thumbnail_url)}" alt="" loading="lazy" decoding="async">`:videoMedia(v)}<span class="video-duration">${videoEsc(videoDuration(v.duration_seconds))}</span></a><div><a href="${videoEsc(v.permalink||'#')}">${videoEsc(videoTitle(v))}</a><small>${videoEsc(videoOwnerName(v))} · ${videoNum(v.view_count)} views</small></div></div>`).join('')||'<p class="muted">Trending videos will appear after uploads are available.</p>';if(trendingCreators)trendingCreators.innerHTML=creatorsHtml;if(mobileTrendingCreators)mobileTrendingCreators.innerHTML=creatorsHtml;if(trendingVideos)trendingVideos.innerHTML=rankedHtml;if(mobileTopVideos)mobileTopVideos.innerHTML=rankedHtml;window.PulseMediaRenderer?.hydrate(trendingVideos);window.PulseMediaRenderer?.hydrate(mobileTopVideos)}
     function renderVideos(){videosGrid.classList.toggle('list',activeView==='list');if(!videoRows.length){videosGrid.innerHTML='<section class="video-empty-state"><h3>No matching videos yet.</h3><p class="muted">Upload a video or clear filters to browse available creator content.</p><div class="actions"><a class="button primary" href="/pulse#create">Upload Video</a><button type="button" data-clear-video-filters>Clear filters</button></div></section>'}else{videosGrid.innerHTML=videoRows.map(videoCard).join('')}videosState.textContent=videoRows.length?`${videoRows.length} video${videoRows.length===1?'':'s'}`:'No matching videos yet.';renderFeaturedVideo();renderVideoSidebars();window.PulseMediaRenderer?.hydrate(videosGrid);window.PulseReactionSystem?.hydrate?.(videosGrid)}
@@ -93007,7 +87008,7 @@ def pulse_videos_page():
     document.getElementById('confirmVideoDelete').addEventListener('click',async()=>{if(!activeVideo)return;try{const d=await pulseApi('/api/pulse/videos/'+activeVideo.id,{method:'DELETE'});videoRows=videoRows.filter(v=>Number(v.id)!==Number(activeVideo.id));activeVideo=null;closeDelete();renderVideos();toast(d.message||'Video deleted.')}catch(err){toast(err.message)}});
     document.querySelector('[data-close-video-manage]').addEventListener('click',closeManage);document.querySelector('[data-close-video-delete]').addEventListener('click',closeDelete);syncVideoFilterControls();loadVideos();
     """
-    main += pulse_promotion_modal_html() + '<link rel="stylesheet" href="/static/css/pulsesoc_promotions.css?v=bare-asset-tokens-20260930a"><script src="/static/js/pulsesoc_promotions.js?v=bare-asset-tokens-20260930a" defer></script>'
+    main += pulse_promotion_modal_html() + '<link rel="stylesheet" href="/static/css/pulsesoc_promotions.css"><script src="/static/js/pulsesoc_promotions.js" defer></script>'
     return pulse_social_shell("Videos", "Watch creator videos, live streams, and replays without mixing them into Reels.", main, "", script, show_intro=False)
 
 
@@ -93247,7 +87248,7 @@ def pulse_video_detail_page(video_id):
         """
         for v in related
     ) or "<p class='muted'>No related videos yet.</p>"
-    comment_form = "<form class='comment-box' id='videoCommentForm'><span class='pulse-emoji-field' data-emoji-scope><input name='body' placeholder='Write a comment...'><button class='pulse-emoji-trigger' type='button' data-emoji-for aria-haspopup='dialog' aria-expanded='false' aria-label='Add emoji'>☺</button></span><button class='primary'>Send</button></form>"
+    comment_form = "<form class='comment-box' id='videoCommentForm'><input name='body' placeholder='Write a comment...'><button class='primary'>Send</button></form>"
     description_text = clean_html(video.get("description") or source_type)
     if len(description_text) > 180:
         description_html = f"<details class='video-description-more'><summary>{description_text[:180]}...</summary><p>{description_text}</p></details>"
@@ -93314,7 +87315,7 @@ def pulse_video_detail_page(video_id):
       </header>
       <div class='video-watch-shell'>
         <aside class='video-watch-left-rail' aria-label='Video navigation'>
-          <a href='/pulse'>⌂ Home</a><a href='/pulse' >▤ Feed</a><a href='/pulse/reels'>▻ Reels</a><a class='active' href='/pulse/videos'>▶ Videos</a><a href='/pulse/status'>◴ Status</a><a href='/pulse/groups'>♧ Groups</a><a href='/pulse/events'>◇ Events</a><a href='{app_first_href('marketplace')}'>▧ Marketplace</a><a href='/pulse/premium/intelligence'>✦ Pulse AI</a><a href='/pulse/music'>♪ Pulse Music</a><a href='/pulse/bookmarks'>▱ Bookmarks</a><a href='/pulse/settings/privacy'>Privacy Center</a><a href='/pulse/help'>Help & Support</a><div class='video-watch-premium'><strong>Go Premium</strong><p class='muted'>Unlock creator-grade video tools.</p></div>
+          <a href='/pulse'>⌂ Home</a><a href='/pulse' >▤ Feed</a><a href='/pulse/reels'>▻ Reels</a><a class='active' href='/pulse/videos'>▶ Videos</a><a href='/pulse/status'>◴ Status</a><a href='/pulse/groups'>♧ Groups</a><a href='/pulse/events'>◇ Events</a><a href='/pulse/marketplace'>▧ Marketplace</a><a href='/pulse/premium/intelligence'>✦ Pulse AI</a><a href='/pulse/music'>♪ Pulse Music</a><a href='/pulse/bookmarks'>▱ Bookmarks</a><a href='/pulse/settings/privacy'>Privacy Center</a><a href='/pulse/help'>Help & Support</a><div class='video-watch-premium'><strong>Go Premium</strong><p class='muted'>Unlock creator-grade video tools.</p></div>
         </aside>
         <main class='video-watch-main'>
       <article class='card video-detail-card'>
@@ -93989,39 +87990,6 @@ def api_pulse_posts():
                 if not result.get("ok"):
                     raise ValueError(result.get("message") or "File upload failed.")
                 media_ids.append(result.get("media", {}).get("id"))
-            # Listing ids this form post is tagging.
-            #
-            # Parsed here because `payload` below is a literal whitelist, not a
-            # view of `request.form`: a key this dict does not name is gone before
-            # `pulse_product_tag_ids_from_payload` is ever called. That helper
-            # accepts three names, and its docstring says `listing_ids` is there
-            # for "the web composer's existing marketplace forms" — the one client
-            # that posts multipart, and so the one client whose tags this branch
-            # discarded with no error on either side.
-            #
-            # Two encodings, both real. A picker built from checkboxes submits the
-            # same field name repeatedly, where `form.get` returns the first value
-            # and silently loses the rest; a picker built from a hidden field
-            # submits one JSON or comma-joined string, where passing the raw value
-            # through would reach the attach path as a single unparseable id and be
-            # refused for the wrong reason. Ids are not validated here — ownership
-            # is re-checked per id at attach time regardless of which key or
-            # encoding carried them.
-            product_listing_ids = []
-            for key in ("product_listing_ids", "listing_ids", "product_ids"):
-                values = [value for value in form.getlist(key) if str(value).strip()]
-                if not values:
-                    continue
-                if len(values) > 1:
-                    product_listing_ids = [str(value).strip() for value in values]
-                    break
-                raw = str(values[0]).strip()
-                try:
-                    parsed = json.loads(raw)
-                    product_listing_ids = parsed if isinstance(parsed, list) else [parsed]
-                except Exception:
-                    product_listing_ids = [x.strip() for x in raw.split(",") if x.strip()]
-                break
             payload = {
                 "body": form.get("body") or form.get("message") or "",
                 "title": form.get("title") or "",
@@ -94029,7 +87997,6 @@ def api_pulse_posts():
                 "tags": tags,
                 "visibility": form.get("visibility") or "public",
                 "media_ids": media_ids,
-                "product_listing_ids": product_listing_ids,
             }
         else:
             payload = request.get_json(silent=True)
@@ -94065,33 +88032,6 @@ def api_pulse_posts():
                 else:
                     logging.warning("PULSE_POST_MUSIC_ATTACH_BLOCKED user_id=%s post_id=%s track_id=%s", user["user_id"], result.get("post_id"), music_track_id)
                 conn.close()
-            # Products the creator attached to their own post. Its own connection
-            # and its own `try`, both on purpose: the post is already created and
-            # committed by this line, so nothing here may be able to unmake it. A
-            # tag that fails is a missing carousel, not a lost post (§82).
-            product_tag_ids = pulse_product_tag_ids_from_payload(payload)
-            if product_tag_ids:
-                tag_conn = None
-                try:
-                    tag_conn = db()
-                    tag_cur = tag_conn.cursor()
-                    tag_result = pulse_attach_products_to_content(
-                        tag_cur, content_type="post", content_id=result.get("post_id"),
-                        listing_ids=product_tag_ids, user_id=user["user_id"],
-                    )
-                    if tag_result.get("attached"):
-                        tag_conn.commit()
-                except Exception:
-                    logging.warning(
-                        "PULSE_POST_PRODUCT_ATTACH_FAILED user_id=%s post_id=%s",
-                        user["user_id"], result.get("post_id"), exc_info=True,
-                    )
-                finally:
-                    if tag_conn is not None:
-                        try:
-                            tag_conn.close()
-                        except Exception:
-                            pass
             created_post = result.get("post") or {}
             video_media = next((m for m in (created_post.get("media") or []) if str((m or {}).get("media_type") or "").lower() == "video"), None)
             if video_media:
@@ -94301,8 +88241,6 @@ def api_pulse_reels_sound_save():
         """
         SELECT id FROM pulse_audio_tracks
         WHERE id=?
-          AND COALESCE(lifecycle_state,'ACTIVE')='ACTIVE'
-          AND COALESCE(removed_at,'')=''
           AND COALESCE(safety_status,'approved')='approved'
           AND COALESCE(active,1)=1
           AND COALESCE(approved_by_admin,0)=1
@@ -94478,8 +88416,6 @@ def api_pulse_reels_create():
                 """
                 SELECT title FROM pulse_audio_tracks
                 WHERE id=?
-                  AND COALESCE(lifecycle_state,'ACTIVE')='ACTIVE'
-                  AND COALESCE(removed_at,'')=''
                   AND COALESCE(safety_status,'approved')='approved'
                   AND COALESCE(active,1)=1
                   AND COALESCE(approved_by_admin,0)=1
@@ -94516,49 +88452,7 @@ def api_pulse_reels_create():
                     video_attach = pulse_attach_music_to_content(cur, content_type="video", content_id=post_id, track_id=audio_track_id, user_id=user["user_id"], start_seconds=sound_start, volume=audio_volume)
                     if not video_attach.get("ok"):
                         logging.warning("PULSE_REEL_FEED_VIDEO_MUSIC_ATTACH_BLOCKED user_id=%s reel_id=%s post_id=%s track_id=%s reason=%s", user["user_id"], reel_id, post_id, audio_track_id, video_attach.get("message"))
-                # An `UPDATE pulse_trending_sounds ... WHERE audio_track_id=?` used to
-                # sit here. The only INSERT into that table was the retired init_db
-                # seed, so the UPDATE matched a row for a seeded placeholder and never
-                # for a track a user uploaded -- it has never once fired for real music.
-                #
-                # It is not replaced with an upsert, because the counter it maintained
-                # is a second one. `pulse_attach_music_to_content` above already routes
-                # through `pulse_music_event`, which increments the track's own
-                # `usage_count`/`trend_score` for every surface -- reel, post, video,
-                # status. The sounds picker reads `COALESCE(ts.trend_score,
-                # at.trend_score, 0)`, so a track with a trending row would be ranked on
-                # reel attachments alone while every other track was ranked on all
-                # surfaces: two scales in one ORDER BY. One writer, one counter.
-        # Products the creator attached to their own reel. Written twice when the
-        # reel is shared to the feed, exactly as the music above it is, and for a
-        # reason that is not symmetry: `commerce_discovery` resolves tags by
-        # *post* id on every surface including reels, because that is the id its
-        # route reads from the client. A reel-only row would be unreachable, so the
-        # mirror row is what makes a reel's products actually appear.
-        #
-        # Inside the reel's own transaction rather than on a second connection —
-        # unlike the post path, where the post was already committed by that point.
-        # Here `conn.commit()` is still ahead of us, so a tag written here rolls
-        # back with the reel if the reel fails, which is the correct outcome: there
-        # is no reel for the tag to be attached to. The `try` is still required so
-        # the reverse cannot happen.
-        reel_product_tag_ids = pulse_product_tag_ids_from_payload(payload)
-        if reel_product_tag_ids:
-            try:
-                pulse_attach_products_to_content(
-                    cur, content_type="reel", content_id=reel_id,
-                    listing_ids=reel_product_tag_ids, user_id=user["user_id"],
-                )
-                if share_to_feed and post_id:
-                    pulse_attach_products_to_content(
-                        cur, content_type="post", content_id=post_id,
-                        listing_ids=reel_product_tag_ids, user_id=user["user_id"],
-                    )
-            except Exception:
-                logging.warning(
-                    "PULSE_REEL_PRODUCT_ATTACH_FAILED trace_id=%s user_id=%s reel_id=%s post_id=%s",
-                    trace_id, user["user_id"], reel_id, post_id, exc_info=True,
-                )
+                cur.execute("UPDATE pulse_trending_sounds SET usage_count=COALESCE(usage_count,0)+1, trend_score=COALESCE(trend_score,0)+1, updated_at=? WHERE audio_track_id=?", (now, audio_track_id))
         conn.commit()
         conn.close()
         try:
@@ -94786,34 +88680,9 @@ def api_pulse_reel_comments_by_id(reel_id):
     return jsonify({**result, "reel_id": reel_id}), status
 
 
-@webhook_app.route("/api/reels/<int:reel_id>", methods=["GET", "PATCH", "DELETE"])
-@webhook_app.route("/api/pulse/reels/<int:reel_id>", methods=["GET", "PATCH", "DELETE"])
+@webhook_app.route("/api/reels/<int:reel_id>", methods=["PATCH", "DELETE"])
+@webhook_app.route("/api/pulse/reels/<int:reel_id>", methods=["PATCH", "DELETE"])
 def api_pulse_reel_manage(reel_id):
-    """Read one reel, or manage it. The GET arm is new and is read-only.
-
-    Until now a reel had no by-id read of any kind over JSON -- the only way to
-    obtain one was `/api/pulse/reels/feed`, which returns whatever page the
-    ranker felt like and may simply not contain the reel you asked about. That
-    is why a reel link pasted into Messenger rendered as a naked url while a
-    post link rendered as a card: the card is not allowed to exist unless the
-    preview can be fetched with *the same request a tap makes*, and for reels
-    there was no such request to make.
-
-    GET is deliberately placed above the `can_manage` gate and below the 404.
-    Reading a reel is not managing it, so the owner check must not apply; but
-    every reel that reaches this line has already been through
-    `pulse_reel_payload`, which is the same viewer-scoped read the Reels
-    surface performs. Deleted, blocked and viewer-invisible reels are all
-    already gone by here, and they leave as an indistinguishable 404 -- "no
-    such reel" and "not yours to see" are the same sentence on purpose, since
-    telling them apart would confirm the reel exists.
-
-    It answers a *preview*, not the reel. `pulse_reel_share_preview` drops
-    every playback url, Mux id and storage key, because this payload's
-    destination is a chat bubble that can be forwarded onward and a still frame
-    is all a card has ever drawn. The full payload stays behind the surfaces
-    that actually play video.
-    """
     init_db()
     user = api_account_user()
     if not user:
@@ -94822,8 +88691,6 @@ def api_pulse_reel_manage(reel_id):
     reel = pulse_reel_payload(reel_id=reel_id, viewer_user_id=user["user_id"])
     if not reel:
         return api_error("Reel not found.", 404, trace_id)
-    if request.method == "GET":
-        return jsonify({"ok": True, "reel": pulse_reel_share_preview(reel), "trace_id": trace_id})
     if not reel.get("can_manage"):
         return api_error("Only the Reel owner can manage this Reel.", 403, trace_id)
     if request.method == "DELETE":
@@ -95242,8 +89109,7 @@ def api_pulse_reel_audio_manage(reel_id):
         cur.execute(
             """
             SELECT * FROM pulse_audio_tracks
-            WHERE id=? AND COALESCE(lifecycle_state,'ACTIVE')='ACTIVE' AND COALESCE(removed_at,'')=''
-              AND COALESCE(safety_status,'approved')='approved' AND COALESCE(active,1)=1
+            WHERE id=? AND COALESCE(safety_status,'approved')='approved' AND COALESCE(active,1)=1
               AND COALESCE(approved_by_admin,0)=1 AND COALESCE(commercial_use_allowed,0)=1
               AND COALESCE(remix_edit_allowed,0)=1 LIMIT 1
             """,
@@ -98754,7 +92620,7 @@ def messenger_media_cookie_user_id():
         conn = db()
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        ensure_mobile_security_session_schema_once(cur)
+        ensure_mobile_security_session_schema(cur)
         cur.execute(
             """
             SELECT user_id
@@ -99963,12 +93829,9 @@ def api_pulse_seller_application_submit():
         notify_seller_review_admins(cur, application, target)
         conn.commit()
         application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
-        submission_context = seller_application_email_context(cur, application)
         response = _seller_application_response(cur, application)
     finally:
         conn.close()
-    # After the connection is closed: the notification engine opens its own.
-    emit_seller_application_event(user["user_id"], target, submission_context)
     response["message"] = "Application sent for review."
     return jsonify(response)
 
@@ -100085,420 +93948,11 @@ def notify_seller_applicant(cur, application, status, message=""):
         logging.warning("SELLER_APPLICATION_APPLICANT_NOTIFY_FAILED error=%s", exc)
 
 
-def seller_connect_status_context(cur, user_id):
-    """The three Stripe status rows a seller sees, read from their payout record.
-
-    Derived rather than stored, because the payout row already holds the only
-    facts that matter — whether Stripe gave us an account id, and whether it has
-    turned charges and payouts on. A separate stored status would be a fourth
-    thing to keep in sync with Stripe and the first to go stale.
-    """
-    row = {}
-    try:
-        cur.execute(
-            "SELECT connected_account_id, provider_account_id, charges_enabled, payouts_enabled, "
-            "onboarding_status FROM seller_payout_accounts WHERE user_id=? "
-            "ORDER BY updated_at DESC, id DESC LIMIT 1",
-            (int(user_id or 0),),
-        )
-        row = dict(cur.fetchone() or {})
-    except Exception as exc:
-        logging.warning("SELLER_CONNECT_STATUS_READ_FAILED user=%s error=%s", user_id, exc)
-
-    def _enabled(value):
-        return str(value).strip().lower() in {"1", "true", "yes", "t", "on"}
-
-    account_id = str(row.get("connected_account_id") or row.get("provider_account_id") or "").strip()
-    onboarding = str(row.get("onboarding_status") or "").strip().lower()
-    charges = _enabled(row.get("charges_enabled"))
-    payouts = _enabled(row.get("payouts_enabled"))
-
-    if not account_id:
-        connect_status = "not_started"
-    elif onboarding in {"restricted", "disabled", "rejected", "disconnected"}:
-        connect_status = "restricted"
-    elif charges and payouts:
-        connect_status = "payments_ready"
-    else:
-        connect_status = "onboarding"
-
-    return {
-        "stripe_connect_status": connect_status,
-        "card_payment_status": "enabled" if charges else "not_enabled",
-        "payout_status": "enabled" if payouts else "not_enabled",
-    }
-
-
-def stripe_timestamp_date(value):
-    """A Stripe unix timestamp as a readable date, or "" if there isn't one.
-
-    Returns "" rather than a placeholder because the fact blocks in payment
-    emails drop empty rows — an absent arrival date should show nothing, not a
-    date the seller could plan around.
-    """
-    try:
-        seconds = int(value or 0)
-    except (TypeError, ValueError):
-        return ""
-    if seconds <= 0:
-        return ""
-    try:
-        return datetime.utcfromtimestamp(seconds).strftime("%B %d, %Y")
-    except (OverflowError, OSError, ValueError):
-        return ""
-
-
-#: Which applicant-facing statuses have an email of their own. A status absent
-#: here still gets its in-app notification from ``notify_seller_applicant``; it
-#: simply has no email yet, which is a gap rather than a silent failure.
-SELLER_APPLICATION_EVENTS = {
-    seller_lifecycle.SUBMITTED: "seller_application_received",
-    seller_lifecycle.RESUBMITTED: "seller_application_received",
-    seller_lifecycle.INFORMATION_REQUESTED: "seller_information_requested",
-    seller_lifecycle.APPROVED: "seller_approved",
-    seller_lifecycle.REJECTED: "seller_declined",
-}
-
-
-def greeting_first_name(user):
-    """The name to greet a user by, or "" when the row carries none.
-
-    The rule lives in the notification layer so the payout scheduler, which
-    cannot import ``bot``, greets a seller by the same name this does.
-    """
-    from services import payments_notifications
-
-    return payments_notifications.greeting_first_name(user)
-
-
-def greeting_first_name_for(cur, user_id):
-    """One greeting name, read on a cursor the caller already holds.
-
-    Takes the caller's cursor rather than opening its own connection because
-    both webhook call sites are inside an open transaction, and a second writer
-    there is a lock wait on Postgres. Never raises: an unaddressed email is a
-    blemish, but a webhook that dies looking up a name is redelivered by Stripe
-    against database effects that have already landed.
-    """
-    try:
-        cur.execute(
-            "SELECT full_name, display_name, username FROM users WHERE user_id=? LIMIT 1",
-            (int(user_id or 0),),
-        )
-        return greeting_first_name(cur.fetchone())
-    except Exception as exc:
-        logging.warning("NOTIFICATION_GREETING_NAME_FAILED user=%s error=%s", user_id, exc)
-        return ""
-
-
-def seller_application_email_context(cur, application, message=""):
-    """Everything the applicant's email needs, gathered while the cursor is open."""
-    user_id = int((application or {}).get("user_id") or 0)
-    context = {
-        "application_id": str((application or {}).get("id") or ""),
-        "store_name": (application or {}).get("business_name") or (application or {}).get("store_name") or "",
-        "reviewer_message": message or "",
-        "seller_application_status": seller_lifecycle.normalize_status((application or {}).get("status") or ""),
-    }
-    try:
-        cur.execute(
-            "SELECT full_name, display_name, username FROM users WHERE user_id=? LIMIT 1",
-            (user_id,),
-        )
-        context["seller_first_name"] = greeting_first_name(cur.fetchone())
-    except Exception as exc:
-        logging.warning("SELLER_APPLICATION_EMAIL_CONTEXT_FAILED user=%s error=%s", user_id, exc)
-    context.update(seller_connect_status_context(cur, user_id))
-    return context
-
-
-def emit_payment_notification(event, user_id, context=None, email_only=False):
-    """Send one marketplace payment notification. Call this AFTER the commit.
-
-    Never raises: a notification that fails to send must not fail the webhook,
-    because Stripe would then redeliver an event whose database effects have
-    already been applied.
-    """
-    if not event or not user_id:
-        return {"ok": False, "skipped": True}
-    try:
-        from services import payments_notifications
-
-        return payments_notifications.emit(event, int(user_id), context or {}, email_only=email_only)
-    except Exception as exc:
-        logging.warning("PAYMENT_NOTIFICATION_FAILED event=%s user=%s error=%s", event, user_id, exc)
-        return {"ok": False, "error": str(exc)}
-
-
-def marketplace_shipped_email_context(cur, record):
-    """What the buyer is told when their order ships, on the caller's cursor.
-
-    Takes the fulfillment route's cursor rather than opening a connection: this
-    runs once per shipment on a request path, and a pool of eight does not want
-    a second connection for three small reads.
-
-    Never raises. The shipment is already committed by the time this is called,
-    so a lookup that fails must cost the buyer a carrier name, not the email —
-    and the template renders every one of these keys as optional.
-    """
-    record = dict(record or {})
-    tx_id = int(record.get("seller_transaction_id") or 0)
-    context = {
-        # The seller_transactions id, matching what payment_succeeded sent for
-        # this same order, so the buyer's two emails name it the same way.
-        "order_id": str(tx_id),
-        "order_reference": f"#{tx_id}",
-        "carrier": str(record.get("carrier") or ""),
-        "tracking_reference": str(record.get("tracking_reference") or ""),
-        "buyer_first_name": greeting_first_name_for(cur, record.get("buyer_user_id")),
-    }
-    try:
-        cur.execute("SELECT metadata_json FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
-        details = json.loads(dict(cur.fetchone() or {}).get("metadata_json") or "{}")
-        context["item_summary"] = str(details.get("title") or "")[:160]
-        cur.execute(
-            "SELECT display_name, business_name FROM marketplace_sellers WHERE user_id=? LIMIT 1",
-            (int(record.get("seller_id") or 0),),
-        )
-        context["store_name"] = marketplace_seller_identity.display_store_name(cur.fetchone())
-    except Exception as exc:
-        logging.warning("MARKETPLACE_SHIPPED_CONTEXT_FAILED order=%s error=%s", tx_id, exc)
-    return context
-
-
-def emit_seller_application_event(user_id, status, context):
-    """Send the applicant's payment notification. Call this AFTER the commit.
-
-    ``payments_notifications.emit`` opens its own connection, so calling it
-    inside the reviewer's transaction would have a second writer wait on an
-    uncommitted row — a lock wait on Postgres, "database is locked" on SQLite.
-    """
-    event = SELLER_APPLICATION_EVENTS.get(seller_lifecycle.normalize_status(status) or "")
-    return emit_payment_notification(event, user_id, context)
-
-
-def marketplace_transaction_parties(tx_ids):
-    """Buyer, seller and amounts for settlement transactions, keyed by id.
-
-    Opens its own connection. Every caller reaches here after the webhook's
-    transaction is committed and closed, so there is nothing to join to.
-    """
-    ids = []
-    for value in tx_ids or []:
-        try:
-            ids.append(int(value))
-        except (TypeError, ValueError):
-            continue
-    if not ids:
-        return {}
-    conn = db()
-    try:
-        placeholders = ",".join(["?"] * len(ids))
-        rows = conn.execute(
-            f"""SELECT id, buyer_user_id, seller_user_id, amount_cents, currency
-                FROM seller_transactions WHERE id IN ({placeholders})""",
-            tuple(ids),
-        ).fetchall()
-    except Exception as exc:
-        logging.warning("MARKETPLACE_TX_PARTIES_FAILED ids=%s error=%s", ids, exc)
-        return {}
-    finally:
-        conn.close()
-    return {int(dict(row)["id"]): dict(row) for row in rows or []}
-
-
-def seller_first_names(user_ids):
-    """First names for notification greetings, or "" where there isn't one."""
-    ids = sorted({int(value) for value in user_ids if value})
-    if not ids:
-        return {}
-    conn = db()
-    try:
-        placeholders = ",".join(["?"] * len(ids))
-        rows = conn.execute(
-            f"SELECT user_id, full_name, display_name, username FROM users WHERE user_id IN ({placeholders})",
-            tuple(ids),
-        ).fetchall()
-    except Exception as exc:
-        logging.warning("MARKETPLACE_NOTIFICATION_NAMES_FAILED ids=%s error=%s", ids, exc)
-        return {}
-    finally:
-        conn.close()
-    names = {}
-    for row in rows or []:
-        user = dict(row)
-        names[int(user["user_id"])] = greeting_first_name(user)
-    return names
-
-
-def emit_marketplace_refund_notifications(results, refund_obj):
-    """Tell each buyer their refund is on the way. Call this AFTER the reversal.
-
-    Driven by the allocator's per-order results rather than the charge's
-    ``amount_refunded``: a charge can span several orders, and telling every
-    buyer the whole charge's figure would overstate what each is getting back.
-    """
-    obj = dict(refund_obj or {})
-    allocations = {}
-    for result in results or []:
-        settlement = dict((result or {}).get("settlement") or {})
-        tx_id = settlement.get("seller_transaction_id")
-        amount = int((result or {}).get("total_refund_minor") or 0)
-        if not tx_id or amount <= 0 or (result or {}).get("duplicate"):
-            continue
-        allocations[int(tx_id)] = allocations.get(int(tx_id), 0) + amount
-    if not allocations:
-        return
-    parties = marketplace_transaction_parties(allocations.keys())
-    names = seller_first_names([row.get("buyer_user_id") for row in parties.values()])
-    refunded_at = stripe_timestamp_date(obj.get("created"))
-    for tx_id, amount in allocations.items():
-        row = parties.get(tx_id) or {}
-        buyer_id = int(row.get("buyer_user_id") or 0)
-        if not buyer_id:
-            continue
-        emit_payment_notification("refund_completed", buyer_id, {
-            "order_id": str(tx_id),
-            "order_reference": f"#{tx_id}",
-            "amount_cents": amount,
-            "currency": row.get("currency") or "USD",
-            "refunded_at": refunded_at,
-            "buyer_first_name": names.get(buyer_id, ""),
-        })
-
-
-def emit_marketplace_paid_order_emails(paid_txs):
-    """Email the buyer their receipt and the seller their new order.
-
-    Email only: ``pulse_emit_payment_checkout_event`` and ``notify_user`` have
-    already written the in-app rows and sent the push for these same two facts.
-    Email was the channel neither of them had.
-
-    Call this AFTER the commit — the notification engine opens its own
-    connection, and a second writer inside the webhook's open transaction is a
-    lock wait on Postgres.
-    """
-    rows = [dict(tx or {}) for tx in paid_txs or []]
-    # One lookup for the whole batch. Resolving a name per row would open a
-    # connection per row against a pool of 8, and a large charge is a batch.
-    names = seller_first_names(
-        [row.get("buyer_user_id") for row in rows]
-        + [row.get("seller_user_id") for row in rows]
-    )
-    for tx in rows:
-        tx_id = int(tx.get("id") or 0)
-        if not tx_id:
-            continue
-        try:
-            details = json.loads(tx.get("metadata_json") or "{}")
-        except Exception:
-            details = {}
-        currency = str(tx.get("currency") or "USD").upper()
-        shared = {
-            "order_id": str(tx_id),
-            "order_reference": f"#{tx_id}",
-            "item_summary": str(details.get("title") or "")[:160],
-            "amount_cents": int(tx.get("amount_cents") or 0),
-            "currency": currency,
-        }
-        buyer_id = int(tx.get("buyer_user_id") or 0)
-        if buyer_id:
-            emit_payment_notification("payment_succeeded", buyer_id, {
-                **shared,
-                "buyer_first_name": names.get(buyer_id, ""),
-            }, email_only=True)
-        seller_id = int(tx.get("seller_user_id") or 0)
-        if seller_id:
-            emit_payment_notification("new_paid_order", seller_id, {
-                **shared,
-                "seller_net_cents": int(tx.get("seller_net_cents") or 0),
-                "seller_first_name": names.get(seller_id, ""),
-            }, email_only=True)
-
-
-def emit_marketplace_dispute_notifications(tx_ids, dispute_obj, event_type):
-    """Tell the seller a payment is disputed. Call this AFTER the hold lands.
-
-    ``dispute_opened`` fires once, on creation, and already carries the evidence
-    deadline. ``dispute_action_required`` is reserved for a later update, so the
-    seller is not sent two emails about the same dispute in the same second.
-
-    The close is the only event carrying a verdict, and it is the one the seller
-    is waiting on. It used to fall through to the ``return`` below, so a seller
-    was told a payment was disputed and then never told how it ended: the money
-    moved — hold released, or earnings reversed — and nothing said so. The other
-    route that could have said it reads ``seller_transaction_id`` off the
-    Dispute's own metadata, which Stripe never populates, so this is the only
-    one that reaches anybody. An unrecognised terminal status sends nothing
-    rather than guessing which way it went.
-    """
-    obj = dict(dispute_obj or {})
-    status = str(obj.get("status") or "")
-    evidence = dict(obj.get("evidence_details") or {})
-    due_by = stripe_timestamp_date(evidence.get("due_by"))
-    if event_type == "charge.dispute.created":
-        event = "dispute_opened"
-    elif event_type == "charge.dispute.updated" and status == "needs_response" and due_by:
-        event = "dispute_action_required"
-    elif event_type == "charge.dispute.closed":
-        event = {"won": "dispute_won",
-                 "lost": "dispute_lost",
-                 # An inquiry that never became a dispute. Nothing was decided,
-                 # so it must not be worded as either side winning.
-                 "warning_closed": "dispute_inquiry_closed"}.get(status, "")
-        if not event:
-            logging.warning("MARKETPLACE_DISPUTE_CLOSED_UNKNOWN_STATUS dispute_id=%s status=%s",
-                            obj.get("id") or "", status or "(empty)")
-            return
-    else:
-        return
-    parties = marketplace_transaction_parties(tx_ids)
-    if not parties:
-        return
-    names = seller_first_names([row.get("seller_user_id") for row in parties.values()])
-    for tx_id, row in parties.items():
-        seller_id = int(row.get("seller_user_id") or 0)
-        if not seller_id:
-            continue
-        emit_payment_notification(event, seller_id, {
-            "order_id": str(tx_id),
-            "order_reference": f"#{tx_id}",
-            "dispute_id": str(obj.get("id") or ""),
-            "amount_cents": int(obj.get("amount") or row.get("amount_cents") or 0),
-            "currency": str(obj.get("currency") or row.get("currency") or "USD").upper(),
-            "dispute_reason": str(obj.get("reason") or "").replace("_", " "),
-            "evidence_due_by": due_by,
-            "seller_first_name": names.get(seller_id, ""),
-        })
-
-
 def approved_marketplace_seller_for_user(cur, user_id):
     cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (int(user_id or 0),))
     seller = cur.fetchone()
     seller = dict(seller or {})
     return seller if seller.get("status") == "approved" else {}
-
-
-def seller_access_refusal(cur, user_id):
-    """``None`` if this account may mutate seller-owned things, else a 403 response.
-
-    Every seller mutation route calls this and nothing else. Before it, four
-    routes carried four different opinions and three carried none: create and
-    edit checked ``status == 'approved'`` by two different means, resume called
-    ``approved_marketplace_seller_for_user``, and pause, delete, submit and the
-    batch route checked only ownership. Ownership is not approval — a seller
-    suspended for fraud still owns their listings, and could still publish them.
-
-    The refusal body carries the full access state so the client can route
-    straight to the application screen rather than having to ask a second time
-    why it was refused.
-    """
-    from services import seller_access_state
-
-    body = seller_access_state.require_seller_access(cur, int(user_id or 0))
-    if body is None:
-        return None
-    return jsonify(body), 403
 
 
 def approved_teacher_for_user(cur, user_id):
@@ -100508,21 +93962,6 @@ def approved_teacher_for_user(cur, user_id):
 
 
 def seller_fee_bps(cur, seller_type):
-    """The commission rate for a lane, from that lane's fee authority.
-
-    Marketplace commission comes from the versioned policy, never from
-    `platform_fee_rules`. A commission must be the rate the seller was shown and
-    agreed to, and a policy version is what a settlement can be audited against
-    years later; a mutable admin row is neither, and its 10% merchant value was
-    never disclosed to anyone. No seller has ever been charged it — production
-    has zero paid marketplace transactions — so the row is dead, not a rate cut.
-
-    The teacher lane is a different product with its own pricing and is not
-    covered by the Marketplace policy, so it still reads the table.
-    """
-    if str(seller_type or "").strip().lower() == "merchant":
-        from services.business_os.marketplace import policy as marketplace_policy
-        return marketplace_policy.platform_fee_bps()
     cur.execute("SELECT fee_bps FROM platform_fee_rules WHERE seller_type=? AND status='active' LIMIT 1", (seller_type,))
     row = dict(cur.fetchone() or {})
     return int(row.get("fee_bps") or (1500 if seller_type == "teacher" else 1000))
@@ -100534,17 +93973,18 @@ def seller_payout_account(cur, user_id, seller_type):
 
 
 def seller_destination_account_id(payout):
-    """The Connect account a Transfer may safely be sent to, or "".
+    """The Connect account a destination charge may safely be routed to, or "".
 
     A payout row is written the moment a seller *starts* Connect onboarding, so
     it carries a real ``connected_account_id`` long before Stripe will accept a
     transfer to it — ``charges_enabled``/``payouts_enabled`` stay 0 until
-    onboarding actually completes.
+    onboarding actually completes. Attaching ``transfer_data.destination`` to
+    such an account makes Stripe reject the whole session, which turned a
+    seller's unfinished onboarding into a *buyer-facing* checkout failure.
 
-    Charges never route here: the buyer always pays the platform. An empty
-    result only means the seller's earnings are recorded as
-    ``ledger_pending_onboarding`` instead of ``transfer_eligible``, deferring
-    the transfer until Stripe would accept it.
+    Buyers must always be able to pay. When the account is not yet chargeable we
+    return "" so the caller falls back to a plain platform charge and records the
+    seller's earnings as ``ledger_pending_onboarding``.
     """
     payout = dict(payout or {})
     account_id = str(payout.get("connected_account_id") or payout.get("provider_account_id") or "").strip()
@@ -100561,246 +94001,6 @@ def seller_destination_account_id(payout):
     return account_id
 
 
-def _seller_onboarding_emit(user_id, seller_type):
-    """A funnel logger for one onboarding attempt.
-
-    Structured stdout, because that is what reaches the deployed log stream —
-    `logging.exception` alone did not, which is why the first production failure
-    of the JSON route below left no line behind and had to be reproduced by hand.
-
-    Carries the correlation id, never the user id, the account id, or anything
-    Stripe was told. The gap this incident lived in — "she clicked" to "she
-    reached Stripe" — is now one grep for SELLER_ONBOARDING across a deploy,
-    rather than an inference across three services and an email template.
-    """
-
-    def _emit(event, payload):
-        fields = " ".join(
-            f"{key}={value}" for key, value in sorted(dict(payload or {}).items())
-        )
-        print(f"SELLER_ONBOARDING event={event} seller_type={seller_type} {fields}", flush=True)
-
-    return _emit
-
-
-def _seller_onboarding_snapshot_writer(seller_type):
-    """Persist an authoritative Stripe reading through the existing writers.
-
-    Both of them, in the order the return leg uses. `record_account_snapshot`
-    lands the capability flags and requirements in two tables in one
-    transaction; `_persist_onboarding_status` writes the one column that
-    projection deliberately will not touch.
-
-    Doing both here is also a repair, not just bookkeeping. The first live seller
-    on this platform is sitting at `charges_enabled=1, payouts_enabled=1,
-    onboarding_status='onboarding_started'` — exactly the shape
-    `services/stripe_onboarding_return` was written about — and because
-    `seller_destination_account_id` refuses on the *word* regardless of the
-    flags, every sale of theirs books `ledger_pending_onboarding` instead of
-    `transfer_eligible`. A seller in that state who opens payment setup now has
-    their status corrected from Stripe's own answer on the way through.
-    """
-
-    def _write(user_id, status):
-        try:
-            from services.business_os.payments import connect_accounts as _bos_connect
-
-            _bos_connect.record_account_snapshot(user_id, status)
-        except Exception:
-            logging.exception("SELLER_ONBOARDING_SNAPSHOT_FAILED user_id=%s", user_id)
-        try:
-            _persist_onboarding_status(user_id, seller_type, status)
-        except Exception:
-            logging.exception("SELLER_ONBOARDING_STATUS_WRITE_FAILED user_id=%s", user_id)
-
-    return _write
-
-
-def _seller_onboarding_error_page(seller_type, result):
-    """What a seller sees when onboarding could not start.
-
-    Never Home, and never a bare "something went wrong". A member who tapped
-    "Set up payments with Stripe" and landed on a feed has been told nothing and
-    has no next move — which is the shape of the failure this whole change is
-    about. This page names what happened, says plainly whether retrying can help,
-    and offers the payouts page, which shows the same state with the rest of the
-    seller's context around it.
-    """
-    state = str(result.get("state") or "")
-    retryable = bool(result.get("retryable")) or state == seller_payment_onboarding.START_FAILED
-    message = html_escape(clean_html(str(result.get("message") or "Payment setup could not start.")))
-    attempt = html_escape(clean_html(str(result.get("attempt") or "")))
-    if state == seller_payment_onboarding.START_NOT_APPROVED:
-        title = "Approval is needed first"
-        # The same two destinations `seller_payouts_page` sends an unapproved
-        # member to. There is no `/pulse/teacher/apply` route — the teacher lane
-        # applies through its own page — so this cannot be one f-string.
-        target = "/pulse/teachers" if seller_type == "teacher" else "/pulse/merchant/apply"
-        action = f"<a class='button primary' href='{target}'>Open application</a>"
-    else:
-        title = "We couldn't open Stripe"
-        retry = (
-            "<a class='button primary' href='/seller/payments/setup'>Try again</a>"
-            if retryable
-            else ""
-        )
-        action = f"{retry}<a class='button' href='/pulse/{seller_type}/payouts'>Payments &amp; payouts</a>"
-    body = (
-        f"<section class='card'><h2>{html_escape(title)}</h2><p>{message}</p>"
-        f"<div class='actions'>{action}</div>"
-        # Printed so a support conversation can name the exact attempt without
-        # the seller having to describe what they saw.
-        f"<p class='muted'>Reference: {attempt}</p></section>"
-    )
-    response = pulse_social_shell(
-        "Payment setup",
-        "Stripe Connect onboarding for approved sellers.",
-        body,
-    )
-    return response, int(result.get("http_status") or 503)
-
-
-@webhook_app.route("/seller/payments/setup", methods=["GET"])
-@auth_required
-def seller_payments_setup():
-    """The durable, emailable front door to Stripe Connect onboarding.
-
-    ## Why this route exists at all
-
-    An approved seller tapped "Set up payments with Stripe" in her approval email
-    on an iPhone and landed inside the PulseSoc app, never seeing Stripe. The CTA
-    resolved to
-
-        https://pulsesoc.com/pulse/merchant/payouts?pulse_app=1&pulse_src=email
-
-    which is where Stripe *returns* a seller to, not where onboarding starts —
-    `payments_email_templates._seller_approved` fell back to it because no caller
-    has ever set `ctx["stripe_onboarding_url"]`. And because `/pulse/*` is claimed
-    by the published apple-app-site-association, iOS handed that URL to the app
-    before any HTTP request was made. There was no redirect to follow and no log
-    line to find: the server was never asked.
-
-    The onboarding logic was never the problem. `POST /api/pulse/payouts/connect`
-    below has always reused the seller's account and minted a fresh AccountLink.
-    It simply had no door a mail client could knock on — you cannot put a JSON
-    POST in an email. This is that door, and both routes now go through the same
-    service so they cannot drift into two policies.
-
-    ## Why the path is /seller/... and not /pulse/...
-
-    So that every copy of the app already on a phone leaves it alone. `/seller/*`
-    is absent from `native_app_links.APPLE_LINK_COMPONENTS`, so iOS does not
-    match it and Safari handles it — which means the old emails already sitting in
-    inboxes start working the moment this deploys, with no new binary and no App
-    Store review. `app_links.WEB_INTENT_PREFIXES` states the same intent for
-    every link the server builds.
-
-    ## Why GET is safe
-
-    Mail security scanners fetch links before a human ever sees them, so this
-    must be idempotent: the Stripe account create carries an idempotency key
-    derived from the seller, the payout row write is an upsert, and an
-    AccountLink is single-use and short-lived anyway. A prefetch therefore costs
-    one reused account and one wasted link, and the seller's own click still gets
-    a fresh one. Nothing here charges, transfers, or enables anything.
-    """
-    init_db()
-    user = require_account()
-    if not user:
-        # `full_path`, not `path`. The intent to set up payments is the only thing
-        # this link carries, and dropping it at the login wall would land an
-        # approved seller on Home after signing in — exactly the dead end that
-        # made the original CTA useless.
-        return redirect(url_for("login_page", next=request.full_path))
-
-    seller_type = seller_payment_onboarding.normalize_seller_type(
-        request.args.get("seller_type")
-    )
-    # Deliberately no seller id from the query string. Onboarding is started for
-    # *the authenticated account* and nothing else; a `?sellerId=` would make this
-    # an IDOR that hands one seller a Stripe link for another's account.
-    now = datetime.utcnow().isoformat(timespec="seconds")
-    emit = _seller_onboarding_emit(user["user_id"], seller_type)
-    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    try:
-        # Two lanes, two approval authorities, same as the JSON route. The
-        # teacher lane has its own table and the service says nothing about it.
-        if seller_type == "teacher":
-            if not approved_teacher_for_user(cur, user["user_id"]):
-                emit(seller_payment_onboarding.EVENT_ERROR, {"reason": "not_approved"})
-                return _seller_onboarding_error_page(
-                    seller_type,
-                    {
-                        "state": seller_payment_onboarding.START_NOT_APPROVED,
-                        "message": "Approved teacher status is required before payment setup.",
-                        "http_status": 403,
-                    },
-                )
-        else:
-            refusal = seller_payment_onboarding.authorize(cur, user["user_id"], seller_type)
-            if refusal:
-                emit(seller_payment_onboarding.EVENT_ERROR, {"reason": "not_approved"})
-                return _seller_onboarding_error_page(seller_type, refusal)
-
-        result = seller_payment_onboarding.start_onboarding(
-            conn=conn,
-            cur=cur,
-            user=dict(user),
-            seller_type=seller_type,
-            base_url=(APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/"),
-            now=now,
-            provider=payment_provider,
-            stripe_configured=bool(STRIPE_SECRET_KEY),
-            existing_account=seller_payout_account(cur, user["user_id"], seller_type),
-            emit=emit,
-            on_snapshot=_seller_onboarding_snapshot_writer(seller_type),
-        )
-    except Exception as exc:
-        trace_id = secrets.token_hex(6)
-        print(
-            f"SELLER_ONBOARDING event=crash trace_id={trace_id} "
-            f"seller_type={seller_type} exc={type(exc).__name__}: {str(exc)[:400]}",
-            flush=True,
-        )
-        logging.exception("SELLER_PAYMENTS_SETUP_FAILED trace_id=%s", trace_id)
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return _seller_onboarding_error_page(
-            seller_type,
-            {
-                "state": seller_payment_onboarding.START_FAILED,
-                "message": (
-                    "Payment setup couldn't be opened. This is a problem on PulseSoc's "
-                    "side, not with your account."
-                ),
-                "attempt": trace_id,
-                "retryable": True,
-                "http_status": 500,
-            },
-        )
-    finally:
-        conn.close()
-
-    if result["state"] == seller_payment_onboarding.START_REDIRECT:
-        # 303 so a browser that arrived here by any means follows with a GET, and
-        # so this hop is never cached as the seller's permanent destination — the
-        # AccountLink behind it is single-use and expires.
-        response = redirect(result["url"], code=303)
-        response.headers["Cache-Control"] = "no-store, private"
-        return response
-    if result["state"] == seller_payment_onboarding.START_ALREADY_ENABLED:
-        # Stripe says this account is done. Restarting onboarding here is the
-        # defect `stripe_onboarding_return` documents: telling someone to finish
-        # setting up when they already have. The payouts page shows them what
-        # Stripe actually decided.
-        response = redirect(f"/pulse/{seller_type}/payouts", code=303)
-        response.headers["Cache-Control"] = "no-store, private"
-        return response
-    return _seller_onboarding_error_page(seller_type, result)
-
-
 @webhook_app.route("/api/pulse/payouts/connect", methods=["POST"])
 def api_pulse_payouts_connect():
     init_db()
@@ -100811,88 +94011,65 @@ def api_pulse_payouts_connect():
     seller_type = payload.get("seller_type") if payload.get("seller_type") in {"merchant", "teacher"} else "merchant"
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    # Two lanes, two authorities, on purpose. The teacher lane is a separate
-    # product with its own approval table and is untouched here.
-    #
-    # The merchant lane goes through the canonical gate because this is the
-    # endpoint the Store's "Set up payments" card calls. The card is shown on
-    # the strength of the canonical seller state, so a route that refused on a
-    # *different* authority would put a live button in front of a seller and
-    # then turn them away — and the two authorities can disagree, which is the
-    # divergence this whole change exists to close.
-    #
-    # This does not touch the Connect safety gate. Approval decides whether
-    # onboarding may *start*; whether a transfer may be sent is decided later
-    # and separately by `seller_destination_account_id`, from Stripe's own
-    # charges/payouts flags. The two axes stay apart here as everywhere else.
-    if seller_type == "teacher":
-        if not approved_teacher_for_user(cur, user["user_id"]):
-            conn.close()
-            return api_error("Approved teacher status is required before payout onboarding.", 403)
-    else:
-        refusal = seller_access_refusal(cur, user["user_id"])
-        if refusal:
-            conn.close()
-            return refusal
+    approved = approved_teacher_for_user(cur, user["user_id"]) if seller_type == "teacher" else approved_marketplace_seller_for_user(cur, user["user_id"])
+    if not approved:
+        conn.close()
+        return api_error(f"Approved {seller_type} status is required before payout onboarding.", 403)
+    account = seller_payout_account(cur, user["user_id"], seller_type)
+    connected_account_id = account.get("connected_account_id") or ""
     trace_id = secrets.token_hex(6)
     try:
-        # One service, three surfaces. This route, the durable email link at
-        # `/seller/payments/setup`, and the app all ask the same function the same
-        # question, because three implementations of "start onboarding" is how
-        # they drift into disagreeing about who is allowed to start and what the
-        # return URLs are. This body used to be that third implementation.
-        #
-        # The behaviour it gains by delegating: Stripe is re-read for a seller who
-        # already has an account, so an account Stripe has already finished is
-        # answered with `already_enabled` instead of being sent back through
-        # onboarding, and the stored status is repaired from Stripe's own answer.
-        result = seller_payment_onboarding.start_onboarding(
-            conn=conn,
-            cur=cur,
-            user=dict(user),
-            seller_type=seller_type,
-            base_url=(APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/"),
-            now=now,
-            provider=payment_provider,
-            stripe_configured=bool(STRIPE_SECRET_KEY),
-            existing_account=seller_payout_account(cur, user["user_id"], seller_type),
-            emit=_seller_onboarding_emit(user["user_id"], seller_type),
-            on_snapshot=_seller_onboarding_snapshot_writer(seller_type),
+        if STRIPE_SECRET_KEY:
+            if not connected_account_id:
+                stripe_account = payment_provider.create_connected_account(user, seller_type)
+                if not stripe_account.get("ok"):
+                    conn.close()
+                    return api_error(
+                        stripe_account.get("message") or "Payout setup could not start.",
+                        int(stripe_account.get("http_status") or 503),
+                        trace_id,
+                        code=stripe_account.get("code") or "",
+                        provider_error=stripe_account.get("provider_error") or {},
+                        retryable=bool(stripe_account.get("retryable")),
+                    )
+                connected_account_id = stripe_account.get("provider_account_id") or ""
+            cur.execute(
+                """
+                INSERT INTO seller_payout_accounts
+                (user_id, seller_type, provider, connected_account_id, provider_account_id, onboarding_status, payouts_enabled, charges_enabled, last_checked_at, last_synced_at, created_at, updated_at)
+                VALUES (?, ?, 'stripe', ?, ?, 'onboarding_started', 0, 0, ?, ?, ?, ?)
+                ON CONFLICT(user_id, seller_type) DO UPDATE SET connected_account_id=excluded.connected_account_id,
+                  provider_account_id=excluded.provider_account_id, onboarding_status='onboarding_started', last_checked_at=excluded.last_checked_at, last_synced_at=excluded.last_synced_at, updated_at=excluded.updated_at
+                """,
+                (user["user_id"], seller_type, connected_account_id, connected_account_id, now, now, now, now),
+            )
+            conn.commit()
+            base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
+            link = payment_provider.create_onboarding_link(connected_account_id, refresh_url=f"{base}/pulse/{seller_type}/payouts", return_url=f"{base}/pulse/{seller_type}/payouts")
+            if not link.get("ok"):
+                conn.close()
+                return api_error(
+                    link.get("message") or "Payout setup could not start.",
+                    int(link.get("http_status") or 503),
+                    trace_id,
+                    code=link.get("code") or "",
+                    provider_error=link.get("provider_error") or {},
+                    retryable=bool(link.get("retryable")),
+                )
+            conn.close()
+            return jsonify({"ok": True, "message": "Stripe onboarding ready.", "onboarding_url": link.get("url"), "connected_account_id": connected_account_id})
+        cur.execute(
+            """
+            INSERT INTO seller_payout_accounts
+            (user_id, seller_type, provider, onboarding_status, payouts_enabled, charges_enabled, missing_requirements_json, last_checked_at, created_at, updated_at)
+            VALUES (?, ?, 'stripe', 'stripe_not_configured', 0, 0, ?, ?, ?, ?)
+            ON CONFLICT(user_id, seller_type) DO UPDATE SET onboarding_status='stripe_not_configured',
+              missing_requirements_json=excluded.missing_requirements_json, last_checked_at=excluded.last_checked_at, updated_at=excluded.updated_at
+            """,
+            (user["user_id"], seller_type, json.dumps(["STRIPE_SECRET_KEY required for live Connect onboarding"]), now, now, now),
         )
-        state = result["state"]
-        if state == seller_payment_onboarding.START_REDIRECT:
-            conn.close()
-            return jsonify({
-                "ok": True,
-                "message": result.get("message") or "Stripe onboarding ready.",
-                "onboarding_url": result.get("url"),
-                "connected_account_id": result.get("connected_account_id") or "",
-            })
-        if state == seller_payment_onboarding.START_ALREADY_ENABLED:
-            conn.close()
-            # No `onboarding_url`, on purpose: the web card reads that key and
-            # navigates. A seller Stripe has already cleared must not be sent
-            # back through onboarding, so there is nowhere to navigate to.
-            return jsonify({
-                "ok": True,
-                "already_enabled": True,
-                "message": result.get("message") or "Your Stripe account is set up.",
-                "charges_enabled": bool(result.get("charges_enabled")),
-                "payouts_enabled": bool(result.get("payouts_enabled")),
-                "payouts_url": f"/pulse/{seller_type}/payouts",
-            })
-        if state == seller_payment_onboarding.START_STRIPE_UNCONFIGURED:
-            conn.close()
-            return jsonify({"ok": True, "message": result.get("message") or ""})
-        conn.close()
-        return api_error(
-            result.get("message") or "Payout setup could not start.",
-            int(result.get("http_status") or 503),
-            trace_id,
-            code=result.get("code") or "",
-            provider_error=result.get("provider_error") or {},
-            retryable=bool(result.get("retryable")),
-        )
+        conn.commit(); conn.close()
+        return jsonify({"ok": True, "message": "Payout profile saved. Stripe Connect is not configured yet, so bank onboarding cannot open in this environment."})
     except Exception as exc:
         # `logging.exception` alone does not reach the deployed log stream — this
         # route failed in production for a seller and left no line behind, which
@@ -101037,24 +94214,6 @@ def api_pulse_payments_checkout():
     if not approved:
         conn.close()
         return api_error("Seller is not approved for payments.", 403)
-    # The global flag above says the card rail exists. This says *this seller*
-    # may use it. Both have to pass, and this one can only be asked here, where
-    # the seller is finally known — the flag check runs before any connection is
-    # open. Asked on the open cursor so the state consulted is the state this
-    # request is about to charge against.
-    if item_type == "marketplace_product" and marketplace_payment_mode == "card":
-        from services import marketplace_card_capability
-        card_decision = marketplace_card_capability.evaluate(cur, seller_user_id=seller_user_id)
-        if not card_decision["card_payments_available"]:
-            conn.close()
-            buyer_decision = marketplace_card_capability.buyer_view(card_decision)
-            return api_error(
-                buyer_decision["message"],
-                503,
-                error_code=buyer_decision["reason_code"],
-                error=buyer_decision["reason_code"],
-                **marketplace_payment_pause.card_unavailable_payload(),
-            )
     payout = seller_payout_account(cur, seller_user_id, seller_type)
     fee_bps = seller_fee_bps(cur, seller_type)
     if item_type == "marketplace_product" and marketplace_payment_pause is not None:
@@ -101204,15 +94363,6 @@ def api_pulse_payments_checkout():
         "status": initial_status,
     }
     pulse_emit_payment_checkout_event(cur, tx_event, "payment_pending", status=initial_status, actor_user_id=buyer["user_id"])
-    if marketplace_cash_payment:
-        # Cash owes the buyer goods from this moment: the order is real and the
-        # seller is expected to hand something over. A *card* order is not opened
-        # here — it is still `created`, and most abandoned checkouts never become
-        # anything else, so opening one now would fill every seller's dashboard
-        # with orders nobody paid for. The card lane opens its record when the
-        # payment webhook lands.
-        marketplace_order_fulfillment.open_from_transaction(
-            cur, {**tx_event, "metadata_json": {"fulfillment": {"kind": fulfillment_kind}}})
     if not marketplace_cash_payment and not STRIPE_SECRET_KEY:
         cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
         pulse_emit_payment_checkout_event(
@@ -101291,17 +94441,15 @@ def api_pulse_payments_checkout():
         # than re-requested from them a screen later.
         if stripe_shipping_object:
             payment_intent_data["shipping"] = stripe_shipping_object
-        # Separate charges and transfers: the buyer always pays PulseSoc, and
-        # the seller's cut leaves later as an explicit Transfer once the
-        # settlement clears its protection window. The transfer group is what
-        # ties those Transfers back to this one charge.
-        # `connected_account_id` no longer routes the charge; it now only says
-        # whether Stripe would accept a transfer to this seller yet, which is
-        # what decides payout readiness.
-        if item_type == "marketplace_product":
-            payment_intent_data["transfer_group"] = f"marketplace_order:{tx_id}"
+        # Seller Connect state must never be a prerequisite for the buyer to
+        # pay. Route a destination charge only to an account Stripe will
+        # actually accept; otherwise take the platform charge and settle the
+        # seller from the ledger once they finish onboarding.
         connected_account_id = seller_destination_account_id(payout)
-        payout_state = "transfer_eligible" if connected_account_id else "ledger_pending_onboarding"
+        if connected_account_id:
+            payment_intent_data.update({"application_fee_amount": platform_fee,
+                                        "transfer_data": {"destination": connected_account_id}})
+        payout_state = "connect_routed" if connected_account_id else "ledger_pending_onboarding"
         # `payment_sheet` settles this purchase with a PaymentIntent the native
         # Stripe sheet can present in-app, instead of a hosted Session the phone
         # has to open in Safari. Everything above — eligibility, price authority,
@@ -101628,7 +94776,7 @@ def pulse_buyer_order_prefetch(cur, rows):
         cur.execute(
             f"""
             SELECT u.user_id, u.username, u.avatar_url,
-                   NULLIF(TRIM(ms.display_name),'') AS seller_store_name
+                   COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name
             FROM users u
             LEFT JOIN marketplace_sellers ms ON ms.user_id=u.user_id
             WHERE u.user_id IN ({placeholders})
@@ -101646,7 +94794,7 @@ def pulse_buyer_order_prefetch(cur, rows):
             SELECT l.id, l.title, l.seller_user_id, l.category, l.price_label, l.currency,
                    l.cover_image_url, l.media_url AS image_url, l.cover_image_url AS thumbnail_url, l.video_url,
                    l.product_type, l.listing_type, l.listing_metadata_json,
-                   NULLIF(TRIM(ms.display_name),'') AS seller_store_name,
+                   COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
                    u.username AS seller_username
             FROM marketplace_listings l
             LEFT JOIN users u ON u.user_id=l.seller_user_id
@@ -101662,18 +94810,13 @@ def pulse_buyer_order_prefetch(cur, rows):
 
 
 def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
-                               sellers_by_id=None, listings_by_id=None,
-                               delivered_at=None):
+                               sellers_by_id=None, listings_by_id=None):
     """Serialize one buyer order.
 
     `sellers_by_id` / `listings_by_id` are optional prefetched maps from
     `pulse_buyer_order_prefetch`. When they are None this queries per row
     exactly as it always did — which is correct for the single-order detail
     endpoint, where N is 1 and a batch would be two queries instead of one.
-
-    `delivered_at` is passed in rather than looked up here, so this stays a pure
-    function of what it is handed and the caller keeps control of how many
-    queries a page of orders costs.
     """
     raw = dict(order or {})
     tx_id = safe_int(raw.get("id"), 0)
@@ -101702,7 +94845,7 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
         cur.execute(
             """
             SELECT u.user_id, u.username, u.avatar_url,
-                   NULLIF(TRIM(ms.display_name),'') AS seller_store_name
+                   COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name
             FROM users u
             LEFT JOIN marketplace_sellers ms ON ms.user_id=u.user_id
             WHERE u.user_id=? LIMIT 1
@@ -101719,7 +94862,7 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
             SELECT l.id, l.title, l.seller_user_id, l.category, l.price_label, l.currency,
                    l.cover_image_url, l.media_url AS image_url, l.cover_image_url AS thumbnail_url, l.video_url,
                    l.product_type, l.listing_type, l.listing_metadata_json,
-                   NULLIF(TRIM(ms.display_name),'') AS seller_store_name,
+                   COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
                    u.username AS seller_username
             FROM marketplace_listings l
             LEFT JOIN users u ON u.user_id=l.seller_user_id
@@ -101779,18 +94922,6 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
     # all along without ever reading the key. The app, having no lane field to
     # read, defaulted every order's timeline to shipping.
     fulfillment_kind = marketplace_fulfillment.order_kind(metadata, listing)
-    # When this buyer's return window closes. The app has read
-    # `return_window_closes_at` since the orders dashboard shipped and no
-    # endpoint has ever sent it, so the deadline was something a buyer could only
-    # discover by being refused. Served only on a paid marketplace purchase:
-    # on a refunded, cancelled or unpaid order a return deadline is meaningless,
-    # and showing one would be worse than showing nothing.
-    return_window_closes_at = None
-    if payment_status == "paid" and item_type in {"marketplace_product", "product"}:
-        from services.business_os.marketplace import policy as marketplace_policy
-
-        return_window_closes_at = marketplace_policy.return_window_closes_at(
-            delivered_at=delivered_at, purchased_at=raw.get("created_at"))
     return {
         **raw,
         "id": tx_id,
@@ -101821,7 +94952,6 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
         },
         "listing": listing,
         "fulfillment_kind": fulfillment_kind,
-        "return_window_closes_at": return_window_closes_at,
         "digital_files": digital_files,
         "marketplace_listing_id": numeric_item_id if item_type in {"marketplace_product", "product"} else 0,
         "receipt_url": receipt_url,
@@ -101891,18 +95021,9 @@ def api_pulse_buyer_orders():
     # the rows have to be off it first.
     seller_rows = cur.fetchall()
     seller_sellers, seller_listings = pulse_buyer_order_prefetch(cur, seller_rows)
-    # One query for the whole page, not one per order — this screen renders up to
-    # 100 rows and a per-row lookup here is the N+1 that made it the slowest
-    # surface in the app once already. Settlements key on `seller_transactions`,
-    # so creator orders below have no delivery record and get nothing.
-    from services import marketplace_settlement_service as _settlements
-    seller_delivered = _settlements.delivered_at_map(
-        cur, [safe_int(dict(row or {}).get("id"), 0) for row in seller_rows])
     seller_orders = [
         pulse_buyer_order_response(cur, row, "seller_transactions",
-                                   sellers_by_id=seller_sellers, listings_by_id=seller_listings,
-                                   delivered_at=seller_delivered.get(
-                                       safe_int(dict(row or {}).get("id"), 0)))
+                                   sellers_by_id=seller_sellers, listings_by_id=seller_listings)
         for row in seller_rows
     ]
     cur.execute(
@@ -101951,13 +95072,7 @@ def api_pulse_buyer_order_detail(transaction_id):
     if not order:
         conn.close()
         return api_error("Order not found.", 404)
-    delivered_at = None
-    if source_table == "seller_transactions":
-        from services import marketplace_settlement_service as _settlements
-        delivered_at = _settlements.delivered_at_map(
-            cur, [int(transaction_id)]).get(int(transaction_id))
-    payload = pulse_buyer_order_response(cur, order, source_table,
-                                         delivered_at=delivered_at)
+    payload = pulse_buyer_order_response(cur, order, source_table)
     conn.close()
     return jsonify({"ok": True, "order": payload, "payment_status": payload.get("payment_status"), "fulfilled": payload.get("status_group") == "paid"})
 
@@ -102341,72 +95456,6 @@ def _seller_profile_api():
     return _profile_api
 
 
-def _seller_profile_access_refusal(user_id):
-    """Seller gate for the Business Profile mutations, which own no cursor.
-
-    These routes hand straight off to ``services.business_os.profile.api`` and
-    never open a connection of their own, so this one borrows a connection for
-    the length of the check and gives it straight back. That is a real cost on a
-    pool of 8, and it is accepted here only because profile writes are rare —
-    the listing routes, which are not rare, pass their existing cursor to
-    ``seller_access_refusal`` instead.
-
-    A failure to *read* the gate refuses the write. A profile edit that lands
-    because the gate was unreadable is the outcome this whole change exists to
-    prevent.
-    """
-    conn = None
-    try:
-        conn = db()
-        conn.row_factory = sqlite3.Row
-        return seller_access_refusal(conn.cursor(), user_id)
-    except Exception:
-        logging.exception("[business-profile] seller access check failed")
-        return api_error("Your seller status could not be confirmed right now.", 503)
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-
-
-def _propagate_store_name(user_id, result):
-    """Land a Business Profile rename on the canonical store-name column.
-
-    Reads the value back out of the service's own response rather than off the
-    request, so the name that reaches ``marketplace_sellers`` is the one the
-    profile service validated and stored — a partial save that *rejected* the
-    name must not propagate the rejected text.
-
-    Best effort by design. The profile write has already committed by the time
-    we get here, so failing the request now would tell the owner their edit was
-    lost when it was not. A propagation miss leaves the two names as they were
-    before this function existed; the audit script is what finds them.
-    """
-    try:
-        status, body = result
-        if int(status) != 200 or not isinstance(body, dict):
-            return
-        profile = body.get("profile")
-        if not isinstance(profile, dict) or "business_name" not in profile:
-            return
-        conn = db()
-        try:
-            conn.row_factory = sqlite3.Row
-            cur = conn.cursor()
-            if store_identity_sync.adopt_store_name(
-                    cur, user_id, profile.get("business_name")) is not None:
-                conn.commit()
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
-    except Exception:
-        logging.exception("[business-profile] store name propagation failed")
-
-
 def _seller_profile_response(result):
     status, body = result
     response = jsonify(body)
@@ -102447,45 +95496,6 @@ def _viewer_has_purchased(conn, viewer_user_id, seller_user_id):
         return False
 
 
-@webhook_app.route("/api/pulse/seller/access-state", methods=["GET"])
-@auth_required
-def api_pulse_seller_access_state():
-    """The one verdict the client reads before showing any seller surface.
-
-    Deliberately its own endpoint rather than a field bolted onto the Business
-    OS payload: Marketplace Selling needs the same answer, and a field on one
-    screen's payload is how Store and Selling came to hold different opinions in
-    the first place. One endpoint, one shape, both callers.
-
-    Never cached. A seller approved thirty seconds ago must not be told to apply
-    because an intermediary held the previous answer.
-    """
-    init_db()
-    user = api_account_user()
-    if not user:
-        return api_error("Login required.", 401)
-    from services import seller_access_state
-
-    conn = None
-    try:
-        conn = db()
-        conn.row_factory = sqlite3.Row
-        state = seller_access_state.get_seller_access_state(
-            conn.cursor(), int(user["user_id"]))
-    except Exception:
-        logging.exception("[seller-access] state read failed")
-        return api_error("Your seller status could not be loaded right now.", 503)
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-    response = jsonify({"ok": True, "seller_access": state})
-    response.headers["Cache-Control"] = "no-store, max-age=0"
-    return response
-
-
 @webhook_app.route("/api/pulse/business/profile", methods=["GET"])
 def api_pulse_business_profile_get():
     """Everything the owner screen needs in one round trip.
@@ -102518,16 +95528,12 @@ def api_pulse_business_profile_update():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    refusal = _seller_profile_access_refusal(user["user_id"])
-    if refusal:
-        return refusal
     payload = request.get_json(silent=True) or {}
     try:
-        result = _seller_profile_api().update_profile(int(user["user_id"]), payload)
+        return _seller_profile_response(
+            _seller_profile_api().update_profile(int(user["user_id"]), payload))
     except Exception:
         return _seller_profile_failure("profile update")
-    _propagate_store_name(user["user_id"], result)
-    return _seller_profile_response(result)
 
 
 @webhook_app.route("/api/pulse/business/profile/hours", methods=["POST"])
@@ -102536,9 +95542,6 @@ def api_pulse_business_profile_hours():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    refusal = _seller_profile_access_refusal(user["user_id"])
-    if refusal:
-        return refusal
     payload = request.get_json(silent=True) or {}
     try:
         handler = _seller_profile_api()
@@ -102556,9 +95559,6 @@ def api_pulse_business_profile_link():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    refusal = _seller_profile_access_refusal(user["user_id"])
-    if refusal:
-        return refusal
     payload = request.get_json(silent=True) or {}
     try:
         return _seller_profile_response(
@@ -102575,9 +95575,6 @@ def api_pulse_business_profile_address():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    refusal = _seller_profile_access_refusal(user["user_id"])
-    if refusal:
-        return refusal
     payload = request.get_json(silent=True) or {}
     try:
         return _seller_profile_response(
@@ -102611,9 +95608,6 @@ def api_pulse_business_profile_publish():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
-    refusal = _seller_profile_access_refusal(user["user_id"])
-    if refusal:
-        return refusal
     try:
         return _seller_profile_response(
             _seller_profile_api().publish(int(user["user_id"])))
@@ -102720,10 +95714,10 @@ def api_pulse_marketplace_media_upload():
     if not user:
         return api_error("Login required.", 401)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    refusal = seller_access_refusal(cur, user["user_id"])
+    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
     conn.close()
-    if refusal:
-        return refusal
+    if not seller:
+        return api_error("Merchant approval is required before uploading product media.", 403)
     file_storage = request.files.get("file") or request.files.get("media")
     if file_storage:
         file_storage.stream.seek(0, os.SEEK_END)
@@ -102846,10 +95840,10 @@ def api_pulse_marketplace_media_attach():
     if media_id <= 0:
         return api_error("An uploaded media reference is required.", 400)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    refusal = seller_access_refusal(cur, user["user_id"])
-    if refusal:
+    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
+    if not seller:
         conn.close()
-        return refusal
+        return api_error("Merchant approval is required before uploading product media.", 403)
     cur.execute("SELECT * FROM chat_media_uploads WHERE id=? LIMIT 1", (media_id,))
     source = cur.fetchone()
     if not source:
@@ -102899,10 +95893,10 @@ def api_pulse_marketplace_digital_file_upload():
     if not user:
         return api_error("Login required.", 401)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    refusal = seller_access_refusal(cur, user["user_id"])
-    if refusal:
+    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
+    if not seller:
         conn.close()
-        return refusal
+        return api_error("Merchant approval is required before uploading digital files.", 403)
     file_storage = request.files.get("file") or request.files.get("media")
     result, status = marketplace_listing_types_service.store_digital_file(int(user["user_id"]), file_storage)
     if not result.get("ok"):
@@ -103054,9 +96048,9 @@ def api_pulse_marketplace_listing_create():
         """
         INSERT INTO marketplace_listings
         (seller_user_id, title, short_description, description, category, subcategory, tags_json, cover_image_url,
-         gallery_json, video_url, price_label, price_minor, currency, quantity, delivery_type, product_type, listing_type, listing_metadata_json, refund_policy,
+         gallery_json, video_url, price_label, currency, quantity, delivery_type, product_type, listing_type, listing_metadata_json, refund_policy,
          estimated_delivery, seller_notes, status, approval_status, safety_score, safety_flags_json, submitted_at, review_version, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user["user_id"], title, short_description, description, category, subcategory,
@@ -103064,7 +96058,7 @@ def api_pulse_marketplace_listing_create():
             clean_html(cover.get("media_url") or "")[:800],
             json.dumps(gallery, default=str)[:1600],
             clean_html(video or "")[:800],
-            price, parse_price_label_to_cents(price, currency)[0], currency, quantity, product_type, product_type,
+            price, currency, quantity, product_type, product_type,
             listing_type, marketplace_listing_types_service.dump_metadata(listing_metadata),
             clean_html(payload.get("refund_policy") or "Reviewed products should state refunds clearly.")[:800],
             clean_html(payload.get("estimated_delivery") or "")[:200],
@@ -103106,12 +96100,6 @@ def api_pulse_marketplace_seller_listing_submit(listing_id):
         return api_error("Login required.", 401)
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    # Ownership is not approval. A seller suspended after drafting a listing
-    # still owns it, and without this could still push it live.
-    refusal = seller_access_refusal(cur, user["user_id"])
-    if refusal:
-        conn.close()
-        return refusal
     cur.execute("SELECT * FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1",
                 (listing_id, int(user["user_id"])))
     listing = dict(cur.fetchone() or {})
@@ -103126,9 +96114,7 @@ def api_pulse_marketplace_seller_listing_submit(listing_id):
     # disagreed, and the row's answer was the optimistic one.
     from services.business_os.marketplace import listing_readiness as _readiness
     _media = pulse_marketplace_media_rows_for_listings(cur, [listing_id])
-    _supplier = pulse_marketplace_supplier_facts_for_listings(cur, [listing_id])
-    verdict = _readiness.evaluate(listing, media=_media.get(int(listing_id), []),
-                                  supplier=_supplier.get(int(listing_id)))
+    verdict = _readiness.evaluate(listing, media=_media.get(int(listing_id), []))
     # Two ways through, because this route serves two journeys. `publishable`
     # is the first submission; `resubmittable` is the answer to a rejection.
     #
@@ -105291,67 +98277,6 @@ def trust_public_page(title, headline, body_html, cta="/signup"):
     return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name="description" content="{html_escape(clean_html(headline))}"><meta name="robots" content="index,follow"><link rel="canonical" href="https://pulsesoc.com{html_escape(clean_html(request.path))}"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-favicon-32-20260913.png"><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 15% 0,rgba(110,223,246,.18),transparent 26rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:22px 0 80px}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px}}a{{color:inherit}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{padding:42px 0 18px}}h1{{font-size:clamp(38px,7vw,74px);line-height:.95;margin:8px 0}}p{{color:var(--muted);line-height:1.6}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.84));padding:16px}}.button{{min-height:46px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;text-decoration:none;font-weight:950;padding:12px 15px;display:inline-flex;align-items:center;justify-content:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}li{{margin:8px 0;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">CoinPlotXAI</a><a class="button" href="{html_escape(clean_html(cta))}">Get Started</a></nav><section class="hero"><span class="badge">Trust-first platform</span><h1>{html_escape(clean_html(headline))}</h1></section>{body_html}</main></body></html>""")
 
 
-#: The Privacy Center's four controls, and the value a member has before they have
-#: ever saved. Not a guess about what looks reasonable: the one control anything
-#: enforces is `personalized_ads_opt_out`, and
-#: `pulse_ads_service.user_personalized_ads_opt_out` reads a missing row as `1`
-#: (opted out). Rendering any other default would show a member a state the ad
-#: server does not agree with. The other three match the `privacy_preferences`
-#: column defaults, so a saved row and an unsaved member read identically.
-PRIVACY_CENTER_CONTROLS = (
-    ("analytics_opt_out", 0, "Opt out of optional analytics where legally required"),
-    ("personalized_ads_opt_out", 1, "Opt out of personalized ads"),
-    ("public_profile", 1, "Public profile visible"),
-    ("creator_visibility", 1, "Creator visibility enabled"),
-)
-
-
-def privacy_center_preferences(user_id):
-    """A member's saved privacy choices, or the defaults if they have none.
-
-    The page used to render these four boxes with literal `checked` attributes and
-    never query the table its own POST writes. Two consequences, the second worse
-    than the first:
-
-    A member who opted out of analytics came back to an unchecked box — and since
-    an HTML checkbox sends nothing when unchecked, the next save of *any* control
-    on the form silently wrote their opt-out back to 0. The form could not be used
-    without discarding a choice already made.
-
-    And a member who had consented to personalized ads — the one control that is
-    actually enforced — was shown "Opt out of personalized ads" ticked while the ad
-    server was personalizing for them. The page asserted the opposite of what was
-    in force, which is worse than asserting nothing.
-
-    Columns are selected in an explicit order and read with `row_values` rather
-    than by iterating the row, because iteration yields values on SQLite and column
-    names on Postgres.
-    """
-
-    names = [name for name, _default, _label in PRIVACY_CENTER_CONTROLS]
-    prefs = {name: default for name, default, _label in PRIVACY_CENTER_CONTROLS}
-    if not user_id:
-        return prefs
-    conn = db()
-    try:
-        row = conn.execute(
-            f"SELECT {', '.join(names)} FROM privacy_preferences WHERE user_id=?",
-            (int(user_id),),
-        ).fetchone()
-    finally:
-        conn.close()
-    if row is None:
-        return prefs
-    for name, value in zip(names, db_service.row_values(row)):
-        # A NULL column keeps the default rather than becoming 0. The table
-        # predates two of these columns, so an old row can hold NULL where a new
-        # one holds a choice, and reading that as "opted in" would revoke a
-        # preference on behalf of a member who never expressed one.
-        if value is not None:
-            prefs[name] = 1 if int(value) else 0
-    return prefs
-
-
 @webhook_app.route("/privacy-center", methods=["GET", "POST"])
 def privacy_center_page():
     init_db()
@@ -105391,18 +98316,7 @@ def privacy_center_page():
     controls = ""
     if user:
         retention = f"Raw analytics: {int(os.getenv('RAW_ANALYTICS_RETENTION_DAYS', '90') or 90)} days · Security logs: {int(os.getenv('SECURITY_LOG_RETENTION_DAYS', '180') or 180)} days · Aggregate analytics: {int(os.getenv('AGGREGATE_ANALYTICS_RETENTION_DAYS', '730') or 730)} days"
-        # Read back *after* the POST above has committed, so the boxes show what is
-        # stored rather than what was submitted. Those differ whenever a write is
-        # rejected, and a form that echoes the request confirms a save that may not
-        # have happened.
-        saved = privacy_center_preferences(user["user_id"])
-        boxes = "".join(
-            "<label><input type='checkbox' name='{}'{}> {}</label><br>".format(
-                name, " checked" if saved.get(name) else "", html_escape(clean_html(label))
-            )
-            for name, _default, label in PRIVACY_CENTER_CONTROLS
-        )
-        controls = f"<section class='card'><h2>Your Controls</h2><p>{html_escape(clean_html(message))}</p><form method='post'>{boxes}<button class='button'>Save Privacy Controls</button></form><p><strong>Account data controls:</strong> Download account data and delete account workflows are visible here for staged rollout and support-assisted processing.</p><p><strong>Retention:</strong> {html_escape(clean_html(retention))}</p><p><a href='/terms'>Terms</a> · <a href='/community-rules'>Community Rules</a> · <a href='/advertising-policy'>Advertising Policy</a> · <a href='/creator-monetization-policy'>Creator Monetization Policy</a></p></section>"
+        controls = f"<section class='card'><h2>Your Controls</h2><p>{html_escape(clean_html(message))}</p><form method='post'><label><input type='checkbox' name='analytics_opt_out'> Opt out of optional analytics where legally required</label><br><label><input type='checkbox' name='personalized_ads_opt_out' checked> Opt out of personalized ads</label><br><label><input type='checkbox' name='public_profile' checked> Public profile visible</label><br><label><input type='checkbox' name='creator_visibility' checked> Creator visibility enabled</label><br><button class='button'>Save Privacy Controls</button></form><p><strong>Account data controls:</strong> Download account data and delete account workflows are visible here for staged rollout and support-assisted processing.</p><p><strong>Retention:</strong> {html_escape(clean_html(retention))}</p><p><a href='/terms'>Terms</a> · <a href='/community-rules'>Community Rules</a> · <a href='/advertising-policy'>Advertising Policy</a> · <a href='/creator-monetization-policy'>Creator Monetization Policy</a></p></section>"
     return trust_public_page("Privacy Center", "Your data is not the product.", f"<p>{html_escape(clean_html(policy['principle']))}</p><section class='grid'>{cards}</section>{controls}", "/dashboard" if user else "/signup")
 
 
@@ -105485,12 +98399,9 @@ def pro_page():
         ("Future Creator Economy", ["creator prestige upgrades", "teacher and merchant enhancements", "optional discovery boosts", "future monetization tools after trust review"]),
     ]
     cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(name))}</h2><ul>{''.join(f'<li>{html_escape(clean_html(item))}</li>' for item in items)}</ul><a class='button primary' href='/pulse/premium'>Explore PulseSoc Premium</a></article>" for name, items in packages)
-    trust = "<article class='card'><h2>Growth-First Access</h2><p>The core PulseSoc ecosystem is free for authenticated users. Premium is aspirational: identity, prestige, creator enhancement, cosmetics, and deeper creator intelligence.</p></article>"
+    trust = "<article class='card'><h2>Growth-First Access</h2><p>The core CoinPlotXAI ecosystem is free for authenticated users. Premium is aspirational: identity, prestige, creator enhancement, cosmetics, and deeper creator intelligence.</p></article>"
     body = f"<section class='grid'>{cards}{trust}</section>"
-    # "PulseSoc Premium" is what the page's own three cards call it and what
-    # `seo.schema.product_schema` offers Google at $14.99. The heading was the
-    # only place on the domain that named it after the company.
-    return trust_public_page("PulseSoc Premium", "Free core ecosystem with PulseSoc Premium prestige and creator enhancements.", body, "/pulse/premium")
+    return trust_public_page("CoinPlotXAI Premium", "Free core ecosystem with PulseSoc Premium prestige and creator enhancements.", body, "/pulse/premium")
 
 
 def pulse_admin_user_row(cur, user_id):
@@ -106401,70 +99312,6 @@ def load_feature_flags(cur):
     return list(flags.values())
 
 
-@webhook_app.route("/api/pulse/capabilities", methods=["GET"])
-@auth_required
-def api_pulse_capabilities():
-    """What the control plane says the caller may use. Wave 1's request path.
-
-    This is the first thing in production that asks the control plane a
-    question, which is the entire content of wave 1 -- and it is why the wave
-    is scheduled first: every capability it can answer about resolves
-    identically under both the legacy engine and the new model, so if anything
-    changes in production during this wave, the wiring is the cause and there
-    is no semantic argument to have about it.
-
-    It grants nothing and gates nothing. Every route behind these capabilities
-    still performs its own checks, exactly as it did before, so a client that
-    disbelieves this response reaches the same refusals it always would. That
-    property is what makes it safe to be the first caller: the failure mode of
-    being wrong here is a mis-drawn tab, not an access-control hole.
-
-    When the process is unarmed -- the variable is unset, or the stored rows
-    disagreed with the capability registry at boot -- `consulted` is false and
-    `capabilities` is empty. That is "no opinion", and a client must read it as
-    "carry on as before", never as "everything is off". The difference is
-    spelled out in the payload rather than left to be inferred from an empty
-    dict, because an empty dict is exactly what a denial would also look like.
-    """
-    init_db()
-    viewer_id = safe_int(account_user_id(), 0)
-    if not viewer_id and not admin_current_user():
-        return api_error("Sign in to continue.", 401, error_code="auth_required")
-
-    from services.pulse_control_plane import runtime as control_plane_runtime
-
-    arming = control_plane_runtime.arming()
-    consulted = bool(arming and arming.armed)
-
-    decisions = {}
-    if consulted:
-        for key in sorted(control_plane_runtime.WAVE_1_KEYS):
-            decision = control_plane_runtime.consult(key, subject_id=str(viewer_id))
-            if decision is None:
-                continue
-            decisions[key] = {
-                "visible": decision.visible,
-                "usable": decision.usable,
-                "reason_code": decision.reason_code,
-                "deployment_state": decision.deployment_state,
-            }
-
-    return jsonify({
-        "ok": True,
-        # False means "nobody was asked", not "the answer was no". Named
-        # `consulted` rather than `enabled` for that reason: `enabled` would
-        # invite a client to read it as the feature switch it is not.
-        "consulted": consulted,
-        "capabilities": decisions,
-        "wave": 1,
-        "model_version": control_plane_runtime.model_version(),
-        # The keys this endpoint is willing to answer about at all. Reported so
-        # a client can tell "not in this wave" from "denied", which are the two
-        # things an absent key could otherwise mean.
-        "scope": sorted(control_plane_runtime.WAVE_1_KEYS),
-    })
-
-
 def capability_runtime_status(cur):
     now = datetime.utcnow().isoformat(timespec="seconds")
     post_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_posts")
@@ -106524,38 +99371,14 @@ def admin_capability_matrix_page():
             conn.close()
             return admin_page_html("Capability Matrix", "<h1>Capability Matrix</h1><p>Owner approval is required to change public feature exposure.</p>", admin), 403
         key = clean_html(request.form.get("feature_key") or "")
-        # Refuse an unrecognised state rather than coercing one. The <select>
-        # below is populated from VALID_STATES, so a word that fails here did
-        # not come from the form -- and answering "I did not understand you" by
-        # writing a default would edit production on the strength of a guess.
-        # Which default hardly matters: the old fallback silently widened the
-        # row to `beta`, and a fail-closed one would silently withdraw the
-        # feature to `disabled`. Both are changes nobody asked for.
-        try:
-            state = feature_flag_engine.state_for_write(request.form.get("state"))
-        except ValueError:
-            conn.close()
-            return admin_page_html(
-                "Capability Matrix",
-                "<h1>Capability Matrix</h1><p>Unrecognised feature state. Nothing was changed.</p>",
-                admin,
-            ), 400
+        state = feature_flag_engine.normalize_state(request.form.get("state"))
         rollout = max(0, min(100, safe_int(request.form.get("rollout_percentage"), 0)))
         notes = clean_html(request.form.get("notes") or "")[:1000]
-        # The label the public is told. Now that init_db() no longer overwrites
-        # it on every request this is the only writer, so an omitted field must
-        # leave the stored value alone rather than blanking it.
-        public_label_raw = request.form.get("public_label")
-        public_label = clean_html(public_label_raw or "")[:80] if public_label_raw is not None else None
         now = datetime.utcnow().isoformat(timespec="seconds")
-        cur.execute("SELECT * FROM feature_flags WHERE feature_key=?", (key,))
-        before_row = cur.fetchone()
-        before = dict(before_row) if before_row else None
         cur.execute(
             """
             UPDATE feature_flags
-            SET state=?, rollout_percentage=?, premium_required=?, owner_only=?, internal_only=?, notes=?,
-                public_label=COALESCE(?, public_label), updated_at=?
+            SET state=?, rollout_percentage=?, premium_required=?, owner_only=?, internal_only=?, notes=?, updated_at=?
             WHERE feature_key=?
             """,
             (
@@ -106563,14 +99386,10 @@ def admin_capability_matrix_page():
                 1 if request.form.get("premium_required") else 0,
                 1 if request.form.get("owner_only") else 0,
                 1 if state == "internal-only" or request.form.get("internal_only") else 0,
-                notes, public_label, now, key,
+                notes, now, key,
             ),
         )
-        log_admin_audit(
-            admin.get("id"), "feature_flag_updated", "feature_flag", key,
-            {"state": state, "rollout": rollout, "public_label": public_label},
-            before=before,
-        )
+        log_admin_audit(admin.get("id"), "feature_flag_updated", "feature_flag", key, {"state": state, "rollout": rollout})
         conn.commit()
         message = f"Feature exposure updated for {key}."
     matrix = build_capability_matrix(cur)
@@ -106609,7 +99428,6 @@ def admin_capability_matrix_page():
           <p><span class='pill'>{html_escape(clean_html(row['flag_state']))}</span> <span class='pill'>Risk {html_escape(clean_html(row['risk_level']))}</span> <span class='pill'>Rollout {int(row['rollout_percentage'])}%</span></p>
           <label>State <select name='state'>{''.join(f"<option value='{s}' {'selected' if s == row['flag_state'] else ''}>{s}</option>" for s in sorted(feature_flag_engine.VALID_STATES))}</select></label>
           <label>Rollout <input name='rollout_percentage' type='number' min='0' max='100' value='{int(row['rollout_percentage'])}'></label>
-          <label>Public label <input name='public_label' maxlength='80' value='{html_escape(clean_html(row.get('public_label') or ''))}'></label>
           <label><input type='checkbox' name='premium_required' {'checked' if row['premium_required'] else ''}> Premium required</label>
           <label><input type='checkbox' name='owner_only' {'checked' if row['owner_only'] else ''}> Owner only</label>
           <label><input type='checkbox' name='internal_only' {'checked' if row['internal_only'] else ''}> Internal only</label>
@@ -107049,8 +99867,6 @@ def admin_seller_application_action(admin):
             return "Application not found."
 
         outcome = ""
-        # Gathered inside the transaction, emitted after it commits.
-        pending_notification = None
         # Assignment is not a decision and may happen on its own, so it is
         # handled first and independently of whether a decision was chosen.
         if reviewer_id >= 0:
@@ -107077,11 +99893,6 @@ def admin_seller_application_action(admin):
             # Re-read so downstream helpers see the row as it now is.
             application = seller_lifecycle.get_application_by_id(cur, app_id)
             notify_seller_applicant(cur, application, target, reason)
-            pending_notification = (
-                int(application.get("user_id") or 0),
-                target,
-                seller_application_email_context(cur, application, reason),
-            )
             if target in (
                 seller_lifecycle.APPROVED, seller_lifecycle.REJECTED, seller_lifecycle.SUSPENDED,
             ):
@@ -107099,8 +99910,6 @@ def admin_seller_application_action(admin):
             outcome = f"Application #{app_id} moved from {move['from']} to {move['to']}."
 
         conn.commit()
-        if pending_notification:
-            emit_seller_application_event(*pending_notification)
         if decision:
             # Audit metadata carries the decision and nothing the applicant
             # wrote: no names, no document filenames, no field values.
@@ -108939,14 +101748,10 @@ def admin_spaces_command_page():
     conn.close()
     rows = ""
     for space in PULSE_SPACES:
-        # The real count, not the catalogue's seed literal. An operator reading
-        # this table is deciding whether a space is worth keeping; a column that
-        # reports 304 for an empty space makes that decision for them, wrongly.
-        space_members = counts.get(space["slug"], 0)
-        metrics = space_discovery_engine.score_space(space, space_members)
+        metrics = space_discovery_engine.score_space(space, counts.get(space["slug"], space.get("member_count", 0)))
         schedule = ai_schedules.get(space["slug"], {})
         ai_enabled = int(schedule.get("enabled") or 0)
-        rows += f"<tr><td>{html_escape(clean_html(space['name']))}</td><td>{html_escape(clean_html(space.get('category') or ''))}</td><td>{html_escape(clean_html(space.get('region') or ''))}</td><td>{space_members}</td><td>{metrics['trust_score']}%</td><td>{metrics['activity_score']}%</td><td>{ai_counts.get(space['slug'],0)} posts<br><span class='muted'>{'Live' if ai_enabled else 'Paused'} · {html_escape(clean_html(schedule.get('next_run') or 'scheduled'))}</span></td><td><form method='post'><input type='hidden' name='slug' value='{html_escape(clean_html(space['slug']))}'><button name='action' value='feature'>Feature</button><button name='action' value='freeze'>Freeze</button><button name='action' value='resume_ai'>Resume AI</button><button name='action' value='pause_ai'>Pause AI</button></form></td></tr>"
+        rows += f"<tr><td>{html_escape(clean_html(space['name']))}</td><td>{html_escape(clean_html(space.get('category') or ''))}</td><td>{html_escape(clean_html(space.get('region') or ''))}</td><td>{counts.get(space['slug'], space.get('member_count',0))}</td><td>{metrics['trust_score']}%</td><td>{metrics['activity_score']}%</td><td>{ai_counts.get(space['slug'],0)} posts<br><span class='muted'>{'Live' if ai_enabled else 'Paused'} · {html_escape(clean_html(schedule.get('next_run') or 'scheduled'))}</span></td><td><form method='post'><input type='hidden' name='slug' value='{html_escape(clean_html(space['slug']))}'><button name='action' value='feature'>Feature</button><button name='action' value='freeze'>Freeze</button><button name='action' value='resume_ai'>Resume AI</button><button name='action' value='pause_ai'>Pause AI</button></form></td></tr>"
     latest_ai = ""
     for row in latest_ai_rows:
         try:
@@ -109408,10 +102213,7 @@ def department_counts(slug):
         elif slug == "security":
             cur.execute("SELECT COUNT(*) AS total FROM security_events WHERE created_at>=?", (today,))
             counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
-            cur.execute(
-                f"SELECT COUNT(*) AS total FROM auth_events WHERE event_type IN ({','.join(['?'] * len(AUTH_SECURITY_EVENTS))}) AND created_at>=?",
-                (*AUTH_SECURITY_EVENTS, today),
-            )
+            cur.execute("SELECT COUNT(*) AS total FROM auth_events WHERE status='failed' AND created_at>=?", (today,))
             counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
         elif slug == "support":
             cur.execute("SELECT COUNT(*) AS total FROM support_tickets WHERE status!='closed'")
@@ -109563,7 +102365,7 @@ def department_control_panels(slug):
     elif slug == "security":
         metrics = [
             {"name": "Security events today", "value": scalar("SELECT COUNT(*) AS total FROM security_events WHERE created_at>=?", (today,)), "detail": "Threat signal"},
-            {"name": "Failed logins", "value": scalar(f"SELECT COUNT(*) AS total FROM auth_events WHERE event_type IN ({','.join(['?'] * len(AUTH_SECURITY_EVENTS))}) AND created_at>=?", (*AUTH_SECURITY_EVENTS, today)), "detail": "Auth risk"},
+            {"name": "Failed logins", "value": scalar("SELECT COUNT(*) AS total FROM auth_events WHERE status='failed' AND created_at>=?", (today,)), "detail": "Auth risk"},
             {"name": "Admin activity", "value": scalar("SELECT COUNT(*) AS total FROM admin_activity_logs WHERE created_at>=?", (today,)), "detail": "Audit"},
         ]
         table_rows = rows("SELECT id, event_type, path, status, created_at FROM security_events ORDER BY id DESC LIMIT 8")
@@ -112792,277 +105594,6 @@ def admin_ai_command_page():
     return admin_page_html("AI Admin Command", body, admin)
 
 
-def _pulsedrop_cell(value) -> str:
-    return html_escape(clean_html("" if value is None else str(value)))
-
-
-def _pulsedrop_setting_card(item, may_edit):
-    """One tunable, its provenance, and the controls to change it.
-
-    The provenance pill is the reason this is a card rather than a table row.
-    ``PulseDrop enabled: off`` is two different incidents depending on whether a
-    human switched it off or the deployment never set the variable, and an
-    operator who cannot tell them apart will either re-break a deliberate
-    shutdown or wait for a worker that was never configured to run.
-    """
-    overridden = bool(item.get("overridden"))
-    source = "Set here" if overridden else "From environment"
-    pill = f"<span class='pill{' on' if overridden else ''}'>{source}</span>"
-    clear = (
-        f"<button name='form_action' value='clear'>Clear</button>"
-        if overridden and may_edit else ""
-    )
-    if not may_edit:
-        control = "<span class='muted'>Read only</span>"
-    elif item.get("kind") == "flag":
-        # Only the button that changes something, so a kill switch is one
-        # unambiguous click during an incident rather than a select plus a save.
-        turning_on = not item.get("value")
-        control = (
-            f"<input type='hidden' name='value' value='{'true' if turning_on else 'false'}'>"
-            f"<button class='primary' name='form_action' value='set'>"
-            f"{'Turn on' if turning_on else 'Turn off'}</button>{clear}"
-        )
-    else:
-        spec = item.get("spec")
-        control = (
-            f"<input type='number' name='value' value='{_pulsedrop_cell(item.get('value'))}' "
-            f"min='{int(getattr(spec, 'low', 0))}' max='{int(getattr(spec, 'high', 0))}'>"
-            f"<button class='primary' name='form_action' value='set'>Save</button>{clear}"
-        )
-    return (
-        "<div class='card'>"
-        f"<h3>{_pulsedrop_cell(item.get('label'))}</h3>"
-        f"<p class='metric'>{_pulsedrop_cell(item.get('display'))}</p>"
-        f"<p>{pill} <span class='pill'>{_pulsedrop_cell(item.get('key'))}</span></p>"
-        f"<p class='muted'>{_pulsedrop_cell(item.get('help'))}</p>"
-        "<form method='post'>"
-        f"<input type='hidden' name='key' value='{_pulsedrop_cell(item.get('key'))}'>"
-        f"{control}</form></div>"
-    )
-
-
-@webhook_app.route("/admin/pulsedrop", methods=["GET", "POST"])
-@admin_required
-def admin_pulsedrop_page():
-    """Operator surface for the commerce curator: is it on, is it working, what did it do.
-
-    All of the reading and all of the writing live in ``services.pulsedrop.ops``
-    and ``services.pulsedrop.config``; what is here is the admin session, the
-    permission split, the audit line and the markup.
-    """
-    admin, denied = require_admin_page("system.view")
-    if denied:
-        return denied
-    from services.pulsedrop import audio as pulsedrop_audio
-    from services.pulsedrop import ops as pulsedrop_ops
-
-    message = ""
-    if request.method == "POST":
-        # Viewing is a ``system.view`` question and changing is a
-        # ``settings.edit`` one, because they have different right answers:
-        # everyone on call should be able to see whether PulseDrop is publishing,
-        # and a much smaller group should be able to change what it publishes.
-        if not admin_has_permission(admin, "settings.edit"):
-            log_admin_audit(admin.get("id"), "admin_permission_denied", "permission", "settings.edit", {"path": request.path})
-            return Response("Forbidden", status=403)
-        action = clean_html(request.form.get("form_action") or "")[:40]
-        key = clean_html(request.form.get("key") or "")[:80]
-        # Wide enough for a music clearance note, which is prose about where the
-        # rights came from. Settings are flags and integers and never approach it.
-        raw = clean_html(request.form.get("value") or "")[:240]
-        changed, message = pulsedrop_ops.apply_action(action, key, raw, admin_user_id=int(admin.get("id") or 0))
-        if changed:
-            log_admin_audit(admin.get("id"), f"pulsedrop_{action}", "pulsedrop_setting", key, {"value": raw})
-
-    data = pulsedrop_ops.dashboard()
-    acct = data["account"]
-    health = data["health"]
-    schedule = data["schedule"]
-    may_edit = admin_has_permission(admin, "settings.edit")
-
-    if acct.get("provisioned"):
-        # The login assertion is on the page because it is the security property
-        # of a system account, and because a hand-edited row could turn it back
-        # on without anything else noticing.
-        login_pill = "<span class='pill on'>Login disabled</span>" if acct.get("login_disabled") else "<span class='pill warn'>LOGIN ENABLED</span>"
-        account_card = (
-            "<div class='card'><h2>Account</h2>"
-            f"<p class='metric'>@{_pulsedrop_cell(acct.get('username'))}</p>"
-            f"<p>{_pulsedrop_cell(acct.get('display_name'))} · user_id {_pulsedrop_cell(acct.get('user_id'))} · "
-            f"{_pulsedrop_cell(acct.get('follower_count'))} followers</p>"
-            f"<p>{login_pill} <span class='pill'>{_pulsedrop_cell(acct.get('status'))}</span></p></div>"
-        )
-    else:
-        # Not an error state. The worker provisions the account on its first
-        # cycle, so this is simply what a deployment that has never run looks
-        # like, and saying so stops it being reported as a fault.
-        account_card = (
-            "<div class='card'><h2>Account</h2><p class='metric'>Not provisioned</p>"
-            "<p class='muted'>@pulsedrop is created by the worker's first cycle. "
-            "If PulseDrop is enabled and this still says not provisioned, the worker is not running.</p></div>"
-        )
-
-    lease_line = (
-        f"a tick is running now (held by {_pulsedrop_cell(schedule.get('held_by'))})"
-        if schedule.get("held")
-        else f"next evaluation {_pulsedrop_cell(schedule.get('due_in') or 'unknown')}"
-    )
-    run_now = (
-        "<form method='post' style='display:inline'>"
-        "<input type='hidden' name='key' value=''>"
-        "<button name='form_action' value='run_now'>Evaluate on next cycle</button></form>"
-        if may_edit else ""
-    )
-
-    health_cards = (
-        "<section class='grid'>"
-        f"{account_card}"
-        f"<div class='card'><h2>Last run</h2><p class='metric'>{_pulsedrop_cell(health.get('last_run_outcome') or 'never')}</p>"
-        f"<p>{_pulsedrop_cell(health.get('last_run_at'))}</p>"
-        f"<p class='muted'>{lease_line}</p><p>{run_now}</p></div>"
-        # Reported next to the last run, not instead of it, because the gap
-        # between the two is the diagnosis: most ticks are supposed to publish
-        # nothing, so an old publication beside a recent run is health, and a
-        # stale run is the worker being down.
-        f"<div class='card'><h2>Last publication</h2><p class='metric'>{_pulsedrop_cell(health.get('last_publication_at') or 'none yet')}</p>"
-        f"<p class='muted'>{_pulsedrop_cell(health.get('failures_shown'))} failed of the last {_pulsedrop_cell(health.get('runs_shown'))} runs</p></div>"
-        f"<div class='card'><h2>Renders</h2><p class='metric'>{_pulsedrop_cell(health.get('renders_failed'))} failed</p>"
-        f"<p class='muted'>{_pulsedrop_cell(health.get('renders_stuck'))} stuck over {pulsedrop_ops.STALL_MINUTES} min</p></div>"
-        "</section>"
-    )
-
-    setting_sections = "".join(
-        f"<h2>{_pulsedrop_cell(group)}</h2><section class='grid'>"
-        + "".join(_pulsedrop_setting_card(item, may_edit) for item in items)
-        + "</section>"
-        for group, items in data["groups"]
-    )
-
-    run_rows = "".join(
-        f"<tr><td>{_pulsedrop_cell(r.get('started_at'))}</td><td>{_pulsedrop_cell(r.get('outcome'))}</td>"
-        f"<td>{_pulsedrop_cell(r.get('reason'))}</td><td>{_pulsedrop_cell(r.get('decision'))}</td>"
-        f"<td>{_pulsedrop_cell(r.get('eligible'))}/{_pulsedrop_cell(r.get('evaluated'))}</td>"
-        f"<td>{_pulsedrop_cell(', '.join(f'{k} {v}' for k, v in sorted((r.get('rejected') or {}).items())))}</td>"
-        f"<td>{_pulsedrop_cell(r.get('duration_ms'))} ms</td></tr>"
-        for r in data["runs"]
-    )
-    pub_rows = "".join(
-        f"<tr><td>{_pulsedrop_cell(p.get('published_at'))}</td><td>{_pulsedrop_cell(p.get('surface'))}</td>"
-        f"<td>{_pulsedrop_cell(p.get('state'))}</td>"
-        f"<td><a href='/pulse/marketplace/{_pulsedrop_cell(p.get('listing_id'))}'>{_pulsedrop_cell(p.get('listing_title') or p.get('listing_id'))}</a></td>"
-        f"<td>{_pulsedrop_cell(p.get('seller_username') or p.get('seller_user_id'))}</td>"
-        f"<td>{_pulsedrop_cell(p.get('category'))}</td><td>{_pulsedrop_cell(p.get('post_id'))}</td></tr>"
-        for p in data["publications"]
-    )
-    render_rows = "".join(
-        f"<tr><td>{_pulsedrop_cell(r.get('updated_at'))}</td><td>{_pulsedrop_cell(r.get('listing_id'))}</td>"
-        f"<td>{_pulsedrop_cell(r.get('source_kind'))}</td><td>{_pulsedrop_cell(r.get('state'))}</td>"
-        f"<td>{_pulsedrop_cell(r.get('attempts'))}/{_pulsedrop_cell(r.get('max_attempts'))}</td>"
-        f"<td>{_pulsedrop_cell(r.get('failure_reason'))}</td>"
-        f"<td>{_pulsedrop_cell(r.get('duration_seconds'))}s</td></tr>"
-        for r in data["renders"]
-    )
-
-    # Music. The clearance table is the only place a human says PulseDrop may
-    # put a given track under a Reel, so the page shows the grounds they gave
-    # alongside the track and keeps withdrawn rows visible — "we cleared four
-    # and all four were taken down" and "we never cleared any" are different
-    # incidents that an empty list would render identically.
-    bed_rows = "".join(
-        f"<tr><td>{_pulsedrop_cell(b.get('track_id'))}</td>"
-        f"<td>{_pulsedrop_cell(b.get('title'))}</td><td>{_pulsedrop_cell(b.get('artist'))}</td>"
-        f"<td><span class='pill{' on' if b.get('selectable') else ''}'>{_pulsedrop_cell(b.get('state'))}</span></td>"
-        f"<td>{_pulsedrop_cell(b.get('clearance_note'))}</td>"
-        f"<td>{_pulsedrop_cell(b.get('cleared_at'))}</td>"
-        + (
-            "<td><form method='post'>"
-            f"<input type='hidden' name='key' value='{_pulsedrop_cell(b.get('track_id'))}'>"
-            "<button name='form_action' value='revoke_bed'>Withdraw</button></form></td>"
-            if may_edit and b.get("active") else "<td></td>"
-        )
-        + "</tr>"
-        for b in data["beds"]
-    )
-    candidate_rows = "".join(
-        f"<tr><td>{_pulsedrop_cell(c.get('track_id'))}</td>"
-        f"<td>{_pulsedrop_cell(c.get('title'))}</td><td>{_pulsedrop_cell(c.get('artist'))}</td>"
-        f"<td class='muted'>{_pulsedrop_cell(c.get('proof_url'))}</td>"
-        + (
-            "<td><form method='post'>"
-            f"<input type='hidden' name='key' value='{_pulsedrop_cell(c.get('track_id'))}'>"
-            "<input name='value' placeholder='Where the rights come from' maxlength='240'>"
-            "<button class='primary' name='form_action' value='clear_bed'>Clear</button></form></td>"
-            if may_edit else "<td></td>"
-        )
-        + "</tr>"
-        for c in data["bed_candidates"][:12]
-    )
-    # The table above is capped at twelve rows; the catalogue behind it is in
-    # the hundreds. Clearing them one button at a time is not a workflow, and
-    # the alternative operators actually reach for is a script run from a laptop
-    # against whichever database their shell points at, with no note and no
-    # audit row. This is the same per-track clearance in a loop, so it cannot
-    # clear anything the single-track path would refuse.
-    candidate_total = int(data.get("bed_candidate_count") or 0)
-    bulk_clear = ""
-    if may_edit and candidate_total:
-        bulk_clear = (
-            "<form method='post' class='row'>"
-            "<input type='hidden' name='key' value=''>"
-            "<input name='value' required minlength='"
-            f"{pulsedrop_audio.BULK_NOTE_MIN}' maxlength='240' style='min-width:22rem' "
-            "placeholder='Where the rights to this catalogue come from'>"
-            f"<button name='form_action' value='clear_all_beds'>Clear all {candidate_total}</button>"
-            "</form>"
-            "<p class='muted'>Every one of these is cleared with the same note, so write the"
-            " grounds that cover the whole catalogue rather than any one track. It is the only"
-            " record of why these are ours to use.</p>"
-        )
-    showing = (
-        f"<p class='muted'>{candidate_total} clearable"
-        + (f", showing the {min(candidate_total, 12)} most used." if candidate_total > 12 else ".")
-        + "</p>"
-    )
-
-    body = f"""
-    <h1>PulseDrop</h1>
-    <p class='muted'>The autonomous commerce curator. It publishes as @pulsedrop and never as the seller:
-    every post names the merchant and links to their listing.</p>
-    <p>{html_escape(clean_html(message))}</p>
-    {health_cards}
-    {setting_sections}
-    <h2>Run log</h2>
-    <section class='card'><p class='muted'>PulseDrop publishing nothing is its normal healthy state — an empty
-    catalog, everything on cooldown and a crash all look identical from outside, so every tick writes its outcome here.</p>
-    <table class='table'><tr><th>Started</th><th>Outcome</th><th>Reason</th><th>Decision</th><th>Eligible</th><th>Rejected</th><th>Took</th></tr>
-    {run_rows or '<tr><td colspan=7>No runs recorded yet.</td></tr>'}</table></section>
-    <h2>Publications</h2>
-    <section class='card'><table class='table'><tr><th>Published</th><th>Surface</th><th>State</th><th>Listing</th><th>Seller</th><th>Category</th><th>Post</th></tr>
-    {pub_rows or '<tr><td colspan=7>Nothing published yet.</td></tr>'}</table></section>
-    <h2>Reel renders</h2>
-    <section class='card'><table class='table'><tr><th>Updated</th><th>Listing</th><th>Source</th><th>State</th><th>Attempts</th><th>Failure</th><th>Duration</th></tr>
-    {render_rows or '<tr><td colspan=7>No renders yet.</td></tr>'}</table></section>
-    <h2>Reel music</h2>
-    <section class='card'><p class='muted'>Composed Reels are encoded silent. A cleared track is attached to the
-    published Reel and played by the client over the video, so withdrawing one here silences every Reel it was ever
-    under — including ones already published — without re-rendering anything.</p>
-    <p class='muted'>Clearing is a separate act from the uploader's own rights checkbox on purpose. Every track in
-    the library is backed by <code>artist-upload:&lt;uid&gt;:&lt;time&gt;</code> and the sentence &ldquo;I confirm that I
-    own this music or have the legal right to upload it&rdquo;, with no document behind it. That is the uploader's
-    claim and it carries their risk; PulseDrop posts under a verified badge on listings the platform earns on, which
-    is a synchronisation licence, so somebody has to say in writing that this particular track is ours to use.</p>
-    <table class='table'><tr><th>Track</th><th>Title</th><th>Artist</th><th>State</th><th>Grounds</th><th>Cleared</th><th></th></tr>
-    {bed_rows or '<tr><td colspan=7>No track cleared. Reels publish silent.</td></tr>'}</table></section>
-    <section class='card'><h3>Available to clear</h3>
-    {showing}
-    {bulk_clear}
-    <table class='table'><tr><th>Track</th><th>Title</th><th>Artist</th><th>Uploader's proof</th><th></th></tr>
-    {candidate_rows or '<tr><td colspan=5>No track in the library passes the platform music rules.</td></tr>'}</table></section>
-    """
-    return admin_page_html("PulseDrop", body, admin)
-
-
 @webhook_app.route("/api/media/upload", methods=["POST"])
 def api_media_upload():
     init_db()
@@ -113923,19 +106454,6 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
             "system_account_label": pulse_feed_engine.MEMBER_000_SYSTEM_LABEL,
             "automation_disclosure": "This account is operated automatically by PulseSoc. It is not a human user.",
             "transparency_disclosure": "Automated posts are generated by PulseSoc systems and remain subject to platform safety and quality controls.",
-            # Lay the banner out whole instead of cropping it to fill the hero.
-            # Declared by the server because the app previously inferred it from
-            # the cover's *filename*, which stops being true the moment the
-            # artwork is redated. See pulse_feed_engine for the full note.
-            "brand_cover_fit": pulse_feed_engine.MEMBER_000_COVER_FIT,
-            "brand_cover_aspect_ratio": pulse_feed_engine.MEMBER_000_COVER_ASPECT_RATIO,
-            # This account has no social graph, and that is a property of living
-            # at ``user_id=0`` rather than of being automated: no
-            # ``pulse_follows`` row can point at it, so its follower count is not
-            # zero, it is undefined. The counts are therefore omitted below and
-            # the client is told why, so that a *followable* automated account
-            # -- @pulsedrop is one -- still shows its real ones.
-            "has_social_graph": False,
             "profile_visibility": "public",
             "account_status": "active",
             "profile_state": "available",
@@ -114010,20 +106528,6 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
             cur, target_user_id, viewer_user_id, account=account
         ),
     })
-    # @pulsedrop is an ordinary ``users`` row on purpose, so everything above --
-    # the real follower count, the real post count, this viewer's real
-    # ``viewer_follows`` -- is already correct for it and must not be replaced.
-    # The overlay only *adds* the fields that make the profile honest about being
-    # automated, which is why it is merged last and merged narrowly. A failure
-    # here costs the disclosure, not the profile, so it degrades rather than
-    # 500s: the account is followable and visible either way.
-    try:
-        from services.pulsedrop import account as pulsedrop_account
-
-        if pulsedrop_account.is_pulsedrop(target_user_id, cur):
-            payload.update(pulsedrop_account.profile_overlay())
-    except Exception:
-        logging.getLogger(__name__).exception("PULSEDROP_PROFILE_OVERLAY_FAILED user_id=%s", target_user_id)
     return payload
 
 
@@ -115346,7 +107850,7 @@ def stripe_webhook():
                         notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
             conn.commit(); conn.close()
             for paid_tx in paid_marketplace_txs:
-                pulse_finalize_marketplace_settlement(paid_tx, session.get("payment_intent") or "", marketplace_transfer_group(metadata))
+                pulse_finalize_marketplace_settlement(paid_tx, session.get("payment_intent") or "")
             resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or None
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
@@ -115395,7 +107899,7 @@ def stripe_webhook():
                 resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
             conn.close()
             if tx and str(tx.get("status") or "") != "refunded" and payment_status in {"paid", "no_payment_required"}:
-                pulse_finalize_marketplace_settlement(tx, session.get("payment_intent") or "", marketplace_transfer_group(metadata))
+                pulse_finalize_marketplace_settlement(tx, session.get("payment_intent") or "")
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
             return "OK", 200
@@ -115721,9 +108225,8 @@ def stripe_webhook():
                 if buyer_id:
                     notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
             conn.commit(); conn.close()
-            emit_marketplace_paid_order_emails(paid_marketplace_txs)
             for paid_tx in paid_marketplace_txs:
-                pulse_finalize_marketplace_settlement(paid_tx, intent_id, marketplace_transfer_group(metadata))
+                pulse_finalize_marketplace_settlement(paid_tx, intent_id)
             resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or None
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
@@ -115737,7 +108240,6 @@ def stripe_webhook():
             marketplace_cart_service._ensure_schema(cur)
             cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
             tx = dict(cur.fetchone() or {})
-            paid_marketplace_txs = []
             if tx and str(tx.get("status") or "") != "refunded":
                 # Conditional: a refund that already settled must not be undone
                 # by a duplicate delivery of the original success event.
@@ -115761,11 +108263,9 @@ def stripe_webhook():
                     notify_user(cur, int(tx.get("buyer_user_id") or 0), "purchase", "Order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
                 resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
                 conn.commit()
-                paid_marketplace_txs = [tx]
             conn.close()
-            emit_marketplace_paid_order_emails(paid_marketplace_txs)
             if tx:
-                pulse_finalize_marketplace_settlement(tx, intent_id, marketplace_transfer_group(metadata))
+                pulse_finalize_marketplace_settlement(tx, intent_id)
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
             return "OK", 200
@@ -115962,152 +108462,40 @@ def stripe_webhook():
     # Additive: the legacy branch below still records into the old tables. The
     # appliers are idempotent, so the inbox replay path (stripe_ledger_handler
     # via reconcile_worker) firing for the same event is harmless.
-    # Both families are matched by prefix and the appliers decide what they
-    # recognise. Holding a second copy of the event list here is what let the
-    # live endpoint stay subscribed to transfer.updated / transfer.canceled
-    # while this branch silently declined to route them.
-    if event_type.startswith("payout.") or event_type.startswith("transfer."):
+    if event_type.startswith("payout.") or event_type in {"transfer.created", "transfer.reversed"}:
         try:
             from services.business_os.payments import seller_payouts as _bos_seller_payouts
             _bos_seller_payouts.ensure_schema()
-            if event_type.startswith("transfer."):
+            if event_type in {"transfer.created", "transfer.reversed"}:
                 _bos_seller_payouts.apply_stripe_transfer_event(event)
             else:
                 _bos_seller_payouts.apply_stripe_payout_event(event)
         except Exception:
             logging.exception("BOS_SELLER_PAYOUT_EVENT_FAILED event_id=%s type=%s", event_id, event_type)
-    # Attribution for the legacy branch below is *not* recomputed there. The
-    # projection applier already resolves a Stripe account to a seller in the
-    # order that actually works (metadata.user_id stamped at account creation ->
-    # its own projection row -> the legacy mapping table) and opens the
-    # ORPHAN_STRIPE_OBJECT incident when it cannot. A second attribution here
-    # would be a second thing to keep in sync, so the answer it already computed
-    # is carried forward instead. Empty means "no attributable seller", and the
-    # legacy write below then leaves the table alone rather than inventing one.
-    connect_projection_user_id = ""
     if event_type == "account.updated":
         try:
             from services.business_os.payments import connect_accounts as _bos_connect_accounts
-            _connect_projection = _bos_connect_accounts.apply_account_updated_event(event) or {}
-            connect_projection_user_id = str(
-                (_connect_projection.get("state") or {}).get("user_id") or ""
-            ).strip()
+            _bos_connect_accounts.apply_account_updated_event(event)
         except Exception:
             logging.exception("BOS_CONNECT_ACCOUNT_EVENT_FAILED event_id=%s", event_id)
 
     if event_type in {"account.updated", "payout.paid", "payout.failed", "charge.refunded", "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed"}:
         obj = event["data"]["object"]
         now = datetime.utcnow().isoformat(timespec="seconds")
-        connect_seller_id = ""
-        # (event, user_id, context) gathered here, emitted after the commit —
-        # the notification engine opens its own connection.
-        payment_notifications = []
-        # Same discipline: (provider_payout_id, paid) run after the commit.
-        payout_scheduler_event = None
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         if event_type == "account.updated":
             acct = obj.get("id") or ""
             requirements = (obj.get("requirements") or {}).get("currently_due") or []
-            disabled_reason = str((obj.get("requirements") or {}).get("disabled_reason") or "")
-            # This used to be a bare `UPDATE ... WHERE connected_account_id=?`.
-            # Stripe routinely delivers `account.updated` for a freshly created
-            # account *before* — or racing with — the insert in the onboarding
-            # route, and that UPDATE then matched zero rows and dropped the
-            # capability state on the floor with nothing to say it had. It is an
-            # upsert now, so an early-arriving event lands and a redelivery
-            # rewrites the same row rather than adding a second one.
-            #
-            # It stays bound to both the account *and* a seller. An existing row
-            # for this account is authoritative for identity; otherwise the
-            # attribution the projection applier already did upstream is used.
-            # When neither names a seller the table is left untouched: Stripe
-            # also delivers `account.updated` for accounts this platform does
-            # not own, and fabricating a row under a null/zero/guessed user
-            # would be worse than the silent no-op this replaces.
-            cur.execute("SELECT user_id, seller_type FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (acct,))
-            connect_existing_row = dict(cur.fetchone() or {})
-            connect_user_id = safe_int(connect_existing_row.get("user_id") or connect_projection_user_id, 0)
-            connect_seller_type = str(
-                connect_existing_row.get("seller_type")
-                or (obj.get("metadata") or {}).get("seller_type")
-                or ""
-            ).strip().lower()
-            if connect_seller_type not in {"merchant", "teacher"}:
-                # Same default the onboarding route applies to an unstated type.
-                connect_seller_type = "merchant"
-            if acct and connect_user_id:
-                # ON CONFLICT (user_id, seller_type) + excluded.*: the same
-                # dialect-portable shape the onboarding route upserts with
-                # (see /api/pulse/payouts/connect), understood by both SQLite
-                # and Postgres, and matching the UNIQUE(user_id, seller_type)
-                # this table is declared with in init_db().
-                cur.execute(
-                    """
-                    INSERT INTO seller_payout_accounts
-                    (user_id, seller_type, provider, connected_account_id, onboarding_status, payouts_enabled, charges_enabled, missing_requirements_json, last_checked_at, created_at, updated_at)
-                    VALUES (?, ?, 'stripe', ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(user_id, seller_type) DO UPDATE SET connected_account_id=excluded.connected_account_id,
-                      onboarding_status=excluded.onboarding_status, payouts_enabled=excluded.payouts_enabled,
-                      charges_enabled=excluded.charges_enabled, missing_requirements_json=excluded.missing_requirements_json,
-                      last_checked_at=excluded.last_checked_at, updated_at=excluded.updated_at
-                    """,
-                    (
-                        connect_user_id,
-                        connect_seller_type,
-                        acct,
-                        "complete" if obj.get("payouts_enabled") and obj.get("charges_enabled") else "requirements_due",
-                        1 if obj.get("payouts_enabled") else 0,
-                        1 if obj.get("charges_enabled") else 0,
-                        json.dumps(requirements, default=str),
-                        now,
-                        now,
-                        now,
-                    ),
-                )
-            charges_on = bool(obj.get("charges_enabled"))
-            payouts_on = bool(obj.get("payouts_enabled"))
-            if payouts_on and charges_on:
-                # Sales made *before* the seller finished onboarding opened in
-                # `pending_onboarding` and nothing ever revisited them, so a
-                # seller who sold first and onboarded second stayed unpayable
-                # forever. Collected here and reconciled after the commit, off
-                # this connection.
-                connect_seller_id = str(connect_user_id or "")
-            if connect_user_id:
-                connect_context = {
-                    "stripe_connect_status": (
-                        "restricted" if disabled_reason
-                        else "payments_ready" if (charges_on and payouts_on)
-                        else "onboarding"
-                    ),
-                    "card_payment_status": "enabled" if charges_on else "not_enabled",
-                    "payout_status": "enabled" if payouts_on else "not_enabled",
-                    "requirements": ", ".join(str(item) for item in requirements)[:400],
-                    "disabled_reason": disabled_reason,
-                    "seller_first_name": greeting_first_name_for(cur, connect_user_id),
-                }
-                if disabled_reason:
-                    payment_notifications.append(("seller_account_restricted", connect_user_id, connect_context))
-                elif charges_on and payouts_on:
-                    # Both dedupe on the seller alone, so Stripe's routine
-                    # `account.updated` traffic cannot re-send either one.
-                    payment_notifications.append(("stripe_account_ready", connect_user_id, connect_context))
-                    payment_notifications.append(("card_payments_enabled", connect_user_id, connect_context))
-                elif requirements:
-                    payment_notifications.append(("stripe_verification_required", connect_user_id, connect_context))
+            cur.execute(
+                """
+                UPDATE seller_payout_accounts
+                SET onboarding_status=?, payouts_enabled=?, charges_enabled=?, missing_requirements_json=?, last_checked_at=?, updated_at=?
+                WHERE connected_account_id=?
+                """,
+                ("complete" if obj.get("payouts_enabled") and obj.get("charges_enabled") else "requirements_due", 1 if obj.get("payouts_enabled") else 0, 1 if obj.get("charges_enabled") else 0, json.dumps(requirements, default=str), now, now, acct),
+            )
         elif event_type in {"payout.paid", "payout.failed"}:
-            # The envelope first, and only then the object. PulseSoc pays sellers
-            # out *as* the connected account (marketplace_payout_worker calls
-            # stripe.Payout.create(..., stripe_account=acct)), and for a payout
-            # created that way `destination` is the seller's own bank account —
-            # `ba_...` — not `acct_...`. The connected account id arrives only on
-            # the event envelope's top-level `account` field, exactly as it does
-            # for account.application.deauthorized below. Reading `destination`
-            # first matched no row, so no payout_paid / payout_failed
-            # notification was ever emitted for a connected-account payout.
-            # The object fields remain as fallbacks so a platform-scoped payout,
-            # which carries no envelope account, still resolves.
-            destination = event.get("account") or obj.get("destination") or obj.get("account") or ""
+            destination = obj.get("destination") or obj.get("account") or ""
             cur.execute("SELECT * FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (destination,))
             account = dict(cur.fetchone() or {})
             if account:
@@ -116115,29 +108503,9 @@ def stripe_webhook():
                     "INSERT INTO seller_payouts (user_id, seller_type, amount_cents, currency, status, provider, provider_payout_id, failure_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'stripe', ?, ?, ?, ?)",
                     (account.get("user_id"), account.get("seller_type"), int(obj.get("amount") or 0), (obj.get("currency") or "usd").upper(), "paid" if event_type == "payout.paid" else "failed", obj.get("id") or "", obj.get("failure_message") or "", now, now),
                 )
-                payment_notifications.append((
-                    "payout_paid" if event_type == "payout.paid" else "payout_failed",
-                    safe_int(account.get("user_id"), 0),
-                    {
-                        "amount_cents": int(obj.get("amount") or 0),
-                        "currency": (obj.get("currency") or "usd").upper(),
-                        "payout_id": obj.get("id") or "",
-                        "payout_reference": obj.get("id") or "",
-                        "arrival_date": stripe_timestamp_date(obj.get("arrival_date")),
-                        "failed_at": now if event_type == "payout.failed" else "",
-                        "failure_reason": obj.get("failure_message") or "",
-                        "seller_first_name": greeting_first_name_for(cur, account.get("user_id")),
-                    },
-                ))
-            # Deferred to after the commit below, for the same reason the
-            # onboarding reconcile and the dispute hold already are: this opens
-            # its own connection and runs `ensure_schema` DDL on it. Held open
-            # across the uncommitted INSERT above, the second connection blocks
-            # on the first one's write lock — SQLite raises "database is locked"
-            # and Postgres simply waits. It was reachable before only because
-            # the seller lookup never matched, so the INSERT never ran and the
-            # connection never took a write lock.
-            payout_scheduler_event = (obj.get("id") or "", event_type == "payout.paid")
+            from services import marketplace_payout_scheduler
+            marketplace_payout_scheduler.apply_provider_event(
+                obj.get("id") or "", paid=event_type == "payout.paid", event_id=event_id)
         else:
             # A refunded or disputed advertiser wallet top-up has to debit the
             # wallet, otherwise the advertiser keeps spending money Stripe has
@@ -116183,29 +108551,7 @@ def stripe_webhook():
                         conn2.commit(); conn2.close()
             tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
             if tx_id:
-                # `charge.dispute.closed` is the only event reaching here that
-                # carries an outcome, and a lost chargeback is not a resolution:
-                # the money has been taken back off the seller. It used to emit
-                # the same "Dispute resolved" notification as a win, so the
-                # seller read their loss as good news. The row status stays in
-                # `pulse_apply_marketplace_dispute`'s vocabulary — that function
-                # rewrites this same column moments later, and a second spelling
-                # here would make the order flap depending on which one ran.
-                outcome = str(obj.get("status") or "") if event_type == "charge.dispute.closed" else ""
-                if event_type == "charge.refunded":
-                    status, note_event = "refunded", "refund_issued"
-                elif event_type == "charge.dispute.created":
-                    status = note_event = "dispute_opened"
-                elif event_type == "charge.dispute.updated":
-                    status = note_event = "dispute_updated"
-                elif outcome == "lost":
-                    status = note_event = "dispute_lost"
-                elif outcome == "won":
-                    status, note_event = "dispute_resolved", "dispute_won"
-                else:
-                    # `warning_closed` — an inquiry that never became a dispute,
-                    # so nothing was decided and nothing was at risk.
-                    status = note_event = "dispute_resolved"
+                status = "refunded" if event_type == "charge.refunded" else "dispute_opened" if event_type == "charge.dispute.created" else "dispute_updated" if event_type == "charge.dispute.updated" else "dispute_resolved"
                 cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
                 tx = dict(cur.fetchone() or {})
                 cur.execute("UPDATE seller_transactions SET status=?, updated_at=? WHERE id=?", (status, now, tx_id))
@@ -116213,7 +108559,7 @@ def stripe_webhook():
                     pulse_emit_payment_checkout_event(
                         cur,
                         {**tx, "status": status},
-                        note_event,
+                        "refund_issued" if event_type == "charge.refunded" else "dispute_opened" if event_type == "charge.dispute.created" else "dispute_updated" if event_type == "charge.dispute.updated" else "dispute_resolved",
                         status=status,
                         actor_user_id=tx.get("buyer_user_id") or 0,
                         extra={
@@ -116223,71 +108569,8 @@ def stripe_webhook():
                         },
                     )
         conn.commit(); conn.close()
-        if payout_scheduler_event:
-            try:
-                from services import marketplace_payout_scheduler
-                marketplace_payout_scheduler.apply_provider_event(
-                    payout_scheduler_event[0], paid=payout_scheduler_event[1], event_id=event_id)
-            except Exception:
-                # A settlement left at `scheduled` after Stripe has ruled on the
-                # payout is money in an unknown state. Never silent — but never
-                # a 500 either, or Stripe redelivers an event whose database
-                # effects above have already landed.
-                logging.exception("MARKETPLACE_PAYOUT_PROVIDER_EVENT_FAILED event_id=%s payout=%s",
-                                  event_id, payout_scheduler_event[0])
-        for _event_name, _event_user_id, _event_context in payment_notifications:
-            # Each is deduped on a stable key derived from the Stripe object, so
-            # a webhook redelivery re-enters here and sends nothing twice.
-            emit_payment_notification(_event_name, _event_user_id, _event_context)
-        if connect_seller_id:
-            # Outside the connection above: the settlement service opens its own,
-            # and `ensure_schema(conn)` on a held connection is how a route
-            # deadlocks a worker on Postgres.
-            try:
-                from services import marketplace_settlement_service as _settlements
-                _settlements.reconcile_seller_onboarding(
-                    connect_seller_id, actor="connect_webhook", reference=obj.get("id") or event_id)
-            except Exception:
-                # A seller left in `pending_onboarding` is money that can never be
-                # released to them. Never silent.
-                logging.exception("MARKETPLACE_ONBOARDING_RECONCILE_FAILED event_id=%s account=%s",
-                                  event_id, obj.get("id") or "")
         if event_type == "charge.refunded":
-            emit_marketplace_refund_notifications(pulse_apply_marketplace_charge_refund(obj), obj)
-        elif event_type.startswith("charge.dispute."):
-            # Outside the connection above on purpose: the settlement service and
-            # the ledger open their own, and holding this one across them is how
-            # `ensure_schema(conn)` deadlocks a worker on Postgres.
-            try:
-                pulse_apply_marketplace_dispute(obj, event_type, event_id)
-                # After the hold, never before: an email saying the payout is on
-                # hold must not go out ahead of the hold actually landing.
-                emit_marketplace_dispute_notifications(
-                    pulse_marketplace_reversal_transaction_ids(obj), obj, event_type)
-            except Exception:
-                # A chargeback that does not place its hold is money about to be
-                # transferred to a seller who is losing it. Never silent.
-                logging.exception("MARKETPLACE_DISPUTE_HOLD_FAILED event_id=%s type=%s", event_id, event_type)
-
-    if event_type == "radar.early_fraud_warning.created":
-        # Its own branch rather than the set above: that block opens a connection
-        # and runs every charge through the ad-wallet reversal path, and a fraud
-        # warning is neither a refund nor a charge object.
-        try:
-            pulse_apply_marketplace_fraud_warning(event["data"]["object"], event_id)
-        except Exception:
-            # The warning is the last point at which the money is still
-            # recoverable. Never silent.
-            logging.exception("MARKETPLACE_FRAUD_WARNING_FAILED event_id=%s", event_id)
-    elif event_type == "account.application.deauthorized":
-        # `data.object` here is the deauthorized Application, not the account;
-        # the connected account id is the event's own `account` field.
-        try:
-            pulse_disconnect_seller_payout_account(event.get("account") or "", event_id)
-        except Exception:
-            # Leaving the account marked payable means every transfer to it
-            # fails at the provider with nothing explaining why.
-            logging.exception("MARKETPLACE_CONNECT_DEAUTHORIZE_FAILED event_id=%s", event_id)
+            pulse_apply_marketplace_charge_refund(obj)
 
     record_stripe_event(event, "processed", resolved_event_user_id)
     creator_economy_service.update_webhook_event(event_id, "processed")
@@ -116461,15 +108744,7 @@ def email_status_from_result(result):
         return "failed_brevo_403"
     if result.get("status_code") == 429 or result.get("error_code") == "brevo_rate_limited":
         return "failed_brevo_rate_limited"
-    if result.get("error_code"):
-        return f"failed_{result['error_code']}"
-    if result.get("status_code"):
-        return f"failed_brevo_{result['status_code']}"
-    # A failure that carried neither a provider status code nor an error code
-    # never reached Brevo -- DNS, TLS, connect timeout. Naming that
-    # "not_configured", as this line used to, sends whoever reads the admin log
-    # to check environment variables that were correct all along.
-    return "failed_brevo_network_error"
+    return f"failed_brevo_{result.get('status_code') or 'not_configured'}"
 
 
 def log_email_status(user_id, email, subject, status, email_type="", provider="brevo", provider_status_code=None, provider_message_id="", safe_error_reason="", metadata=None, trace_id="", retry_count=0):
@@ -116695,20 +108970,6 @@ def _email_retry_at(attempts):
 
 def process_email_delivery_jobs(limit=10, provider_send=None):
     """Claim and process a bounded batch without recursively creating jobs."""
-    # Claiming a row spends an attempt: `retry_count` is incremented at claim
-    # time, before the provider is reached. A process holding no Brevo
-    # credentials cannot deliver anything, so letting it drain the queue would
-    # burn five attempts against mail another process could have sent and then
-    # dead-letter it permanently -- verification and password-reset mail
-    # included. Every worker importing this module inherits the opportunistic
-    # processor, so this is not hypothetical. Leave the rows for a process that
-    # can actually send them.
-    if provider_send is None:
-        readiness = email_service_service.provider_status()
-        if not readiness.get("ready"):
-            return {"attempted": 0, "sent": 0, "retry": 0, "dead_letter": 0, "skipped": 0,
-                    "deferred": "provider_not_ready",
-                    "missing_fields": readiness.get("missing_fields") or []}
     provider_send = provider_send or email_service_service.send_email
     limit = max(1, min(int(limit or 10), 50))
     now = datetime.now().isoformat()
@@ -116935,25 +109196,6 @@ def send_platform_email(to_email, subject, text_body, html_body="", user_id=None
         from_email,
         bool(provider.get("api_key_configured")),
     )
-    # This verdict used to be computed only to be logged. Calling the provider
-    # anyway from a process with no credentials cannot deliver the message; it
-    # spends the attempt, writes a `failed_brevo_not_configured` row that reads
-    # like a platform-wide outage, and only then reaches the outbox where a
-    # configured process actually sends it. Every such row in production came
-    # from exactly that -- a worker that inherited the sender address but not
-    # the API key. Hand the message to the outbox up front instead. Nothing is
-    # suppressed: the mail is queued, delivered by the worker, and the log says
-    # queued because that is what happened.
-    if not provider.get("ready") and queue_on_failure:
-        queued = enqueue_platform_email(
-            to_email, subject, text_body, html_body, user_id,
-            email_type=email_type,
-            idempotency_key=idempotency_key,
-            metadata={"deferred_reason": "provider_not_ready_in_this_process",
-                      "missing_fields": provider.get("missing_fields") or []},
-        )
-        send_platform_email.last_error = "" if queued.get("ok") else "queue_failed"
-        return bool(queued.get("ok"))
     try:
         result = email_service_service.send_email(
             to_email,
@@ -121049,23 +113291,6 @@ def _init_db_impl():
     except Exception as exc:
         logging.exception("PULSE_ID_SCHEMA_SKIPPED error=%s", exc)
 
-    # Here and nowhere else. `create_account` and `login_page` both write an
-    # acceptance from inside an open transaction on their own connection, so
-    # creating the table on demand would be a second connection asking for a write
-    # lock the caller still holds -- which fails the signup it was recording.
-    # Unguarded, unlike the line above: the point of the table is that an account
-    # cannot come into existence without a record of what it agreed to, and a
-    # swallowed failure here would quietly restore exactly the defect it replaces.
-    legal_acceptance.ensure_schema(conn)
-
-    # Here as well as in `create_account`, so the invariant exists from boot
-    # rather than from whenever somebody next signs up. Safe at this line for the
-    # reason the comment above cares about: `ensure_email_identity_index` catches
-    # everything and returns False, so it cannot truncate the schema the way a
-    # raise here would. `run_once_per_process` makes the signup-path call a no-op
-    # after this one.
-    account_email_uniqueness.ensure_email_identity_index(cur)
-
     ensure_user_presence_schema(cur, conn)
     ensure_mobile_security_session_schema(cur)
     cur.execute("""
@@ -122378,73 +114603,10 @@ def _init_db_impl():
         ("removed_at", "TEXT"),
         ("removed_by_admin", "INTEGER"),
         ("admin_review_notes", "TEXT"),
-        ("lifecycle_state", "TEXT DEFAULT 'ACTIVE'"),
-        ("takedown_reason_code", "TEXT"),
-        ("takedown_reason_note", "TEXT"),
-        ("purge_scheduled_at", "TEXT"),
-        ("purged_at", "TEXT"),
-        ("legal_hold", "INTEGER DEFAULT 0"),
         ("tags_json", "TEXT"),
         ("created_at", "TEXT"),
         ("updated_at", "TEXT"),
     ], conn=conn)
-    # Rows that predate `lifecycle_state` carry their state in the legacy trio.
-    # Reading them as ACTIVE would silently resurrect every track an admin has
-    # already removed through /api/admin/pulse/music/<id>/remove.
-    #
-    # This keyed on `COALESCE(lifecycle_state,'')=''` and therefore never ran: the
-    # column is added with `DEFAULT 'ACTIVE'`, and both Postgres and SQLite apply a
-    # default to the rows that already exist, so by the time the backfill looked
-    # there was nothing left NULL to find. Production carried three tracks reading
-    # ACTIVE that a human had removed -- the exact outcome the comment above
-    # describes -- and the admin menu computed from `lifecycle_state` offered
-    # "Take down" on them while withholding "Restore", so the one action an
-    # operator would want was the one action unreachable.
-    #
-    # Keyed on ACTIVE instead, which is what the default actually produced. Still
-    # idempotent, and it cannot walk a state backwards: a restore clears
-    # `removed_at` and sets `safety_status='approved'`, so a restored track stops
-    # matching, and QUARANTINED / PURGE_PENDING / PURGED are not ACTIVE so a later
-    # boot cannot demote them to TAKEN_DOWN.
-    cur.execute(
-        """
-        UPDATE pulse_audio_tracks
-        SET lifecycle_state='TAKEN_DOWN'
-        WHERE UPPER(COALESCE(lifecycle_state,'ACTIVE'))='ACTIVE'
-          AND (COALESCE(removed_at,'')!='' OR lower(COALESCE(safety_status,''))='removed')
-        """
-    )
-    cur.execute("UPDATE pulse_audio_tracks SET lifecycle_state='ACTIVE' WHERE COALESCE(lifecycle_state,'')=''")
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS music_takedown_audit (
-        action_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        track_id INTEGER,
-        action TEXT,
-        previous_state TEXT,
-        new_state TEXT,
-        actor_user_id INTEGER,
-        actor_role TEXT,
-        reason_code TEXT,
-        reason_note TEXT,
-        affected_reference_count INTEGER DEFAULT 0,
-        request_id TEXT,
-        created_at TEXT,
-        restored_at TEXT,
-        related_action_id INTEGER
-    )
-    """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_music_takedown_audit_track ON music_takedown_audit(track_id, action_id)")
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS music_owner_stepups (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        admin_user_id INTEGER,
-        granted_at TEXT,
-        expires_at TEXT,
-        request_id TEXT,
-        consumed_at TEXT
-    )
-    """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_music_owner_stepups_admin ON music_owner_stepups(admin_user_id, expires_at)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_music_reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122515,50 +114677,6 @@ def _init_db_impl():
         ("audio_start_time", "REAL DEFAULT 0"),
         ("audio_volume", "REAL DEFAULT 1"),
     ], conn=conn)
-    # Products a creator attached to their own content. Deliberately shaped like
-    # `pulse_content_music` above it — same polymorphic (content_type, content_id)
-    # key, same UNIQUE, same `attached_by_user_id` — because it is the same kind of
-    # thing: an attachment the composer writes and a reader resolves. It is read by
-    # `services/commerce_discovery`, but it is not that package's table: the writer
-    # is the post composer, and making the composer depend on the discovery
-    # package's schema guard to save a post would be the wrong dependency.
-    #
-    # Two deliberate departures from the music shape:
-    #
-    # `seller_user_id` is denormalised, not for speed but for correctness. It is
-    # the seller at *attach* time, which is what the tag was authorised against.
-    # A listing that later changes hands carries an authorisation nobody granted,
-    # and the read path drops the tag when this column stops matching the live
-    # listing. This is the products analogue of `license_snapshot_json`: a snapshot
-    # of the permission, not of the goods.
-    #
-    # There is no price, title or availability snapshot, and that is the opposite
-    # choice to music on purpose. A stale song is still the song; a stale price is
-    # a lie to a buyer. Everything merchandising-related is read live from
-    # `marketplace_listings` on every serve so a sold-out or repriced product
-    # cannot be served from a cache nobody remembers writing.
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS pulse_content_products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        content_type TEXT,
-        content_id INTEGER,
-        listing_id INTEGER,
-        attached_by_user_id INTEGER,
-        seller_user_id INTEGER,
-        authority TEXT DEFAULT 'owner',
-        created_at TEXT,
-        UNIQUE(content_type, content_id, listing_id)
-    )
-    """)
-    add_columns_if_missing(cur, "pulse_content_products", [
-        ("content_type", "TEXT"),
-        ("content_id", "INTEGER"),
-        ("listing_id", "INTEGER"),
-        ("attached_by_user_id", "INTEGER"),
-        ("seller_user_id", "INTEGER"),
-        ("authority", "TEXT DEFAULT 'owner'"),
-        ("created_at", "TEXT"),
-    ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_trending_sounds (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122591,28 +114709,63 @@ def _init_db_impl():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_reel_audio_reel ON pulse_reel_audio(reel_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_sound_saves_user ON pulse_reel_sound_saves(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_saved_sounds_user ON pulse_saved_sounds(user_id, created_at)")
-    # There used to be a three-track seed here -- "PulseSoc Neon Rise", "Trust
-    # Signal", "Creator Glow Loop" -- inserted on every `init_db()`. It is gone,
-    # and deliberately not replaced with a fixed idempotent version, for two
-    # reasons that only became visible once production was measured:
-    #
-    # 1. The rows were never playable. The INSERT listed no `audio_url` column at
-    #    all, so all 21,612 of them carried a NULL audio_url while all 148 real
-    #    user uploads carried one. They sat `approved_by_admin=1, active=1` in
-    #    search, in trending sounds and in the Reels audio picker -- a catalogue
-    #    that was 99.3% entries which play nothing when tapped. A seed whose
-    #    fixed form is "exactly three unplayable rows" is not worth keeping.
-    #
-    # 2. The repair UPDATE beside it matched `WHERE title=? AND artist=?` with no
-    #    ownership filter, so any user upload that happened to share a default
-    #    sound's title and artist was force-set `approved_by_admin=1, active=1`
-    #    on every boot -- a moderation bypass reachable by naming a file. No real
-    #    upload currently matches, so it was latent rather than exercised, but it
-    #    is a bypass that the seed's existence is what creates.
-    #
-    # Real music reaches the catalogue through `api_pulse_music_upload`, which
-    # goes through moderation. An empty music library on a fresh install is the
-    # honest state; it is not an error condition and no read path treats it as one.
+    now_seed = datetime.utcnow().isoformat(timespec="seconds")
+    default_sounds = [
+        ("PulseSoc Neon Rise", "CoinPlotXAI", 84, 118, "trending", "energetic", "electronic", ["reels", "video", "neon"]),
+        ("Trust Signal", "PulseSoc Studio", 72, 96, "educational", "focused", "ambient", ["status", "education", "trust"]),
+        ("Creator Glow Loop", "CoinPlotXAI", 98, 124, "creator", "cinematic", "electronic", ["post", "creator", "motion"]),
+    ]
+    for title, artist, trend, bpm, source, mood, genre, tags in default_sounds:
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO pulse_audio_tracks
+            (title, artist, duration_seconds, waveform_json, bpm, usage_count, trend_score, source_type, safety_status,
+             source_provider, license_type, commercial_use_allowed, remix_edit_allowed, attribution_required, proof_url,
+             approved_by_admin, active, mood, genre, tags_json, created_at, updated_at)
+            VALUES (?, ?, 30, ?, ?, 0, ?, ?, 'approved',
+                    'original_pulse_sound', 'PulseSoc original work', 1, 1, 0, ?, 1, 1, ?, ?, ?, ?, ?)
+            """,
+            (
+                title,
+                artist,
+                json.dumps([0.18, 0.45, 0.62, 0.38, 0.72, 0.54, 0.3, 0.66]),
+                bpm,
+                trend,
+                source,
+                f"internal:{title.lower().replace(' ', '-')}",
+                mood,
+                genre,
+                json.dumps(tags),
+                now_seed,
+                now_seed,
+            ),
+        )
+        cur.execute(
+            """
+            UPDATE pulse_audio_tracks
+            SET source_provider=COALESCE(NULLIF(source_provider,''),'original_pulse_sound'),
+                license_type=COALESCE(NULLIF(license_type,''),'PulseSoc original work'),
+                commercial_use_allowed=1,
+                remix_edit_allowed=1,
+                attribution_required=0,
+                proof_url=COALESCE(NULLIF(proof_url,''),?),
+                approved_by_admin=1,
+                active=1,
+                mood=COALESCE(NULLIF(mood,''),?),
+                genre=COALESCE(NULLIF(genre,''),?),
+                tags_json=COALESCE(NULLIF(tags_json,''),?),
+                updated_at=?
+            WHERE title=? AND artist=?
+            """,
+            (f"internal:{title.lower().replace(' ', '-')}", mood, genre, json.dumps(tags), now_seed, title, artist),
+        )
+        cur.execute("SELECT id FROM pulse_audio_tracks WHERE title=? AND artist=? LIMIT 1", (title, artist))
+        seed_track_id = safe_int((cur.fetchone() or [0])[0], 0)
+        if seed_track_id:
+            cur.execute(
+                "INSERT OR IGNORE INTO pulse_trending_sounds (audio_track_id, trend_score, usage_count, category, updated_at) VALUES (?, ?, 0, ?, ?)",
+                (seed_track_id, trend, source.title(), now_seed),
+            )
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_comments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -123236,21 +115389,7 @@ def _init_db_impl():
         ("moderation_reason", "TEXT DEFAULT ''"),
         ("moderation_category", "TEXT DEFAULT ''"),
         ("review_version", "INTEGER DEFAULT 0"),
-        # The buyer-facing price lives in `price_label`, a free-text string
-        # ("$35.00", "Free", "Request access"). Sorting a storefront by price
-        # therefore has no numeric column to sort on, and casting the label in
-        # SQL is not an option: SQLite quietly yields 0.0 for a non-numeric
-        # string while Postgres raises `invalid input syntax`, so a cast-based
-        # ORDER BY passes every local test and takes down the production grid.
-        # `price_minor` is that number, in the listing's currency's minor unit.
-        #
-        # NULL means "not yet derived", not "free". Both are sorted last by
-        # marketplace_catalog.SORTS, so the two cases need not be told apart
-        # there -- but they must not be conflated at the write sites, which is
-        # why this carries no DEFAULT.
-        ("price_minor", "INTEGER"),
     ], conn=conn)
-    _backfill_marketplace_price_minor(cur)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_product_media (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -123380,23 +115519,6 @@ def _init_db_impl():
         # missing supplier schema must not take down a web process that has 1,538
         # routes with nothing to do with variants.
         logging.getLogger(__name__).exception("SUPPLIER_SCHEMA_BOOTSTRAP_FAILED")
-    # Post-purchase fulfillment, for the same reason and by the same rule: the
-    # timeout sweeper runs in a worker that never serves a request, so the tables
-    # have to exist at boot rather than the first time a buyer confirms receipt.
-    # The statements live in the owning module; a second copy here is how the two
-    # would drift.
-    try:
-        marketplace_order_fulfillment.create_schema(cur)
-    except Exception:
-        logging.getLogger(__name__).exception("ORDER_FULFILLMENT_SCHEMA_BOOTSTRAP_FAILED")
-    # The delivery promise, third for the same reason: §70's accuracy reporting and
-    # §71-72's calibration both read this table from workers that serve no
-    # requests, so it cannot be created lazily on a checkout path they never run.
-    try:
-        from services.delivery import promise as delivery_promise
-        delivery_promise.create_schema(cur)
-    except Exception:
-        logging.getLogger(__name__).exception("DELIVERY_PROMISE_SCHEMA_BOOTSTRAP_FAILED")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125667,21 +117789,9 @@ def _init_db_impl():
                 flag["public_label"], flag["notes"], now_flags,
             ),
         )
-        # ``label`` is the admin-facing name of the capability. No route writes
-        # it, so it is owned by the code above and re-asserting it here keeps a
-        # rename in source from needing a data edit.
-        #
-        # ``public_label`` is deliberately NOT re-asserted. It used to be, and
-        # because init_db() runs on every request that meant the seeded value
-        # was restored within milliseconds of any change — so the column was
-        # unwritable in practice, and production has carried
-        # ``marketplace_checkout = "Internal"`` since May while that capability
-        # was taking real orders. An operator could not have corrected it. The
-        # value is operator-owned from here; the INSERT above still seeds a new
-        # row, so a fresh database is unchanged.
         cur.execute(
-            "UPDATE feature_flags SET label=? WHERE feature_key=?",
-            (flag["label"], flag["feature_key"]),
+            "UPDATE feature_flags SET label=?, public_label=? WHERE feature_key=?",
+            (flag["label"], flag["public_label"], flag["feature_key"]),
         )
     for index_sql in [
         "CREATE INDEX IF NOT EXISTS idx_ai_recommendations_status ON ai_recommendations(status)",
@@ -127835,33 +119945,7 @@ def _init_db_impl():
         ("temp_password_created_at", "TEXT"),
         ("failed_login_count", "INTEGER DEFAULT 0"),
         ("locked_until", "TEXT"),
-        # The explicit link from an `admin_users` row to the `users` row that may
-        # act as it. `admin_current_user()` reads session["admin_user_id"], which
-        # only the web login form ever sets, so a phone-authenticated owner could
-        # not reach an admin route at all. This column is what a bearer/cookie
-        # caller is resolved through; it is never derived from the request.
-        ("account_user_id", "INTEGER"),
     ], conn=conn)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_admin_users_account_user ON admin_users(account_user_id)")
-    # Re-run the owner link now that the column it writes exists.
-    #
-    # `ensure_owner_super_user()` already called this far earlier in init (see the
-    # call above `CREATE TABLE admin_users`), which is fine on every boot after the
-    # first but fails on the one deploy that introduces `account_user_id`: the
-    # column is added here, thousands of lines later, so the earlier attempt raises
-    # UndefinedColumn, is swallowed, and the owner is left unlinked -- reachable
-    # endpoints that refuse the only person allowed to use them. Production did
-    # exactly this (`OWNER_ADMIN_ACCOUNT_LINK_SKIPPED error=UndefinedColumn`).
-    #
-    # It is idempotent -- the UPDATE is a no-op once the link matches -- so calling
-    # it twice costs a single indexed lookup and removes the ordering assumption
-    # rather than relying on a later restart to paper over it.
-    #
-    # The `owner_super_user_enabled()` guard is not redundant: it is the gate the
-    # original call site sits behind, and without it this retry would link the
-    # owner on a deployment that had deliberately switched the bootstrap off.
-    if owner_super_user_enabled():
-        ensure_owner_admin_account_link(cur)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS admin_audit_logs (
@@ -130246,16 +122330,6 @@ def log_engagement(user_id, feature, query=""):
 
 
 def clean_html(text):
-    # Row dicts hand this sanitizer whatever the column holds, and a numeric
-    # column arrives as an int. `re.sub` raises TypeError on one, which is how
-    # sixteen public post pages came to return HTTP 500: `data-media-id` is a
-    # media row id, and `clean_html(item.get("id"))` crashed the whole render.
-    #
-    # Only *truthy* non-strings are coerced. None and the falsy values already
-    # became "" via the `or ""` below, so no call site that works today changes
-    # behaviour -- this widens the set of inputs that do not crash, nothing else.
-    if text and not isinstance(text, str):
-        text = str(text)
     text = re.sub(r"<[^>]+>", " ", text or "")
     text = re.sub(r"\s+", " ", text).strip()
     return text
@@ -131317,16 +123391,7 @@ def legacy_account_summary(user_id):
     if not row:
         return "Account not found. Use /start first."
 
-    # By name, not by unpacking. Unpacking a row yields its VALUES on SQLite
-    # and its column NAMES on Postgres, so this Telegram summary greeted every
-    # production user as "display_name". Both row types index by name.
-    name = row["display_name"]
-    email = row["email"]
-    pro = row["is_pro"]
-    plan = row["subscription_plan"]
-    status = row["subscription_status"]
-    risk = row["risk_profile"]
-    exchange_goal = row["preferred_exchange_goal"]
+    name, email, pro, plan, status, risk, exchange_goal = row
     return (
         "👤 Account\n\n"
         f"Name: {name or 'Not set'}\n"
@@ -134164,91 +126229,6 @@ def main():
         keep_web_process_alive_without_telegram()
 
 
-def arm_control_plane_consultation():
-    """Decide once per worker whether this process may consult the control plane.
-
-    Wave 1 of the capability cutover. Runs after `init_db()` because it reads
-    the columns the Stage 11 migration added, and it is deliberately the only
-    place the answer is computed: `services/pulse_control_plane/runtime.py`
-    explains at length why a per-request read would be worse, but the short
-    version is that it would invent a third outcome -- "the control plane could
-    not answer" -- on a path that has two, and every way of handling that
-    outcome is bad.
-
-    Never raises. An arming failure must not stop a boot, because the failure
-    mode of *not* arming is that ten capabilities behave exactly as they did
-    before wave 1, which is the intended rollback rather than an outage.
-
-    The logging is deliberately asymmetric. Armed is one line; refused-because-
-    the-rows-disagree prints every disagreement, because that case means either
-    the migration did not land or something edited `feature_flags` afterwards,
-    and both are worth waking up to.
-    """
-    try:
-        from services.pulse_control_plane import runtime as control_plane_runtime
-    except Exception as exc:
-        logging.warning("CONTROL_PLANE_ARM_IMPORT_FAILED error=%s", exc)
-        return None
-
-    rows = None
-    try:
-        conn = db()
-        try:
-            cur = conn.cursor()
-            if not table_exists(cur, "feature_flags"):
-                logging.info("CONTROL_PLANE_ARM_NO_TABLE feature_flags does not exist here")
-            else:
-                try:
-                    cur.execute(
-                        "SELECT feature_key, deployment_state, eligibility_policy "
-                        "FROM feature_flags"
-                    )
-                    rows = {
-                        row[0]: {"deployment_state": row[1], "eligibility_policy": row[2]}
-                        for row in cur.fetchall()
-                    }
-                except Exception as exc:
-                    # The table is there and the migrated columns are not. A
-                    # distinct case from a read failure, and the one a developer
-                    # is most likely to hit: the Stage 11 migration is a script
-                    # that was run against production, and `init_db()` does not
-                    # recreate its columns by design -- the migration writes
-                    # reconciled truth, and a schema bootstrap has no business
-                    # inventing that. So a freshly built database cannot arm and
-                    # therefore behaves exactly as it did before wave 1. That is
-                    # correct, but it reads as a breakage unless it says so.
-                    logging.info(
-                        "CONTROL_PLANE_ARM_UNMIGRATED feature_flags exists without the "
-                        "migrated columns (%s); run scripts/capability_migration.py "
-                        "--apply against this database. Staying unarmed is pre-wave "
-                        "behaviour, not an outage.",
-                        exc,
-                    )
-        finally:
-            conn.close()
-    except Exception as exc:
-        # Leaving `rows` as None is the honest signal: not "the rows are wrong"
-        # but "the evidence arming requires was never gathered". runtime.arm
-        # distinguishes the two in its reason string.
-        logging.warning("CONTROL_PLANE_ARM_READ_FAILED error=%s", exc)
-
-    try:
-        result = control_plane_runtime.arm(rows)
-    except Exception as exc:
-        logging.exception("CONTROL_PLANE_ARM_FAILED error=%s", exc)
-        return None
-
-    if result.armed:
-        logging.info("CONTROL_PLANE_ARMED %s", result.reason)
-    elif result.blocked_by_disagreement:
-        logging.error("CONTROL_PLANE_ARM_REFUSED %s", result.reason)
-        for line in result.disagreements:
-            logging.error("CONTROL_PLANE_ARM_DISAGREEMENT %s", line)
-    else:
-        logging.info("CONTROL_PLANE_NOT_ARMED %s", result.reason)
-    return result
-
-
 def initialize_database_for_web_startup():
     global INIT_DB_THREAD_STARTED
     if os.getenv("COINPILOTX_INIT_DB_ON_IMPORT", "1").strip().lower() in {"0", "false", "no", "off"}:
@@ -134259,7 +126239,6 @@ def initialize_database_for_web_startup():
         startup_mode = "async" if _deployment_environment_enabled() else "sync"
     if startup_mode == "sync" or os.getenv("COINPILOTX_SYNC_DB_INIT_ON_IMPORT", "").strip().lower() in {"1", "true", "yes", "on"}:
         init_db()
-        arm_control_plane_consultation()
         return
     if INIT_DB_THREAD_STARTED:
         logging.info("DB_INIT_BACKGROUND_SKIPPED_ALREADY_STARTED")
@@ -134271,11 +126250,6 @@ def initialize_database_for_web_startup():
             init_db()
         except Exception as exc:
             logging.exception("DB_INIT_BACKGROUND_FAILED error=%s", exc)
-            # Arming needs the migrated columns, and a failed init_db is
-            # exactly the case where they may not exist yet. Returning leaves
-            # the process unarmed, which is pre-wave behaviour.
-            return
-        arm_control_plane_consultation()
 
     threading.Thread(target=_run_startup_init, name="coinpilotx-db-init", daemon=True).start()
     logging.info("DB_INIT_BACKGROUND_STARTED")

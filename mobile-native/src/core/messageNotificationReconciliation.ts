@@ -1,7 +1,7 @@
 import * as Notifications from "expo-notifications";
 import { pulseApi } from "../api/pulseApi";
 import { getNotificationBadgeCounts } from "../api/notifications";
-import { badgeFor, setUnreadCounts } from "./unreadCounts";
+import { setUnreadCounts } from "./unreadCounts";
 import { outboxScope, pendingMutations } from "./mutations/outbox";
 
 const MESSAGE_TYPES = new Set(["message", "new_message", "chat_message", "private_message", "group_message", "image_message", "video_message", "voice_message", "file_message"]);
@@ -29,41 +29,24 @@ export function parseMessageNotification(key: string, data: Record<string, unkno
 }
 
 export type ReconciliationResult = { examined: number; dismissed: number; preserved: number; failures: number; cancelled: boolean };
-type Flight = { epoch: number; again: boolean; promise: Promise<ReconciliationResult> };
-let flight: Flight | null = null;
+let flight: Promise<ReconciliationResult> | null = null;
+let again = false;
 let generation = 0;
 export function cancelMessageReconciliation() { generation += 1; }
 
 export function reconcileMessageNotifications(): Promise<ReconciliationResult> {
-  // Coalescing is scoped to one identity, not global. A caller arriving after
-  // `cancelMessageReconciliation` -- which is how an account switch announces
-  // itself -- belongs to a different account than the pass in flight, and that
-  // pass is about to abandon itself because its own scope check now fails.
-  // Handing the shared promise over would report a completed reconciliation to
-  // a caller whose Notification Center was never enumerated, so the incoming
-  // account's stale alerts would sit there until some later lifecycle trigger
-  // happened to fire. Nothing errors and nothing logs, which is what makes the
-  // extra field worth it.
-  const joinable = flight;
-  if (joinable && joinable.epoch === generation) { joinable.again = true; return joinable.promise; }
-  // `again` rides on the entry rather than the module for the same reason: two
-  // passes from different generations can briefly overlap, and a shared flag
-  // lets the incoming pass clear the outgoing one's trailing-pass request.
-  const entry: Flight = { epoch: generation, again: false, promise: null as unknown as Promise<ReconciliationResult> };
-  entry.promise = (async () => {
+  if (flight) { again = true; return flight; }
+  flight = (async () => {
     let result: ReconciliationResult = { examined: 0, dismissed: 0, preserved: 0, failures: 0, cancelled: false };
     // A trailing pass picks up pushes/read events arriving during enumeration.
     for (let pass = 0; pass < 2; pass += 1) {
-      entry.again = false;
+      again = false;
       result = await run();
-      if (!entry.again || result.cancelled) break;
+      if (!again || result.cancelled) break;
     }
     return result;
-    // Only clear our own slot. A pass started after a switch has already
-    // replaced `flight`, and a blind `flight = null` here would drop it.
-  })().finally(() => { if (flight === entry) flight = null; });
-  flight = entry;
-  return entry.promise;
+  })().finally(() => { flight = null; });
+  return flight;
 }
 
 async function run(): Promise<ReconciliationResult> {
@@ -91,16 +74,12 @@ async function run(): Promise<ReconciliationResult> {
           return p.conversationId === entry.conversationId && p.messageIds.includes(entry.messageId);
         })) removable.add(entry.key);
       }
-      const locallyDismissed = new Set<string>();
       for (const key of removable) {
         if (!current()) break;
-        try {
-          await Notifications.dismissNotificationAsync(key);
-          result.dismissed += 1;
-          locallyDismissed.add(key);
-        }
+        try { await Notifications.dismissNotificationAsync(key); result.dismissed += 1; }
         catch { result.failures += 1; }
       }
+      const locallyDismissed = new Set(removable);
       removable.clear();
       if (!current()) break;
       try {
@@ -122,12 +101,7 @@ async function run(): Promise<ReconciliationResult> {
         const counts = await getNotificationBadgeCounts();
         if (current()) {
           const snapshot = setUnreadCounts(counts);
-          // The icon takes the "combined" scope, not `totalCount`: `totalCount`
-          // is notifications + *social* messages, so a business↔customer unread
-          // left the icon blank and nothing brought the seller back to the app.
-          // Read through `badgeFor` so the icon and the in-app combined badge
-          // stay one definition — re-deriving the sum here is how they drift.
-          await Notifications.setBadgeCountAsync(Math.max(0, badgeFor("combined", snapshot).count));
+          await Notifications.setBadgeCountAsync(Math.max(0, snapshot.totalCount));
         }
       } catch { result.failures += 1; }
     }

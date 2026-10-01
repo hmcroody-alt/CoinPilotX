@@ -136,18 +136,6 @@ EVENT_DEFINITIONS: dict[str, dict[str, str]] = {
     "system_announcement": {"category": "system", "priority": "normal", "urgency": "standard", "title": "PulseSoc announcement"},
 }
 
-# Marketplace payment events register themselves here rather than being
-# duplicated. An event missing from this registry resolves to category
-# "system", which is not in EMAIL_DEFAULT_CATEGORIES — so the failure mode of
-# forgetting one is a seller who is never emailed about their money.
-try:
-    from services import payments_notifications as _payments_notifications
-
-    EVENT_DEFINITIONS.update(_payments_notifications.EVENT_DEFINITIONS)
-except Exception as _payments_notifications_error:  # pragma: no cover - import guard
-    _payments_notifications = None
-    logging.warning("PAYMENTS_NOTIFICATION_EVENTS_UNAVAILABLE error=%s", _payments_notifications_error)
-
 DEFAULT_CATEGORIES = sorted({definition["category"] for definition in EVENT_DEFINITIONS.values()} | {
     "admin_security",
     "chat_message",
@@ -2124,25 +2112,19 @@ def get_notification(user_id: int, notification_id: int) -> dict[str, Any] | Non
 
 
 def badge_counts(user_id: int, chat_unread_count: int = 0) -> dict[str, Any]:
-    # _push_payload() calls this once per outbound notification. ensure_schema is
-    # @run_once_per_process, but the guard caches only successes -- so a schema
-    # pass that keeps failing raises on every push, leaking a connection each
-    # time without the finally.
     conn = db_service.connect()
-    try:
-        ensure_schema(conn)
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT COUNT(*)
-            FROM notifications
-            WHERE recipient_user_id=? AND deleted_at IS NULL AND (read_at IS NULL OR status!='read')
-            """,
-            (int(user_id),),
-        )
-        alert_count = _int((cur.fetchone() or [0])[0])
-    finally:
-        conn.close()
+    ensure_schema(conn)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COUNT(*)
+        FROM notifications
+        WHERE recipient_user_id=? AND deleted_at IS NULL AND (read_at IS NULL OR status!='read')
+        """,
+        (int(user_id),),
+    )
+    alert_count = _int((cur.fetchone() or [0])[0])
+    conn.close()
     return {
         "ok": True,
         "alert_unread_count": alert_count,
@@ -2152,39 +2134,6 @@ def badge_counts(user_id: int, chat_unread_count: int = 0) -> dict[str, Any]:
         "unread_count": alert_count,
         "server_authoritative": True,
     }
-
-
-def icon_badge_count(user_id: int) -> int:
-    """Combined unread for the app icon: alerts + chat + commerce.
-
-    Mirrors the merge `_pulse_notification_os_badge_counts()` performs in
-    bot.py for the read APIs, and must keep mirroring it: that helper is what
-    feeds the client's badge snapshot, so any other arithmetic here puts the
-    push badge and the foreground reconcile back into disagreement, which is
-    the whole defect this exists to close.
-
-    badge_counts() above cannot answer this alone. It counts only the
-    `notifications` table and takes chat as a parameter defaulting to 0, so on
-    its own it misses every legacy `pulse_notifications` alert, every chat
-    unread and every commerce unread.
-
-    Imported lazily: notification_service imports this module at module scope.
-    """
-    user_id = int(user_id or 0)
-    legacy_alert = legacy_chat = legacy_commerce = 0
-    try:
-        from services import notification_service as _notification_service
-
-        legacy = _notification_service.pulse_badge_counts(user_id) or {}
-        legacy_alert = _int(legacy.get("alert_unread_count"))
-        legacy_chat = _int(legacy.get("chat_unread_count"))
-        legacy_commerce = _int(legacy.get("commerce_unread_count"))
-    except Exception:
-        # A badge is not worth failing a delivery over. Fall back to whatever
-        # the central table alone can say.
-        pass
-    central_alert = _int((badge_counts(user_id) or {}).get("alert_unread_count"))
-    return central_alert + legacy_alert + legacy_chat + legacy_commerce
 
 
 def mark_read(user_id: int, notification_id: int) -> dict[str, Any]:
@@ -2462,7 +2411,7 @@ def _push_payload(notification: dict[str, Any], prefs: dict[str, Any]) -> dict[s
     metadata = notification.get("metadata") if isinstance(notification.get("metadata"), dict) else {}
     deep_link = sanitize_deep_link(notification.get("deep_link") or metadata.get("deep_link") or "/pulse/notifications")
     body = str(notification.get("body") or notification.get("message") or notification.get("preview") or "New PulseSoc update.")
-    badge_count = icon_badge_count(int(notification.get("recipient_user_id") or notification.get("user_id") or 0))
+    badge_count = badge_counts(int(notification.get("recipient_user_id") or notification.get("user_id") or 0)).get("total_unread_count", 0)
     payload = {
         "notification_id": int(notification.get("id") or 0),
         "type": notification.get("type") or notification.get("notification_type") or "system_announcement",
@@ -2481,15 +2430,8 @@ def _push_payload(notification: dict[str, Any], prefs: dict[str, Any]) -> dict[s
         "sound": notification.get("sound_key") or _sound_key(category, priority, prefs),
         "vibrate": notification.get("vibration") or _vibration_pattern(category, priority, prefs),
         "vibration": notification.get("vibration") or _vibration_pattern(category, priority, prefs),
-        # The number, not a flag. Both wire adapters read THIS key and coerce
-        # it to an int — push_service._send_expo_push() and the raw APNs body
-        # below — so the literal `True` this used to hold reached the phone as
-        # int(True) == 1 and pinned every non-comm_v2 push's icon to 1, while
-        # the real figure sat unread in `badge_count`. Web push is unaffected
-        # either way: static/sw.js only honours a same-origin string path here
-        # and falls back to the brand asset for anything else.
-        "badge": int(badge_count),
-        "badge_count": int(badge_count),
+        "badge": True,
+        "badge_count": badge_count,
         "show_on_lock_screen": True,
         "lock_screen": True,
         **metadata,
@@ -2796,14 +2738,6 @@ def _notification_email_html(notification: dict[str, Any], body: str) -> str:
     )
 
 
-def _render_payments_email(metadata: dict[str, Any] | None) -> dict[str, str] | None:
-    if not isinstance(metadata, dict) or not metadata.get("email_template"):
-        return None
-    if _payments_notifications is None:
-        return None
-    return _payments_notifications.render_email(metadata)
-
-
 def _dispatch_email(cur: Any, notification: dict[str, Any], prefs: dict[str, Any]) -> dict[str, Any]:
     category = str(notification.get("category") or "system")
     priority = str(notification.get("priority") or "normal")
@@ -2816,22 +2750,11 @@ def _dispatch_email(cur: Any, notification: dict[str, Any], prefs: dict[str, Any
     if not contact.get("email"):
         return {"ok": False, "status": "skipped_no_contact", "provider": "brevo_email", "message": "Recipient email is missing."}
     body = _notification_public_preview(notification, prefs)
-    subject = str(notification.get("title") or "PulseSoc update")[:180]
-    html_body = _notification_email_html(notification, body)
-    text_body = body
-    # A payment event carries a template key and a small context rather than a
-    # rendered document, so the email is built here, at send time. A retry
-    # re-renders from the same context instead of replaying a stale snapshot.
-    rendered = _render_payments_email(metadata)
-    if rendered:
-        subject = rendered["subject"][:180]
-        html_body = rendered["html"]
-        text_body = rendered["text"]
     result = email_service.send_email(
         contact["email"],
-        subject,
-        html_body,
-        text_body,
+        str(notification.get("title") or "PulseSoc update")[:180],
+        _notification_email_html(notification, body),
+        body,
         email_type=str(notification.get("type") or "notification"),
         user_id=int(notification.get("recipient_user_id") or notification.get("user_id") or 0),
         metadata={"notification_id": notification.get("id"), "category": category},

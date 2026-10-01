@@ -1,48 +1,13 @@
 import json
 import os
 
-from services import app_links
-
 SITE_URL = os.getenv("PUBLIC_SITE_URL", "https://pulsesoc.com").rstrip("/")
 LOGO_URL = f"{SITE_URL}/static/brand/pulsesoc-logo-20260913.png"
 SHARE_IMAGE_URL = f"{SITE_URL}/static/brand/pulsesoc-og-20260913.png"
 SUPPORT_EMAIL = "support@pulsesoc.com"
 
-# Read from Apple's own record of the listing on 2026-09-18
-# (`https://itunes.apple.com/lookup?id=6777591572`) rather than from what this
-# repo believes it shipped. Structured data is a set of claims made to a search
-# engine; every one of these has to be checkable against a source outside the
-# codebase, and the App Store listing is that source.
-#
-# `tests/test_app_schema.py` pins each value and says what it is a claim about,
-# so a version bump that leaves this stale fails rather than quietly asserting
-# the wrong version to Google.
-APP_MINIMUM_IOS = "15.1"
-APP_VERSION = "1.0.2"
-APP_FIRST_RELEASED = "2026-07-01"
-APP_CONTENT_RATING = "4+"
-
 
 def organization_schema():
-    """The one Organization node this domain publishes.
-
-    `@id` is what makes it one node. Google consolidates nodes that share an
-    `@id`, so two pages describing `#organization` differently do not produce
-    two entities -- they produce one entity with contradictory properties, and
-    the contradiction is resolved by whichever page was crawled last.
-
-    That was the state before this became the single source. `/terms` and
-    `/privacy` each declared this exact `@id` with `name: "CoinPlotXAI Inc."`,
-    while `/app`, `/features/*` and `/pricing` declared it with `name:
-    "PulseSoc"`. Separately, `/` and `/about` published Organization nodes with
-    no `@id` at all, which join nothing and corroborate nothing.
-
-    `name` is the brand a person searches for. `legalName` is the company that
-    signs things. Both are true, they are different fields, and the split is
-    corroborated outside this repo: Apple records the App Store seller as
-    COINPLOTXAI INC.
-    """
-
     return {
         "@type": "Organization",
         "@id": f"{SITE_URL}/#organization",
@@ -58,11 +23,7 @@ def organization_schema():
             "url": f"{SITE_URL}/support",
             "availableLanguage": "en",
         }],
-        # `sameAs` is for profiles that identify this same entity elsewhere, and
-        # the App Store listing is the strongest one available: Apple records
-        # the seller as COINPLOTXAI INC, which independently corroborates the
-        # `legalName` above rather than asking Google to take our word for it.
-        "sameAs": [app_links.app_store_url(), "https://t.me/DocShieldX_bot"],
+        "sameAs": ["https://t.me/DocShieldX_bot"],
     }
 
 
@@ -83,121 +44,24 @@ def website_schema():
     }
 
 
-def mobile_app_schema():
-    """The iPhone app, described the way Apple records it.
-
-    What this replaces was wrong in every field that mattered: it declared
-    `FinanceApplication` for a social network, `operatingSystem: "Telegram,
-    Web, PWA"` for a product whose app is on iOS, and a $14.99 offer on an
-    application that is free to download. It described the Telegram bot this
-    company used to be.
-
-    Two deliberate omissions:
-
-    * No `aggregateRating`. The listing has two ratings, and Google's guidance
-      is that a rating in structured data should come from reviews the site
-      itself collects -- restating Apple's on our own domain is the kind of
-      claim that is technically sourced and still misleading. A missing star
-      rating costs nothing we currently qualify for.
-    * No `downloadUrl`. `installUrl` is the field for "where a person installs
-      this"; `downloadUrl` invites a direct binary, which we do not offer.
-
-    The $14.99 in `product_schema` is a different claim about a different
-    thing: the app is free, PulseSoc Premium is the paid subscription
-    (`bot.PRO_PRICE_MONTHLY`). Both can be true at once, and were not before.
-    """
-
+def software_schema():
     return {
-        "@type": "MobileApplication",
-        "@id": f"{SITE_URL}/#app",
+        "@type": "SoftwareApplication",
+        "@id": f"{SITE_URL}/#software",
         "name": "PulseSoc",
-        "applicationCategory": "SocialNetworkingApplication",
-        "operatingSystem": f"iOS {APP_MINIMUM_IOS} or later",
-        "url": f"{SITE_URL}/app",
-        "installUrl": app_links.app_store_url(),
-        "softwareVersion": APP_VERSION,
-        "datePublished": APP_FIRST_RELEASED,
-        "contentRating": APP_CONTENT_RATING,
-        "inLanguage": "en",
+        "applicationCategory": "FinanceApplication",
+        "operatingSystem": "Telegram, Web, PWA",
+        "url": SITE_URL + "/",
         "image": SHARE_IMAGE_URL,
         "publisher": {"@id": f"{SITE_URL}/#organization"},
-        "description": "PulseSoc for iPhone: posts, reels, live video, direct messages, calls, creator profiles, and a marketplace, with reporting, blocking and moderation built in.",
+        "description": "Creator, video, live, messaging, scam-safety, portfolio context, market intelligence, and premium community features.",
         "offers": {
             "@type": "Offer",
-            "price": "0",
+            "price": "14.99",
             "priceCurrency": "USD",
-            "availability": "https://schema.org/InStock",
+            "availability": "https://schema.org/OnlineOnly",
         },
     }
-
-
-def app_page_graph(page, trail=()):
-    """The graph for the app pages, composed by hand rather than through
-    `schema_graph`.
-
-    `schema_graph` attaches a `Service` node to every page, with `serviceType`
-    defaulting to "AI intelligence". On a page whose subject is a free iPhone
-    app that is not a smaller claim than the rest, it is a different one, and
-    the point of this pass is that each node corresponds to something real.
-
-    `trail` is the breadcrumb between the home page and this one, so a feature
-    page can say it sits under /app. Passing it explicitly rather than deriving
-    it from the URL keeps the crumb honest when the two disagree.
-    """
-
-    graph = [
-        organization_schema(),
-        website_schema(),
-        mobile_app_schema(),
-        webpage_schema(page),
-        breadcrumb_schema([
-            ("Home", SITE_URL + "/"),
-            *trail,
-            (page["breadcrumb"], page["canonical"]),
-        ]),
-    ]
-    if page.get("faqs"):
-        graph.append(faq_schema(page["faqs"]))
-    return json.dumps({"@context": "https://schema.org", "@graph": graph}, ensure_ascii=False)
-
-
-def commerce_policy_graph(page):
-    """The graph for `/returns`, `/refund-policy`, `/shipping` and `/contact`.
-
-    A third hand-composed graph rather than a reuse, and the omission is the
-    reason. `app_page_graph` attaches `mobile_app_schema()` to every page it
-    builds, which is right for a page whose subject is the iPhone app and wrong
-    here: a returns policy is not a claim about an app, and a `MobileApplication`
-    node on it invites Google to read the page as app marketing. `schema_graph`
-    would additionally attach a `Service` node with `serviceType` defaulting to
-    "AI intelligence", which on a shipping page is simply false.
-
-    What is left is what is true: who publishes the page (Organization), which
-    site it belongs to (WebSite), what the page is (WebPage), and where it sits
-    (BreadcrumbList). Merchant Center's reviewers read the rendered page rather
-    than the JSON-LD, so nothing here is load-bearing for approval -- which is
-    precisely why it must not overclaim to buy something.
-
-    `/contact` gets one extra node, a `ContactPage` type on the WebPage itself
-    rather than a separate entity, because that is the one page of the four
-    whose subject schema.org has a specific type for.
-    """
-
-    webpage = webpage_schema(page)
-    if page.get("page_type"):
-        webpage["@type"] = page["page_type"]
-    return json.dumps({
-        "@context": "https://schema.org",
-        "@graph": [
-            organization_schema(),
-            website_schema(),
-            webpage,
-            breadcrumb_schema([
-                ("Home", SITE_URL + "/"),
-                (page["breadcrumb"], page["canonical"]),
-            ]),
-        ],
-    }, ensure_ascii=False)
 
 
 def service_schema(page):
@@ -326,7 +190,7 @@ def schema_graph(page, include_product=False, include_article=False):
     graph = [
         organization_schema(),
         website_schema(),
-        mobile_app_schema(),
+        software_schema(),
         webpage_schema(page),
         service_schema(page),
         breadcrumb_schema([

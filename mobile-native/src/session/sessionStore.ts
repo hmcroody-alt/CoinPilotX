@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as SecureStore from "../native/secureStore";
+import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { PULSE_API_BASE_URL } from "../api/config";
 
@@ -59,22 +59,8 @@ export type NativeSessionEnvelope = {
   refreshTokenExpiresAt: number;
 };
 
-/**
- * The cookie this process is holding. Same reasoning as `liveEnvelope` below.
- *
- * The cookie's own loss is survivable — `credentials: "include"` lets the
- * platform jar attach it, so requests still authenticate. What is not
- * survivable is what an unreadable cookie does to `canRecoverSession` in
- * `pulseApi`: with neither a stored refresh token nor a readable cookie it
- * answers "no", which suppresses the **pre-flight** refresh. The app then has
- * to discover its missing bearer by being refused, once per process, on a
- * request the user is watching.
- */
-let liveCookie: string | null = null;
-
 export async function getSessionCookie() {
   if (Platform.OS === "web") return AsyncStorage.getItem(COOKIE_KEY);
-  if (liveCookie) return liveCookie;
   try {
     return await SecureStore.getItemAsync(COOKIE_KEY, KEYCHAIN_OPTIONS);
   } catch (error) {
@@ -88,7 +74,6 @@ export async function getSessionCookie() {
 }
 
 export async function setSessionCookie(cookie: string) {
-  liveCookie = cookie || null;
   if (Platform.OS === "web") {
     if (!cookie) {
       await AsyncStorage.removeItem(COOKIE_KEY);
@@ -110,78 +95,26 @@ export async function setSessionCookie(cookie: string) {
   });
 }
 
-/**
- * One rule for what counts as an envelope, applied to both tiers below.
- *
- * Written once rather than twice on purpose: the in-memory tier and the
- * keychain tier must accept and reject exactly the same shapes, or a device
- * whose keychain works and a device whose keychain does not would disagree
- * about whether it is signed in.
- */
-function normalizeEnvelope(value: Partial<NativeSessionEnvelope> | null): NativeSessionEnvelope | null {
-  if (!value || value.version !== 1 || !value.refreshToken || Number(value.userId || 0) <= 0) return null;
-  return {
-    version: 1,
-    userId: Number(value.userId),
-    accessToken: String(value.accessToken || ""),
-    accessTokenExpiresAt: Number(value.accessTokenExpiresAt || 0),
-    refreshToken: String(value.refreshToken),
-    refreshTokenExpiresAt: Number(value.refreshTokenExpiresAt || 0)
-  };
-}
-
-/**
- * The envelope this process is holding, whether or not the keychain took it.
- *
- * `setSecureValue` swallows a failed keychain write by design — see the comment
- * there — and the documented cost was "the session simply won't persist across
- * a cold start". That was wrong by one tier. The envelope is not only how the
- * app resumes; it is where the **bearer** lives, and the bearer is what
- * `services/csrf.py` requires for every native write. So a swallowed write did
- * not degrade persistence, it removed write authority for the whole run:
- *
- *   * reads kept succeeding, because `credentials: "include"` attaches the
- *     session cookie from the platform jar and the cookie authenticates;
- *   * every write was refused `403 {"code":"csrf"}`, because no bearer was ever
- *     attached and `g.mobile_access_user_id` was therefore never set;
- *   * the recovery in `pulseApi` could not break the loop. It refreshed, the
- *     server minted a good token, `setSessionEnvelope` dropped it, and the
- *     replay went out with no bearer. Measured in production: import 403,
- *     refresh 200, import 403, 238ms apart, forever.
- *
- * Which is how a seller's 58-product CJ import could report "That import didn't
- * run" with a perfectly healthy cart on screen and a perfectly healthy server.
- *
- * Holding it in memory is **not** the plaintext fallback that `setSecureValue`
- * refuses. Nothing is written outside the keychain; this is the same process
- * memory the token already passes through on its way into a request header. It
- * is dropped when the process dies, so a device with an unwritable keychain
- * still has to sign in again after a cold start — the cost the original comment
- * described, and the only one it should ever have had.
- */
-let liveEnvelope: NativeSessionEnvelope | null = null;
-
 export async function getSessionEnvelope(): Promise<NativeSessionEnvelope | null> {
-  // Preferred over the keychain rather than used as a fallback. When the write
-  // succeeded the two are identical, and when it did not this is the only copy
-  // that exists. A "read storage, fall back to memory" order would also work
-  // today and would break the moment a read failure and a write failure stop
-  // coinciding.
-  if (liveEnvelope) return liveEnvelope;
   const raw = await getSecureValue(SESSION_ENVELOPE_KEY);
   if (!raw) return null;
   try {
-    return normalizeEnvelope(JSON.parse(raw) as Partial<NativeSessionEnvelope>);
+    const value = JSON.parse(raw) as Partial<NativeSessionEnvelope>;
+    if (value.version !== 1 || !value.refreshToken || Number(value.userId || 0) <= 0) return null;
+    return {
+      version: 1,
+      userId: Number(value.userId),
+      accessToken: String(value.accessToken || ""),
+      accessTokenExpiresAt: Number(value.accessTokenExpiresAt || 0),
+      refreshToken: String(value.refreshToken),
+      refreshTokenExpiresAt: Number(value.refreshTokenExpiresAt || 0)
+    };
   } catch {
     return null;
   }
 }
 
 export async function setSessionEnvelope(envelope: NativeSessionEnvelope | null) {
-  // Set before the await, so a caller that writes and immediately reads — which
-  // is exactly what `pulseApi`'s refresh-and-replay does — cannot observe the
-  // old value through an interleaving.
-  liveEnvelope = normalizeEnvelope(envelope);
   if (!envelope) return deleteSecureValue(SESSION_ENVELOPE_KEY);
   await setSecureValue(SESSION_ENVELOPE_KEY, JSON.stringify(envelope));
 }

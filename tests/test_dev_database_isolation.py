@@ -17,18 +17,9 @@ The fix is the session fixture in `conftest.py`. This file is what keeps it hone
 fixture is a single assignment with no observable effect on any passing test, so without
 these assertions it could be deleted, or have its `finally` restore moved above the
 `yield`, and the whole suite would stay green while quietly writing to the repo again.
-
-`connect()` has a *second* leg, though, and the classes below the first two are about
-that one. It reads `DATABASE_URL` before it reads `LOCAL_SQLITE_FILE`, so the fixture only
-ever protected the case where that variable is unset — and it does not stay unset.
-Importing `bot` sets it, to a relative path, from `.env.local`. Every test in the two
-classes above clears the environment, which erases the variable and makes them
-structurally blind to it: they were all green on the day 124MB `coinpilotx.db` took four
-rows and a new mtime from a run that was supposed to be sandboxed.
 """
 
 import os
-import pathlib
 import sqlite3
 import tempfile
 import unittest
@@ -36,8 +27,6 @@ from unittest.mock import patch
 
 from services import db as platform_db
 from services import undx_cost
-from services.command_center_worker import config as local_env
-from tests import conftest as root_conftest
 
 #: The repository root, which is where a relative fallback path resolves to when pytest
 #: is invoked from there — the normal case, and the one that did the damage.
@@ -138,156 +127,6 @@ class TheGuardCanFail(unittest.TestCase):
                          "an unconfigured record() lands in whatever LOCAL_SQLITE_FILE "
                          "names — which is why it must not name the developer's file")
         undx_cost.reset_for_tests()
-
-
-def _database_connect_opens():
-    """The file `connect()` actually opens under the *ambient* environment.
-
-    Asked of SQLite rather than of the module, and deliberately without
-    `patch.dict(os.environ, {}, clear=True)` — clearing the environment is what made the
-    two classes above unable to see this leg at all.
-    """
-    connection = platform_db.connect()
-    try:
-        rows = connection.execute("PRAGMA database_list").fetchall()
-    finally:
-        connection.close()
-    return os.path.realpath([r[2] for r in rows if r[1] == "main"][0])
-
-
-class TheConfiguredUrlIsNotTheRepositoryEither(unittest.TestCase):
-    """The `DATABASE_URL` leg, under the environment the suite really runs in.
-
-    Asserted as a property of whatever the variable holds, not as equality with the
-    conftest's own path, because ~250 test modules pin a database of their own at module
-    scope and all of that happens during *collection*. In a run that shares a process the
-    variable therefore holds whichever module was collected last, which is legitimate —
-    what must be true of every one of those values is that it is set, and that it is not
-    in this checkout.
-    """
-
-    def test_the_variable_is_set_and_points_outside_the_repository(self):
-        """Set at all is half the point: absent is what let `bot` fill it in.
-
-        `_load_local_env_file` assigns only keys missing from `os.environ`, so presence
-        is what makes the capture impossible. Judged by the conftest's own predicate so
-        that the test and the pin cannot disagree about what "inside the repository"
-        means.
-        """
-        value = os.environ.get("DATABASE_URL")
-        self.assertTrue(value, "DATABASE_URL is unset: bot's .env.local can capture it")
-        self.assertFalse(root_conftest._would_write_inside_the_repository(value),
-                         f"the configured database is inside the repo: {value}")
-
-    def test_the_two_legs_of_connect_converge_on_one_file(self):
-        """Why the pin names the fallback file rather than a second temp file.
-
-        A suite that clears the environment, or sets `DATABASE_URL` empty — and a dozen
-        do, via `setdefault("DATABASE_URL", "")` — drops through to `LOCAL_SQLITE_FILE`.
-        Pointing both at the same database is what keeps those suites landing exactly
-        where they landed before this pin existed.
-        """
-        self.assertEqual(os.path.realpath(root_conftest._FALLBACK_DB_PATH),
-                         os.path.realpath(platform_db.LOCAL_SQLITE_FILE))
-
-    def test_an_ambient_connection_actually_uses_it(self):
-        """Read it through SQLite, because the variable is only evidence of intent."""
-        opened = _database_connect_opens()
-        self.assertFalse(opened.startswith(os.path.realpath(REPO_ROOT) + os.sep),
-                         f"an ambient connection writes inside the repo: {opened}")
-
-    def test_the_sqlalchemy_engine_is_off_the_relative_path_too(self):
-        """The gap the session fixture documented as out of its reach.
-
-        `services.db` resolves `ENGINE_URL` once, at import, so a fixture can never move
-        it; only a variable set before that import can. It is asserted here because it is
-        the same defect — a session opened against `sqlite:///coinpilotx.db` writes to the
-        developer's file exactly as a raw connection does. No module-scope pin can move it
-        afterwards, so unlike the variable this one is settled before collection begins.
-        """
-        self.assertFalse(
-            root_conftest._would_write_inside_the_repository(platform_db.ENGINE_URL),
-            f"the SQLAlchemy engine is bound inside the repo: {platform_db.ENGINE_URL}")
-
-
-class TheConfiguredUrlGuardCanFail(unittest.TestCase):
-    """Reproduce the capture, so the assertions above are evidence and not decoration.
-
-    Every one of them holds while the pin is installed, which on its own proves nothing
-    about the pin's necessity — the same gap the two classes at the top of this file call
-    out about the fixture.
-    """
-
-    def test_patching_the_constant_alone_does_not_save_you(self):
-        """The precise reason the session fixture was not enough.
-
-        `LOCAL_SQLITE_FILE` stays pinned at the temp file for the whole of this test. Only
-        `DATABASE_URL` carries the post-`bot` value — the relative URL `.env.local` supplies
-        — and `connect()` still opens the developer's database, because it consults the
-        variable *first* and never reaches the constant. `sqlite3.connect` is faked so that
-        proving this does not itself create the file.
-        """
-        self.assertTrue(os.path.isabs(platform_db.LOCAL_SQLITE_FILE))
-        with patch.dict(os.environ, {"DATABASE_URL": "sqlite:///coinpilotx.db"}), \
-                patch("sqlite3.connect") as fake_connect:
-            platform_db.connect()
-        self.assertEqual(fake_connect.call_args.args[0], "coinpilotx.db",
-                         "the fixture's patched constant was never consulted")
-
-    def test_a_local_env_file_captures_an_absent_variable_and_not_a_present_one(self):
-        """The mechanism itself, driven through a real loader rather than a paraphrase.
-
-        `services.command_center_worker.config._load_local_env_file` is the same
-        assign-only-if-absent loader `bot` runs at module scope, over the same
-        `.env.local`, and it imports in milliseconds instead of booting the monolith. Fed
-        a file carrying the relative URL it takes the variable when nothing holds it —
-        which is the pre-fix state and the whole defect — and is inert when the pin does.
-        """
-        with tempfile.TemporaryDirectory() as scratch:
-            env_local = pathlib.Path(scratch, ".env.local")
-            env_local.write_text("DATABASE_URL=sqlite:///coinpilotx.db\n", encoding="utf-8")
-
-            pinned = os.environ["DATABASE_URL"]
-            with patch.dict(os.environ, {}):
-                local_env._load_local_env_file(env_local)
-                self.assertEqual(os.environ["DATABASE_URL"], pinned,
-                                 "a present DATABASE_URL must not be overwritten")
-
-            with patch.dict(os.environ, {}):
-                del os.environ["DATABASE_URL"]
-                local_env._load_local_env_file(env_local)
-                captured = os.environ["DATABASE_URL"]
-            self.assertEqual(captured, "sqlite:///coinpilotx.db",
-                             "without the pin the loader takes the variable")
-            self.assertEqual(os.environ["DATABASE_URL"], pinned)
-
-
-class ThePinLeavesADeliberateDatabaseAlone(unittest.TestCase):
-    """What the pin must *not* do.
-
-    It replaces a value that would write into this checkout. A developer running the suite
-    against a throwaway PostgreSQL, or a suite asking for `:memory:`, has chosen a database
-    and silently redirecting it to a temp file would be its own bug — a Postgres-only
-    dialect crash would then never reproduce locally.
-    """
-
-    def test_it_replaces_only_what_lands_in_the_repository(self):
-        pins = {
-            None: True,
-            "": True,
-            "sqlite:///coinpilotx.db": True,
-            "sqlite:///./coinpilotx.db": True,
-            f"sqlite:///{os.path.join(REPO_ROOT, 'coinpilotx.db')}": True,
-            "sqlite:///:memory:": False,
-            "file::memory:?cache=shared": False,
-            "postgresql://localhost/pulsesoc": False,
-            "postgres://localhost/pulsesoc": False,
-            "sqlite:////tmp/pulsesoc-test/coinpilotx.db": False,
-        }
-        for url, expected in pins.items():
-            with self.subTest(url=url):
-                self.assertEqual(
-                    root_conftest._would_write_inside_the_repository(url), expected)
 
 
 if __name__ == "__main__":

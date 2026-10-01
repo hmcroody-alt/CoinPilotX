@@ -78,7 +78,6 @@ export {
   formatTemperature,
   formatTime,
   formatWeight,
-  languageDisplayName,
   monthNames,
   regionDisplayName,
   timeZoneLabel,

@@ -26,7 +26,6 @@ import { ATTACHED_MUSIC_EXCLUSIVE, ORIGINAL_AUDIO } from "../attachedMusicAudioP
 import type { AttachedMusicPolicy } from "../attachedMusicAudioPolicy";
 
 const withMusic: AttachedMusicPolicy = {
-  audioUnavailable: false,
   mode: ATTACHED_MUSIC_EXCLUSIVE,
   hasAttachedMusic: true,
   muteOriginalAudio: true,
@@ -37,7 +36,6 @@ const withMusic: AttachedMusicPolicy = {
 };
 
 const noMusic: AttachedMusicPolicy = {
-  audioUnavailable: false,
   mode: ORIGINAL_AUDIO,
   hasAttachedMusic: false,
   muteOriginalAudio: false,

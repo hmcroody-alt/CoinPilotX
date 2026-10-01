@@ -150,70 +150,6 @@ class CompatRow(Mapping):
         return self._data.items()
 
 
-#: PostgreSQL SQLSTATE for a unique-constraint violation. Named because the bare
-#: string in an ``except`` branch reads like a magic number.
-POSTGRES_UNIQUE_VIOLATION = "23505"
-
-
-def is_unique_violation(exc) -> bool:
-    """Whether ``exc`` is "that row already exists", on either engine.
-
-    This exists because the obvious spelling is wrong in production. ``connect()``
-    hands back a real ``sqlite3.Connection`` locally and a psycopg2 cursor behind
-    ``CompatConnection`` on PostgreSQL, so the exception classes share no ancestor
-    that means "uniqueness": a duplicate raises ``sqlite3.IntegrityError`` on one
-    engine and ``psycopg2.errors.UniqueViolation`` on the other.
-
-    So ``except sqlite3.IntegrityError`` -- which is what every hand-rolled site
-    in this repo writes -- catches nothing at all in production. The local suite
-    cannot see that, because locally it is the only engine there is.
-
-    Matched by SQLSTATE rather than by class so psycopg2 need not be importable
-    for this module to load, and so a DBAPI swap does not silently un-match.
-    Deliberately narrow: a foreign-key or not-null violation is a different bug
-    and must not be mistaken for a duplicate.
-    """
-    if isinstance(exc, sqlite3.IntegrityError):
-        # SQLite folds several constraint kinds into one class, so the class alone
-        # is not the answer; the message names which one fired.
-        return "unique" in str(exc).lower()
-    code = getattr(exc, "pgcode", None) or getattr(getattr(exc, "diag", None), "sqlstate", None)
-    return str(code or "") == POSTGRES_UNIQUE_VIOLATION
-
-
-def row_values(row) -> tuple:
-    """The row's column VALUES, left to right, whatever engine produced it.
-
-    Use this anywhere ``tuple(row)`` or ``list(row)`` was reached for. Those two
-    mean opposite things depending on which database answered, and every test in
-    this repository runs on the engine where they happen to mean the right one:
-
-    * SQLite hands back ``sqlite3.Row``, a *sequence*. ``tuple(row)`` is the
-      values.
-    * Postgres goes through :class:`CompatRow`, a *Mapping*. ``tuple(row)`` is
-      the **column names** — ``Mapping.__iter__`` yields keys.
-
-    So ``dict(zip(columns, tuple(row)))`` silently becomes ``{"user_id":
-    "user_id", ...}`` in production and nowhere else. That is not hypothetical:
-    it is what took the comm_v2 send-idempotency preflight down (issue #25), and
-    it reached production because ``IS_POSTGRES`` decides which row type exists
-    and no test has ever run with it true.
-
-    Positional ``row[0]`` already agrees on both types and stays fine. This
-    helper is for the cases that need the whole row at once.
-    """
-    if row is None:
-        return ()
-    if isinstance(row, CompatRow):
-        # By position, not via ``values()``: CompatRow's mapping half collapses
-        # repeated column names (``SELECT a, a``) while its positional half
-        # keeps both, and a caller zipping against a column list needs both.
-        return tuple(row[index] for index in range(len(row)))
-    if isinstance(row, Mapping):
-        return tuple(row.values())
-    return tuple(row)
-
-
 AUTO_PK_TABLES = {
     "users": "user_id",
     "alerts_history": "id",
@@ -369,13 +305,6 @@ AUTO_PK_TABLES = {
     "pulse_videos": "id",
     "pulse_video_comments": "id",
     "pulse_audio_tracks": "id",
-    # The owner music takedown flow reads both of these back: the audit row's id
-    # becomes the `related_action_id` a later restore links to, and the step-up
-    # row's id is the grant a purge consumes. A missing entry here does not raise
-    # on Postgres, it silently yields 0 -- an unlinkable audit trail and a grant
-    # nothing can consume.
-    "music_takedown_audit": "action_id",
-    "music_owner_stepups": "id",
     # Same defect, quieter symptom. `bot.notify_user` reads the new notification's
     # id back to link its delivery rows and the push payload to it, but writes
     # `int(cur.lastrowid or 0)` — so instead of a TypeError, on Postgres every
@@ -704,135 +633,6 @@ def _escape_postgres_percent_literals(sql):
     return "".join(out)
 
 
-_SCALAR_MAX_MIN = {"MAX": "GREATEST", "MIN": "LEAST"}
-_MAX_MIN_CALL = re.compile(r"(MAX|MIN)(\s*)\(", re.I)
-
-
-def _top_level_arg_count(sql, open_index):
-    """How many comma-separated arguments the call opening at ``open_index``
-    takes. Returns 0 for an unbalanced paren so the caller leaves it alone."""
-    depth = 0
-    args = 1
-    index = open_index
-    in_single = False
-    in_double = False
-    while index < len(sql):
-        char = sql[index]
-        if in_single:
-            if char == "'":
-                in_single = False
-        elif in_double:
-            if char == '"':
-                in_double = False
-        elif char == "'":
-            in_single = True
-        elif char == '"':
-            in_double = True
-        elif char == "(":
-            depth += 1
-        elif char == ")":
-            depth -= 1
-            if depth == 0:
-                return args
-        elif char == "," and depth == 1:
-            args += 1
-        index += 1
-    return 0
-
-
-def _rewrite_scalar_max_min(sql):
-    """Rewrite SQLite's scalar ``MAX(a, b)``/``MIN(a, b)`` as Postgres'
-    ``GREATEST``/``LEAST``.
-
-    Postgres' ``MAX``/``MIN`` are one-argument aggregates, so the two-argument
-    spelling raises ``function max(integer, integer) does not exist``. Calls with
-    a single top-level argument are the aggregate and are left untouched --
-    including ``MAX(COALESCE(amount, 14.99))``, whose comma belongs to the inner
-    call.
-
-    NULL handling diverges: SQLite's scalar ``MAX`` returns NULL if any argument
-    is NULL, while ``GREATEST`` skips NULLs and returns NULL only when every
-    argument is. Today's call sites all guard with COALESCE or a literal, so the
-    difference is unreachable, but a nullable argument would not behave alike on
-    the two engines.
-    """
-    out = []
-    index = 0
-    length = len(sql)
-    in_single = False
-    in_double = False
-    in_line_comment = False
-    in_block_comment = False
-    escaped = False
-    while index < length:
-        char = sql[index]
-        next_char = sql[index + 1] if index + 1 < length else ""
-
-        if in_line_comment:
-            out.append(char)
-            if char == "\n":
-                in_line_comment = False
-            index += 1
-            continue
-
-        if in_block_comment:
-            out.append(char)
-            if char == "*" and next_char == "/":
-                out.append(next_char)
-                in_block_comment = False
-                index += 2
-                continue
-            index += 1
-            continue
-
-        if not in_single and not in_double:
-            if char == "-" and next_char == "-":
-                out.append(char)
-                out.append(next_char)
-                in_line_comment = True
-                index += 2
-                continue
-            if char == "/" and next_char == "*":
-                out.append(char)
-                out.append(next_char)
-                in_block_comment = True
-                index += 2
-                continue
-
-        if char == "\\" and not escaped and (in_single or in_double):
-            escaped = True
-            out.append(char)
-            index += 1
-            continue
-
-        if char == "'" and not in_double and not escaped:
-            in_single = not in_single
-        elif char == '"' and not in_single and not escaped:
-            in_double = not in_double
-        elif not in_single and not in_double:
-            previous = sql[index - 1] if index else ""
-            if not (previous.isalnum() or previous == "_"):
-                match = _MAX_MIN_CALL.match(sql, index)
-                if match and _top_level_arg_count(sql, match.end() - 1) > 1:
-                    out.append(_SCALAR_MAX_MIN[match.group(1).upper()])
-                    out.append(match.group(2))
-                    out.append("(")
-                    index = match.end()
-                    escaped = False
-                    continue
-
-        out.append(char)
-        escaped = False
-        index += 1
-    return "".join(out)
-
-
-def _translate_scalar_max_min(sql):
-    if not IS_POSTGRES:
-        return sql
-    return _rewrite_scalar_max_min(sql)
-
-
 def _translate_create_table(sql):
     sql = re.sub(r"\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b", "SERIAL PRIMARY KEY", sql, flags=re.I)
     sql = re.sub(r"\b(\w+)\s+INTEGER\s+PRIMARY\s+KEY\b", r"\1 SERIAL PRIMARY KEY", sql, flags=re.I)
@@ -857,7 +657,6 @@ def _translate_sql(sql):
     translated = translated.replace("datetime('now')", "CURRENT_TIMESTAMP")
     translated = translated.replace('datetime("now")', "CURRENT_TIMESTAMP")
     translated = re.sub(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", "INSERT INTO", translated, flags=re.I)
-    translated = _translate_scalar_max_min(translated)
     translated = _replace_question_placeholders(translated)
     translated = _escape_postgres_percent_literals(translated)
     return translated

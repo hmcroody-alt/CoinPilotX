@@ -354,12 +354,9 @@ def test_a_stockless_type_is_never_blocked_by_stock_even_unprojected():
     make every digital listing served by a query that omits ``quantity``
     silently unpurchasable.
     """
-    # `quantity` is the one column this test withholds. Everything else
-    # publication requires is present, including a price, so the abstention being
-    # exercised is the stock rule's and not some other rule's.
     row = {"status": "published", "approval_status": "approved",
            "seller_status": "approved", "seller_store_name": "Store",
-           "product_type": "digital", "price_label": "$9.99"}
+           "product_type": "digital"}
     assert "quantity" not in row
     assert lifecycle.publication_blocker(row) == ""
     assert lifecycle.is_public(row) is True, (

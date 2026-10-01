@@ -103,28 +103,7 @@ export function registerSessionInvalidationHandler(handler: ((event: SessionInva
   };
 }
 
-/**
- * A request, plus the one thing `RequestInit` cannot say: how long this
- * particular call is worth waiting for.
- *
- * The shared budget below is sized for a request that reads something. A few
- * writes are not that — a supplier import walks 25 products through CJ and the
- * server is allowed 120 seconds to do it — and for those the default is not
- * merely tight, it is *wrong in a way that reports itself as a failure*: the
- * client gives up, the server carries on, finishes, and commits. The merchant
- * is then told an import did not happen that did.
- */
-export type PulseRequestInit = RequestInit & {
-  /**
-   * Milliseconds this call may take before the client stops waiting. Only
-   * raise it above the default when the server is genuinely allowed to take
-   * longer than that, and make it exceed the server's own ceiling — a budget
-   * that expires first turns a completed write into a reported failure.
-   */
-  timeoutMs?: number;
-};
-
-export async function pulseApi<T>(path: string, options: PulseRequestInit = {}): Promise<T> {
+export async function pulseApi<T>(path: string, options: RequestInit = {}): Promise<T> {
   const method = String(options.method || "GET").toUpperCase();
   const span = startSpan("api.request", { route: perfRouteLabel(path), method });
   // Measured here rather than around `fetch` so it reflects what the caller
@@ -168,13 +147,13 @@ export async function pulseApi<T>(path: string, options: PulseRequestInit = {}):
  * the same frame. Share only the in-flight work; never cache the response here,
  * so server authority, refresh semantics, and explicit reloads stay intact.
  */
-function readCoalescingKey(path: string, options: PulseRequestInit, method: string) {
+function readCoalescingKey(path: string, options: RequestInit, method: string) {
   if (method !== "GET" || options.body || options.signal || options.headers) return "";
   if (options.cache === "no-store" || options.cache === "reload") return "";
   return path;
 }
 
-async function pulseApiRequest<T>(path: string, options: PulseRequestInit, allowRefresh: boolean): Promise<T> {
+async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefresh: boolean): Promise<T> {
   const headers = new Headers(options.headers || {});
   const body = options.body;
   if (!(body instanceof FormData) && !headers.has("Content-Type")) {
@@ -197,12 +176,8 @@ async function pulseApiRequest<T>(path: string, options: PulseRequestInit, allow
   let response: Response;
   const timeout = requestTimeout(options);
   try {
-    // `timeoutMs` is ours, not the platform's, so it is removed rather than
-    // spread into `fetch` — an unknown key on a `RequestInit` is ignored today
-    // but is not something to hand to a transport we do not own.
-    const { timeoutMs: _budget, ...transportOptions } = options;
     const requestOptions = {
-      ...transportOptions,
+      ...options,
       headers,
       credentials: "include",
       signal: timeout.signal
@@ -354,17 +329,9 @@ const UPLOAD_TIMEOUT_MS = 180000;
  * signal by rejecting, and a transport that quietly ignores it would otherwise
  * leave us hanging on exactly the stalled request the budget exists to bound.
  */
-function requestTimeout(options: PulseRequestInit) {
+function requestTimeout(options: RequestInit) {
   const controller = new AbortController();
-  // A caller-supplied budget wins over both defaults, including the upload one:
-  // a caller that names a number knows what it is waiting for, and the two
-  // defaults are guesses made from the shape of the body.
-  const budget =
-    options.timeoutMs && options.timeoutMs > 0
-      ? options.timeoutMs
-      : options.body instanceof FormData
-        ? UPLOAD_TIMEOUT_MS
-        : PULSE_API_READ_TIMEOUT_MS;
+  const budget = options.body instanceof FormData ? UPLOAD_TIMEOUT_MS : PULSE_API_READ_TIMEOUT_MS;
   let expired = false;
 
   let trip!: (error: PulseApiError) => void;
@@ -486,56 +453,6 @@ async function refreshNativeSession(
   return refreshPromise;
 }
 
-/**
- * The session is over and it ended here, not at a sign-out button.
- *
- * Every `"invalid"` return below used to clear the credentials and stop. That is
- * half of what a sign-out does. `session/auth` pairs the same credential clear
- * with `clearUserScopedMediaState()`, and the reason is not housekeeping: most
- * of what this app caches is stored under a BARE key, so it is not isolated by
- * account at rest and the sweep is the only thing keeping one person's data away
- * from the next one. `core/storageScope` says so in as many words — profiles,
- * the activity inbox, the saved library, recent searches and every composer
- * draft "survived a sign-out under a bare key and were read straight back by the
- * next account."
- *
- * So a session that dies on this path left all of it behind. That mattered most
- * at the third call site: a refreshed `userId` that disagrees with the stored
- * envelope IS an account switch, which is the exact scenario the sweep was
- * written for, and it was the one place the sweep did not run. The 401/403 site
- * matters too, because refresh-reuse detection revokes a whole token family on
- * benign desync — that path is reached in ordinary use, not only under attack.
- *
- * WHY NOT ROUTE IT THROUGH `sessionInvalidationHandler`
- *
- * This file already has a session-invalidation hook and `App.tsx:144` does
- * register it, so "nobody would wire it up" is not the objection. The real one
- * is visible in what that handler does: it calls `requestReauthentication`,
- * which sets the auth state to `expiredState()`. That is a UI transition — it
- * neither signs out nor sweeps, which is exactly why this leak survived while a
- * hook for session invalidation existed and fired. Putting a privacy boundary
- * there would make it depend on a React effect being mounted and on a handler
- * whose job is something else. The sweep belongs at the moment the session is
- * known to be dead, unconditionally.
- *
- * ON THE LAZY REQUIRE
- *
- * `media/mediaSessionCleanup` reaches `media/messengerMediaAccess`, which
- * imports this module, so a static import here is a real require cycle.
- * Resolving it at call time is the cycle-break `screens/BusinessHubRoute` uses.
- */
-async function abandonInvalidSession(): Promise<RefreshResult> {
-  await clearNativeSessionCredentials();
-  await setCachedSessionUser(null);
-  const { clearUserScopedMediaState } = require("../media/mediaSessionCleanup") as typeof import("../media/mediaSessionCleanup");
-  // Guarded because this runs inside an ordinary request's refresh, not a
-  // user-initiated sign-out: a cleanup fault must not turn "your session
-  // expired" into a thrown error the caller never expected. Each step inside is
-  // already individually guarded; this is the outer belt.
-  await clearUserScopedMediaState().catch(() => undefined);
-  return "invalid";
-}
-
 async function performNativeSessionRefresh(cookie: string, serverConfirmedSession: boolean): Promise<RefreshResult> {
   // Declared out here so the catch below can see it: a network fault on a
   // cookie-only attempt has to arm the backoff too, and that is precisely the
@@ -571,7 +488,9 @@ async function performNativeSessionRefresh(cookie: string, serverConfirmedSessio
     }, PULSE_API_REFRESH_TIMEOUT_MS);
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
-        return abandonInvalidSession();
+        await clearNativeSessionCredentials();
+        await setCachedSessionUser(null);
+        return "invalid";
       }
       return temporary();
     }
@@ -580,11 +499,14 @@ async function performNativeSessionRefresh(cookie: string, serverConfirmedSessio
     const userId = Number(user?.user_id ?? user?.id ?? 0);
     if (data.authenticated !== true || userId <= 0 || !data.refresh_token) return temporary();
     if (shouldRejectTemporaryQaUser(user)) {
-      return abandonInvalidSession();
+      await clearNativeSessionCredentials();
+      await setCachedSessionUser(null);
+      return "invalid";
     }
-    // An account switch, discovered mid-flight. See `abandonInvalidSession`.
     if (envelope?.userId && envelope.userId !== userId) {
-      return abandonInvalidSession();
+      await clearNativeSessionCredentials();
+      await setCachedSessionUser(null);
+      return "invalid";
     }
     const now = Date.now();
     const nextEnvelope: NativeSessionEnvelope = {

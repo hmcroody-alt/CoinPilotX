@@ -33,27 +33,13 @@ listing and its variants, bind the supplier mapping, then hand the listing to
 An ordinary product comes out ``PUBLISHED``. One that genuinely cannot be sold
 safely comes out ``NEEDS_ATTENTION`` carrying the specific codes that stopped it.
 
-And neither of them comes out a *draft*. "Import & publish" is the merchant
-releasing the product, so the listing's own axis says released either way --
-``published`` when the gate agreed, ``review_ready`` when it did not. A refusal
-is an answer about buyers, not a retraction of what the merchant asked for, and
-writing it as ``draft`` said the opposite: it filed the product under the
-merchant's unfinished work and, because ``draft`` is excluded from
-``lifecycle.MERCHANT_RELEASED_STATUSES``, kept it out of the moderation queue
-too. Seller 1 was holding 67 such rows in production, each one reading
-"pending review" and sitting in no queue at all. :func:`drafts._release_for_review`
-carries the argument in full. The one exception is a store that has turned
-auto-publish *off*: there the merchant has said they want to look first, and a
-draft is exactly what they asked for.
-
 What did *not* change is who decides. :func:`_create_draft_listing` still writes
 ``status='draft'`` as a SQL literal, and this module still contains no publish
 rule of its own: every question about whether a buyer may see something is
 answered by :mod:`drafts`, in the same function the merchant's explicit Publish
-button calls. The insert cannot publish, it cannot release either, the gate can,
-and the gate is one implementation shared by both entry points (§32). A refusal
-is therefore never "the importer disagreed with the publisher" -- there is only
-one publisher.
+button calls. The insert cannot publish, the gate can, and the gate is one
+implementation shared by both entry points (§32). A refusal is therefore never
+"the importer disagreed with the publisher" -- there is only one publisher.
 
 The trust boundary above is unaffected by any of it. Auto-publishing widens what
 the server *does* with supplier facts; it does not widen what the client may
@@ -110,39 +96,18 @@ NEEDS_REVIEW = "NEEDS_REVIEW"
 #: normal outcome of "Import to Store" for an ordinary product, and the one this
 #: module previously had no way to report because it always stopped at a draft.
 PUBLISHED = "PUBLISHED"
-#: Named in the request but not attempted this run, because the run was already
-#: full. The cart holds :data:`import_cart.MAX_ITEMS` rows and one run imports at
-#: most :data:`MAX_BATCH`, so a legal cart can exceed a legal run by design.
-#:
-#: This outcome is what that overflow looks like. It used to be a
-#: ``batch_too_large`` 400 raised before the loop, which discarded the whole
-#: request -- 58 selected, 0 imported, and a merchant told only "that import
-#: didn't run". Nothing was wrong with the 25 the run could have served. The cap
-#: is a real bound on provider quota and request duration and is unchanged; what
-#: changed is that exceeding it is now reported per item, like every other thing
-#: that can happen to one row, instead of destroying its neighbours.
-#:
-#: Nothing was created and nothing was read, so these rows stay in the cart and
-#: write no audit entry. Importing again picks them up.
-DEFERRED = "DEFERRED"
-#: Imported and held back from buyers because publishing it would not have been
-#: safe. Carries ``problems`` -- :mod:`drafts`' own validation codes, unmodified
-#: -- so the merchant is told the actual reason rather than "needs attention".
+#: Imported and left as a draft because publishing it would not have been safe.
+#: Carries ``problems`` -- :mod:`drafts`' own validation codes, unmodified -- so
+#: the merchant is told the actual reason rather than "needs attention".
 #:
 #: Distinct from the refusals above, and the distinction is the merchant's:
 #: ``NO_MEDIA`` and friends mean *nothing was created*, while this means the
 #: product is in their store and is one specific fix away from selling.
-#:
-#: The row lands in ``review_ready``, not ``draft``. It used to land in ``draft``,
-#: which read as "the merchant has not finished with this" about a product they
-#: had just asked to publish -- and, because
-#: ``lifecycle.MERCHANT_RELEASED_STATUSES`` excludes ``draft``, kept it out of the
-#: moderation queue as well. See :func:`drafts._release_for_review`.
 NEEDS_ATTENTION = "NEEDS_ATTENTION"
 
 OUTCOMES = (IMPORTED, ALREADY_EXISTS, PROVIDER_UNAVAILABLE, INVALID_PRODUCT,
             NO_VARIANTS, NO_MEDIA, RESTRICTED, NEEDS_REVIEW, PUBLISHED,
-            NEEDS_ATTENTION, DEFERRED)
+            NEEDS_ATTENTION)
 
 #: Outcomes after which the cart row is cleared. ``ALREADY_EXISTS`` clears too:
 #: the merchant's intent — "this product should be in my store" — is satisfied,
@@ -173,13 +138,7 @@ REVIEW_TERMS = (
 )
 
 #: One import may create at most this many listings. Bounds provider quota use
-#: and the transaction count of a single request. Each item costs one to three
-#: provider reads and may wait on the inventory lease, so this is a duration
-#: bound as much as a quota one -- raising it to swallow a full cart would trade
-#: a refusal the merchant can read for an edge timeout they cannot.
-#:
-#: A request naming more rows than this is *not* refused. The surplus comes back
-#: as :data:`DEFERRED` and stays in the cart. See that constant.
+#: and the transaction count of a single request.
 MAX_BATCH = 25
 
 
@@ -207,15 +166,11 @@ def _authoritative(business_id, store_id, actor_user_id, connection_id, provider
       the draft's provenance record.
     * **variants** — attempted only when the product payload carried none, since
       CJ returns them inline on some endpoint versions and not others.
-    * **inventory** — best-effort about the shelf, not about the record. A failed
-      inventory read leaves each variant at whatever the catalogue said and does
-      *not* mark anything out of stock. This is the asymmetry that matters: an
-      inventory outage must not empty a merchant's shelf, because an empty shelf
-      looks like a normal bad day and nobody pages anyone about it. But the
-      reason now comes back as the third return value and gets written down —
-      see :func:`_apply_inventory` for what silence cost here.
-
-    Returns ``(product, snapshot_id, inventory_error)``.
+    * **inventory** — best-effort. A failed inventory read leaves each variant
+      at whatever the catalogue said and does *not* mark anything out of stock.
+      This is the asymmetry that matters: an inventory outage must not empty a
+      merchant's shelf, because an empty shelf looks like a normal bad day and
+      nobody pages anyone about it.
     """
     try:
         product_read = gateway.read(
@@ -242,70 +197,17 @@ def _authoritative(business_id, store_id, actor_user_id, connection_id, provider
             # is a truthful description of what we know.
             pass
 
-    inventory_error = _apply_inventory(
-        product, business_id, store_id, actor_user_id, connection_id, provider,
-        external_product_id, context=context, adapter=adapter)
-
-    return product, product_read.get("snapshot_id"), inventory_error
-
-
-#: How many times to re-ask for inventory after the gateway's own single-flight
-#: lease turns us away, and how long to wait when the 429 advises nothing. Only
-#: ``request_in_progress`` is retried: it is the one failure that is ours rather
-#: than the provider's, and the one guaranteed to clear on its own.
-_LEASE_RETRIES = 3
-_LEASE_PAUSE_SECONDS = 2.0
-
-
-def _apply_inventory(product, business_id, store_id, actor_user_id, connection_id,
-                     provider, external_product_id, *, context=None, adapter=None):
-    """Attach stock to ``product["variants"]``. Returns the failure code, or ``None``.
-
-    Still best-effort about the *shelf* — a failure here leaves each variant at
-    whatever the catalogue said and marks nothing out of stock, because an
-    inventory outage must not empty a merchant's store. What is no longer
-    best-effort is the *record*: the caller receives the reason and writes it to
-    ``marketplace_product_sources``, so a listing that imported without stock can
-    be found by asking, instead of only by noticing.
-
-    That distinction is the whole defect this function was extracted to fix. The
-    code here used to be a bare ``except … pass``, and the failure it swallowed
-    most often was not CJ being down. It was ``gateway._cached_read`` refusing
-    *us*: inventory is cached for ten seconds behind a cross-process lease, a
-    multi-item import touches the same product more than once inside that window,
-    and the second pass is turned away with ``request_in_progress``. In
-    production that silently voided stock for 683 of 719 variants — every one of
-    which CJ could and still can count precisely.
-
-    So a lease collision is now waited out rather than absorbed. Retrying is
-    cheap and does not spend provider quota: the winning caller populates the
-    same cache entry, so the retry is normally served from it.
-    """
-    last = None
-    for attempt in range(_LEASE_RETRIES + 1):
-        try:
-            inventory_read = gateway.read(
-                "inventory", business_id=business_id, store_id=store_id,
-                actor_user_id=actor_user_id, connection_id=connection_id,
-                params={"pid": external_product_id}, context=context, adapter=adapter)
-            readings = normalize.inventory(provider, inventory_read.get("data"))
-        except SupplierError as exc:
-            last = getattr(exc, "code", None) or "inventory_read_failed"
-            if last != "request_in_progress" or attempt == _LEASE_RETRIES:
-                return last
-            pause = getattr(exc, "retry_after", None)
-            time.sleep(min(float(pause) if pause else _LEASE_PAUSE_SECONDS, 5.0))
-            continue
-        except normalize.NormalizationError:
-            return "inventory_unreadable"
-        if not readings:
-            # The read succeeded and described nothing this product's variants
-            # match. Not an outage, and not a silence worth nothing: it is how a
-            # normalizer seam presents, and this integration has had three.
-            return "inventory_empty"
+    try:
+        inventory_read = gateway.read(
+            "inventory", business_id=business_id, store_id=store_id,
+            actor_user_id=actor_user_id, connection_id=connection_id,
+            params={"pid": external_product_id}, context=context, adapter=adapter)
+        readings = normalize.inventory(provider, inventory_read.get("data"))
         product["variants"] = normalize.apply_inventory(product["variants"], readings)
-        return None
-    return last
+    except (SupplierError, normalize.NormalizationError):
+        pass
+
+    return product, product_read.get("snapshot_id")
 
 
 def _validate(product, selection):
@@ -429,19 +331,13 @@ def _create_draft_listing(cur, seller_user_id, product, *, marketplace_autolist=
     media = [m for m in (product.get("media") or []) if isinstance(m, str)]
     cur.execute(
         "INSERT INTO marketplace_listings "
-        "(seller_user_id, title, description, category, price_label, price_minor, status, "
+        "(seller_user_id, title, description, category, price_label, status, "
         " created_at, updated_at, approval_status, currency, quantity, "
         " delivery_type, product_type, listing_type, cover_image_url, "
         " listing_metadata_json) "
-        "VALUES (?,?,?,?,?,?,'draft',?,?,'pending_review',?,?,'physical','physical','',?,?)",
-        # An import arrives unpriced on purpose -- the retail price is decided at
-        # publish, in `drafts.py`, from the offer the merchant accepts. The
-        # literal 0 is written beside the literal "" rather than left NULL so
-        # that the two columns move together at every site that touches either;
-        # they sort identically, and the pairing is what the tripwire test in
-        # tests/test_marketplace_price_minor.py checks for.
+        "VALUES (?,?,?,?,?,'draft',?,?,'pending_review',?,?,'physical','physical','',?,?)",
         (int(seller_user_id), product.get("title"), product.get("description"),
-         product.get("category"), "", 0, now, now, product.get("currency") or "USD", None,
+         product.get("category"), "", now, now, product.get("currency") or "USD", None,
          media[0] if media else None,
          json.dumps({"source": "dropship", "media": media,
                      "marketplace_autolist": bool(marketplace_autolist)},
@@ -573,7 +469,7 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
     with nothing behind it, which is the answer the tell is supposed to be able
     to give.
     """
-    product, snapshot_id, inventory_error = _authoritative(
+    product, snapshot_id = _authoritative(
         business_id, store_id, actor_user_id, connection_id, provider,
         external_product_id, context=context, adapter=adapter)
     chosen = _validate(product, selection)
@@ -622,14 +518,7 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
         supplier_cost_currency=product.get("currency"),
         inventory_source=provider,
         inventory_reference=external_product_id,
-        # STALE, not SYNCED, when the inventory read did not land. The row is
-        # linked and its catalogue facts are current; what is missing is a stock
-        # confirmation, and that is exactly what STALE means. Recording SYNCED
-        # regardless is what made the defect invisible: every production source
-        # row claimed a completed sync while 683 of 719 variants sat at UNKNOWN.
-        sync_state=(supplier_schema.SYNC_STALE if inventory_error
-                    else supplier_schema.SYNC_SYNCED),
-        last_sync_error=inventory_error,
+        sync_state=supplier_schema.SYNC_SYNCED,
     )
 
     payload = {
@@ -655,13 +544,7 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
     if not finish["published"]:
         return NEEDS_ATTENTION, {
             **payload,
-            # `IN_REVIEW`, not `DRAFT`. The gate refused to publish and
-            # `autopublish` released the row anyway (`drafts._release_for_review`),
-            # because the merchant tapped Import & publish and a refusal to go
-            # live is not a retraction of that. Reporting `DRAFT` here would put
-            # the one wrong word back on the wire after the column stopped saying
-            # it.
-            "status": "IN_REVIEW",
+            "status": "DRAFT",
             "published": False,
             # `drafts`' own codes, passed through unmodified. Translating them
             # here would give the merchant a second, less precise vocabulary for
@@ -726,12 +609,7 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
     if item_ids is not None:
         if not isinstance(item_ids, (list, tuple)):
             raise SupplierError("invalid_input", http_status=400)
-        # Deliberately the cart's ceiling and not MAX_BATCH. Selecting every row
-        # of a legal cart is a legal thing to ask for, and answering it with a
-        # 400 was this route's production failure: the run's capacity is now
-        # applied per item below. What stays refused here is a request that
-        # describes no cart that could exist, which bounds the read that follows.
-        if len(item_ids) > import_cart.MAX_ITEMS:
+        if len(item_ids) > MAX_BATCH:
             raise SupplierError("batch_too_large", http_status=400)
         item_ids = [str(i) for i in item_ids if isinstance(i, str) and i.strip()]
 
@@ -756,12 +634,7 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
 
     if not rows:
         raise SupplierError("import_cart_empty", http_status=409)
-    # The same split serves both entry points, and the whole-cart one is why it
-    # is a split rather than a slice. `rows[:MAX_BATCH]` silently dropped the
-    # tail and then reported `requested` as 25, so a merchant who imported a
-    # 58-row cart was told 58 rows had been considered when 33 had not been read
-    # at all. The tail is now named.
-    rows, deferred_rows = rows[:MAX_BATCH], rows[MAX_BATCH:]
+    rows = rows[:MAX_BATCH]
 
     try:
         seller_user_id = int(str(merchant_id).strip())
@@ -862,17 +735,6 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
             **payload,
         })
 
-    # Appended after the loop, so a deferred row cannot be mistaken for one that
-    # was reached and refused. No provider read, no transaction, no audit row --
-    # the only true statement about these is that the run was full.
-    for row in deferred_rows:
-        results.append({
-            "item_id": row["item_id"],
-            "external_product_id": row["external_product_id"],
-            "provider": str(row["provider"] or "cj").strip().lower(),
-            "outcome": DEFERRED,
-        })
-
     if imported_item_ids:
         conn = db.connect()
         try:
@@ -885,15 +747,7 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
               for outcome in OUTCOMES}
     return {
         "results": results,
-        # Everything the merchant asked for, including what this run did not
-        # reach. Reporting only the attempted rows here is what let the tail
-        # disappear without anybody being told.
-        "requested": len(rows) + len(deferred_rows),
-        # Named separately from `counts` because it is the one number the cart
-        # screen needs to say what happens next: these are still in the cart and
-        # one more tap imports them.
-        "deferred": len(deferred_rows),
-        "max_per_import": MAX_BATCH,
+        "requested": len(rows),
         # Every item that produced a listing, not only the ones that stopped at a
         # draft. Reporting `counts[IMPORTED]` here after auto-publish arrived would
         # have told a merchant who published twenty products that none imported.
@@ -903,10 +757,7 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
         # applies to the summary as much as to the rows: a batch of twenty with one
         # needs-attention is not a published batch, and `any()` here would let one
         # success speak for nineteen drafts.
-        # `not deferred_rows` for the same reason: a run that left 33 products in
-        # the cart has not finished the merchant's request, whatever happened to
-        # the 25 it did reach, and a caller reading this as "done" would stop.
-        "published": counts[PUBLISHED] > 0 and not deferred_rows and counts[PUBLISHED] == sum(
+        "published": counts[PUBLISHED] > 0 and counts[PUBLISHED] == sum(
             counts[o] for o in CREATED_LISTING),
         "published_count": counts[PUBLISHED],
         "needs_attention": counts[NEEDS_ATTENTION],

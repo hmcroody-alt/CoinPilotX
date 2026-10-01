@@ -188,35 +188,12 @@ export const linking: LinkingOptions<RootStackParamList> = {
           statusId: Number
         }
       },
-      /**
-       * The product page, not the browse grid. `getStateFromPath` above resolves
-       * this path through `nativeObjectDestination` and never reaches this
-       * declaration, but a route table that still named `MarketplaceDetail` was a
-       * second answer to the question the resolver had just answered -- and it is
-       * the answer `getPathFromState` reads when the app generates a link.
-       */
-      MarketplaceProduct: {
+      MarketplaceDetail: {
         path: "pulse/marketplace/:listingId",
         parse: {
           listingId: Number
         }
       },
-      /**
-       * The buyer's cart, which `services/app_links.py` has declared
-       * `native_supported` and pointed at `MarketplaceCart` all along. The screen
-       * was registered in `AppNavigator` and reachable by tapping, but no linking
-       * path named it, so `pulsesoc://pulse/cart` -- the URL the website's "Open
-       * cart in the app" button really emits -- resolved to nothing here and was
-       * then reinterpreted as the Activity Inbox by the notification resolver.
-       *
-       * Declared here as well as in `nativeObjectDestination` for the same reason
-       * `MarketplaceProduct` is: this is the entry `getPathFromState` reads when
-       * the app generates a link, and it is the only declaration
-       * `tests/web_surface/test_scheme_urls_match_the_native_route_table.py` can
-       * see when it checks that every `native_supported` destination has a screen
-       * behind it.
-       */
-      MarketplaceCart: "pulse/cart",
       SellerStore: {
         path: "pulse/seller-store",
         parse: {
@@ -224,24 +201,6 @@ export const linking: LinkingOptions<RootStackParamList> = {
           sellerId: String
         }
       },
-      /**
-       * The dropshipping hub.
-       *
-       * `Dropshipping` and its eight sibling routes were registered in
-       * `AppNavigator` but named by no link and reached by no button, so a
-       * merchant who imported products could not open the screen that lists
-       * them. The one `navigate("Dropshipping")` call in the app lives in
-       * `StoreDashboardScreen`, which is itself registered nowhere — a dead
-       * entry point inside a dead screen.
-       *
-       * The hub, not `DropshippingProducts`, because the products screen
-       * requires a `connectionId` and no merchant knows theirs. The hub takes no
-       * params, resolves the active connection itself, and falls back to the
-       * suppliers list when there is none — so this URL leads somewhere useful
-       * whether or not a supplier is connected. The siblings stay unlinked for
-       * that same reason: their ids belong in a tap, not in a URL.
-       */
-      Dropshipping: "pulse/dropshipping",
       BuyerOrders: {
         path: "pulse/orders",
         parse: {
@@ -268,35 +227,6 @@ export const linking: LinkingOptions<RootStackParamList> = {
       },
       MerchantApply: "pulse/merchant/apply",
       MerchantDashboard: "pulse/merchant/dashboard",
-      /**
-       * Where Stripe Connect onboarding hands a seller back.
-       *
-       * `/pulse/merchant/payouts` is a web route that already existed — it is
-       * the URL the onboarding link has always carried — but nothing claimed it
-       * here, so a seller returning from Stripe stayed in the browser. The
-       * server's return page now opens `pulsesoc://pulse/merchant/payouts` and
-       * this is the entry that catches it.
-       *
-       * It must sit above `MerchantProfile`. That route's `:sellerId` matches
-       * the literal segment `payouts` perfectly well, and without this entry
-       * the link would open a merchant profile for a seller named "payouts" —
-       * a wrong screen rather than no screen, which is the harder failure to
-       * notice. `services/app_links.py` reserves `payouts` as a store id for
-       * the same reason.
-       *
-       * `layer` arrives as a query param so the server can choose the landing
-       * by return state: a seller who is live wants the overview, a seller with
-       * steps left wants the setup surface. An absent or unrecognised value
-       * falls back to `payout_overview` inside the screen, so an older link
-       * still lands somewhere truthful.
-       */
-      MoneyLayer: {
-        path: "pulse/merchant/payouts",
-        parse: {
-          layer: String,
-          currency: String
-        }
-      },
       MerchantProfile: {
         path: "pulse/merchant/:sellerId",
         parse: {

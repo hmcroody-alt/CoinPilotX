@@ -7,14 +7,12 @@ setup-required responses instead of crashing the app.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 from typing import Any
 
 import stripe
 
-from services import stripe_mode
 from services.marketplace_payment_errors import (
     classify_provider_exception,
     stripe_response_dict,
@@ -24,15 +22,6 @@ from services.marketplace_payment_errors import (
 
 def _base_url() -> str:
     return (os.getenv("APP_BASE_URL") or os.getenv("BASE_URL") or "https://pulsesoc.com").rstrip("/")
-
-
-def transfer_group_for(transaction_id: Any) -> str:
-    """Link a platform charge to the Transfer that later pays the seller.
-
-    Matches `marketplace_settlement_service`'s `order_id`, so a Stripe transfer
-    group and a settlement row resolve to each other without a lookup table.
-    """
-    return f"marketplace_order:{int(transaction_id)}"
 
 
 def _stripe_ready() -> bool:
@@ -50,10 +39,7 @@ def provider_status() -> dict[str, Any]:
         "webhook_secret_loaded": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
         "connect_client_id_loaded": bool(os.getenv("STRIPE_CONNECT_CLIENT_ID")),
         "base_url": _base_url(),
-        # Asked rather than re-derived. The copy that lived here reported a
-        # restricted live key as "not_configured", which is the one misreading
-        # that costs money.
-        "mode": stripe_mode.mode(),
+        "mode": "live" if (os.getenv("STRIPE_SECRET_KEY") or "").startswith("sk_live_") else "test" if (os.getenv("STRIPE_SECRET_KEY") or "").startswith("sk_test_") else "not_configured",
     }
 
 
@@ -82,17 +68,6 @@ _NETWORK_MESSAGE = "We couldn't reach the payout provider. Try again in a moment
 _UNAVAILABLE_MESSAGE = "Payout setup is temporarily unavailable. Try again in a moment."
 
 CONNECT_PLATFORM_CODE = "CONNECT_PLATFORM_NOT_ENABLED"
-
-# A Connect account is minted once per seller and then holds that seller's money
-# forever. The only thing that keeps two sellers out of one account is the
-# idempotency key, and the only thing in that key that distinguishes them is the
-# user id — so an unusable id is not a detail to paper over with "", it is the
-# whole guard going missing. Refused here rather than sent to Stripe.
-CONNECT_IDENTITY_CODE = "CONNECT_SELLER_IDENTITY_MISSING"
-_IDENTITY_MESSAGE = (
-    "Payout setup couldn't start because your session didn't identify which "
-    "account to connect. Sign out and back in, then try again."
-)
 
 # Stripe answers a platform that never enabled Connect with a plain
 # ``InvalidRequestError`` whose only distinguishing mark is its message — there
@@ -151,96 +126,19 @@ def connect_failure(exc: Exception, operation: str) -> dict[str, Any]:
     }
 
 
-def connect_refusal(code: str, message: str, operation: str, http_status: int = 400) -> dict[str, Any]:
-    """The same descriptor :func:`connect_failure` returns, for a call we refuse.
-
-    Callers in ``bot.py`` read ``ok``, ``http_status``, ``message``, ``code``,
-    ``provider_error`` and ``retryable`` off a failed Connect result, so a
-    refusal that never reached Stripe has to answer in that exact shape rather
-    than raise. ``provider_error`` keeps the ``{type, code, param}`` keys with
-    empty values: there is no provider error to fingerprint, because no provider
-    call was made.
-    """
-    print(f"CONNECT_{operation.upper()}_REFUSED code={code}", flush=True)
-    logging.error("CONNECT_%s_REFUSED code=%s", operation.upper(), code)
-    return {
-        "ok": False,
-        "status": "invalid_request",
-        "code": code,
-        "http_status": http_status,
-        "message": message,
-        "provider_error": {"type": "", "code": None, "param": None},
-        "retryable": False,
-    }
-
-
-def _seller_identity(user: dict[str, Any], seller_type: str) -> str:
-    """Return the id half of the idempotency key, or "" if it cannot be trusted.
-
-    Fails closed. ``str(user.get("user_id") or "")`` used to yield ``""`` for a
-    missing id, which collapsed every such seller onto the key
-    ``connect-account::merchant`` — and Stripe answers a repeated idempotency key
-    by replaying the *first* response, so the second seller would be handed the
-    first seller's connected account. Anything that is not a positive integer is
-    rejected, because every real caller passes a row id.
-    """
-    if not str(seller_type or "").strip():
-        return ""
-    raw = str(user.get("user_id") or "").strip()
-    try:
-        return str(int(raw)) if int(raw) > 0 else ""
-    except (TypeError, ValueError):
-        return ""
-
-
-def _account_idempotency_key(user_id: str, seller_type: str, email: str) -> str:
-    """Name the seller *and* the request, because Stripe keys outlive the tap.
-
-    The key's whole job is the double tap that lands before the first response
-    is persisted — once ``seller_payout_accounts`` holds a connected account id
-    the route never calls this function again, so the row is the durable guard.
-    But a Stripe idempotency key is remembered for 24 hours, and a repeat that
-    carries *different* parameters is not replayed: it raises
-    ``IdempotencyError``. Keyed on the seller alone, a seller who started
-    onboarding, changed their email, and tried again the same day would be
-    refused by Stripe for a reason that has nothing to do with them — and the
-    route surfaces that as "a problem on PulseSoc's side, not with your
-    account", which is true and useless.
-
-    So the key carries a digest of the parameters that vary. Identical taps
-    still collapse onto one key and one account; a genuinely different request
-    gets a different key and a real answer. The seller and seller type stay in
-    the clear for log reading; only the email is hashed, because an idempotency
-    key is echoed in Stripe's dashboard and request logs.
-    """
-    digest = hashlib.sha256(f"{user_id}\x1f{seller_type}\x1f{email}".encode()).hexdigest()[:16]
-    return f"connect-account:{user_id}:{seller_type}:{digest}"
-
-
 def create_connected_account(user: dict[str, Any], seller_type: str) -> dict[str, Any]:
-    # Checked before ``_stripe_ready`` for the reason ``create_payment_intent``
-    # states: behind the readiness gate this branch would be unreachable on a
-    # developer machine and in CI, so production would be the first place it ran.
-    user_id = _seller_identity(user if isinstance(user, dict) else {}, seller_type)
-    if not user_id:
-        return connect_refusal(CONNECT_IDENTITY_CODE, _IDENTITY_MESSAGE, "account_create")
     if not _stripe_ready():
         return setup_required("Stripe Connect cannot start until STRIPE_SECRET_KEY is configured.")
-    email = user.get("email") or None
+    user_id = str(user.get("user_id") or "")
     try:
         account = stripe.Account.create(
             type="express",
-            email=email,
+            email=user.get("email") or None,
             metadata={"user_id": user_id, "seller_type": seller_type},
             capabilities={"card_payments": {"requested": True}, "transfers": {"requested": True}},
-            # PulseSoc runs separate charges and transfers and decides settlement
-            # timing itself: the payout worker calls Transfer.create and then
-            # Payout.create against the connected account. An Express account
-            # defaults to Stripe's *automatic* schedule, so without this the two
-            # schedulers would both pay the seller out of the same balance.
-            # Manual is what makes PulseSoc the only thing moving that money.
-            settings={"payouts": {"schedule": {"interval": "manual"}}},
-            idempotency_key=_account_idempotency_key(user_id, seller_type, email or ""),
+            # Guards the double tap that lands before the first response is
+            # persisted; the stored row is the durable guard once it exists.
+            idempotency_key=f"connect-account:{user_id}:{seller_type}",
         )
     except Exception as exc:
         return connect_failure(exc, "account_create")
@@ -268,27 +166,6 @@ def create_onboarding_link(provider_account_id: str, refresh_url: str = "", retu
     return {"ok": True, "url": stripe_response_value(link, "url")}
 
 
-def _requirement_list(requirements: dict[str, Any], bucket: str) -> list[str]:
-    """One of Stripe's requirement arrays, as a list of strings.
-
-    Defensive about the container because this dict is also reconstructed from
-    stored JSON on replay paths: a bare string here must not be iterated
-    character by character into a requirement called ``"c"``.
-    """
-    value = requirements.get(bucket)
-    if not value:
-        return []
-    if isinstance(value, str):
-        text = value.strip()
-        return [text] if text else []
-    if isinstance(value, dict):
-        return []
-    try:
-        return [str(item).strip() for item in value if str(item).strip()]
-    except TypeError:
-        return []
-
-
 def get_account_status(provider_account_id: str) -> dict[str, Any]:
     if not _stripe_ready():
         return setup_required("Stripe account status is unavailable until Stripe is configured.")
@@ -300,42 +177,15 @@ def get_account_status(provider_account_id: str) -> dict[str, Any]:
         return connect_failure(exc, "account_retrieve")
     payouts_enabled = bool(stripe_response_value(account, "payouts_enabled", False))
     charges_enabled = bool(stripe_response_value(account, "charges_enabled", False))
-    requirements = stripe_response_dict(stripe_response_value(account, "requirements", {}))
-    capabilities = stripe_response_dict(stripe_response_value(account, "capabilities", {}))
-    # `disabled_reason` lives on `account.requirements`, not on the account.
-    # Reading it from the top level returned "" for every account Stripe has
-    # ever held — including one whose `requirements.disabled_reason` said
-    # exactly why — so the one field that distinguishes "Stripe is asking for a
-    # document" from "Stripe has stopped this account" was never populated.
-    # `connect_accounts.record_account_snapshot` has always read it from the
-    # right place; this key was the odd one out. The top-level lookup is kept as
-    # a fallback only so a replayed or hand-built account dict that carries it
-    # flat still works.
-    disabled_reason = str(
-        requirements.get("disabled_reason")
-        or stripe_response_value(account, "disabled_reason", "")
-        or ""
-    ).strip()
     return {
         "ok": True,
         "provider_account_id": provider_account_id,
         "payouts_enabled": payouts_enabled,
         "charges_enabled": charges_enabled,
         "details_submitted": bool(stripe_response_value(account, "details_submitted", False)),
-        "disabled_reason": disabled_reason,
-        # This module's own word for the pair of flags, not the
-        # `seller_payout_accounts.onboarding_status` column's vocabulary. The
-        # two are unrelated and must not be copied into one another — see
-        # `services/stripe_onboarding_return`, which owns that translation.
+        "disabled_reason": str(stripe_response_value(account, "disabled_reason", "") or ""),
         "onboarding_status": "enabled" if payouts_enabled and charges_enabled else "restricted",
-        "requirements": requirements,
-        # Flattened so a caller deciding what to tell a seller does not have to
-        # know which of Stripe's two nestings a given field arrived in.
-        "currently_due": _requirement_list(requirements, "currently_due"),
-        "past_due": _requirement_list(requirements, "past_due"),
-        "capabilities": capabilities,
-        "card_payments_capability": str(capabilities.get("card_payments") or ""),
-        "transfers_capability": str(capabilities.get("transfers") or ""),
+        "requirements": stripe_response_dict(stripe_response_value(account, "requirements", {})),
         "account": stripe_response_dict(account),
     }
 
@@ -370,14 +220,9 @@ def create_checkout_session(
         "item_id": str(item_id),
     }
     payment_intent_data: dict[str, Any] = {"metadata": metadata}
-    if int(seller_user_id or 0) > 0:
-        # Separate charges and transfers: the buyer pays the platform, and the
-        # seller's cut leaves later via an explicit Transfer once the settlement
-        # clears its protection window. A destination charge would settle at
-        # charge time and make that window unenforceable.
-        metadata["platform_fee_cents"] = str(int(platform_fee_cents or 0))
-        metadata["connected_account_id"] = str(connected_account_id or "")
-        payment_intent_data["transfer_group"] = transfer_group_for(transaction_id)
+    if connected_account_id:
+        payment_intent_data["application_fee_amount"] = int(platform_fee_cents or 0)
+        payment_intent_data["transfer_data"] = {"destination": connected_account_id}
     session = stripe.checkout.Session.create(
         mode="payment",
         client_reference_id=str(buyer_user_id),
@@ -402,35 +247,7 @@ def create_checkout_session(
     }
 
 
-# A destination charge settles the seller's cut at charge time, which removes the
-# window in which a chargeback, a fraud warning or a refund can still freeze or
-# reverse the seller's money. `tests/marketplace/test_charge_model_authority.py`
-# walks the AST of the repository to prove no charge site names these keys — but
-# an opaque `**kwargs` splat is the one shape that walk cannot see through, so
-# this call refuses them at runtime instead.
-DESTINATION_CHARGE_KEYS = frozenset({
-    "transfer_data",
-    "application_fee_amount",
-    "application_fee",
-    "on_behalf_of",
-})
-
-
 def create_payment_intent(**kwargs) -> dict[str, Any]:
-    # Checked before `_stripe_ready` on purpose. Without a configured key this
-    # function returns a soft "not configured" dict, so a check placed after that
-    # gate would never fire on a developer machine or in CI - the first time
-    # anyone saw it would be production.
-    forbidden = sorted(DESTINATION_CHARGE_KEYS.intersection(kwargs))
-    if forbidden:
-        raise ValueError(
-            "refusing to create a destination charge: "
-            + ", ".join(forbidden)
-            + ". PulseSoc uses separate charges and transfers so the platform holds "
-            "the money until the settlement clears its protection window; settling "
-            "the seller's cut at charge time makes every freeze, hold and reversal "
-            "path unenforceable for this payment."
-        )
     if not _stripe_ready():
         return setup_required("Payment intents are unavailable until Stripe is configured.")
     intent = stripe.PaymentIntent.create(**kwargs)
@@ -441,55 +258,14 @@ def create_payment_intent(**kwargs) -> dict[str, Any]:
     }
 
 
-def create_transfer(*, destination: str = "", idempotency_key: str = "", **kwargs) -> dict[str, Any]:
-    """Move funds from the platform balance to a connected account.
-
-    This is not a payout. A transfer credits the connected account's Stripe
-    balance; a separate payout moves that balance to the seller's bank.
-    """
+def create_transfer(**kwargs) -> dict[str, Any]:
     if not _stripe_ready():
         return setup_required("Transfers are unavailable until Stripe is configured.")
-    if destination:
-        kwargs["destination"] = destination
-    if not kwargs.get("destination"):
-        return {"ok": False, "message": "Connected account id is required."}
-    extra: dict[str, Any] = {"idempotency_key": idempotency_key} if idempotency_key else {}
-    transfer = stripe.Transfer.create(**kwargs, **extra)
+    transfer = stripe.Transfer.create(**kwargs)
     return {
         "ok": True,
         "transfer": stripe_response_dict(transfer),
         "provider_transfer_id": stripe_response_value(transfer, "id"),
-    }
-
-
-def create_transfer_reversal(*, transfer_id: str = "", idempotency_key: str = "",
-                             **kwargs) -> dict[str, Any]:
-    """Claw a transfer back from a connected account to the platform balance.
-
-    The inverse of :func:`create_transfer`, and the only thing that can recover
-    a seller's cut once the transfer leg has run. Under separate charges and
-    transfers a refund is paid to the buyer out of the *platform* balance, while
-    the seller's share is already sitting in the connected account where no
-    refund can reach it; without a reversal that difference is simply a loss
-    carried as a negative internal balance.
-
-    A reversal draws on the connected account's Stripe balance, so it works only
-    while the money is still there. Once a payout has moved that balance to the
-    seller's bank there is nothing left to reverse and Stripe refuses the call —
-    which is a different recovery, not a retryable error, and is the caller's to
-    decide about.
-    """
-    if not _stripe_ready():
-        return setup_required("Transfer reversals are unavailable until Stripe is configured.")
-    transfer_id = str(transfer_id or "").strip()
-    if not transfer_id:
-        return {"ok": False, "message": "Provider transfer id is required."}
-    extra: dict[str, Any] = {"idempotency_key": idempotency_key} if idempotency_key else {}
-    reversal = stripe.Transfer.create_reversal(transfer_id, **kwargs, **extra)
-    return {
-        "ok": True,
-        "reversal": stripe_response_dict(reversal),
-        "provider_reversal_id": stripe_response_value(reversal, "id"),
     }
 
 

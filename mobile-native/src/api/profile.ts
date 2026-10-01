@@ -67,34 +67,6 @@ export type PulseProfile = {
   automation_disclosure?: string;
   transparency_disclosure?: string;
   /**
-   * How to lay out a first-party brand cover, and the true shape of the file.
-   *
-   * Only official accounts whose cover is a *designed banner* send these. The
-   * banner carries a centred wordmark, so filling the hero with it crops the
-   * wordmark; `"contain"` asks for the whole image inside a box of
-   * `brand_cover_aspect_ratio`. Absent — which is every human profile — the
-   * cover is a photograph and fills the hero as before.
-   *
-   * Server-authored on purpose. This used to be a filename match plus a
-   * hard-coded ratio in a stylesheet, which meant redating the artwork silently
-   * disabled the treatment and a second official account could not have it
-   * without an app release.
-   */
-  brand_cover_fit?: "contain" | string;
-  brand_cover_aspect_ratio?: number;
-  /**
-   * Whether follower/following counts mean anything for this account.
-   *
-   * `false` only for an account that cannot be followed at all — PulseSoc
-   * Insight lives at `user_id=0`, so no follow row can point at it and its
-   * count is undefined rather than zero. Defaulted to `true` by
-   * `normalizeProfile`, so an older server that omits it is read as an ordinary
-   * account, which every human profile is.
-   *
-   * Not a synonym for `automated`: @pulsedrop is automated *and* followable.
-   */
-  has_social_graph?: boolean;
-  /**
    * Server-authored answer to what this viewer may see about this profile
    * owner, keyed snake_case as the API returns it. Profile OS destinations gate
    * on these rather than on a client-side ownership guess — see
@@ -367,26 +339,12 @@ export function normalizeProfile(input: Partial<PulseProfile>): PulseProfile {
     badges: profile.badges || [],
     theme: normalizeTheme(profile.theme || {}),
     viewer_follows: Boolean(profile.viewer_follows),
-    is_self: Boolean(profile.is_self),
-    // Absent means "an ordinary account", because that is what every human
-    // profile and every older server sends. Only an explicit `false` — which
-    // one account in the product sends — removes the follower counts.
-    has_social_graph: profile.has_social_graph !== false,
-    // A ratio is only usable if it is a positive finite number; anything else
-    // would reserve a box of height 0 or Infinity and lose the cover entirely.
-    // Dropping it here means the header falls back to filling the hero, which
-    // is the treatment every other profile gets.
-    brand_cover_aspect_ratio: positiveRatio(profile.brand_cover_aspect_ratio)
+    is_self: Boolean(profile.is_self)
   };
   // Public profile payloads are defense-in-depth sanitized even if an older
   // server accidentally includes an internal identifier.
   delete (normalized as Record<string, unknown>).pulse_id;
   return normalized;
-}
-
-function positiveRatio(value: unknown): number | undefined {
-  const ratio = Number(value);
-  return Number.isFinite(ratio) && ratio > 0 ? ratio : undefined;
 }
 
 function normalizeTheme(theme: PulseProfileTheme): PulseProfileTheme {

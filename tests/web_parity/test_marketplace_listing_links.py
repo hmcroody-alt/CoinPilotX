@@ -42,23 +42,11 @@ over whatever the grid emitted, not as a fixed id list.
 
 ## Why responses, not routes
 
-A rule existing proves nothing here, so every assertion below is made against a
-real response.
-
-Most of them use a signed-in client. That used to be the only vantage point that
-could tell the outcomes apart, because `require_account()` ran before the lookup
-and an anonymous request got `302 /login` for a real listing, a hidden one and a
-nonexistent one alike. It no longer does: the page is public, because it is a
-canonical URL submitted in `/sitemap-products.xml` and a crawler never has a
-session. The signed-in client is kept anyway — it is the vantage point the
-predicates are easiest to read from, since a refusal and a login wall are both
-"not the listing" when seen anonymously.
-
-The two anonymous assertions are at the bottom of the file and divide what that
-change gave up from what it kept: a public listing is readable without a session
-(`test_a_public_listing_is_readable_without_a_session`), and every *refusal*
-still looks identical to one another (`test_every_refusal_looks_the_same_to_a_
-signed_out_visitor`), so the page cannot be used to enumerate withheld listings.
+A rule existing proves nothing here: `require_account()` runs before the lookup,
+so an anonymous client sees `302 /login` for a real listing, a hidden one and a
+nonexistent one alike. Every assertion below is therefore made against a real
+response from a signed-in client, which is the only vantage point that can tell
+the three outcomes apart.
 """
 
 from __future__ import annotations
@@ -157,19 +145,12 @@ for path in %(paths)r:
         "title": ("Listing %(public)d" in body),
         "body": ("Body of listing %(public)d" in body),
         "seller": ("Seller9001 Store" in body),
-        # The rendered controls, not the attribute names. A click handler
-        # selects on `[data-mkt-save]`, so searching for the bare attribute
-        # matches the script and passes even with no controls at all -- which is
-        # exactly how this check was vacuous when first written. The pattern
-        # therefore demands the attribute sit inside an element's opening tag.
-        #
-        # Two of the three are buttons and the first is an anchor, deliberately.
-        # `/pulse/messages/new?q=` is a real page, so Message seller still works
-        # with JavaScript off; Save and Report are fetch-only and ship `hidden`
-        # until the script binds them. Do not "fix" contact back to a button.
-        "actions": all(
-            re.search(r"<(?:a|button)\b[^>]*\bdata-mkt-%%s=" %% m, body)
-            for m in ("contact", "save", "report")),
+        # The rendered buttons, not the attribute names. The page ships a click
+        # handler that selects on `[data-contact-seller]`, so searching for the
+        # bare attribute matches the script and passes even with no buttons at
+        # all -- which is exactly how this check was vacuous when first written.
+        "actions": all("<button %%s=" %% m in body for m in
+                       ("data-contact-seller", "data-save-listing", "data-report-listing")),
     }
 report["pages"] = pages
 
@@ -177,46 +158,20 @@ grid = client.get("/pulse/marketplace").get_data(as_text=True)
 report["grid"] = {
     "status": 200,
     "shows": {str(l): ("Listing %%d" %% l) in grid for l in %(seeded_ids)r},
-    # Every listing id the served grid links to, server-rendered. The href shape
-    # is whatever `app_links` decides for the `product` destination -- see
-    # tests/test_marketplace_web_ctas_follow_the_registry.py -- so it is asked for
-    # here rather than pattern-matched. It used to be the app-first interstitial
-    # and is now the public product page; either way it names a listing id, and
-    # that id is what this file is about.
-    "links": sorted(l for l in %(seeded_ids)r
-                    if ("href='%%s'" %% bot.app_first_href("product", l)) in grid
-                    or ('href="%%s"' %% bot.app_first_href("product", l)) in grid),
+    # Every listing id the served grid links to, server-rendered.
+    "links": sorted({int(m) for m in re.findall(r"/pulse/marketplace/(\d+)", grid)}),
+    # The client-rendered card builds the same link from its own row.
+    "js_link": "/pulse/marketplace/${listingId}" in grid,
 }
 
-# Searching used to replace the grid in the DOM with cards a client-side twin
-# built, so the twin had to be handed the server's link shape and this file
-# checked that shape was present. Search is now rendered by the server from
-# `?q=`, through the very same card function the grid uses, so the question "do
-# search results keep the link" is asked of the search results themselves
-# instead of a template string left in the page for a script to fill in.
-search = client.get(
-    "/pulse/marketplace?q=Listing+%%d" %% %(public)d).get_data(as_text=True)
-report["search"] = {
-    "shows": ("Listing %%d" %% %(public)d) in search,
-    "links": sorted(l for l in %(seeded_ids)r
-                    if ("href='%%s'" %% bot.app_first_href("product", l)) in search
-                    or ('href="%%s"' %% bot.app_first_href("product", l)) in search),
-}
-
-# The signed-out view of every outcome. A public listing is now readable without
-# a session -- that is the point of the public product page -- so what is recorded
-# is enough to compare the *refusals* to each other, byte for byte, rather than
-# only their status codes. Length and title stand in for the body: a refusal that
-# leaked the title, or that rendered a different-sized page for a row that exists,
-# would still be a 404.
+# The signed-out view of all three outcomes, to show they are indistinguishable
+# without a session -- which is why nothing above is asserted anonymously.
 anon = app.test_client()
-_anon = {}
-for l in %(all_ids)r:
-    r = anon.get("/pulse/marketplace/%%d" %% l)
-    b = r.get_data(as_text=True)
-    _anon[str(l)] = [r.status_code, r.headers.get("Location", ""), len(b),
-                     ("Listing %%d" %% l) in b]
-report["anonymous"] = _anon
+report["anonymous"] = {
+    str(l): [anon.get("/pulse/marketplace/%%d" %% l).status_code,
+             anon.get("/pulse/marketplace/%%d" %% l).headers.get("Location", "")]
+    for l in (%(public)d, %(hidden)d, %(missing)d)
+}
 
 report["rules"] = sorted({r.rule for r in app.url_map.iter_rules()
                           if r.rule.startswith("/pulse/marketplace")})
@@ -254,8 +209,7 @@ def marketplace_probe():
     code = _PROBE % {
         "repo": REPO, "rows": _ROWS, "paths": paths,
         "seeded_ids": [PUBLIC, PAUSED, UNAPPROVED, HIDDEN_SELLER],
-        "all_ids": [PUBLIC, PAUSED, UNAPPROVED, HIDDEN_SELLER, MISSING],
-        "public": PUBLIC,
+        "public": PUBLIC, "hidden": HIDDEN_SELLER, "missing": MISSING,
     }
     proc = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=env,
                           capture_output=True, text=True, timeout=900)
@@ -320,19 +274,14 @@ def test_the_grid_only_links_to_listings_it_can_serve(marketplace_probe):
 
     Written over whatever the grid emitted rather than a fixed list, so a
     future card that links somewhere new is covered without editing this test.
-
-    The card now points at `/open/product/<id>`, the app-first interstitial, so
-    the id is read from there. The listing it names still has to be one this
-    server will serve: that is what the interstitial's App Store fallback and
-    its native destination both resolve to, and it is what a desktop visitor
-    reaches. Moving the button did not make a dead id acceptable.
     """
     grid = marketplace_probe["grid"]
     assert grid["links"], "the grid links to no listings at all"
     for listing_id in grid["links"]:
         page = marketplace_probe["pages"].get("/pulse/marketplace/%d" % listing_id)
         assert page is not None and page["status"] == 200, (
-            "the grid links to listing %d, which does not serve" % listing_id)
+            "the grid links to /pulse/marketplace/%d, which does not serve"
+            % listing_id)
 
 
 def test_the_grid_and_the_listing_page_agree_on_who_is_public(marketplace_probe):
@@ -353,37 +302,15 @@ def test_the_grid_and_the_listing_page_agree_on_who_is_public(marketplace_probe)
         % sorted(grid_shows))
 
 
-def test_a_search_result_links_to_the_same_place_as_the_grid(marketplace_probe):
-    """Search results must be openable, exactly as browsing results are.
+def test_the_client_rendered_card_links_to_the_same_place(marketplace_probe):
+    """Search results replace the grid in the DOM, and must keep the link.
 
-    Without this, a member who searched would lose the ability to open a product
-    that browsing offered — the same page, two behaviours.
-
-    This used to assert that the page carried the link *template* an inline
-    JavaScript twin of the card substituted an id into, because searching
-    replaced the grid in the DOM with cards that twin built. Search is now
-    rendered by the server from ``?q=``, through the same card function as the
-    grid, so the twin is gone and the template with it.
-
-    The property did not go away and is now checked one step closer to the user:
-    against the links in a real search response, rather than against a string a
-    script was trusted to use correctly. That is stricter than before -- a
-    template being present never proved the twin rendered it -- and the third
-    assertion is the one the twin existed to make true, now free.
+    Without this, a member who searched would lose the ability to open a
+    product that browsing offered — the same page, two behaviours.
     """
-    search = marketplace_probe["search"]
-    # Guarded first, because an empty result set would make everything below
-    # vacuous: a search that silently stopped matching fails here rather than
-    # passing on zero cards.
-    assert search["shows"], (
-        "searching for the public listing's own title returned a page that does "
-        "not contain it, so this test is not looking at a search result")
-    assert search["links"] == [PUBLIC], (
-        "a search result does not link to the listing it shows: expected [%d], "
-        "got %s" % (PUBLIC, search["links"]))
-    assert search["links"] == marketplace_probe["grid"]["links"], (
-        "browsing and searching disagree about where a product opens: grid=%s "
-        "search=%s" % (marketplace_probe["grid"]["links"], search["links"]))
+    assert marketplace_probe["grid"]["js_link"], (
+        "the client-side marketplace card builds no /pulse/marketplace/<id> link, "
+        "so search results are not openable")
 
 
 def test_the_create_page_still_wins_over_the_id_route(marketplace_probe):
@@ -402,52 +329,24 @@ def test_the_route_is_registered_for_an_integer_id(marketplace_probe):
         % marketplace_probe["rules"])
 
 
-def test_a_public_listing_is_readable_without_a_session(marketplace_probe):
-    """The deliberate withdrawal, asserted so it reads as a decision.
+def test_signed_out_visitors_cannot_tell_the_outcomes_apart(marketplace_probe):
+    """The login redirect happens before the lookup, and must keep doing so.
 
-    This file used to assert that an anonymous request for *any* listing id got
-    the same `302 /login`, because `require_account()` ran before the lookup. That
-    is no longer true and must not be: `/pulse/marketplace/<id>` is submitted in
-    `/sitemap-products.xml` and carries a canonical URL, so a crawler — which
-    never has a session — has to get the page. A login wall there would be a
-    sitemap full of URLs that redirect.
+    If the row were read first, a 404 for the missing id — or a different
+    destination for the hidden one — would tell an anonymous visitor which ids
+    exist, turning the login wall into an enumeration oracle.
 
-    What was given up is narrow, and it is the part that was never worth keeping:
-    a public listing answering 200 tells an anonymous visitor that a public
-    listing exists. It is in the sitemap; that is the same statement.
-    """
-    status, location, _, title = marketplace_probe["anonymous"][str(PUBLIC)]
-    assert status == 200, (
-        "a signed-out visitor cannot read the public listing (%s -> %r), so every "
-        "URL in /sitemap-products.xml is a redirect to Google"
-        % (status, location))
-    assert title, (
-        "the anonymous response was a 200 that does not contain the listing "
-        "title, so it is some other page wearing a success code")
-
-
-def test_every_refusal_looks_the_same_to_a_signed_out_visitor(marketplace_probe):
-    """The privacy property that survives, and now the only one here.
-
-    Opening the public page gave up "you cannot tell a real id from a fake one".
-    It did *not* give up the one that matters: you must not be able to tell a
-    listing that exists but is withheld from one that never existed. Otherwise
-    the page is an enumeration oracle over unapproved and paused inventory and
-    over hidden sellers' catalogues — the three things the two predicates exist
-    to withhold.
-
-    Compared byte-count and title rather than status alone, deliberately. Three
-    404s whose bodies differ in length leak exactly what the status code hides,
-    and a 404 that still renders the title leaks more than the length would.
+    The redirect target necessarily echoes the requested path, so the assertion
+    is that it echoes *only* that: each answer must be exactly the same function
+    of the URL, carrying nothing drawn from the row behind it.
     """
     answers = marketplace_probe["anonymous"]
-    refused = {lid: answers[str(lid)] for lid in REFUSED}
-    shapes = {tuple(answer) for answer in refused.values()}
-    assert len(shapes) == 1, (
-        "a signed-out visitor can tell the refusals apart, so the page reveals "
-        "which withheld listings exist: %s"
-        % {REFUSED[lid]: answer for lid, answer in refused.items()})
-    status, location, _, title = shapes.pop()
-    assert status == 404, "refusals answer %s, not 404" % status
-    assert not location, "a refusal carries a redirect target: %r" % location
-    assert not title, "a refusal renders the listing title"
+    assert {status for status, _ in answers.values()} == {302}, (
+        "a signed-out visitor gets more than one status across a real, a hidden "
+        "and a nonexistent listing: %s" % answers)
+    for listing_id, (_, location) in answers.items():
+        expected = "/login?next=/pulse/marketplace/%s" % listing_id
+        assert location == expected, (
+            "the signed-out redirect for %s carries something other than the "
+            "requested path (%r), so it can reveal whether the listing exists"
+            % (listing_id, location))

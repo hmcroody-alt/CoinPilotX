@@ -1825,7 +1825,6 @@ def register(app) -> None:
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/notifications/reconcile")
-@auth_required
 def reconcile_message_notifications():
     user, denied = _require_user()
     if denied:

@@ -43,12 +43,7 @@ jest.mock("../../api/feed", () => ({
   pulsePostUrl: jest.fn(), reactToPost: jest.fn(), repostPost: jest.fn(), deletePost: jest.fn(),
   savablePostId: (post: { id: number }) => post.id
 }));
-// Profile paints itself with `ProfileCanvas` now, not with the decorative
-// atmosphere. The mock this replaced named a component the screen no longer
-// renders, so it stubbed nothing and quietly implied the old layer was still
-// there. Stubbed for the original reason: these files assert behaviour, and the
-// canvas has its own assertions in `ProfileScreen.graphite.test.tsx`.
-jest.mock("../../components/ProfileCanvas", () => ({ ProfileCanvas: () => null }));
+jest.mock("../../components/GalacticAtmosphere", () => ({ GalacticAtmosphere: () => null }));
 jest.mock("../../components/Screen", () => ({
   LogiNexusScreenShell: ({ children }: { children: React.ReactNode }) => children,
   LogiNexusStatePanel: ({ title }: { title: string }) => title

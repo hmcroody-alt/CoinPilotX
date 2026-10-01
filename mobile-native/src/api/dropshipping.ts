@@ -317,16 +317,7 @@ export const IMPORT_OUTCOMES = [
   // must not be asked to. Attention is the merchant's own: a missing price, an
   // unbound variant, something they can go and fix.
   "PUBLISHED",
-  "NEEDS_ATTENTION",
-  // Named in the request, not reached: the run filled up first. The cart holds
-  // more rows than one import consumes, so this is an ordinary outcome of an
-  // ordinary full cart, not an error.
-  //
-  // It is not a refusal and must never be counted as one. Nothing was read and
-  // nothing was created, the row is still in the cart, and the next Import picks
-  // it up. Treating it as a failure would tell a merchant 33 products could not
-  // be imported when the truth is that 33 have not been tried yet.
-  "DEFERRED"
+  "NEEDS_ATTENTION"
 ] as const;
 export type ImportOutcome = (typeof IMPORT_OUTCOMES)[number];
 
@@ -684,276 +675,6 @@ export function connectionCanFulfil(connection: SupplierConnection): boolean {
 }
 
 /* ------------------------------------------------------------------ *
- * Supplier status — the one health answer
- * ------------------------------------------------------------------ */
-
-/**
- * The single most upstream thing the merchant has left to do.
- *
- * Ordered by what blocks what, and chosen by the server. A client picking its
- * own order would send a merchant with expired credentials to go and fix three
- * out-of-stock products, using stock readings taken before the credentials
- * expired — work they would do twice.
- */
-export const SUPPLIER_NEXT_ACTIONS = [
-  "RECONNECT_SUPPLIER",
-  "CHOOSE_FULFILLMENT_SHOP",
-  "RETRY_SYNC",
-  "RESOLVE_PRODUCT_ISSUES",
-  "IMPORT_FIRST_PRODUCT",
-  "REVIEW_DRAFTS"
-] as const;
-export type SupplierNextAction = (typeof SUPPLIER_NEXT_ACTIONS)[number];
-
-/**
- * Whether a fulfilment shop has been chosen, as a state rather than as "is the
- * id empty". The id is stored NOT NULL, so "never chosen" and "chosen, then the
- * provider stopped offering it" are both the empty string on the wire and a
- * client testing truthiness cannot tell them apart.
- */
-export const FULFILLMENT_SHOP_STATES = ["BOUND", "NOT_SELECTED"] as const;
-export type FulfillmentShopState = (typeof FULFILLMENT_SHOP_STATES)[number];
-
-export type SupplierProductCounts = {
-  imported: number;
-  /** Published *and* approved. The decision, not the outcome — see `live`. */
-  published: number;
-  /**
-   * How many a buyer can actually reach, counted server-side from the same
-   * predicate buyer discovery runs. Always `<= published`, because publication
-   * also needs stock, an approved seller and a store name.
-   *
-   * `null` when the server did not send it, which is not the same fact as zero
-   * and must not be rendered as one: an older server paired with this build
-   * would otherwise report a healthy catalogue as nothing live at all. Zero is
-   * the alarming answer here, so an absent number cannot be spelled that way —
-   * the mirror of the rule `orderCounts` follows for the reassuring one.
-   */
-  live: number | null;
-  awaitingReview: number;
-  draft: number;
-  blocked: number;
-  archived: number;
-  other: number;
-};
-
-export type SupplierIssueCounts = {
-  /** Products flagged for anything at all. One product with two problems is one. */
-  products: number;
-  cost: number;
-  stock: number;
-};
-
-export type SupplierOrderCounts = {
-  /** Paid sales with no supplier purchase behind them yet. */
-  awaitingSupplierOrder: number;
-  /** Of those, the ones the merchant can place right now. */
-  readyToPlace: number;
-  /** Of those, the ones held up by something they must fix first. */
-  blocked: number;
-  placed: number;
-};
-
-export type SupplierStatus = {
-  connectionId: string;
-  provider: string;
-  connectionState: string;
-  message: string | null;
-  environment: string;
-  realOrderSubmissionEnabled: boolean;
-  fulfillmentShopState: FulfillmentShopState;
-  externalShopId: string | null;
-  credentialPresent: boolean;
-  lastVerifiedAt: string | null;
-  lastSyncAt: string | null;
-  /**
-   * When the *catalogue* last moved, which is a different clock from
-   * `lastSyncAt`: one connection-level call can succeed while every product row
-   * stays untouched.
-   */
-  lastProductSyncAt: string | null;
-  products: SupplierProductCounts;
-  /** Worst sync state across this connection's products, or null when it has none. */
-  syncState: string | null;
-  issues: SupplierIssueCounts;
-  /**
-   * Null when the server could not read the fulfilment tables — not zero. "No
-   * orders are waiting" is a claim about the merchant's sales, and a read that
-   * did not happen cannot support it.
-   */
-  orders: SupplierOrderCounts | null;
-  nextAction: SupplierNextAction | null;
-  needsAttention: boolean;
-};
-
-export type StoreSupplierStatus = {
-  environment: string;
-  realOrderSubmissionEnabled: boolean;
-  suppliers: SupplierStatus[];
-  needsAttention: boolean;
-};
-
-function count(value: unknown): number {
-  const parsed = centsOrNull(value);
-  return parsed !== null && parsed >= 0 ? parsed : 0;
-}
-
-/** {@link count} for a number whose absence must not read as zero. */
-function countOrNull(value: unknown): number | null {
-  const parsed = centsOrNull(value);
-  return parsed !== null && parsed >= 0 ? parsed : null;
-}
-
-/**
- * Null unless the server sent an object. Every other normalizer here defaults a
- * missing number to zero, which is right for a count of products the merchant
- * owns and wrong for a count of orders they owe: zero is the reassuring answer,
- * so an absent block must not be spelled as one.
- */
-function orderCounts(value: unknown): SupplierOrderCounts | null {
-  if (!value || typeof value !== "object") return null;
-  const raw = value as Record<string, unknown>;
-  return {
-    awaitingSupplierOrder: count(raw.awaiting_supplier_order),
-    readyToPlace: count(raw.ready_to_place),
-    blocked: count(raw.blocked),
-    placed: count(raw.placed)
-  };
-}
-
-function nextAction(value: unknown): SupplierNextAction | null {
-  const name = text(value).toUpperCase();
-  return (SUPPLIER_NEXT_ACTIONS as readonly string[]).includes(name)
-    ? (name as SupplierNextAction)
-    : null;
-}
-
-/**
- * Every default below leans the same way: toward "not proven healthy".
- *
- * A missing field is not evidence of health, and this payload's whole purpose is
- * to stop screens claiming a supplier works when nothing checked. So
- * `needsAttention` is `!== false` rather than `=== true` — an absent field means
- * a server that cannot answer, and nagging a working merchant is recoverable
- * where a green badge over a dead connection is not. `environment` falls back to
- * SANDBOX and `realOrderSubmissionEnabled` to false for the same reason: the
- * failure mode of guessing wrong must never be "we told them real orders ship".
- */
-function normalizeSupplierStatus(raw: Record<string, unknown>): SupplierStatus {
-  const products = (raw.products || {}) as Record<string, unknown>;
-  const issues = (raw.issues || {}) as Record<string, unknown>;
-  return {
-    connectionId: text(raw.connection_id),
-    provider: text(raw.provider).toLowerCase() || "unknown",
-    connectionState: text(raw.connection_state).toUpperCase() || "UNKNOWN",
-    message: textOrNull(raw.message),
-    environment: text(raw.environment).toUpperCase() || "SANDBOX",
-    realOrderSubmissionEnabled: raw.real_order_submission_enabled === true,
-    fulfillmentShopState: raw.fulfillment_shop_state === "BOUND" ? "BOUND" : "NOT_SELECTED",
-    externalShopId: textOrNull(raw.external_shop_id),
-    credentialPresent: raw.credential_present === true,
-    lastVerifiedAt: textOrNull(raw.last_verified_at),
-    lastSyncAt: textOrNull(raw.last_sync_at),
-    lastProductSyncAt: textOrNull(raw.last_product_sync_at),
-    products: {
-      imported: count(products.imported),
-      published: count(products.published),
-      live: countOrNull(products.live),
-      awaitingReview: count(products.awaiting_review),
-      draft: count(products.draft),
-      blocked: count(products.blocked),
-      archived: count(products.archived),
-      other: count(products.other)
-    },
-    // Null, not "SYNCED": a connection with no products has no sync state, and
-    // saying it is synced is the fabrication this endpoint exists to end.
-    syncState: textOrNull(raw.sync_state)?.toUpperCase() ?? null,
-    issues: {
-      products: count(issues.products),
-      cost: count(issues.cost),
-      stock: count(issues.stock)
-    },
-    orders: orderCounts(raw.orders),
-    nextAction: nextAction(raw.next_action),
-    needsAttention: raw.needs_attention !== false
-  };
-}
-
-/**
- * Everything every dropshipping surface needs to describe supplier health.
- *
- * One call, because the alternative is what this replaced: screens holding the
- * connections list and the products list, neither of which contains "is this
- * supplier working", inferring it — three screens, three rules, three answers
- * about the same connection at the same moment.
- *
- * `environment` and `realOrderSubmissionEnabled` are repeated at the top level
- * on purpose. They are platform-wide, and a client reading them off whichever
- * connection sorted first would report them per-supplier, so a second supplier
- * would appear to have different permissions than the first.
- */
-export async function getSupplierStatus(scope: DropshippingScope): Promise<StoreSupplierStatus> {
-  const response = await pulseApi<{
-    environment?: unknown;
-    real_order_submission_enabled?: unknown;
-    suppliers?: unknown[];
-    needs_attention?: unknown;
-  }>(`${BASE}/supplier-status${scopeQuery(scope)}`);
-  const suppliers = list<Record<string, unknown>>(response.suppliers).map(normalizeSupplierStatus);
-  return {
-    environment: text(response.environment).toUpperCase() || "SANDBOX",
-    realOrderSubmissionEnabled: response.real_order_submission_enabled === true,
-    suppliers,
-    // The server's own rollup when it sent one. Re-scanning the list here would
-    // be a second implementation of "is anything wrong", which is the defect.
-    needsAttention:
-      response.needs_attention !== undefined
-        ? response.needs_attention !== false
-        : suppliers.some((supplier) => supplier.needsAttention)
-  };
-}
-
-export type SupplierResync = {
-  queuedProducts: number;
-  queuedJobs: number;
-  truncated: boolean;
-  maxProducts: number;
-};
-
-/**
- * Ask for this supplier's data to be re-read now.
- *
- * Resolves when the work is *queued*, not when it is done — the background
- * worker drains it. So the caller must not tell the merchant "synced"; the
- * honest sentence is that a refresh has started, and the fresh figures arrive
- * on a later {@link getSupplierStatus}.
- *
- * `truncated` is passed through rather than hidden. A merchant with a catalogue
- * larger than one request may enqueue, told simply "syncing", would go looking
- * for a failure that is really a cap.
- */
-export async function requestSupplierResync(
-  scope: DropshippingScope,
-  connectionId: string
-): Promise<SupplierResync> {
-  const response = await pulseApi<{
-    queued_products?: unknown;
-    queued_jobs?: unknown;
-    truncated?: unknown;
-    max_products?: unknown;
-  }>(`${BASE}/connections/${encodeURIComponent(connectionId)}/sync`, {
-    method: "POST",
-    body: scopeBody(scope)
-  });
-  return {
-    queuedProducts: count(response.queued_products),
-    queuedJobs: count(response.queued_jobs),
-    truncated: response.truncated === true,
-    maxProducts: count(response.max_products)
-  };
-}
-
-/* ------------------------------------------------------------------ *
  * Catalogue browse
  * ------------------------------------------------------------------ */
 
@@ -1201,16 +922,6 @@ export type ImportCart = {
   count: number;
   staleCount: number;
   maxItems: number;
-  /**
-   * The most rows one import will process. Distinct from `maxItems`, which is
-   * how many the cart may *hold* — the cart is deliberately the larger of the
-   * two, so a full cart takes several imports.
-   *
-   * `null` from a server that does not send it. The screen then says nothing
-   * about batching rather than guessing a number, because a wrong cap on the
-   * button is worse than no cap: it would under-offer a server that grew.
-   */
-  maxPerImport: number | null;
 };
 
 export async function getImportCart(scope: DropshippingScope, connectionId: string): Promise<ImportCart> {
@@ -1222,8 +933,7 @@ export async function getImportCart(scope: DropshippingScope, connectionId: stri
     items,
     count: centsOrNull(response.count) ?? items.length,
     staleCount: centsOrNull(response.stale_count) ?? 0,
-    maxItems: centsOrNull(response.max_items) ?? 0,
-    maxPerImport: centsOrNull(response.max_per_import)
+    maxItems: centsOrNull(response.max_items) ?? 0
   };
 }
 
@@ -1530,22 +1240,6 @@ export type ImportRunResult = {
   publishedCount: number;
   /** How many landed as drafts with something for the merchant to fix. */
   needsAttention: number;
-  /**
-   * How many of the requested rows this run did not reach, and left in the cart.
-   *
-   * Non-zero means the request was larger than one import can serve. Nothing
-   * failed; the cart still holds them and importing again continues. This is the
-   * number the cart screen needs to say what to do next.
-   */
-  deferred: number;
-  /**
-   * The most rows one import will process, as the server reports it.
-   *
-   * Read rather than hardcoded so the client cannot drift from the server's
-   * actual capacity — a 25 baked in here would keep offering 25 after the server
-   * changed, and the mismatch would land back on the merchant as a surprise.
-   */
-  maxPerImport: number | null;
   /** The rule the run actually priced with. */
   pricingRule: PricingRule;
   /**
@@ -1559,26 +1253,6 @@ export type ImportRunResult = {
   /** Whether products imported in this run are offered marketplace-wide (§19/§20). */
   marketplaceAutolist: boolean;
 };
-
-/**
- * How long an import may take before the client stops waiting.
- *
- * Not a round number picked for comfort. The server's own ceiling is gunicorn's
- * `--timeout 120`, and a measured 25-product CJ run against production took
- * **154 seconds** and answered `200` — every one of those products imported. The
- * app was on the shared 15-second budget at the time, so it had given up 139
- * seconds earlier and told the merchant "Nothing was imported — your cart is
- * unchanged." The cart went 58 → 33 behind that sentence.
- *
- * So the number has to clear the slowest thing the server is permitted to do,
- * not the fastest thing it usually does. Under it, a *successful* import is
- * reported as a failure, which is worse than a slow one: the merchant either
- * gives up on a feature that works, or re-runs it believing nothing happened.
- *
- * Retrying is safe regardless — the route is idempotent per product — but that
- * is a property of the server, not a licence to misreport what it did.
- */
-const IMPORT_TIMEOUT_MS = 240_000;
 
 /**
  * Import the selected cart rows.
@@ -1605,7 +1279,6 @@ export async function importSelected(
     `${BASE}/connections/${encodeURIComponent(connectionId)}/import`,
     {
       method: "POST",
-      timeoutMs: IMPORT_TIMEOUT_MS,
       // `undefined` is dropped by JSON serialisation, which is what "let the
       // store decide" has to look like on the wire. `null` would be a value.
       body: scopeBody(scope, {
@@ -1626,13 +1299,6 @@ export async function importSelected(
     published: response.published === true,
     publishedCount: centsOrNull(response.published_count) ?? 0,
     needsAttention: centsOrNull(response.needs_attention) ?? 0,
-    // Counted from the rows when the server does not send the number, so a build
-    // talking to an older server still renders deferred rows correctly rather
-    // than folding them into the failure count.
-    deferred:
-      centsOrNull(response.deferred) ??
-      results.filter((item) => item.outcome === "DEFERRED").length,
-    maxPerImport: centsOrNull(response.max_per_import),
     pricingRule: normalizePricingRule(response.pricing_rule),
     pricingSource: normalizePricingSource(response.pricing_source),
     // Defaulted to the server's own default rather than to `false`. A response
@@ -1644,17 +1310,8 @@ export async function importSelected(
   };
 }
 
-/**
- * Outcomes the merchant does not need to act on.
- *
- * `DEFERRED` belongs here even though the row is not in the store yet. Nothing
- * went wrong with it and there is nothing to inspect — one run was full, so it
- * stayed in the cart. Counting it as reviewable would put a problem badge on
- * every cart bigger than one import, which is the opposite of what a seller
- * with a large cart needs to be told. The one thing that still has to be said
- * about these rows — tap Import again — is said by the count, not by this.
- */
-const BENIGN_OUTCOMES = ["IMPORTED", "PUBLISHED", "ALREADY_EXISTS", "DEFERRED"];
+/** Outcomes the merchant does not need to act on. */
+const BENIGN_OUTCOMES = ["IMPORTED", "PUBLISHED", "ALREADY_EXISTS"];
 
 /**
  * Whether a bulk import needs the merchant's attention.
@@ -2230,7 +1887,6 @@ export const SUPPLIER_ORDER_REASONS = [
   "supplier_stock_unconfirmed",
   "order_no_longer_eligible",
   "supplier_ordering_disabled",
-  "supplier_funding_required",
   "supplier_order_needs_support"
 ] as const;
 export type SupplierOrderReason = (typeof SUPPLIER_ORDER_REASONS)[number];
@@ -2270,7 +1926,6 @@ export const SUPPLIER_ORDER_REASON_COPY: Record<SupplierOrderReason, string> = {
   supplier_stock_unconfirmed: "Your supplier has not confirmed stock for this order",
   order_no_longer_eligible: "This sale was cancelled, refunded or disputed, so nothing was ordered",
   supplier_ordering_disabled: "Supplier ordering is not switched on for this account yet",
-  supplier_funding_required: "Waiting for this order to be funded before it goes to your supplier. Nothing has been sent",
   supplier_order_needs_support: "This order needs support before it can be sent to your supplier"
 };
 
@@ -2577,14 +2232,7 @@ const PROVIDER_CODES = [
   "quota_exhausted",
   "product_unavailable",
   "request_timeout",
-  "request_unreachable",
-  // CJ answered the shop list with something that was not a list. It is a 502,
-  // which matches none of the status classes at the foot of this function, so
-  // without this entry it arrives as a bare "Something went wrong" — and the
-  // server only started sending it because the alternative was worse: this case
-  // used to be reported as an empty shop list, which told the merchant their CJ
-  // account owned no shops when the truth was that we could not read them.
-  "shop_list_unavailable"
+  "request_unreachable"
 ];
 
 /**
@@ -2595,56 +2243,6 @@ const PROVIDER_CODES = [
  * buttons, and a single "Something went wrong" sends the merchant to re-enter
  * credentials that were never wrong.
  */
-/**
- * True when the server refused the request for naming more rows than it accepts.
- *
- * Deliberately not a `DropshippingState`. Every state in that union owns a whole
- * screen, and this condition owns one sentence under the Import button — the
- * cart behind it is fine and still readable.
- *
- * It is also no longer reachable from this app: the server used to refuse any
- * selection over its per-import cap, which is exactly what a merchant selecting
- * all 58 rows of their cart did, and it arrived here as a bare 400 that matched
- * no status class and so read as "That import didn't run." The server now defers
- * the surplus instead. This remains because the refusal still exists above the
- * cart's own capacity, and because an app in the store outlives the server it
- * was written against — a build that meets the old behaviour should say
- * something true about it rather than fall back to the generic failure.
- */
-export function isBatchTooLarge(error: unknown): boolean {
-  return error instanceof PulseApiError && String(error.code || "").toLowerCase() === "batch_too_large";
-}
-
-/**
- * True when *this app* stopped waiting — not when the server refused.
- *
- * The distinction is the whole point. Every other failure in this module is a
- * thing the server said, so the screen can report what happened to the request.
- * These two are the opposite: the client gave up and the request is still out
- * there. Nobody on this device knows whether the write landed.
- *
- * That matters for a write and only for a write. A read that times out changed
- * nothing, so "your supplier didn't respond, try again" is true enough and
- * `PROVIDER_CODES` keeps carrying these for that case. A *write* that times out
- * may have committed in full — production proved it does: a 25-product import
- * answered `200` after 154 seconds while the app, on a 15-second budget, had
- * already told the merchant their cart was unchanged. It was not; it had gone
- * from 58 rows to 33.
- *
- * So callers that write must ask this *before* `stateForError`, for the same
- * reason `isBatchTooLarge` is asked first: the sentence that state produces is
- * a claim about the server's behaviour that the client has no standing to make.
- *
- * `request_unreachable` is included because it is the same epistemic position
- * arrived at differently — a socket that died mid-flight also leaves the write's
- * outcome unknown. It is not a claim that the request failed.
- */
-export function isClientTimeout(error: unknown): boolean {
-  if (!(error instanceof PulseApiError)) return false;
-  const code = String(error.code || "").toLowerCase();
-  return code === "request_timeout" || code === "request_unreachable";
-}
-
 export function stateForError(error: unknown): DropshippingState {
   if (!(error instanceof PulseApiError)) return "ERROR";
   const code = String(error.code || "").toLowerCase();

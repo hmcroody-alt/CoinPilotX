@@ -54,9 +54,6 @@ import {
   type MarketplacePricingRule
 } from "../api/marketplace";
 import { PulseApiError } from "../api/pulseApi";
-import { sellerStoreNameOrEmpty } from "../api/sellerIdentity";
-import type { CardPaymentStatus } from "../api/sellerAccess";
-import { CardPaymentsCard } from "../components/store/CardPaymentsCard";
 import {
   StoreAttentionBanner,
   StoreBulkBar,
@@ -226,23 +223,9 @@ type Props = {
     push?: (...args: any[]) => void;
     goBack?: () => void;
   };
-  /**
-   * The seller's card-payment readiness, passed down rather than fetched here.
-   *
-   * `SellerStoreRoute` already holds the one seller verdict for this route — it
-   * is what decided this screen may render at all — so reading it again here
-   * would mean two `/seller/access-state` requests on every focus, and two
-   * answers that can disagree for as long as the second is in flight.
-   *
-   * Optional because three test files and any future non-route caller mount
-   * this screen directly. When it is absent the card-payments row is simply not
-   * drawn: an absent status is *unknown*, and the one thing worse than no CTA
-   * is a "Set up payments" button shown to a seller who already has.
-   */
-  cardPaymentStatus?: CardPaymentStatus;
 };
 
-export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: Props) {
+export function StoreDashboardScreen({ route, navigation }: Props) {
   const formatters = useFormatters();
   const reducedMotion = useLogiNexusReducedMotion();
   const insets = useSafeAreaInsets();
@@ -729,12 +712,7 @@ export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: P
   // Gathering rows across tabs is the workflow, and `selectionSummary` names the
   // part that scrolled off screen so nothing is selected invisibly.
 
-  // Through `sellerStoreNameOrEmpty`, not off `seller_name` directly. The raw
-  // field is a legacy alias the server keeps pointed at the canonical store
-  // name; reading it here happened to work, but it made this the one seller
-  // surface deciding for itself which of several name-shaped keys to trust —
-  // exactly how the buyer surfaces came to disagree with each other.
-  const sellerName = sellerStoreNameOrEmpty(snapshot.listings[0]) || "Your store";
+  const sellerName = String(snapshot.listings[0]?.seller_name || "Your store");
   const listingsFailed = result?.listings.status === "error";
   const ordersFailed = result?.orders.status === "error";
 
@@ -767,24 +745,6 @@ export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: P
     },
     [navigation]
   );
-
-  /**
-   * "Set up payments" — hands off to the payout-onboarding layer.
-   *
-   * Deliberately a navigation, not a `POST /api/pulse/payouts/connect` from
-   * here. That route has three success-shaped answers — a link, or `ok: true`
-   * with no link because the deployment has no Stripe key, or a 403 because
-   * approval has not landed — and `MoneyLayerScreen` already tells them apart
-   * (`payoutOnboardingOutcome`), opens Stripe's own hosted page, and re-checks
-   * status when the app returns to the foreground. A second caller here would
-   * be a second chance to read `ok: true` as "you're set up".
-   *
-   * `navigate`, not `push`: `MoneyLayer` is a different route, so there is no
-   * merge-into-the-focused-screen problem the way there is for `SellerStore`.
-   */
-  const openPaymentSetup = useCallback(() => {
-    navigation.navigate("MoneyLayer", { layer: "payout_onboarding" });
-  }, [navigation]);
 
   /**
    * The listing editor is a panel inside `SellerStoreScreen`, and this screen
@@ -877,15 +837,7 @@ export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: P
    * Formatted values
    * -------------------------------------------------------------- */
 
-  // An em dash, not a zero. These figures come from the canonical metrics
-  // endpoint, and when that call fails the honest answer is "we don't know" —
-  // showing $0.00 would be this screen inventing a number again, which is the
-  // whole reason the endpoint exists.
-  const UNKNOWN = "—";
-  const salesText =
-    kpis.salesTodayMinor == null
-      ? UNKNOWN
-      : formatters.currency(kpis.salesTodayMinor / 100, { currency: kpis.currency });
+  const salesText = formatters.currency(kpis.salesTodayMinor / 100, { currency: kpis.currency });
   const salesTrend =
     kpis.salesTrend == null
       ? null
@@ -937,7 +889,7 @@ export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: P
             />
             <StoreKpiCard
               label="Open orders"
-              value={kpis.openOrders == null ? UNKNOWN : formatters.count(kpis.openOrders)}
+              value={formatters.count(kpis.openOrders)}
               // MOCK-DATA: `shippingToday` needs order.ship_by, so the
               // "N ship today" caption is absent rather than guessed.
               caption={kpis.shippingToday == null ? null : `${kpis.shippingToday} ship today`}
@@ -954,15 +906,9 @@ export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: P
           <View style={styles.kpiRow}>
             <StoreKpiCard
               label="Listings live"
-              // The canonical count, not a tally of the rows this screen
-              // happens to be holding. The row list is capped at 80 and the
-              // health column is about stock, not publication; "live" means a
-              // buyer can see it and buy it, and that is decided in one place.
-              value={
-                snapshot.metrics == null
-                  ? UNKNOWN
-                  : formatters.count(snapshot.metrics.live_listings)
-              }
+              value={formatters.count(
+                allRows.filter((row) => row.health === "in_stock" || row.health === "low_stock").length
+              )}
               caption={outCount > 0 ? `${outCount} not buyable` : null}
               onPress={() => {
                 setTab("all");
@@ -974,15 +920,7 @@ export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: P
             />
             <StoreKpiCard
               label="Sold · 7 days"
-              // Was the sum of a per-row figure this client derived from every
-              // order, filtering out only "cancel" and "refund" — which is how
-              // three abandoned checkouts became "Sold · 7 days: 3" for a store
-              // that had never sold anything.
-              value={
-                snapshot.metrics == null
-                  ? UNKNOWN
-                  : formatters.count(snapshot.metrics.sold_last_7_days)
-              }
+              value={formatters.count(allRows.reduce((sum, row) => sum + row.unitsSold7d, 0))}
               onPress={() => navigation.navigate("BusinessOsInsights", { title: "Store reports" })}
               destinationHint="reports"
               reducedMotion={reducedMotion}
@@ -1228,21 +1166,6 @@ export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: P
                     setExpanded(true);
                   }}
                   reducedMotion={reducedMotion}
-                />
-              </Animated.View>
-            ) : null}
-
-            {/* Card payments. Sits with the store-level rows rather than in
-                the listing list because it is a fact about the storefront, not
-                about any one product — and it renders at all only when there
-                is something to say: `CardPaymentsCard` returns null for READY.
-                See `marketplace/cardPaymentState` for which states get a CTA. */}
-            {cardPaymentStatus ? (
-              <Animated.View style={entrance.styleFor(SLOT.banner)}>
-                <CardPaymentsCard
-                  status={cardPaymentStatus}
-                  onSetUpPayments={openPaymentSetup}
-                  testID="store-card-payments"
                 />
               </Animated.View>
             ) : null}

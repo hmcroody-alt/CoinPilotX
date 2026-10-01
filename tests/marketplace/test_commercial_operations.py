@@ -8,22 +8,12 @@ from services import marketplace_payout_scheduler as scheduler
 import json
 from datetime import datetime, timedelta, timezone
 
-def test_terms_disclose_the_rate_checkout_will_actually_charge():
-    # These terms used to advertise a flat 10% that came from a mutable admin
-    # row, while the future notice named 5%. A seller reading the document could
-    # not tell what they would be charged. Both numbers now come from the one
-    # policy: the current rate is whatever it charges today, and the notice is
-    # the rate waiting on the owner gates.
+def test_current_terms_are_ten_percent_and_future_notice_hidden():
     t = ops.terms()
-    from services.business_os.marketplace import policy
-    assert t["current"]["platform_fee_bps"] == policy.platform_fee_bps() == 0
-    assert t["current"]["fee_policy_version"] == "MARKETPLACE_STANDARD_V1"
+    assert t["current"]["platform_fee_bps"] == 1000
     assert t["future_notice"] == {"published": False, "policy_version": "MARKETPLACE_STANDARD_V1", "platform_fee_bps": 500, "effective_at": None}
     accepted = ops.accept_terms(7, source="native")
     assert accepted["terms_version"] == ops.CURRENT_TERMS_VERSION
-    # The acceptance names the policy, so it stays meaningful after the gates
-    # open; a version that named "legacy current" would not.
-    assert accepted["fee_policy_version"] == "MARKETPLACE_STANDARD_V1"
 
 def test_ip_case_has_audited_transitions():
     case = ops.submit_ip_case(listing_id=1, seller_id=7, claimant_reference="rights-holder:1",
@@ -55,53 +45,9 @@ def test_scheduler_uses_canonical_payout_and_does_not_claim_paid():
     settlements.settle_paid_transaction(tx, payout_ready=True)
     settlements.mark_delivered(91, actor="carrier", idempotency_key="delivered:91")
     settlements.evaluate_eligibility(91, now=datetime.now(timezone.utc)+timedelta(days=3))
-    calls = []
-    def transfer(args):
-        calls.append(args); return {"id": "tr_test"}
-    def payout(args):
-        calls.append(args); return {"id": "po_test"}
     metrics = scheduler.run_once(account_resolver=lambda _: {"connected_account_id":"acct_test","payouts_enabled":True},
-                                 provider_transfer=transfer, provider_create=payout)
-    assert metrics["scheduled_count"] == 1 and metrics["transferred_count"] == 1
-    # The transfer funds the connected account; only then can it pay out.
-    assert [c["method"] for c in calls] == ["transfer", "payout"]
-    assert calls[0]["kwargs"]["destination"] == "acct_test"
-    assert calls[0]["kwargs"]["transfer_group"] == "marketplace_order:91"
-    assert "stripe_account" not in calls[0]
-    assert calls[1]["stripe_account"] == "acct_test"
-    assert calls[0]["idempotency_key"] != calls[1]["idempotency_key"]
+                                 provider_create=lambda _: {"id":"po_test"})
+    assert metrics["scheduled_count"] == 1
     assert settlements.get_settlement(91)["payout_state"] == "scheduled"
     assert scheduler.apply_provider_event("po_test", paid=True, event_id="evt_paid")["changed"] == 1
     assert settlements.get_settlement(91)["payout_state"] == "paid"
-
-def test_failed_transfer_never_reaches_the_payout_call():
-    tx = {"id": 92, "seller_user_id": 8, "item_type": "marketplace_product", "amount_cents": 5000,
-          "platform_fee_cents": 500, "seller_net_cents": 4500, "currency": "USD",
-          "metadata_json": json.dumps({"commercial_quote": {"merchandise_net_minor":5000,
-          "buyer_total_minor":5000,"platform_fee_bps":1000,"fee_policy_version":"MARKETPLACE_LEGACY_CURRENT"}})}
-    settlements.settle_paid_transaction(tx, payout_ready=True)
-    settlements.mark_delivered(92, actor="carrier", idempotency_key="delivered:92")
-    settlements.evaluate_eligibility(92, now=datetime.now(timezone.utc)+timedelta(days=3))
-    payout_calls = []
-    def failing_transfer(_):
-        raise RuntimeError("insufficient platform balance")
-    metrics = scheduler.run_once(account_resolver=lambda _: {"connected_account_id":"acct_test","payouts_enabled":True},
-                                 provider_transfer=failing_transfer,
-                                 provider_create=lambda a: payout_calls.append(a) or {"id":"po_never"})
-    assert payout_calls == []
-    assert metrics["transferred_count"] == 0 and metrics["failed_count"] == 1
-    # This assertion used to read `payout_state == "failed"` and stop there, which
-    # was the whole of the old behaviour: the row failed and nothing ever looked
-    # at it again. Retry governance changed the *end* state, not this test's
-    # point. A bare RuntimeError carries no Stripe error code and no Stripe
-    # exception class, so it is unclassifiable, and an unclassifiable failure is
-    # treated as non-retryable — the money stays fenced and an operator is told,
-    # rather than being retried blindly or stranded silently.
-    row = settlements.get_settlement(92)
-    assert row["payout_state"] == "held"
-    assert row["blocker_code"] == scheduler.UNRECOVERABLE_BLOCKER
-    assert row["payout_failure_class"] == "permanent"
-    assert row["payout_failure_code"] == "unclassified"
-    # Never retried: the budget was not spent down by a failure it must not repeat.
-    assert row["payout_attempt_count"] == 1
-    assert row["payout_next_attempt_at"] is None

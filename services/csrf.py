@@ -96,7 +96,6 @@ with similar names.
 from __future__ import annotations
 
 import hmac
-import logging
 import secrets
 
 from flask import g, request, session
@@ -244,67 +243,6 @@ def bearer_is_csrf_safe() -> bool:
     return True
 
 
-#: Why the bearer exemption did not fire, in words that name a *fix*. Ordered
-#: from "the client sent nothing" to "the client sent something the server
-#: refused", because those are repaired at opposite ends of the system and the
-#: opaque `403 csrf` the seller saw could not tell them apart.
-BEARER_OK = "ok"
-BEARER_ABSENT = "absent"                    # no Authorization header at all
-BEARER_NOT_BEARER = "not-bearer"            # header present, different scheme
-BEARER_IDENTITY_MISMATCH = "identity-mismatch"  # verified, but names another user
-BEARER_UNCLASSIFIED = "unclassified"        # bot returned None without a reason
-
-
-def bearer_refusal_reason() -> str:
-    """Why ``bearer_is_csrf_safe()`` said no, as a loggable enum.
-
-    Names a *fix*, which is the whole point. ``absent`` is a client that never
-    attached the credential and is repaired in ``pulseApi``; ``expired`` is a
-    client whose refresh is not landing; ``no-live-session`` is a server-side
-    revocation. One 403 for all three is what made the seller's import
-    unfixable from the outside -- ``business_os_dropshipping_routes`` answered
-    47 bytes of ``{"code":"csrf"}`` and the app drew "that import didn't run",
-    and nothing anywhere recorded which of these it was.
-
-    The token is **not** parsed here. Everything past "is there a header, and
-    does it say bearer" is classified by ``bot.account_user_id_from_mobile_``
-    ``access_token``, which is the only code that verifies one; it leaves a
-    breadcrumb on ``g`` and this reads it. Re-deriving the reason locally would
-    be a second, drifting implementation of exactly the thing this module was
-    written to stop having six of.
-    """
-    header = (request.headers.get("Authorization") or "").strip()
-    if not header:
-        return BEARER_ABSENT
-    if not header.lower().startswith("bearer "):
-        return BEARER_NOT_BEARER
-    # Read rather than re-verified, and that is why this agrees with
-    # `bearer_is_csrf_safe()` instead of drifting from it: the resolver sets this
-    # flag on its success path, so a bearer the gate accepted *by* re-verifying
-    # is holding the flag by the time anyone asks here. Hence `bearer_safe` in
-    # `refusal_detail()` can be derived from this answer instead of paying for a
-    # second signature check and a second sessions query.
-    #
-    # The two differ on one input -- the flag already set *and* a cookie naming
-    # someone else, where the gate's first branch returns True without looking.
-    # That cannot arise today: `account_user_id()` only reaches the bearer branch
-    # that pre-sets the flag when there is no cookie to short-circuit on, and no
-    # cookie means nothing to disagree with. Checked anyway rather than assumed
-    # away, because "unreachable" is a property of today's caller and this is a
-    # diagnostic -- if the assumption ever lapses, naming the mismatch is the
-    # safe answer and a silent `ok` is not.
-    resolved = getattr(g, "mobile_access_user_id", None)
-    if resolved:
-        cookie_user_id = session.get("account_user_id")
-        if cookie_user_id and str(cookie_user_id) != str(resolved):
-            return BEARER_IDENTITY_MISMATCH
-        return BEARER_OK
-    # Set by the resolver at each of its early returns. Absent means the
-    # resolver was never reached.
-    breadcrumb = getattr(g, "bearer_refusal", "")
-    return str(breadcrumb) if breadcrumb else BEARER_UNCLASSIFIED
-
-
 def token_matches() -> bool:
     """Constant-time comparison of the submitted token against the session's.
 
@@ -336,40 +274,7 @@ def verify(allow_bearer: bool = False) -> bool:
     """
     if allow_bearer and bearer_is_csrf_safe():
         return True
-    if token_matches():
-        return True
-    log_refusal(allow_bearer)
-    return False
-
-
-def log_refusal(allow_bearer: bool = False) -> dict:
-    """Record why a write was refused, once, at the moment it is refused.
-
-    This existed as ``refusal_detail()`` for the whole life of the module and
-    was called from nowhere, which cost a production incident: a seller's
-    58-product import answered ``403 {"code":"csrf"}`` and there was no way to
-    learn from outside which of six different causes it was. The diagnostic was
-    already written and already redacted. It just was not connected.
-
-    Emitted at WARNING because a refused write is a user-visible failure, not
-    traffic. Nothing here is a secret: booleans, a channel name, and an enum.
-    No token value, no user id, no header contents -- deliberately, because a
-    log line is the one place a CSRF token must never appear, and the whole
-    value of this record is that it can be read in production without care.
-    """
-    detail = refusal_detail()
-    detail["allow_bearer"] = bool(allow_bearer)
-    try:
-        logging.warning(
-            "CSRF_REFUSED path=%s method=%s sent=%s session_has_token=%s "
-            "bearer_safe=%s bearer=%s allow_bearer=%s",
-            request.path, request.method, detail["sent"],
-            detail["session_has_token"], detail["bearer_safe"],
-            detail["bearer"], detail["allow_bearer"],
-        )
-    except Exception:
-        pass
-    return detail
+    return token_matches()
 
 
 def refusal_detail() -> dict:
@@ -382,16 +287,9 @@ def refusal_detail() -> dict:
     stale token": those need different fixes and one of them is ours.
     """
     supplied, source = submitted_token()
-    bearer = bearer_refusal_reason()
     return {
         "sent": source,
         "session_has_token": bool(session.get(CSRF_SESSION_KEY)),
         "matched": bool(supplied) and token_matches(),
-        # `bearer_safe` is derived from the classifier rather than re-asking
-        # `bearer_is_csrf_safe()`. Re-asking costs a second verification --
-        # signature, decode, and a `mobile_security_sessions` query -- on a
-        # request that has already failed, and this runs on the authentication
-        # path of every refused native write.
-        "bearer_safe": bearer == BEARER_OK,
-        "bearer": bearer,
+        "bearer_safe": bearer_is_csrf_safe(),
     }

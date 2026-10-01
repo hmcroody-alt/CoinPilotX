@@ -23,13 +23,7 @@ import {
   validateCart
 } from "../api/marketplaceCommerce";
 import { buyerErrorCopy } from "../api/marketplaceErrors";
-import {
-  CHECKOUT_OPTIONS_FALLBACK,
-  fetchCheckoutOptions,
-  type CheckoutCountry,
-  type CheckoutOptions
-} from "../api/checkoutCountries";
-import { checkoutSettlementCopy } from "../marketplace/checkoutPaymentCopy";
+import { fetchShippingCountries, type CheckoutCountry } from "../api/checkoutCountries";
 import {
   deviceTimezone,
   formatDateLabel,
@@ -69,12 +63,8 @@ type Stage = "details" | "review" | "opening" | "processing" | "confirmed" | "fa
 type MarketplaceCheckoutPaymentMethod = "cash" | "card";
 
 const POLL_INTERVAL_MS = 2500;
-
-// Whether Marketplace card checkout is open is the server's answer, fetched
-// with the rest of the checkout options. This screen used to hold its own
-// `MARKETPLACE_CARD_PAYMENTS_PAUSED = true`; see `api/checkoutCountries` for
-// why a second copy stopped being safe the moment the server's pause became an
-// environment flag. The offline default lives there too, and it is *closed*.
+const MARKETPLACE_CARD_PAYMENTS_PAUSED = true;
+const MARKETPLACE_CARD_PAUSE_BADGE = "Temporarily Unavailable";
 
 /** Older navigations carry only the four physical lanes. Read them as kinds so
  * a screen opened before this build shipped still lands somewhere coherent. */
@@ -200,27 +190,20 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   // retry re-presents the same PaymentIntent rather than minting a second one.
   const [sheet, setSheet] = useState<PaymentSheetBootstrap | null>(null);
   const [message, setMessage] = useState("");
-  const [options, setOptions] = useState<CheckoutOptions>(CHECKOUT_OPTIONS_FALLBACK);
+  const [countries, setCountries] = useState<CheckoutCountry[]>([]);
   const checking = useRef(false);
 
   const needsAddress = fulfillmentNeedsAddress(kind);
-  const countries = options.countries;
 
-  // Asked on every checkout, not only the ones that collect an address. The
-  // country list is still used only when there is a country field, but the same
-  // response carries whether the card rail is open — and a digital download has
-  // to answer that question too. Never throws and never leaves the screen
-  // waiting: an unreachable server resolves to the closed default.
-  //
-  // The seller is sent along because the platform rail being open is only half
-  // the answer: this particular seller also has to be able to receive the
-  // money. A cart spanning several sellers has no single `sellerUserId`, so it
-  // gets the platform answer and the charge-time gate remains the backstop.
+  // Only fetched when an address is actually going to be asked for. A digital
+  // download has no country field, so the request would be pure overhead on the
+  // step that most needs to feel instant.
   useEffect(() => {
+    if (!needsAddress || countries.length) return;
     let alive = true;
-    void fetchCheckoutOptions(params.sellerUserId).then((next) => { if (alive) setOptions(next); });
+    void fetchShippingCountries().then((list) => { if (alive) setCountries(list); });
     return () => { alive = false; };
-  }, [params.sellerUserId]);
+  }, [countries.length, needsAddress]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -236,14 +219,6 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   // from `price × quantity` alone — no shipping options, no automatic tax — so
   // that number *is* the charge, not a running estimate.
   const knowsFinalAmount = params.subtotalMinor != null;
-  // The settlement sentence and the CTA's lane-capability, decided together so
-  // they cannot contradict each other. See `marketplace/checkoutPaymentCopy`.
-  const settlement = checkoutSettlementCopy({
-    lane: paymentMethod,
-    cardPaymentsAvailable: options.cardPaymentsAvailable,
-    cardUnavailableMessage: options.cardUnavailableMessage,
-    knowsFinalAmount
-  });
   // The charge, or "" when this screen does not know it. Never a sentence
   // standing in for one.
   //
@@ -332,13 +307,9 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
     setStage("opening");
     setMessage("");
     try {
-      // Courtesy, not enforcement. The card row is already disabled when the
-      // rail is closed, and the three server lanes refuse a card start on their
-      // own — twice, once on this flag and once on the seller's Connect state.
-      // This only spares a buyer whose options load raced the tap.
-      if (paymentMethod === "card" && !options.cardPaymentsAvailable) {
+      if (paymentMethod === "card" && MARKETPLACE_CARD_PAYMENTS_PAUSED) {
         setStage("review");
-        setMessage(options.cardUnavailableMessage);
+        setMessage("Marketplace card payments are temporarily unavailable. Choose cash, local pickup, or in-person payment.");
         return;
       }
       if (paymentMethod === "cash") {
@@ -627,27 +598,15 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
           trailing="$0 fee"
           onPress={() => { setPaymentMethod("cash"); setMessage(""); }}
         />
-        {/* Visible either way. A payment method that disappears when it is
-            unavailable reads as a method the product does not have, and the
-            buyer is left wondering whether they are on the wrong screen. */}
         <RadioRow
-          selected={options.cardPaymentsAvailable && paymentMethod === "card"}
+          selected={false}
           title="Card / Stripe"
-          // The unavailable sentence comes from the server rather than from a
-          // literal here, because there is now more than one reason to be
-          // unavailable and they are not interchangeable. "Temporarily paused"
-          // was true while the whole rail was off; said about a seller who has
-          // never onboarded it tells the buyer to come back later for something
-          // that will not change, and blames the platform for the seller's
-          // state. The server knows which case this is; the screen does not.
-          detail={options.cardPaymentsAvailable
-            ? "Pay by card now. The seller is paid after the order completes."
-            : options.cardUnavailableMessage}
-          trailing={options.cardPaymentsAvailable ? "" : options.cardBadge}
-          disabled={!options.cardPaymentsAvailable}
+          detail="Card checkout is temporarily paused. Marketplace orders settle with cash, local pickup, or in person."
+          trailing={MARKETPLACE_CARD_PAUSE_BADGE}
+          disabled
           onPress={() => {
             setPaymentMethod("card");
-            setMessage(options.cardPaymentsAvailable ? "" : options.cardUnavailableMessage);
+            setMessage("Marketplace card payments are temporarily unavailable. Choose cash, local pickup, or in-person payment.");
           }}
         />
       </Section>
@@ -662,14 +621,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
             the buyer brace for a charge that never comes — and would have hidden
             a real one if it ever did. */}
         <SummaryRow label="Delivery" value={kind === "pickup" ? "Free — you collect" : "No delivery charge"} />
-        {/* Cash carries no platform fee and that is worth stating. The card fee
-            is a rate this screen was never handed, so on the card lane the row
-            is omitted rather than printed with prose where a figure belongs —
-            the same rule the item total and the total row already follow. It
-            used to read "Temporarily unavailable", which described the *rail*
-            in the slot reserved for the *fee*, and would have gone on saying so
-            after the rail opened. */}
-        {paymentMethod === "cash" ? <SummaryRow label="PulseSoc platform fee" value="$0.00" /> : null}
+        <SummaryRow label="PulseSoc platform fee" value={paymentMethod === "cash" ? "$0.00" : "Temporarily unavailable"} />
         <View style={styles.rule} />
         {/* The label used to soften to a bare "Total" when the amount was
             unknown while the value went on printing prose beside it — the row
@@ -679,38 +631,27 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
           <SummaryRow label={paymentMethod === "cash" ? "Total due to seller" : "Total to pay"} value={amount} strong />
         ) : null}
         {/* Something always says where the money is settled, including when the
-            total row above is omitted.
-
-            The card branch answers two independent questions, and it used to
-            answer the wrong one from a literal. Whether the rail is open is the
-            server's to say — and when it is closed the reason differs per
-            seller, so the sentence is the server's too, the same one the row
-            and the footnote already show. Whether the amount is final is this
-            screen's own fact and stays here.
-
-            Collapsing those two into one hard-coded sentence is how
-            "Marketplace card payments are temporarily unavailable." came to sit
-            directly under a live "Pay securely · $40.92". The literal was true
-            when the rail was globally paused and could not follow it open
-            again; every other sentence on this screen had already been moved to
-            the server and this one was missed, so the screen contradicted
-            itself in the one place a buyer reads last. */}
-        <Text style={styles.muted}>{settlement.text}</Text>
+            total row above is omitted. The card branch's sentence used to be
+            the only one that covered an unknown amount, and card is the branch
+            that is currently paused — so on the one lane a buyer can actually
+            use, an order with no subtotal said nothing about the amount at all.
+            A row removed for honesty still owes the buyer the reason. */}
+        {paymentMethod === "cash" ? (
+          <Text style={styles.muted}>
+            {knowsFinalAmount
+              ? "No card or Stripe charge will start. Pay the seller directly when you pick up or meet in person."
+              : "No card or Stripe charge will start. The amount isn't set here — agree it with the seller when you pick up or meet in person."}
+          </Text>
+        ) : knowsFinalAmount ? (
+          <Text style={styles.muted}>Marketplace card payments are temporarily unavailable.</Text>
+        ) : (
+          <Text style={styles.muted}>The exact amount is confirmed on the secure payment page before you authorize anything.</Text>
+        )}
       </Section>
 
       {message ? <Text style={styles.error}>{message}</Text> : null}
       {/* The CTA states an amount only when this screen knows the exact charge.
-          Otherwise it promises nothing it cannot keep.
-
-          It is also disabled when the card lane is the selected one and the
-          server says that lane is shut. `beginCheckout` already refuses this
-          case, but it refuses it *after* the tap, and its own comment calls
-          itself "courtesy, not enforcement" — so until now the only thing a
-          buyer saw beforehand was a live "Pay securely" button. That is the
-          invalid triad: a card lane selected, a sentence saying card is
-          unavailable, and an enabled button promising to charge it. Disabling
-          here makes the three unable to co-occur rather than relying on the
-          row's `disabled` prop, which the options fetch can land behind. */}
+          Otherwise it promises nothing it cannot keep. */}
       <PrimaryButton
         label={stage === "opening"
           ? paymentMethod === "cash" ? "Confirming cash order…" : "Opening secure payment…"
@@ -721,22 +662,11 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
               : "Continue to Payment"}
         icon={stage === "opening" ? null : paymentMethod === "cash" ? "cash-outline" : "lock-closed"}
         busy={stage === "opening"}
-        disabled={!settlement.ctaEnabled}
         onPress={() => void beginCheckout()}
       />
-      {/* The cash footnote used to open by declaring the card rail paused. That
-          was a platform claim made on the buyer's behalf by a shipped binary,
-          and it is now wrong in two separate ways: the rail may be open and
-          this seller simply un-onboarded, or the rail may be open and the buyer
-          may have picked cash freely. Neither is a pause. So the sentence about
-          card only appears when card is genuinely unavailable, and when it does
-          it is the server's sentence — the same one the row above shows, rather
-          than a second, contradicting account of why. */}
       <Text style={styles.footnote}>
         {paymentMethod === "cash"
-          ? options.cardPaymentsAvailable
-            ? "Cash, local pickup, and in-person orders carry a $0.00 PulseSoc platform fee."
-            : `${options.cardUnavailableMessage} Cash, local pickup, and in-person orders remain active with a $0.00 PulseSoc platform fee.`
+          ? "Marketplace card payments are paused. Cash, local pickup, and in-person orders remain active with a $0.00 PulseSoc platform fee."
           : "Your order isn't confirmed until your payment clears."}
       </Text>
     </ScrollView>

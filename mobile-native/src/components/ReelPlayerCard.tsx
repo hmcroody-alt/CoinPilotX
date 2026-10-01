@@ -14,38 +14,13 @@ import { LikeBurst, LikeBurstHandle, MuteGlyphPulse, MuteGlyphPulseHandle } from
 import { useTapMuteLike } from "../media/useTapMuteLike";
 import { classifyReelMedia } from "../reels/reelMediaKind";
 import { useSavedState } from "../social/savedStore";
-import type { CommerceFeedbackAction, CommercePlacement } from "../api/commerceDiscovery";
-import { ReelsCommerceChip } from "../commerce/ReelsCommerceChip";
 import { ReelPhotoSurface } from "./reels/ReelPhotoSurface";
 import { ReelCarouselSurface } from "./reels/ReelCarouselSurface";
 import { ReelLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
 import { colors } from "../theme/colors";
 import { sharePulseObject } from "../sharing/nativeShare";
-import { buildReelShareMetadata } from "../sharing/reelShare";
 import { ContentTranslation } from "./ContentTranslation";
-import { CommerceOverlay } from "./commerce/CommerceOverlay";
-import type { PulseCommerceOverlay } from "../api/pulseCommerceOverlay";
-import { isPulseCommerceOverlay } from "../api/pulseCommerceOverlay";
 import { createThemedStyles } from "../theme/themedStyles";
-
-/**
- * Everything the Marketplace chip needs, or nothing at all.
- *
- * One optional object rather than four optional props, because the four are
- * all-or-nothing: a placement with no feedback sink is an undismissable
- * recommendation, and a feedback sink with no placement is dead weight. Bundled,
- * the absent case is a single `null` and the "no chip" path is one branch.
- *
- * The screen owns the binding — which reel carries the chip is decided by
- * `reelSlots.bindReelCommerce` against reel *ids*, never by this card's index.
- */
-export type ReelCommerceBinding = {
-  placement: CommercePlacement;
-  /** Server-owned dwell in ms, forwarded from the serve response. */
-  visibleDwellMs: number;
-  navigation: { navigate: (...args: any[]) => void };
-  onFeedback: (placement: CommercePlacement, action: CommerceFeedbackAction) => void;
-};
 
 type ReelPlayerCardProps = {
   reel: PulseReel;
@@ -99,32 +74,6 @@ type ReelPlayerCardProps = {
   onOpenMore: (reel: PulseReel) => void;
   onJoinLive: (reel: PulseReel) => void;
   onViewable?: (reel: PulseReel, watchMs: number) => void;
-  /**
-   * The one Marketplace chip this reel carries, if any.
-   *
-   * Optional and defaulted to null, so every existing caller — and every test
-   * that renders this card — keeps the exact layout it had. The chip is additive
-   * in the strongest sense available: with this prop absent there is no extra
-   * element in the tree at all, not a zero-height one.
-   *
-   * Distinct from the two `onOpenCommerce*` props below, and the distinction is
-   * the whole reason both exist. This is a *recommendation*: a product the
-   * discovery engine chose to put in front of this viewer, which the reel itself
-   * is not about. Those are a *disclosure*: the live price and stock of the one
-   * product a PulseDrop Reel was published to sell. `ReelsScreen` keeps them
-   * from ever landing on the same reel — see `commerceReelIds`.
-   */
-  commerce?: ReelCommerceBinding | null;
-  /**
-   * Open the product a PulseDrop Reel is about.
-   *
-   * Optional, and the overlay renders only when it is supplied, because a
-   * surface that cannot navigate must not show a call to action it cannot
-   * honour. A Reel with no `commerce` field ignores both of these entirely.
-   */
-  onOpenCommerceProduct?: (commerce: PulseCommerceOverlay) => void;
-  /** Open the merchant's store. A different destination from the product. */
-  onOpenCommerceSeller?: (commerce: PulseCommerceOverlay) => void;
 };
 
 export function ReelPlayerCard({
@@ -153,10 +102,7 @@ export function ReelPlayerCard({
   onOpenMusic,
   onOpenMore,
   onJoinLive,
-  onViewable,
-  commerce = null,
-  onOpenCommerceProduct,
-  onOpenCommerceSeller
+  onViewable
 }: ReelPlayerCardProps) {
   const videoRef = useRef<Video>(null);
   const attachedSoundRef = useRef<Audio.Sound | null>(null);
@@ -558,14 +504,14 @@ export function ReelPlayerCard({
           refreshAttempted.current = false;
           setFailed(false);
           recoverPlaybackUrl().catch(() => undefined);
-        }}
-        // This surface is the one drawn *because* the Reel is removed,
-        // restricted or held for review -- and its "Share link" button used to
-        // send the caption, the title, the creator's name and the poster of
-        // exactly that Reel. The share sheet was a way around the refusal the
-        // screen behind it was displaying. `buildReelShareMetadata` reads the
-        // same availability the surface did and sends the link alone.
-        onShare={() => sharePulseObject(buildReelShareMetadata(reel, reelWebUrl(reel.id))).catch(() => undefined)} />
+        }} onShare={() => sharePulseObject({
+          kind: "reel",
+          url: reelWebUrl(reel.id),
+          title: reel.title || "PulseSoc Reel",
+          description: reel.caption || reel.body,
+          author: reel.author?.display_name || reel.author?.name || reel.author?.username,
+          previewImageUrl: reel.poster_url
+        }).catch(() => undefined)} />
       )}
       {isVideoKind && contentState === "playable" ? <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Reel muted. Tap to unmute, double tap to like." : "Reel sound on. Tap to mute, double tap to like."} style={styles.tapLayer} onPress={handleTap} onLongPress={() => onOpenReactions(reel)} /> : null}
       <View style={styles.scrim} pointerEvents="none" />
@@ -622,52 +568,6 @@ export function ReelPlayerCard({
       </View>
 
       <View style={[styles.caption, fullBleed ? { bottom: contentBottom } : null]}>
-        {/*
-          Above the caption and inside this block, so it inherits the offsets
-          that already clear the action rail, the navigator and the home
-          indicator. Rendered only when the caller can actually navigate: a
-          screen that cannot open the product must not show a button promising
-          it can. An ordinary Reel has no `commerce` field and renders nothing.
-
-          Never co-renders with the recommendation chip below. That is enforced
-          at the source — `ReelsScreen.commerceReelIds` withholds a slot from a
-          reel carrying this overlay — rather than by a branch here, following
-          the same rule the Live exclusion already follows: a slot that is bound
-          and then suppressed is a slot the next eligible reel never gets.
-        */}
-        {isPulseCommerceOverlay(reel.commerce) && onOpenCommerceProduct ? (
-          <CommerceOverlay
-            commerce={reel.commerce}
-            surface="reel"
-            onOpenProduct={onOpenCommerceProduct}
-            onOpenSeller={onOpenCommerceSeller || onOpenCommerceProduct}
-          />
-        ) : null}
-        {/* First child of a *bottom-anchored* column, which is the entire
-            no-overlap argument: adding a row at the top grows the column
-            upward, so the handle, caption, music chip and mute button do not
-            move by a pixel and nothing below can be covered. The column's own
-            `right: 76` already clears the action rail (which ends at 72), and
-            the progress bar lives below this column's bottom anchor.
-
-            Deliberately not an absolutely positioned overlay at some computed
-            `bottom`: caption height is content- and locale-dependent, so any
-            constant there is a guess that a two-line caption turns into an
-            overlap. There is no constant here to get wrong.
-
-            `isActive` is the card's own `active`, so the chip's dwell counting
-            and its ignore timer run only while this reel is genuinely being
-            watched — not while a comment sheet is up, not in the background,
-            and not on the neighbouring reel the pager keeps mounted. */}
-        {commerce ? (
-          <ReelsCommerceChip
-            placement={commerce.placement}
-            isActive={active}
-            visibleDwellMs={commerce.visibleDwellMs}
-            navigation={commerce.navigation}
-            onFeedback={commerce.onFeedback}
-          />
-        ) : null}
         <Text style={styles.title} numberOfLines={1}>{author.username ? `@${author.username}` : reel.title || "PulseSoc Reel"}</Text>
         {reel.caption || reel.body ? (
           <ContentTranslation
@@ -679,17 +579,7 @@ export function ReelPlayerCard({
         ) : null}
         {isLive ? <Pressable accessibilityRole="button" accessibilityLabel="Join this Live" style={styles.joinLive} onPress={() => onJoinLive(reel)}><Text style={styles.joinLiveText}>Join Live</Text></Pressable> : null}
         <View style={styles.mediaMetaRow}>
-          {/* A removed track has a blank title, which would render as the chip
-              for "Original audio" — the one thing this reel is definitely not
-              playing. Saying so plainly is also what keeps the surface honest:
-              the video is fine, the sound is gone, and the viewer is not left
-              waiting for audio that will never arrive. The chip stays
-              non-interactive because there is no music page left to open. */}
-          {musicPolicy.audioUnavailable ? (
-            <View accessibilityRole="text" accessibilityLabel="Audio unavailable. This song was removed by PulseSoc." style={styles.musicMicro}><View style={styles.musicOrb}><Text style={styles.musicNote}>⌀</Text></View><Text style={styles.musicLabel} numberOfLines={1}>Audio unavailable</Text></View>
-          ) : (
-            <Pressable accessibilityRole="button" accessibilityLabel={reel.audio?.title ? `Music: ${reel.audio.title}${reel.audio.artist ? ` by ${reel.audio.artist}` : ""}` : "Original audio"} style={styles.musicMicro} onPress={() => onOpenMusic(reel)}><View style={styles.musicOrb}><Text style={styles.musicNote}>♪</Text></View><Text style={styles.musicLabel} numberOfLines={1}>{reel.audio?.title || "Original audio"}{reel.audio?.artist ? ` · ${reel.audio.artist}` : ""}</Text></Pressable>
-          )}
+          <Pressable accessibilityRole="button" accessibilityLabel={reel.audio?.title ? `Music: ${reel.audio.title}${reel.audio.artist ? ` by ${reel.audio.artist}` : ""}` : "Original audio"} style={styles.musicMicro} onPress={() => onOpenMusic(reel)}><View style={styles.musicOrb}><Text style={styles.musicNote}>♪</Text></View><Text style={styles.musicLabel} numberOfLines={1}>{reel.audio?.title || "Original audio"}{reel.audio?.artist ? ` · ${reel.audio.artist}` : ""}</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Turn Reel sound on" : "Mute Reel"} style={styles.muteButton} onPress={onToggleMuted}><Text style={styles.muteButtonText}>{muted ? "⌁" : "◖))"}</Text></Pressable>
         </View>
       </View>

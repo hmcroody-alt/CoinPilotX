@@ -131,17 +131,6 @@ def trusted_proxy_hops() -> int:
         return DEFAULT_HOPS
 
 
-def geo_header_name() -> str:
-    """The header a trusted edge writes its country into, or ``""`` if unset.
-
-    Exposed so a caller can tell "this tier is switched off" apart from "the edge
-    could not place this visitor". :func:`client_country` returns ``""`` for both,
-    which is right for its purpose -- neither is a country -- and wrong for an
-    operator, who can fix one of them by setting a variable.
-    """
-    return (os.getenv(GEO_HEADER_ENV) or "").strip()
-
-
 def _note(field: str, amount: int = 1) -> None:
     with _LOCK:
         _STATS[field] = _STATS.get(field, 0) + amount
@@ -262,7 +251,7 @@ def client_country(headers) -> str:
     came from is honest, and one that says "ZZ" because the caller typed it is
     not.
     """
-    name = geo_header_name()
+    name = (os.getenv(GEO_HEADER_ENV) or "").strip()
     if not name:
         return ""
     try:

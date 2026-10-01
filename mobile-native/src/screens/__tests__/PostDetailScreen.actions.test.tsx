@@ -30,9 +30,11 @@ jest.mock("expo-secure-store", () => ({
   deleteItemAsync: jest.fn()
 }));
 jest.mock("expo-haptics", () => ({ impactAsync: jest.fn(), ImpactFeedbackStyle: { Light: "light" } }));
-jest.mock("../../components/ContentTranslation", () =>
-  require("../../testing/contentTranslationStub").contentTranslationStub()
-);
+jest.mock("../../components/ContentTranslation", () => {
+  const { Text } = jest.requireActual("react-native");
+  const ReactActual = jest.requireActual("react");
+  return { ContentTranslation: ({ text }: any) => ReactActual.createElement(Text, null, text) };
+});
 jest.mock("../../core/eventSync", () => ({
   invalidateNativeSync: jest.fn().mockResolvedValue(undefined),
   registerSyncInvalidation: jest.fn(() => () => undefined)
@@ -74,25 +76,6 @@ jest.mock("../../api/pulseApi", () => ({
   pulseApi: (...args: any[]) => mockSaveApi(...args)
 }));
 const mockSaveApi = jest.fn();
-
-/**
- * Just the save requests, out of everything the screen sends through `pulseApi`.
- *
- * `pulseApi` is mocked at the transport, so this spy sees *every* call the screen
- * makes — and since the post-detail commerce surface was added, the first one is
- * a discovery fetch rather than the save. These cases used to read
- * `mock.calls[0]` and count `toHaveBeenCalledTimes`, which quietly made them
- * assertions about the screen's total network traffic instead of about saving.
- *
- * Filtering by URL rather than mocking the commerce module out: the claim each
- * case makes is "one save request, with this body", and that claim should hold
- * however much unrelated traffic the screen has. Stubbing the other caller away
- * would restore the positional index and leave the next added request to break
- * these same two lines again.
- */
-function saveCalls(): any[][] {
-  return mockSaveApi.mock.calls.filter(([url]) => typeof url === "string" && url.includes("/save"));
-}
 
 import { POST_COMMENT_PAGE_SIZE } from "../../api/feed";
 import { peekSaveState, resetSavedStoreForTests } from "../../social/savedStore";
@@ -185,7 +168,7 @@ describe("PostDetailScreen save", () => {
       first = onSave(post());
       second = onSave(post());
     });
-    expect(saveCalls()).toHaveLength(1);
+    expect(mockSaveApi).toHaveBeenCalledTimes(1);
 
     await tap(async () => {
       pending.resolve({ ok: true, saved: true });
@@ -204,7 +187,7 @@ describe("PostDetailScreen save", () => {
       `/api/pulse/posts/${POST_ID}/save`,
       expect.objectContaining({ method: "POST" })
     );
-    expect(JSON.parse(saveCalls()[0][1].body)).toEqual({ post_id: POST_ID, saved: true });
+    expect(JSON.parse(mockSaveApi.mock.calls[0][1].body)).toEqual({ post_id: POST_ID, saved: true });
   });
 
   it("shows the save immediately and then keeps the server's answer", async () => {
@@ -360,9 +343,7 @@ describe("PostDetailScreen reactions", () => {
 describe("PostDetailScreen share", () => {
   it("shares through the native sheet with a deep link, not a bare copied URL", async () => {
     await renderScreen();
-    await tap(() =>
-      card().onShare(post({ visibility: "public", title: "Fixture title", thumbnail_url: "https://cdn.example/p.jpg" }))
-    );
+    await tap(() => card().onShare(post({ title: "Fixture title", thumbnail_url: "https://cdn.example/p.jpg" })));
     expect(mockShare).toHaveBeenCalledTimes(1);
     const payload = mockShare.mock.calls[0][0];
     expect(payload.kind).toBe("post");
@@ -371,26 +352,6 @@ describe("PostDetailScreen share", () => {
     expect(payload.description).toBe("A post under test.");
     expect(payload.author).toBe("Fixture Author");
     expect(payload.previewImageUrl).toBe("https://cdn.example/p.jpg");
-  });
-
-  /**
-   * The reason the test above had to grow an explicit `visibility: "public"`.
-   *
-   * This fixture never carried one, and the share described the post anyway.
-   * A body preview is opt-in on that literal now, so a post whose visibility
-   * the client cannot read describes nothing — while the link still goes,
-   * because the recipient is meant to learn that a post exists.
-   */
-  it("says nothing about a post whose visibility it cannot read", async () => {
-    await renderScreen();
-    await tap(() => card().onShare(post({ title: "Fixture title", thumbnail_url: "https://cdn.example/p.jpg" })));
-    const payload = mockShare.mock.calls[0][0];
-    expect(payload.title).toBe("");
-    expect(payload.description).toBe("");
-    expect(payload.author).toBe("");
-    expect(payload.previewImageUrl).toBe("");
-    expect(payload.url).toMatch(new RegExp(`${POST_ID}$`));
-    expect(payload.message).not.toContain("A post under test.");
   });
 });
 

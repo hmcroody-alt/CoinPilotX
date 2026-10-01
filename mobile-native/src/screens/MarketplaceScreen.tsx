@@ -49,8 +49,6 @@ import {
 } from "../api/marketplaceBuyerPresentation";
 import { mediaDisplayUrl } from "../api/feed";
 import { sellerStoreName } from "../api/sellerIdentity";
-import { MarketplaceDiscoveryShelves } from "../commerce/MarketplaceDiscoveryShelves";
-import { useMarketplaceCommerce } from "../commerce/useMarketplaceCommerce";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { useTranslation } from "../i18n";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
@@ -93,26 +91,6 @@ export function MarketplaceScreen({ route, navigation }: Props) {
   const [cartCount, setCartCount] = useState(0);
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState<SortKey>("relevance");
-
-  // ---- Discovery shelves --------------------------------------------------
-  // Recommended rails above the grid. They stand down the moment the user
-  // narrows, because a shelf answers "show me something" and a narrowed grid is
-  // the answer to a specific question the user just asked.
-  const [commerceRefreshToken, setCommerceRefreshToken] = useState(0);
-  /**
-   * The four states in which the shelves must not be here.
-   *
-   * `sellerUserId` is the one that is not a matter of taste: this screen doubles
-   * as a seller's storefront, and putting other sellers' products above a
-   * seller's own inventory is taking their surface to advertise their
-   * competitors.
-   */
-  const commerceSuppressed =
-    Boolean(sellerUserId) || Boolean(query.trim()) || category !== "All" || offline;
-  const commerce = useMarketplaceCommerce({
-    suppressed: commerceSuppressed,
-    refreshToken: commerceRefreshToken
-  });
 
   const categories = useMemo(
     () => ["All", ...Array.from(new Set(items.map((item) => String(item.category || "").trim()).filter(Boolean))).slice(0, 12)],
@@ -166,20 +144,7 @@ export function MarketplaceScreen({ route, navigation }: Props) {
   function openInitialListing(source: MarketplaceListing[]) {
     if (!initialListingId || !navigation) return;
     const target = source.find((item) => item.id === initialListingId);
-    // `source` is one page of 32 rows from this grid's own search, and the id
-    // being asked for is under no obligation to be in it -- prod publishes 196
-    // listings, so most ids are not. This used to `return` when the lookup
-    // missed, which left the caller staring at the browse grid with no error
-    // and no way to tell that a specific product had been requested at all.
-    //
-    // `MarketplaceProductScreen` reads `listingId` on its own and fetches the
-    // listing when no snapshot comes with it, so the miss costs a round trip,
-    // not the destination. Hand over the snapshot when the page happens to
-    // carry it, purely so the product opens without that fetch.
-    if (!target) {
-      navigation.navigate("MarketplaceProduct", { listingId: initialListingId });
-      return;
-    }
+    if (!target) return;
     navigation.navigate("MarketplaceProduct", { listingId: target.id, listing: target, title: target.title });
   }
 
@@ -263,9 +228,6 @@ export function MarketplaceScreen({ route, navigation }: Props) {
             tintColor={storeLight.accent.brandOnLight}
             onRefresh={() => {
               refreshCartCount();
-              // A pull-to-refresh is the user asking for a fresh browse, so the
-              // shelves are re-served too. Anything they hid stays hidden.
-              setCommerceRefreshToken((token) => token + 1);
               load("refresh").catch(() => undefined);
             }}
           />
@@ -349,15 +311,6 @@ export function MarketplaceScreen({ route, navigation }: Props) {
             </View>
 
             {error ? <Text style={styles.notice} accessibilityLiveRegion="polite">{error}</Text> : null}
-
-            {/* Below every control the user owns — search, sort, category — and
-                above the grid. Placing the shelves above those controls would
-                put our ordering ahead of the tools for changing it. */}
-            <MarketplaceDiscoveryShelves
-              modules={commerce.modules}
-              navigation={navigation as any}
-              onFeedback={commerce.onFeedback}
-            />
           </View>
         }
         ListEmptyComponent={

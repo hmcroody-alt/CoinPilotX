@@ -54,20 +54,10 @@ type Props = {
   navigation: { navigate: (...args: any[]) => void; goBack?: () => void };
 };
 
-type Filter = "ALL" | "IN_REVIEW" | "DRAFT" | "PUBLISHED";
+type Filter = "ALL" | "DRAFT" | "PUBLISHED";
 
-/**
- * `IN_REVIEW` is its own chip rather than a relabelling of `DRAFT`, because the
- * two are now genuinely different things and a store can hold both. An import
- * the publish gate declined is released for review (`review_ready`); a `draft`
- * is what a store with auto-publish *off* produces, where the merchant asked to
- * look before anything moved. Folding them together would put those two
- * populations under one word again, which is the confusion this split exists to
- * end.
- */
 const FILTERS: { key: Filter; label: string; status?: string }[] = [
   { key: "ALL", label: "All" },
-  { key: "IN_REVIEW", label: "In review", status: "review_ready" },
   { key: "DRAFT", label: "Drafts", status: "draft" },
   { key: "PUBLISHED", label: "Published", status: "active" }
 ];
@@ -78,16 +68,9 @@ const FILTERS: { key: Filter; label: string; status?: string }[] = [
  * `draft` is spelled out as "not in your store yet" because "Draft" alone reads
  * as a saved thing rather than an invisible one, and the gap between those two
  * readings is a merchant waiting for orders that cannot arrive.
- *
- * `review_ready` says the same thing about the store and a different thing about
- * whose move it is. It is the state an import lands in now: the merchant has
- * released it and it is waiting on a decision, not on them. Printing "Draft"
- * here would tell a merchant their import did not work.
  */
 const STATUS_COPY: Record<string, string> = {
   draft: "Not in your store yet",
-  review_ready: "In review — not in your store yet",
-  pending_review: "In review — not in your store yet",
   active: "In your store",
   paused: "Paused",
   archived: "Archived",
@@ -157,15 +140,6 @@ export function DropshippingProductsScreen({ route, navigation }: Props) {
     [rows]
   );
 
-  const reviewCount = useMemo(
-    () =>
-      rows.filter((row) => {
-        const status = row.status.toLowerCase();
-        return status === "review_ready" || status === "pending_review";
-      }).length,
-    [rows]
-  );
-
   const stateBlock = stateOwnsScreen(state) ? (
     <DropshippingStateView
       state={state}
@@ -179,10 +153,8 @@ export function DropshippingProductsScreen({ route, navigation }: Props) {
           filter === "ALL"
             ? "You haven't imported anything yet."
             : filter === "DRAFT"
-              ? "No drafts — nothing here is waiting on you."
-              : filter === "IN_REVIEW"
-                ? "Nothing in review."
-                : "Nothing published yet.",
+              ? "No drafts — everything you've imported is published."
+              : "Nothing published yet.",
         body:
           filter === "ALL"
             ? "Browse your supplier's catalogue and add products to your import cart."
@@ -242,17 +214,6 @@ export function DropshippingProductsScreen({ route, navigation }: Props) {
               <Text style={styles.draftNote}>
                 {formatters.count(draftCount)} of these are drafts and aren't in your store yet.
                 Open one to set its price and publish it.
-              </Text>
-            ) : null}
-
-            {/* Deliberately a different sentence from the draft note above, and
-                not "open one to publish it": these are released and waiting on a
-                decision, so the merchant's next move is to read what each is
-                waiting on, not to do the publishing again. */}
-            {state === "READY" && reviewCount > 0 && filter !== "IN_REVIEW" ? (
-              <Text style={styles.draftNote}>
-                {formatters.count(reviewCount)} of these are in review and aren't in your store
-                yet. Open one to see what it's waiting on.
               </Text>
             ) : null}
 

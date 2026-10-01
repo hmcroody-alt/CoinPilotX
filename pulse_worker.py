@@ -10,10 +10,6 @@ from datetime import datetime, timezone
 import bot
 from services import pulse_ai, pulse_feed_engine
 from services import marketplace_reservation_sweeper as reservation_sweeper
-from services import marketplace_release_cycle as release_cycle
-from services import marketplace_payout_worker as payout_worker
-from services import payments_reconciliation_cycle as reconciliation_cycle
-from services import stripe_mode
 
 
 WORKER_NAME = "pulse_worker"
@@ -254,36 +250,6 @@ def main():
         reservation_sweeper.batch_limit(),
         bool(os.getenv("STRIPE_SECRET_KEY")),
     )
-    # Same reason: a deployment's payout behaviour should be readable from its
-    # first ten log lines rather than inferred from whether sellers get paid.
-    logging.info(
-        "MARKETPLACE_RELEASE_CONFIG fulfillment_sweep=%s settlement_sweep=%s interval=%s",
-        release_cycle.fulfillment_sweep_enabled(),
-        release_cycle.settlement_sweep_enabled(),
-        release_cycle.interval_seconds(),
-    )
-    # `may_move_money` is only the two switches, and both are set deliberately
-    # by whoever is activating. `blocked_by` is the rest of the ladder --
-    # Postgres, and a Stripe key *this service* can see. Railway variables are
-    # per service, so an owner who sets the switches here and the Stripe key on
-    # the web service gets a worker that announces itself ready and then
-    # refuses every cycle. Printing both puts that in the boot log rather than
-    # in a week of sellers not being paid.
-    logging.info(
-        "PAYOUT_WORKER_CONFIG enabled=%s may_move_money=%s blocked_by=%s "
-        "stripe_mode=%s interval=%s batch=%s",
-        payout_worker.worker_enabled(),
-        payout_worker.may_move_money(),
-        payout_worker.blocked_reason() or "-",
-        stripe_mode.mode(),
-        payout_worker.interval_seconds(),
-        payout_worker.batch_limit(),
-    )
-    logging.info(
-        "PAYMENTS_RECONCILIATION_CONFIG enabled=%s interval=%s",
-        reconciliation_cycle.reconciliation_enabled(),
-        reconciliation_cycle.interval_seconds(),
-    )
     state: dict = {}
     while True:
         try:
@@ -305,17 +271,6 @@ def main():
                 if conn:
                     conn.close()
             run_reservation_sweep_if_due(state)
-            # The rest of the marketplace money chain, in the order it travels:
-            # an order reaches the buyer, its settlement hold clears, and only
-            # then does the payout cycle move anything. Each keeps its own
-            # deadline and its own gates; all three are off unless configured.
-            release_cycle.run_release_cycle_if_due(state)
-            payout_worker.run_payout_cycle_if_due(state)
-            # Last, and on its own much longer deadline: the sweep that checks
-            # whether the three above actually did what their metrics claim.
-            # After them rather than before, so a finding is about the state the
-            # chain settled into on this tick and not the one it started from.
-            reconciliation_cycle.run_reconciliation_cycle_if_due(state)
             bot.record_worker_heartbeat(
                 WORKER_NAME,
                 "healthy",
@@ -326,9 +281,6 @@ def main():
                     "batch_size": BATCH_SIZE,
                     "openai_key_present": bool(os.getenv("OPENAI_API_KEY")),
                     **sweep_heartbeat_metadata(state),
-                    **release_cycle.heartbeat_metadata(state),
-                    **payout_worker.heartbeat_metadata(state),
-                    **reconciliation_cycle.heartbeat_metadata(state),
                 },
             )
         except Exception as exc:

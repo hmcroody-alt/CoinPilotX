@@ -19,29 +19,11 @@ from services import marketplace_seller_identity as identity
 REPO = pathlib.Path(__file__).resolve().parents[1]
 
 
-def test_the_storefront_name_is_the_only_public_name():
+def test_store_name_prefers_storefront_then_registered_business():
     assert identity.store_name({"display_name": "Roody's Shop"}) == "Roody's Shop"
+    assert identity.store_name({"business_name": "Roody LLC"}) == "Roody LLC"
     # The storefront name wins: it is what the seller told buyers they trade as.
     assert identity.store_name({"display_name": "Roody's Shop", "business_name": "Roody LLC"}) == "Roody's Shop"
-
-
-def test_the_registered_legal_name_is_never_a_public_name():
-    """`business_name` is compliance evidence, not a shop sign.
-
-    It used to be the second choice in the public chain, which reads as harmless
-    until you notice that a sole trader's registered name is usually their own
-    name — so the legal fallback leaked exactly what the `users` fallback leaked,
-    by a longer route. A seller with only a legal name now has *no* public
-    identity, which is the honest answer and the one the audit script repairs.
-    """
-    legal_only = {"business_name": "Roody Cherie Ltd"}
-    assert identity.store_name(legal_only) == ""
-    assert identity.display_store_name(legal_only) == identity.FALLBACK_STORE_NAME
-    assert "roody" not in identity.display_store_name(legal_only).lower()
-    assert not identity.has_store_identity(legal_only)
-    # Reachable on purpose, for private-side surfaces only.
-    assert identity.legal_business_name(legal_only) == "Roody Cherie Ltd"
-    assert identity.legal_business_name({"display_name": "Roody's Shop"}) == ""
 
 
 def test_store_name_never_falls_back_to_a_personal_name():
@@ -64,11 +46,6 @@ def test_publication_requires_a_store_name():
         "seller_status": "approved",
         "quantity": 4,
         "product_type": "physical",
-        # Carried so the store name is the only thing varying below. Publication
-        # also requires a price, and a row silent about one is refused by that
-        # rule -- which would satisfy the negative assertions for the wrong
-        # reason and contradict the positive one.
-        "price_label": "$12.00",
     }
     assert lifecycle.is_public({**live, "seller_store_name": "Roody's Shop"})
     assert lifecycle.public_denial_code({**live, "seller_store_name": "Roody's Shop"}) == ""
@@ -93,10 +70,6 @@ def test_a_row_without_identity_columns_is_not_treated_as_nameless():
         "seller_status": "approved",
         "quantity": 4,
         "product_type": "physical",
-        # The identity columns are the ones this test withholds. A price is not
-        # optional for publication, so leaving it out too would make the row fail
-        # for a reason this test is not about.
-        "price_label": "$12.00",
     }
     assert lifecycle.is_public(unprojected)
     assert lifecycle.public_denial_code(unprojected) == ""
@@ -104,32 +77,10 @@ def test_a_row_without_identity_columns_is_not_treated_as_nameless():
 
 def test_public_sql_enforces_the_invariant_on_the_seller_table():
     sql = lifecycle.public_sql("l", "ms")
-    assert "ms.display_name" in sql
+    assert "ms.display_name" in sql and "ms.business_name" in sql
     assert "IS NOT NULL" in sql
-    # The predicate must never reach for a users alias, nor for the legal name.
+    # The predicate must never reach for a users alias.
     assert "u.display_name" not in sql
-    assert "business_name" not in sql
-
-
-def test_no_query_projects_the_legal_name_as_the_store_name():
-    """The helper is only the authority if nobody hand-copies around it.
-
-    Six buyer-facing queries in `bot.py` carried their own inlined copy of the
-    old COALESCE instead of calling `store_name_select`, so changing the helper
-    alone left the leak live in exactly the places that serve buyers. This
-    asserts on source text because that is the failure mode: the copies are
-    correct-looking SQL that simply never consults the module that owns the rule.
-    """
-    pattern = re.compile(r"business_name[^\n]{0,120}?AS\s+seller_store_name", re.IGNORECASE)
-    for relative in (
-        "bot.py",
-        "services/marketplace_cart_routes.py",
-        "services/marketplace_offers_routes.py",
-        "services/marketplace_listing_lifecycle.py",
-    ):
-        text = (REPO / relative).read_text(encoding="utf-8", errors="ignore")
-        offenders = pattern.findall(text)
-        assert not offenders, f"{relative} projects the legal name publicly: {offenders[:2]}"
 
 
 def _buyer_marketplace_sql(text: str) -> list[str]:

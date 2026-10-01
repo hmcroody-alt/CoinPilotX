@@ -198,77 +198,6 @@ def test_health_without_a_bound_shop_proves_identity_and_asks_nothing_else():
     assert len(transport.calls) == 1
 
 
-def test_the_shop_list_cj_actually_sends_is_read_rather_than_rejected():
-    """CJ answers this endpoint with `code: 0`, and it means success.
-
-    Every fixture in this file is built by a `Response` whose default body says
-    `{"code": 200, "result": True}`, so until this test the suite asserted an
-    envelope the live account does not use for these two paths. That is how a
-    100%-broken shop list stayed green: the fake transport was answering in a
-    dialect the real one never spoke.
-
-    The body below is the one the merchant's account returned on 2026-09-22 --
-    `code: 0`, `success: true`, `message: null`, and no `result` key at all --
-    carrying the `api` shop it has owned since 2026-09-08. Rejecting it cost
-    that merchant fulfilment entirely, and the rejection was reported to them
-    as a fact about their CJ account.
-    """
-    adapter, transport, _, _ = make_adapter(Response(body={"code": 0, "success": True, "message": None,
-        "data": [{"id": SHOP, "name": "Fixture shop", "type": "api", "status": 1}]}))
-    shops = adapter.get_shops()
-    assert shops == [{"shop_id": SHOP, "name": "Fixture shop", "platform": "api", "status": 1}]
-    assert_call(transport, "shop/getShops")
-
-
-def test_the_warehouse_list_uses_the_same_envelope_and_is_read_too():
-    """The second casualty, and the reason the fix is not endpoint-specific.
-
-    Seven endpoints were measured against the live account. `setting/get`,
-    `product/getCategory`, `product/listV2`, `shopping/pay/getBalance` and
-    `webhook/product/subscribe/list` answer `code: 200`; `shop/getShops` and
-    this one answer `code: 0`. So the split is not one endpoint's quirk, and a
-    patch that special-cased the shop list would have left warehouses failing
-    for exactly the same reason, undiagnosed.
-    """
-    adapter, transport, _, _ = make_adapter(Response(body={"code": 0, "success": True, "message": None,
-        "data": [{"id": "5001", "areaId": 1, "countryCode": "CN", "areaEn": "China", "disabled": False}]}))
-    assert adapter.get_warehouses() == [{"warehouse_id": "5001", "area_id": 1, "country": "CN",
-        "name": "China", "disabled": False}]
-    assert_call(transport, "product/globalWarehouseList")
-
-
-@pytest.mark.parametrize("body", [
-    {"code": 0, "success": False, "message": "shop service unavailable", "data": []},
-    {"code": 0, "result": False, "data": []},
-    {"code": 0, "message": "nothing affirmed", "data": []},
-    {"code": 1699999, "success": True, "data": []}])
-def test_admitting_code_zero_did_not_admit_failure_or_silence(body):
-    """`0` is admitted as a code and nothing more.
-
-    A widened success gate is only safe if it stayed a gate. A body that denies
-    success is still a rejection whatever its code, a body that affirms nothing
-    is still a rejection, and a code outside the two CJ actually uses is still
-    a rejection even when the body claims success -- otherwise this fix would
-    have traded a shop list we could not read for a failure we could not see.
-    """
-    adapter, _, _, _ = make_adapter(Response(body=body))
-    with pytest.raises(SupplierError) as failure:
-        adapter.get_shops()
-    assert failure.value.code == "SUPPLIER_REJECTED"
-
-
-def test_an_account_with_no_shops_is_a_successful_empty_list_not_a_failure():
-    """The distinction the swallow in `connection_shops` used to erase.
-
-    CJ reports a shopless account as an ordinary success carrying an empty
-    `data`. It has a shape of its own, so there is never a need to infer
-    emptiness from a rejection -- and the code that did infer it turned this
-    adapter's failure into a sentence about the merchant's account.
-    """
-    adapter, _, _, _ = make_adapter(Response(body={"code": 0, "success": True, "message": None, "data": []}))
-    assert adapter.get_shops() == []
-
-
 @pytest.mark.parametrize("shop,status", [(SHOP, 0), ("4001", 1), (SHOP, None)])
 def test_shop_health_rejects_unowned_inactive_unknown(shop, status):
     adapter, _, _, _ = make_adapter(Response({"openId": OPEN_ID}),
@@ -647,43 +576,6 @@ def test_shipping_unsupported_route_and_missing_total_are_not_free_shipping():
     assert adapter.estimate_shipping(shipping_payload())["quotes"][0]["provider_total"] is None
 
 
-def test_shipping_quote_carries_a_typed_transit_range_beside_the_raw_words():
-    """No consumer should ever have to parse CJ's aging string itself.
-
-    The adapter is the only layer that sees ``arrivalTime``, so it is where the
-    typed range has to be produced. Leaving only the string here is what makes
-    four surfaces write four different parsers of it.
-    """
-    fixture = [{"option": {"enName": "CJPacket"}, "channelId": "c1", "optionId": "o1",
-        "totalPostageFee": "8.50", "arrivalTime": "7-20"}]
-    adapter, _, _, _ = make_adapter(Response(fixture))
-    quote = adapter.estimate_shipping(shipping_payload())["quotes"][0]
-    assert quote["estimated_transit"] == "7-20"
-    assert quote["transit"] == {"min_days": 7, "max_days": 20,
-                                "basis": "UNSPECIFIED", "source_text": "7-20"}
-
-
-def test_shipping_aging_falls_back_to_the_nested_option():
-    """Some channels state aging only inside ``option``. Reading one place and
-    not the other loses the estimate for those channels entirely."""
-    fixture = [{"option": {"enName": "USPS+", "arrivalTime": "3-7"}, "optionId": "o1",
-        "totalPostageFee": "4.71"}]
-    adapter, _, _, _ = make_adapter(Response(fixture))
-    quote = adapter.estimate_shipping(shipping_payload())["quotes"][0]
-    assert quote["transit"]["max_days"] == 7
-
-
-def test_an_unreadable_aging_leaves_transit_none_not_a_default():
-    """A quote with real freight but unusable aging is a quote we can price and
-    cannot date. It must not acquire a duration on the way out."""
-    fixture = [{"option": {"enName": "CJPacket"}, "optionId": "o1",
-        "totalPostageFee": "8.50", "arrivalTime": ""}]
-    adapter, _, _, _ = make_adapter(Response(fixture))
-    quote = adapter.estimate_shipping(shipping_payload())["quotes"][0]
-    assert quote["provider_total"] == "8.50"
-    assert quote["transit"] is None
-
-
 @pytest.mark.parametrize("status,body,code", [(429, None, "RATE_LIMITED"), (401, None, "REAUTH_REQUIRED"),
     (503, None, "PROVIDER_UNAVAILABLE"), (200, {"code": 1600200, "result": False}, "RATE_LIMITED"),
     (200, {"code": 900, "result": False, "message": "CJ API suspended: reactivate your account"}, "REACTIVATION_REQUIRED")])
@@ -799,46 +691,8 @@ def test_subscription_list_uses_explicit_bound_shop_and_mutations_remain_gated()
 
 def test_balance_read_is_not_authorization_to_pay():
     adapter, transport, _, _ = make_adapter(Response("42.25"))
-    assert adapter.get_balance() == {"balance": "42.25", "frozen": None, "non_withdrawable": None,
-                                     "currency": "USD", "funding_enabled": False}
+    assert adapter.get_balance() == {"balance": "42.25", "currency": "USD", "funding_enabled": False}
     assert_call(transport, "shopping/pay/getBalance")
-
-
-def test_the_balance_cj_actually_sends_is_read_rather_than_rejected():
-    """CJ sends an object here, and this read used to reject every one of them.
-
-    Measured against the live account on 2026-09-22: the body is
-    ``{"amount": 0.0, "noWithdrawalAmount": 0.0, "freezeAmount": 0.0}``. The
-    old implementation passed that dict straight to ``_money``, which accepts
-    only a scalar, so the call raised ``MALFORMED_PROVIDER_RESPONSE`` every
-    time it was made in production -- a 100% failure rate hidden by the test
-    above, which hands over a bare string CJ has never sent.
-
-    This is the shop-list fault a second time and in a second place, which is
-    the reason it is worth a test of its own rather than an edit: a fixture
-    free to invent the provider's shape will keep agreeing with whatever the
-    code already does.
-    """
-    adapter, transport, _, _ = make_adapter(Response(
-        {"amount": 0.0, "noWithdrawalAmount": 0.0, "freezeAmount": 0.0}))
-    assert adapter.get_balance() == {"balance": "0.0", "frozen": "0.0", "non_withdrawable": "0.0",
-                                     "currency": "USD", "funding_enabled": False}
-    assert_call(transport, "shopping/pay/getBalance")
-
-
-def test_held_money_is_reported_beside_the_balance_and_never_inside_it():
-    """Spendable and held are separate numbers, because spending held money overdraws.
-
-    A funding gate reads ``balance``. If ``freezeAmount`` -- money CJ has
-    already committed against orders in flight -- were summed into it, the
-    first live order would be approved against funds that are not there.
-    """
-    adapter, _, _, _ = make_adapter(Response(
-        {"amount": 10.0, "noWithdrawalAmount": 4.0, "freezeAmount": 25.0}))
-    balance = adapter.get_balance()
-    assert balance["balance"] == "10.0"
-    assert balance["frozen"] == "25.0" and balance["non_withdrawable"] == "4.0"
-    assert balance["funding_enabled"] is False
 
 
 def test_default_requests_transport_cannot_reach_network_without_the_switch(monkeypatch):

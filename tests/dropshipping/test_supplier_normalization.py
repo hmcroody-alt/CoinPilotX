@@ -3,20 +3,18 @@
 What this file is defending
 ---------------------------
 ``normalize`` is the only module allowed to know a provider's vocabulary, and
-every layer above it treats what comes out as true. That makes its four
+every layer above it treats what comes out as true. That makes its three
 refusals load-bearing:
 
 * an unparseable price becomes ``None``, never ``0``,
 * an absent stock signal becomes ``UNKNOWN``, never ``OUT_OF_STOCK``,
-* a rejected media URL is dropped, never replaced with a placeholder,
-* an unreadable shipping aging becomes ``None``, never a default duration.
+* a rejected media URL is dropped, never replaced with a placeholder.
 
-Each of those is one ``or 0`` / ``or "OUT_OF_STOCK"`` / ``or PLACEHOLDER`` /
-``or (7, 15)`` away from being wrong, and each wrong version is invisible: a
-100%-margin product, a storefront that empties itself during a provider outage,
-an import that reports success while shipping black cards, and a delivery date
-shown to a buyer that no carrier ever quoted. None of the four raises, so
-nothing downstream can notice. This file is where they are noticed.
+Each of those is one ``or 0`` / ``or "OUT_OF_STOCK"`` / ``or PLACEHOLDER`` away
+from being wrong, and each wrong version is invisible: a 100%-margin product, a
+storefront that empties itself during a provider outage, and an import that
+reports success while shipping black cards. None of the three raises, so nothing
+downstream can notice. This file is where they are noticed.
 
 The tests are pure — no database, no network, no fixtures — because the boundary
 is pure. If a test here needs a connection, the boundary has leaked.
@@ -422,125 +420,3 @@ def test_all_unknown_cost_range_is_none_not_zero():
 
 def test_a_genuinely_free_variant_is_included():
     assert n.cost_range([{"cost_cents": 0}, {"cost_cents": 500}]) == (0, 500)
-
-
-# ---------------------------------------------------------------------------
-# Transit aging: an unknown duration is not a duration
-# ---------------------------------------------------------------------------
-
-@pytest.mark.parametrize("value", [
-    None, "", "   ", "N/A", "--", "unknown", "abc", [], {}, True, False,
-])
-def test_an_unreadable_aging_string_is_none_not_a_duration(value):
-    """The fourth refusal. A fallback range here would be a fabricated promise.
-
-    Every one of these inputs is a provider saying nothing usable about
-    duration. The tempting repair is a house default — "call it 7-15 and move
-    on" — which reads as a real carrier estimate on a product page while being a
-    number PulseSoc invented.
-    """
-    assert n.transit_days(value) is None
-
-
-@pytest.mark.parametrize("text,low,high", [
-    # The literal values CJ's own logistics appendix publishes.
-    ("7-20", 7, 20),      # ePacket, Wedenpost, CJPacket
-    ("3-7", 3, 7),        # DHL, SF International
-    ("10-45", 10, 45),    # Pos Malaysia
-    ("5-15", 5, 15),      # China EMS
-    ("2-5", 2, 5),        # the freightCalculate doc's own worked example
-    # Shapes the repo's existing CJ fixture and the wider docs produce.
-    ("5-10 days", 5, 10),
-    ("10", 10, 10),
-    ("7 - 20", 7, 20),
-    ("7~20", 7, 20),
-    ("7 to 20", 7, 20),
-    ("7–20", 7, 20),      # en dash
-    ("7—20", 7, 20),      # em dash
-])
-def test_real_cj_aging_formats_become_a_typed_range(text, low, high):
-    parsed = n.transit_days(text)
-    assert (parsed["min_days"], parsed["max_days"]) == (low, high)
-    assert isinstance(parsed["min_days"], int) and isinstance(parsed["max_days"], int)
-
-
-def test_basis_is_unspecified_when_cj_does_not_say():
-    """CJ's bare ranges carry no unit, and guessing one is a ~40% error.
-
-    This is the ordinary case, not an edge case. Folding it into an assumed
-    CALENDAR reading would silently shorten every quote, because N business days
-    is longer in wall-clock time than N calendar days — the overpromising
-    direction.
-    """
-    assert n.transit_days("7-20")["basis"] == n.TRANSIT_BASIS_UNSPECIFIED
-    # "days" is still not a statement about *which* days.
-    assert n.transit_days("5-10 days")["basis"] == n.TRANSIT_BASIS_UNSPECIFIED
-
-
-@pytest.mark.parametrize("text,basis", [
-    ("3-7 business days", n.TRANSIT_BASIS_BUSINESS),
-    ("3-7 Working Days", n.TRANSIT_BASIS_BUSINESS),
-    ("3-7 weekdays", n.TRANSIT_BASIS_BUSINESS),
-    ("7-20个工作日", n.TRANSIT_BASIS_BUSINESS),
-    ("5-9 calendar days", n.TRANSIT_BASIS_CALENDAR),
-    ("5-9自然日", n.TRANSIT_BASIS_CALENDAR),
-])
-def test_a_stated_basis_is_read_including_bilingual_strings(text, basis):
-    assert n.transit_days(text)["basis"] == basis
-
-
-@pytest.mark.parametrize("text", ["7-900", "2024-2025", "1-181", "0-3650"])
-def test_an_implausible_range_is_rejected_rather_than_quoted(text):
-    """The ceiling is what stops a non-aging string becoming a delivery date.
-
-    ``"2024-2025"`` is the case that matters: a year span parses as a flawless
-    2024-to-2025-day range, so a parser without an upper bound accepts it and
-    quotes it. Rejecting the whole reading is correct — a value this far out of
-    range is evidence the field did not contain aging at all.
-    """
-    assert n.transit_days(text) is None
-
-
-def test_bounds_round_up_because_later_is_the_safe_direction():
-    parsed = n.transit_days("7.5-19.2")
-    assert (parsed["min_days"], parsed["max_days"]) == (8, 20)
-
-
-def test_a_zero_lower_bound_becomes_one_day():
-    """A shipped good cannot arrive in zero days, and "arrives today" is how a
-    zero lower bound renders."""
-    assert n.transit_days("0-5")["min_days"] == 1
-    assert n.transit_days("0-0") == {
-        "min_days": 1, "max_days": 1,
-        "basis": n.TRANSIT_BASIS_UNSPECIFIED, "source_text": "0-0"}
-
-
-def test_a_reversed_range_is_swapped_not_discarded():
-    parsed = n.transit_days("20-7")
-    assert (parsed["min_days"], parsed["max_days"]) == (7, 20)
-
-
-def test_the_range_separator_is_never_read_as_a_negative_sign():
-    """The shared ``_NUMBER`` pattern captures a leading sign, by design, so
-    reusing it here reads "7-20" as 7 followed by -20 and collapses the range
-    onto its lower bound."""
-    parsed = n.transit_days("7-20")
-    assert parsed["max_days"] == 20
-    assert parsed["min_days"] < parsed["max_days"]
-
-
-def test_markup_and_trailing_content_do_not_defeat_the_parse():
-    assert n.transit_days("<b>7-20</b>")["max_days"] == 20
-    # A third number is not part of the interval.
-    assert n.transit_days("7-20, option 3")["max_days"] == 20
-
-
-def test_source_text_is_retained_for_audit():
-    """A normalized range that disagrees with the provider has to be traceable
-    back to the exact string it came from."""
-    assert n.transit_days("  5-10 days  ")["source_text"] == "5-10 days"
-
-
-def test_every_basis_is_a_declared_member_of_the_vocabulary():
-    for text in ("7-20", "3-7 business days", "5-9 calendar days"):
-        assert n.transit_days(text)["basis"] in n.TRANSIT_BASES

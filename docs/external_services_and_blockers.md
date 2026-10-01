@@ -120,13 +120,10 @@ disk that disappears on redeploy.
 OpenAI: `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_SCAM_MODEL`,
 `OPENAI_TELEGRAM_MODEL`, `PULSE_AI_ENABLED`, `PULSE_AI_RATE_LIMIT_PER_MINUTE`
 
-Google Cloud Translation: `GOOGLE_CLOUD_TRANSLATION_CREDENTIALS_JSON`,
-`GOOGLE_CLOUD_PROJECT_ID`, `GOOGLE_CLOUD_TRANSLATION_LOCATION`,
-`TRANSLATION_ENABLED`, `TRANSLATION_PRIMARY_PROVIDER` — a service-account JSON
-is the only credential that works. This integration speaks Cloud Translation v3,
-which rejects API keys with 401 `CREDENTIALS_MISSING`.
-`GOOGLE_CLOUD_TRANSLATION_API_KEY` was listed here and is no longer read by any
-code; buying a key does not configure translation.
+Google Cloud Translation: `GOOGLE_CLOUD_TRANSLATION_API_KEY`,
+`GOOGLE_CLOUD_TRANSLATION_CREDENTIALS_JSON`, `GOOGLE_CLOUD_PROJECT_ID`,
+`GOOGLE_CLOUD_TRANSLATION_LOCATION`, `TRANSLATION_ENABLED`,
+`TRANSLATION_PRIMARY_PROVIDER`
 
 AI story media: `AI_STORY_PROVIDER`, `AI_STORY_IMAGE_ENDPOINT`,
 `AI_STORY_VIDEO_ENDPOINT`
@@ -152,15 +149,13 @@ different jobs per chain.
 ### Email, SMS and push
 
 Brevo (formerly Sendinblue) covers both email and SMS:
-`BREVO_API_KEY`, `BREVO_SMS_API_KEY`,
+`BREVO_API_KEY`, `BREVO_SMTP_API_KEY`, `BREVO_SMS_API_KEY`,
 `BREVO_SMS_ENABLED`, `BREVO_SMS_SENDER`, `BREVO_DEFAULT_LIST_ID`,
-`BREVO_PRO_LIST_ID`, `BREVO_TELEGRAM_LIST_ID`,
+`BREVO_PRO_LIST_ID`, `BREVO_TELEGRAM_LIST_ID`, `SENDINBLUE_API_KEY`,
 `DEFAULT_FROM_EMAIL`, `SMS_SENDER_NAME`
 
-The consolidation this section used to recommend has happened. `BREVO_API_KEY`
-is the only name for the transactional email key; `SENDINBLUE_API_KEY` (rename
-artifact) and `BREVO_SMTP_API_KEY` (which names a different credential) are no
-longer read by anything.
+`SENDINBLUE_API_KEY` alongside `BREVO_API_KEY` is a rename artifact — same
+vendor, old name. Worth consolidating so nobody buys twice.
 
 Push notification credentials — these are free from Apple/Google but require
 developer accounts:

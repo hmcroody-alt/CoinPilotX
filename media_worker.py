@@ -586,7 +586,6 @@ def process_cover_backlog(limit: int = 4) -> dict:
         WHERE deleted_at IS NULL
           AND media_type IN ('image', 'gif', 'video')
           AND COALESCE(is_available, 1)=1
-          AND COALESCE(mime_type, '') NOT LIKE 'audio/%'
           AND COALESCE(cover_attempts, 0) < ?
           AND COALESCE(cover_generated_at, '')=''
           AND (
@@ -624,71 +623,6 @@ def process_cover_backlog(limit: int = 4) -> dict:
     conn.commit()
     conn.close()
     return {"checked": len(rows), "processed": processed, "failed": failed}
-
-
-def process_media_asset_cover_sync(limit: int = 25) -> dict:
-    """Copy generated covers onto the Pulse feed's mirror table.
-
-    `pulse_media_assets` is populated once, at upload, from the upload result --
-    and for a video that result's `thumbnail_url` is the video's own URL,
-    because covers are generated afterwards. The only other writers are the Mux
-    webhooks, which touch the `mux_*` columns and never the cover ones. So a
-    cover that lands on `chat_media_uploads` has never reached the mirror the
-    feed actually reads.
-
-    A `image.mux.com` poster counts as fillable here: it is a machine fallback
-    the apps must fetch live, not a cover anyone chose, and a stored JPEG of
-    ours is strictly better. Anything else is left alone.
-    """
-    conn = bot.db()
-    conn.row_factory = bot.sqlite3.Row
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT p.id AS asset_id, c.thumbnail_url AS cover_thumbnail, c.poster_url AS cover_poster
-        FROM pulse_media_assets p
-        JOIN chat_media_uploads c ON c.id = p.media_id
-        WHERE COALESCE(c.thumbnail_url, '') LIKE '%-cover-%'
-          AND (
-            COALESCE(p.thumbnail_url, '')='' OR p.thumbnail_url=COALESCE(p.public_url, '')
-            OR COALESCE(p.poster_url, '')='' OR p.poster_url=COALESCE(p.public_url, '')
-            OR COALESCE(p.poster_url, '') LIKE '%image.mux.com%'
-          )
-        ORDER BY p.id DESC
-        LIMIT ?
-        """,
-        (max(1, min(int(limit or 25), 200)),),
-    )
-    rows = [dict(row) for row in cur.fetchall()]
-    synced = 0
-    for row in rows:
-        thumbnail = str(row.get("cover_thumbnail") or "")
-        cur.execute(
-            """
-            UPDATE pulse_media_assets
-            SET thumbnail_url=CASE
-                    WHEN COALESCE(thumbnail_url, '')='' OR thumbnail_url=COALESCE(public_url, '') THEN ?
-                    ELSE thumbnail_url
-                END,
-                poster_url=CASE
-                    WHEN COALESCE(poster_url, '')='' OR poster_url=COALESCE(public_url, '')
-                         OR COALESCE(poster_url, '') LIKE '%image.mux.com%' THEN ?
-                    ELSE poster_url
-                END,
-                updated_at=?
-            WHERE id=?
-            """,
-            (
-                thumbnail,
-                str(row.get("cover_poster") or "") or thumbnail,
-                _now(),
-                int(row.get("asset_id") or 0),
-            ),
-        )
-        synced += 1
-    conn.commit()
-    conn.close()
-    return {"checked": len(rows), "synced": synced}
 
 
 def _fail_or_retry_job(cur, job, error: Exception) -> None:
@@ -1349,58 +1283,6 @@ def reconcile_media_availability(limit: int = 10) -> dict:
     return {"checked": checked, "downgraded": downgraded}
 
 
-def pulsedrop_cycle() -> dict:
-    """PulseDrop's render drain and curator tick, isolated from the rest.
-
-    Imported inside the function, and wrapped, for the same reason the optional
-    route packs in ``bot.py`` are: this loop runs every few seconds and
-    everything else in it is media that a member is waiting on. A curator that
-    raises — a schema not yet created, a marketplace column that moved — must
-    not be able to stop a video from being transcoded. PulseDrop going quiet is
-    always recoverable; the media pipeline stopping is not.
-
-    Both halves are cheap on the overwhelming majority of cycles: the kill
-    switch is a memoised settings read, and the lease is one UPDATE that matches
-    no rows until the curator is due.
-    """
-    try:
-        from services.pulsedrop import curator
-
-        return curator.worker_cycle()
-    except Exception as exc:
-        logging.exception("PULSEDROP_CYCLE_FAILED error=%s", exc)
-        return {"outcome": "error", "reason": str(exc)[:200]}
-
-
-#: Outcomes that mean "the curator looked and correctly did nothing". This loop
-#: runs every few seconds, so logging these would bury the cycle log in a line
-#: that never changes — and they are already visible on /admin/pulsedrop and in
-#: the heartbeat metadata, which is where "is it ticking at all" is answered.
-_PULSEDROP_QUIET = frozenset({"not_due", "disabled"})
-
-
-def _log_pulsedrop(outcome) -> None:
-    """Log a PulseDrop cycle that did something, and stay silent otherwise.
-
-    Worth its own line rather than folding into ``MEDIA_WORKER_CYCLE`` because
-    the failure mode PulseDrop actually has is going quiet, and a curator whose
-    every result is a dict nested inside a media log line is a curator nobody
-    notices has stopped publishing. Everything interesting — a publication, a
-    render, a rejection, an error — is rare enough to print.
-    """
-    if not isinstance(outcome, dict):
-        return
-    name = str(outcome.get("outcome") or "").lower()
-    # Renders drain *before* the tick, so a cycle can be ``not_due`` and still
-    # have started, finished or failed an encode. Keying only on the outcome
-    # would hide a failing renderer behind the quietest outcome there is.
-    renders = outcome.get("renders")
-    busy = isinstance(renders, dict) and any(renders.values())
-    if not busy and (not name or name in _PULSEDROP_QUIET):
-        return
-    logging.info("PULSEDROP_CYCLE %s", outcome)
-
-
 def run_cycle() -> dict:
     replay = reconcile_live_replay_backlog(BATCH_SIZE)
     uploads = process_pending_uploads(BATCH_SIZE)
@@ -1408,11 +1290,9 @@ def run_cycle() -> dict:
     jobs = process_media_jobs(BATCH_SIZE)
     playback = process_playback_backlog(int(os.getenv("MEDIA_WORKER_PLAYBACK_BACKLOG_BATCH", "2")))
     covers = process_cover_backlog(int(os.getenv("MEDIA_WORKER_COVER_BACKLOG_BATCH", "4")))
-    cover_sync = process_media_asset_cover_sync(int(os.getenv("MEDIA_WORKER_COVER_SYNC_BATCH", "25")))
     durations = reconcile_stored_video_durations(int(os.getenv("MEDIA_WORKER_DURATION_RECONCILE_BATCH", "25")))
     availability = reconcile_media_availability(int(os.getenv("MEDIA_WORKER_AVAILABILITY_RECONCILE_BATCH", "10")))
-    pulsedrop = pulsedrop_cycle()
-    return {"replay": replay, "uploads": uploads, "messenger": messenger, "jobs": jobs, "playback": playback, "covers": covers, "cover_sync": cover_sync, "durations": durations, "availability": availability, "pulsedrop": pulsedrop}
+    return {"replay": replay, "uploads": uploads, "messenger": messenger, "jobs": jobs, "playback": playback, "covers": covers, "durations": durations, "availability": availability}
 
 
 def main() -> None:
@@ -1439,7 +1319,6 @@ def main() -> None:
             result["dependencies"] = dependency_snapshot()
             bot.record_worker_heartbeat(WORKER_NAME, "healthy", metadata=result)
             logging.info("MEDIA_WORKER_CYCLE uploads=%s jobs=%s", result.get("uploads"), result.get("jobs"))
-            _log_pulsedrop(result.get("pulsedrop"))
         except Exception as exc:
             logging.exception("MEDIA_WORKER_CYCLE_FAILED error=%s", exc)
             try:

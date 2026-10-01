@@ -102,7 +102,6 @@ function result(over: Partial<StoreLoadResult> = {}): StoreLoadResult {
   return {
     listings: { status: "ok", data: [listing()] },
     orders: { status: "ok", data: [order()] },
-    metrics: null,
     cachedAt: null,
     offline: false,
     ...over

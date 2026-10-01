@@ -22,7 +22,6 @@ os.close(_HANDLE)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
 
 import bot  # noqa: E402
-from services import db as db_service  # noqa: E402
 
 
 def _use_module_database():
@@ -58,29 +57,13 @@ class CashSettlementTest(unittest.TestCase):
     # fixtures
     # ------------------------------------------------------------------
     def _make_user(self, username):
-        """The seller or buyer, created once and reused for the rest of the run.
-
-        ``_use_module_database`` re-runs ``init_db`` per test but never empties the
-        tables, so ``setUp`` runs against whatever the previous test left behind.
-        This used to INSERT unconditionally, which meant test two onwards minted a
-        *second* account at ``cash_seller@example.com`` -- the duplicate-account
-        state the platform must not be able to reach, manufactured by a fixture.
-        Nothing here needs a fresh row; it needs a seller and a buyer. So it asks
-        for one, and only inserts if the address is unclaimed.
-        """
-        email = f"{username}@example.com"
         conn = bot.db()
         cur = conn.cursor()
-        cur.execute("SELECT user_id FROM users WHERE email = ? LIMIT 1", (email,))
-        existing = cur.fetchone()
-        if existing is not None:
-            user_id = int(db_service.row_values(existing)[0])
-        else:
-            cur.execute(
-                "INSERT INTO users (username, display_name, email, account_status, created_at) VALUES (?,?,?,?,?)",
-                (username, username, email, "active", self.now),
-            )
-            user_id = int(cur.lastrowid)
+        cur.execute(
+            "INSERT INTO users (username, display_name, email, account_status, created_at) VALUES (?,?,?,?,?)",
+            (username, username, f"{username}@example.com", "active", self.now),
+        )
+        user_id = int(cur.lastrowid)
         conn.commit()
         conn.close()
         return {"user_id": user_id, "username": username}

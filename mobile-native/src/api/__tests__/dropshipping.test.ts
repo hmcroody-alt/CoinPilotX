@@ -77,10 +77,8 @@ import {
   getImportedProduct,
   getStoreImportPolicy,
   getSupplierProduct,
-  getSupplierStatus,
   importNeedsReview,
   importSelected,
-  isBatchTooLarge,
   listImportedProducts,
   listSupplierConnections,
   previewPricing,
@@ -91,12 +89,6 @@ import {
   updateImportedProduct,
   updateStoreImportPolicy
 } from "../dropshipping";
-import {
-  NEXT_ACTION_COPY,
-  actionIsBlocking,
-  operatingMode,
-  ordersCopy
-} from "../../screens/dropshipping/supplierStatusCopy";
 import { PulseApiError } from "../pulseApi";
 
 const SCOPE = { businessId: "biz-1", storeId: 42 } as any;
@@ -511,26 +503,6 @@ describe("stateForError separates causes that have different fixes", () => {
     expect(stateForError(new PulseApiError("x", 500))).toBe("ERROR");
   });
 
-  /**
-   * A shop list the server could not read, which used to be an empty one.
-   *
-   * `connection_shops` translated the supplier's rejection into `shops: []`, so
-   * this failure reached the merchant as a sentence about their supplier
-   * account — "this account has no shops" — when the truth was that we could
-   * not read the list. The live account was told exactly that, over a shop it
-   * had owned since 2026-09-08. The server now reports the failure as a
-   * failure, and this asserts the client has somewhere to put it: a 502 matches
-   * none of the status classes at the foot of `stateForError`, so without the
-   * code it arrives as a bare "Something went wrong" and the trade would have
-   * been one wrong answer for another.
-   */
-  it("reads an unreadable shop list as the supplier being unreachable", () => {
-    expect(stateForError(new PulseApiError("x", 502, "shop_list_unavailable")))
-      .toBe("PROVIDER_UNAVAILABLE");
-    // And the status alone does not get there, so the code is doing the work.
-    expect(stateForError(new PulseApiError("x", 502))).toBe("ERROR");
-  });
-
   it("returns a retry hint only when the server gave one", () => {
     expect(retryAfterSeconds(new PulseApiError("x", 503, "provider_unavailable", { retry_after: 30 }))).toBe(30);
     expect(retryAfterSeconds(new PulseApiError("x", 503))).toBeNull();
@@ -759,68 +731,6 @@ describe("bulk import reports each item, not one verdict", () => {
     });
     expect(importNeedsReview(await importSelected(SCOPE, "c1", { itemIds: ["i1"] }))).toBe(false);
   });
-
-  it("carries the rows the run did not reach, and the cap that stopped it", async () => {
-    // The production failure's wire shape. `requested` is what the seller asked
-    // for and `deferred` is what one run could not take, so a screen can say
-    // "25 of 30" instead of promising all 30 and then reporting five phantom
-    // failures.
-    mockPulseApi.mockResolvedValue({
-      requested: 3,
-      imported: 2,
-      deferred: 1,
-      max_per_import: 2,
-      results: [
-        { item_id: "i1", outcome: "PUBLISHED", listing_id: 5 },
-        { item_id: "i2", outcome: "PUBLISHED", listing_id: 6 },
-        { item_id: "i3", outcome: "DEFERRED" }
-      ]
-    });
-    const run = await importSelected(SCOPE, "c1", { itemIds: ["i1", "i2", "i3"] });
-    expect(run.requested).toBe(3);
-    expect(run.deferred).toBe(1);
-    expect(run.maxPerImport).toBe(2);
-  });
-
-  it("counts the deferred rows itself when the server did not total them", async () => {
-    // A server that names the outcome per row but omits the total must not
-    // collapse to "0 deferred" — that reads as a finished run and the rows left
-    // in the cart never get a second tap.
-    mockPulseApi.mockResolvedValue({
-      requested: 2,
-      imported: 1,
-      results: [{ item_id: "i1", outcome: "PUBLISHED" }, { item_id: "i2", outcome: "DEFERRED" }]
-    });
-    const run = await importSelected(SCOPE, "c1", { itemIds: ["i1", "i2"] });
-    expect(run.deferred).toBe(1);
-    expect(run.maxPerImport).toBeNull();
-  });
-
-  it("does not ask the merchant to review a run that only deferred rows", async () => {
-    // A deferred row is not a problem to look at. Counting it as one would put
-    // a warning on every large cart.
-    mockPulseApi.mockResolvedValue({
-      requested: 2,
-      imported: 1,
-      deferred: 1,
-      results: [{ item_id: "i1", outcome: "PUBLISHED" }, { item_id: "i2", outcome: "DEFERRED" }]
-    });
-    expect(importNeedsReview(await importSelected(SCOPE, "c1", { itemIds: ["i1", "i2"] }))).toBe(false);
-  });
-
-  it("names an over-cap refusal, which stateForError can only call ERROR", async () => {
-    // `batch_too_large` arrives as a 400, which matches none of stateForError's
-    // status classes, so it falls to a bare ERROR and the screen says "That
-    // import didn't run." That fallthrough was the whole of what a seller with
-    // 58 products in the cart was told, which is why this code gets a
-    // predicate of its own rather than another state.
-    const overCap = new PulseApiError("too many", 400, "batch_too_large");
-    expect(isBatchTooLarge(overCap)).toBe(true);
-    expect(stateForError(overCap)).toBe("ERROR");
-    expect(isBatchTooLarge(new PulseApiError("down", 503, "provider_unavailable"))).toBe(false);
-    expect(isBatchTooLarge(new Error("boom"))).toBe(false);
-    expect(isBatchTooLarge(null)).toBe(false);
-  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -844,18 +754,6 @@ describe("the cart is its own layer", () => {
     mockPulseApi.mockResolvedValue({ items: [{ item_id: "i1", external_product_id: "p1" }], count: 1 });
     const cart = await getImportCart(SCOPE, "c1");
     expect(cart.items[0].preview).toBeNull();
-  });
-
-  it("reports how many of a cart one import will take, and null when unsaid", async () => {
-    // The cart can hold more than one run imports. The screen needs the run's
-    // cap from the server rather than a constant of its own, and `null` has to
-    // stay distinguishable from a number so an older server means "do not claim
-    // a limit" rather than "the limit is zero".
-    mockPulseApi.mockResolvedValue({ items: [], count: 0, max_per_import: 25 });
-    expect((await getImportCart(SCOPE, "c1")).maxPerImport).toBe(25);
-
-    mockPulseApi.mockResolvedValue({ items: [], count: 0 });
-    expect((await getImportCart(SCOPE, "c1")).maxPerImport).toBeNull();
   });
 });
 
@@ -1390,121 +1288,6 @@ describe("the shipping allowance keeps unknown and zero apart", () => {
     it("leaves the allowance alone when it is not part of the change", async () => {
       await updateStoreImportPolicy(SCOPE, { autoPublish: false });
       expect(bodyOf()).not.toHaveProperty("shipping_allowance_cents");
-    });
-  });
-});
-
-/**
- * The payload production actually sends, byte for byte.
- *
- * Every other fixture in this file was written by the same person who wrote the
- * normaliser, which makes them a check on internal consistency and not on the
- * wire. This one was captured on 2026-09-22 by running the deployed
- * `services.business_os.suppliers.status` against the live database for the only
- * merchant who has a supplier connected, and pasted here unedited — spellings,
- * nesting, `null`s and all.
- *
- * It is here because the mission's own QA step could not be completed on the
- * merchant's phone, and a fixture that agrees with the client's assumptions is
- * exactly the evidence that failure mode produces. If the server ever renames
- * `real_order_submission_enabled` or moves `orders` under the products block,
- * this is the test that goes red rather than a merchant's screen going blank.
- */
-const PRODUCTION_PAYLOAD_2026_09_22 = {
-  environment: "SANDBOX",
-  real_order_submission_enabled: false,
-  needs_attention: true,
-  suppliers: [
-    {
-      connection_id: "sc_366edc85175345eeb4ce86913ed21f1e",
-      provider: "cj",
-      connection_state: "CONNECTED",
-      message: null,
-      environment: "SANDBOX",
-      real_order_submission_enabled: false,
-      fulfillment_shop_state: "NOT_SELECTED",
-      external_shop_id: "",
-      credential_present: true,
-      last_verified_at: "2026-09-22T05:32:47.460333+00:00",
-      last_sync_at: "2026-09-22T05:32:48.741121+00:00",
-      last_product_sync_at: "2026-09-22T05:31:56",
-      products: {
-        imported: 38,
-        published: 11,
-        awaiting_review: 0,
-        draft: 27,
-        blocked: 0,
-        archived: 0,
-        other: 0,
-        by_status: { "published/approved": 11, "draft/pending_review": 27 }
-      },
-      sync_state: "SYNCED",
-      sync: { PENDING: 0, SYNCED: 38, STALE: 0, ERROR: 0, DISCONNECTED: 0, REMOVED: 0, UNKNOWN: 0 },
-      issues: {
-        products: 0,
-        cost: 0,
-        stock: 0,
-        by_reason: {
-          MARGIN_LOST: 0,
-          SELLING_BELOW_COST: 0,
-          COST_UNAVAILABLE: 0,
-          SUPPLIER_OUT_OF_STOCK: 0,
-          STOCK_UNREADABLE: 0,
-          REPRICE_IMPOSSIBLE: 0
-        }
-      },
-      orders: {
-        awaiting_supplier_order: 0,
-        ready_to_place: 0,
-        blocked: 0,
-        placed: 0,
-        counted_through: 200
-      },
-      next_action: "CHOOSE_FULFILLMENT_SHOP",
-      needs_attention: true
-    }
-  ]
-};
-
-describe("getSupplierStatus against the real production payload", () => {
-  it("reads every field the screens render, off the wire the server really uses", async () => {
-    mockPulseApi.mockResolvedValue(PRODUCTION_PAYLOAD_2026_09_22);
-    const status = await getSupplierStatus(SCOPE);
-    const supplier = status.suppliers[0];
-
-    expect(status.environment).toBe("SANDBOX");
-    expect(status.realOrderSubmissionEnabled).toBe(false);
-    expect(status.needsAttention).toBe(true);
-    expect(supplier.connectionState).toBe("CONNECTED");
-    // The live account's real defect: connected, importing, publishing — and no
-    // shop chosen, so nothing can be ordered. This is the one state the merchant
-    // has to be told about, and the one a "green tick because connected" screen
-    // would hide.
-    expect(supplier.fulfillmentShopState).toBe("NOT_SELECTED");
-    expect(supplier.nextAction).toBe("CHOOSE_FULFILLMENT_SHOP");
-    expect(supplier.products.imported).toBe(38);
-    expect(supplier.products.published).toBe(11);
-    expect(supplier.products.draft).toBe(27);
-    expect(supplier.syncState).toBe("SYNCED");
-    expect(supplier.issues.products).toBe(0);
-    expect(supplier.orders).toEqual({ awaitingSupplierOrder: 0, readyToPlace: 0, blocked: 0, placed: 0 });
-  });
-
-  it("turns that payload into the three sentences the merchant is shown", async () => {
-    mockPulseApi.mockResolvedValue(PRODUCTION_PAYLOAD_2026_09_22);
-    const status = await getSupplierStatus(SCOPE);
-
-    // §1: who, which environment, and whether anything ships — all three, in the
-    // dull case as much as the alarming one.
-    expect(operatingMode(status).line).toBe("CJ connected · Sandbox mode · Real fulfilment OFF");
-    // §3: one thing to do next, and the button that does it.
-    expect(NEXT_ACTION_COPY[status.suppliers[0].nextAction!].button).toBe("Choose fulfilment shop");
-    expect(actionIsBlocking(status.suppliers[0].nextAction)).toBe(true);
-    // §6: zero waiting is a real zero here — the server read the tables and
-    // found nothing, which is a different answer from `null`.
-    expect(ordersCopy(status.suppliers[0].orders)).toEqual({
-      label: "Nothing waiting",
-      attention: false
     });
   });
 });
