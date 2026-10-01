@@ -96,7 +96,12 @@ describe("PulseSoc navigation route resolution", () => {
     ["/pulse/reels/18", "ReelDetail", { reelId: 18, title: "Reel" }],
     ["/pulse/status/19", "StatusDetail", { statusId: 19, title: "Status" }],
     ["/pulse/live/20", "LiveDetail", { liveId: 20, title: "Live" }],
-    ["/pulse/marketplace/21", "MarketplaceDetail", { listingId: 21, title: "Marketplace" }],
+    // The product page, not the browse grid. `MarketplaceDetail` renders
+    // `MarketplaceScreen`, and while it was this path's destination a deep-linked
+    // product only opened when its id fell inside the page of rows the grid's
+    // search had just returned -- so "Open this listing in PulseSoc" landed on
+    // the Marketplace for every older listing.
+    ["/pulse/marketplace/21", "MarketplaceProduct", { listingId: 21, title: "Marketplace" }],
     ["/pulse/messages/22", "Chat", { conversationId: 22, title: "Conversation" }],
     ["/pulse/notifications/23", "NotificationCenter", { notificationId: 23 }],
     ["/pulse/events/24", "EventDetail", { eventId: 24, title: "Event" }],
@@ -142,5 +147,56 @@ describe("PulseSoc navigation route resolution", () => {
       const handled = calls.length > 0;
       expect({ route: action.route, handled }).toEqual({ route: action.route, handled: true });
     }
+  });
+
+  /**
+   * `/pulse/merchant/<id>` is the canonical store link.
+   *
+   * `services/app_links.py` emits this spelling for every store URL the server
+   * produces, and `linking.ts` maps `pulse/merchant/:sellerId` to MerchantProfile
+   * — so a universal link opened from outside the app has always worked. The
+   * in-app resolver only knew `store`/`business`, so tapping the identical path
+   * inside the app resolved to null and silently did nothing. One path, two
+   * resolvers, two answers.
+   *
+   * The aliases are pinned alongside it because a fix that only handles the
+   * singular is the same bug one rename later.
+   */
+  describe("the canonical merchant path", () => {
+    it.each(["/pulse/merchant/10", "/pulse/merchants/10", "/pulse/store/10", "/pulse/stores/10", "/pulse/business/10"])(
+      "%s opens the storefront",
+      (route) => {
+        expect(nativeObjectDestination(route)).toEqual({
+          screen: "MerchantProfile",
+          params: { sellerId: "10", title: "Business" }
+        });
+      }
+    );
+
+    it("carries a non-numeric seller key through untouched", () => {
+      expect(nativeObjectDestination("/pulse/merchant/acme-co")?.params).toEqual({
+        sellerId: "acme-co",
+        title: "Business"
+      });
+    });
+
+    /**
+     * The reason the matcher needs a lookahead rather than `([^/]+)`. These are
+     * real screens with their own `linking.ts` entries; capturing "apply" as a
+     * seller id would open an empty storefront instead of the seller application
+     * and would break the three entry points `sellerEntryPoints.test.ts` guards.
+     */
+    it.each(["/pulse/merchant/apply", "/pulse/merchant/dashboard", "/pulse/merchant", "/pulse/merchant/"])(
+      "%s is not a storefront",
+      (route) => {
+        expect(nativeObjectDestination(route)).toBeNull();
+      }
+    );
+
+    it("still sends the seller application to its own screen", () => {
+      const { navigation, calls } = makeNavigation();
+      openNativeRoute(navigation, "/pulse/merchant/apply");
+      expect(calls.map((call) => call.screen)).not.toContain("MerchantProfile");
+    });
   });
 });

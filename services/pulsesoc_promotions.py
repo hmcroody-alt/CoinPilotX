@@ -261,7 +261,20 @@ def _destination(content_type: str, content_id: int) -> str:
     if content_type == "live_stream":
         return f"/pulse/live/{content_id}"
     if content_type == "marketplace_listing":
-        return f"/pulse/marketplace?listing={content_id}"
+        # The listing's own canonical URL, not `?listing=<id>` on the grid.
+        #
+        # `?listing=` was never a parameter anything read. `Filters.from_args` in
+        # `marketplace_storefront` parses exactly four keys -- category, q, sort,
+        # page -- and discards the rest, so the old destination spent the seller's
+        # ad budget delivering every click to the unfiltered Marketplace with the
+        # promoted product nowhere in particular on it. The failure was invisible
+        # because the page still rendered: 200, no error, wrong product.
+        #
+        # `/pulse/marketplace/<id>` is the canonical public product page, the same
+        # URL the sitemap submits, the search API returns and the universal link
+        # resolves, so an ad click, an organic result and a shared link now all
+        # land on one object.
+        return f"/pulse/marketplace/{content_id}"
     if content_type == "music_release":
         return f"/pulse/music?track={content_id}"
     return "/pulse"

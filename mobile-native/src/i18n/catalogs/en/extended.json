@@ -406,6 +406,7 @@
       "a11yVoiceProgress": "Voice message progress",
       "a11yVoiceUnavailable": "{{label}}. Voice message unavailable.",
       "assistantAlwaysAvailable": "Always available · PulseSoc Intelligence",
+      "assistantConnecting": "Connecting · PulseSoc Intelligence",
       "assistantReconnecting": "Service reconnecting",
       "attachCamera": "Camera",
       "attachCameraDetail": "Capture now",
@@ -2421,6 +2422,22 @@
       "share": "Share",
       "shop": "Shop",
       "openMarketplace": "Open Marketplace"
+    },
+    "pulsedrop": {
+      "label": {
+        "trending": "Trending",
+        "newDrop": "New drop",
+        "popular": "Popular",
+        "topPick": "Top pick",
+        "discovery": "Discover"
+      },
+      "availability": {
+        "unavailable": "No longer available",
+        "notPriced": "Not priced yet"
+      },
+      "seller": {
+        "visitStore": "Visit store"
+      }
     }
   },
   "discovery": {

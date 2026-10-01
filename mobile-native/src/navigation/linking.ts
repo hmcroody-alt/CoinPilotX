@@ -188,7 +188,14 @@ export const linking: LinkingOptions<RootStackParamList> = {
           statusId: Number
         }
       },
-      MarketplaceDetail: {
+      // `pulse/marketplace/:listingId` belongs to the product page. It used to
+      // name `MarketplaceDetail`, which renders the browse grid, and two
+      // resolvers for one path disagreeing is the failure `nativeRouteActions`
+      // is commented against -- so this entry moves with it rather than being
+      // left behind as a second answer. `MarketplaceDetail` keeps no path of its
+      // own: it is reached in-app by `navigate()`, and the grid's own URL is
+      // `pulse/marketplace` on the Marketplace tab.
+      MarketplaceProduct: {
         path: "pulse/marketplace/:listingId",
         parse: {
           listingId: Number

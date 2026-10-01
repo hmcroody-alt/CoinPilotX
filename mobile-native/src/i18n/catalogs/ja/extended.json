@@ -403,6 +403,7 @@
       "a11yVoiceProgress": "音声メッセージの再生位置",
       "a11yVoiceUnavailable": "{{label}}。音声メッセージはご利用いただけません。",
       "assistantAlwaysAvailable": "いつでも利用可能 · PulseSocインテリジェンス",
+      "assistantConnecting": "接続中 · PulseSocインテリジェンス",
       "assistantReconnecting": "サービスに再接続中",
       "attachCamera": "カメラ",
       "attachCameraDetail": "その場で撮影",
@@ -2398,6 +2399,22 @@
       "share": "シェア",
       "shop": "ショップ",
       "openMarketplace": "マーケットプレイスを開く"
+    },
+    "pulsedrop": {
+      "label": {
+        "trending": "急上昇",
+        "newDrop": "新着",
+        "popular": "人気",
+        "topPick": "おすすめ",
+        "discovery": "発見"
+      },
+      "availability": {
+        "unavailable": "販売終了",
+        "notPriced": "価格未設定"
+      },
+      "seller": {
+        "visitStore": "ストアを見る"
+      }
     }
   },
   "discovery": {

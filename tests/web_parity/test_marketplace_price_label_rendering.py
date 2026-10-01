@@ -23,20 +23,45 @@ had tests. Nothing asserted the shape of what a surface actually emitted, so
 three separate sites could each re-invent the phrase downstream of a correct
 helper and stay green.
 
-Every assertion below is therefore made against bytes served by the app, and the
-one surface whose output is JavaScript is *executed*, not read. Reading the
-script source for the absence of a string would be exactly the class of check
-that failed here: it passes for a template that never renders a price at all,
-and it passes for one that renders an empty ``<span class="pill"></span>``,
-which is not "no price" but "a price the seller set to nothing".
+Every assertion below is therefore made against bytes served by the app. Reading
+a template for the absence of a string would be exactly the class of check that
+failed here: it passes for a template that never renders a price at all, and it
+passes for one that renders an empty price element, which is not "no price" but
+"a price the seller set to nothing".
 
 ## Three price values, not one
 
 ``""`` is the value a dropship import writes. ``"   "`` is what a hand-edited or
 migrated row can hold, and is the case a bare ``or`` fallback never catches --
 whitespace is truthy, so the old code would have passed it through and rendered
-an empty pill. A missing key covers the client-side twin being handed a row from
-an older serializer. All three must render identically: no pill.
+an empty pill. Both must render identically: no price element.
+
+## What changed when the storefront was rebuilt
+
+The markup these assertions read is new. The grid used to serve
+``<article class='card'>`` holding a ``<p>`` of ``<span class="pill">`` elements,
+one of which was the price; it now serves ``<article class="mkt-card">`` whose
+price is its own ``<p class="mkt-card-price">``, and the product page's price is
+``<span class="mkt-price-value">``. So the *anchors* below were re-derived, and
+one pair of tests lost its subject entirely:
+
+The grid no longer ships a second card renderer. ``marketplaceListingHtml`` --
+the inline JavaScript twin that search results were built from, and half of the
+drift this file was written about -- is gone, because search is now a
+server-rendered GET against the same route and therefore the same renderer. The
+two tests that executed that twin in node and compared it byte-for-byte with the
+served card are replaced by one test asserting the twin is *absent*, so that
+reintroducing a JavaScript card is a failure here rather than a silent return of
+the two-renderer problem. If one ever is reintroduced, those two tests should be
+restored to their original shape from git history rather than left deleted: the
+claim they made (a member cannot tell which renderer produced a card) becomes
+live again the moment there are two renderers.
+
+The old anchor is also gone and did not need replacing. ``pill_paragraph`` keyed
+off an unconditionally-emitted category pill so that "the paragraph is missing"
+stayed distinguishable from "the price within it is missing". The new card needs
+no such proxy: it is keyed by the product link that carries its own listing id,
+so a missing card and a missing price are already two different findings.
 """
 
 from __future__ import annotations
@@ -44,7 +69,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -55,8 +79,8 @@ from tests.probe_report import parse_report
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-#: A listing whose seller priced it. The control: every "no pill" assertion
-#: below is worthless unless a pill appears when there *is* a price, and this is
+#: A listing whose seller priced it. The control: every "no price" assertion
+#: below is worthless unless a price appears when there *is* one, and this is
 #: what distinguishes the fix from deleting the price from the card entirely.
 PRICED = 78001
 PRICED_LABEL = "$19.99"
@@ -70,6 +94,22 @@ ALL_LISTINGS = (PRICED, BLANK, WHITESPACE)
 
 #: The substitution that used to be rendered here.
 INVENTED = "Request access"
+
+#: The class the grid card puts its price in, and the class the product page puts
+#: its price in. Named here rather than inline because three tests read them and
+#: they are the only two places on the web where a marketplace price is printed.
+CARD_PRICE_CLASS = "mkt-card-price"
+PAGE_PRICE_CLASS = "mkt-price-value"
+
+#: The one *other* thing an absent price is allowed to change about a card. The
+#: stylesheet keys the reserved price height off this flag, applied to the
+#: title's bottom margin, because the obvious alternative -- an empty
+#: `<p class="mkt-card-price">` holding the space -- is precisely what
+#: `test_an_unpriced_grid_card_has_no_price_element` forbids. Naming the pair
+#: here keeps the shape assertion exact: an unpriced card differs from a priced
+#: one by the missing price and by this flag, and by nothing else.
+CARD_BODY_CLASS = "mkt-card-body"
+CARD_BODY_UNPRICED_CLASS = "mkt-card-body is-unpriced"
 
 _PROBE = r"""
 import json, re, sys, sqlite3
@@ -115,38 +155,49 @@ client = app.test_client()
 with client.session_transaction() as session:
     session["account_user_id"] = viewer_id
 
-CARD = re.compile(r"<article class='card'>.*?</article>", re.S)
-
-
-def pill_paragraph(html):
-    '''The first paragraph carrying any pill, or None.
-
-    This used to key off the Safety pill, on the grounds that it was the one
-    element of the row always present -- which kept "the price paragraph is
-    gone" and "the price pill is gone" distinguishable. That pill has been
-    removed: it printed `marketplace_listings.safety_score`, which holds the
-    reviewer's *risk* number, so the worst listing the engine can score read
-    "Safety 100" to a buyer.
-
-    The category pill inherits the job. It is emitted unconditionally by both
-    surfaces (`row.get('category') or 'Education'`), so a None here still means
-    the paragraph itself is missing rather than the price within it.
-    '''
-    for para in re.findall(r"<p>.*?</p>", html, re.S):
-        if re.search(r"class=['\"]pill['\"]>", para):
-            return para
-    return None
-
+CARD = re.compile(r'<article class="mkt-card">.*?</article>', re.S)
 
 grid = client.get("/pulse/marketplace").get_data(as_text=True)
 report["grid_status"] = 200
 report["grid_invented"] = %(invented)r in grid
+
+# Whole cards, keyed by the listing id in their own product link. The card is the
+# unit of comparison: a card that did not render at all and a card that rendered
+# without a price are different findings and must not collapse into one.
 grid_cards = {}
 for card in CARD.findall(grid):
-    found = re.search(r"/pulse/marketplace/(\d+)'", card)
+    found = re.search(r'/pulse/marketplace/(\d+)"', card)
     if found:
-        grid_cards[found.group(1)] = pill_paragraph(card)
-report["grid_paragraphs"] = grid_cards
+        grid_cards[found.group(1)] = card
+report["grid_cards"] = grid_cards
+
+# Is a second renderer of the *marketplace* card being shipped to the browser
+# again? Two scopes, both deliberate.
+#
+# Sources: the inline document plus the marketplace's own asset. The retired twin
+# was inline, so the document has to be read; but nothing would stop the next one
+# from living in `pulse_marketplace.js`, so a check that read only the document
+# would call that clean. The shell's other bundles are out of scope on purpose --
+# they ship `notificationCard` and `enhanceMobileReelCard`, which render different
+# objects, and failing on those would make this test a tax on unrelated work.
+#
+# Names: a builder whose name mentions the thing at risk. `notificationCard` is
+# not a second renderer of a marketplace card; `marketplaceListingHtml`,
+# `renderProductCard` and `listingCardHtml` all are.
+CARD_FN = re.compile(
+    r"(?:function\s+|(?:const|let|var)\s+)"
+    r"(\w*(?:[Ll]isting|[Pp]roduct|[Mm]arketplace)\w*)\s*(?:\(|=\s*(?:\(|function))")
+scripts = {"(inline)": grid}
+for src in re.findall(r'<script[^>]+src="([^"]+)"', grid):
+    if src.startswith("/") and "marketplace" in src:
+        asset = client.get(src)
+        if asset.status_code == 200:
+            scripts[src] = asset.get_data(as_text=True)
+report["grid_scripts"] = sorted(scripts)
+report["grid_js_card"] = sorted({
+    "%%s:%%s" %% (where, name)
+    for where, source in scripts.items() for name in CARD_FN.findall(source)
+})
 
 pages = {}
 for lid in %(ids)r:
@@ -154,21 +205,13 @@ for lid in %(ids)r:
     body = response.get_data(as_text=True)
     pages[str(lid)] = {
         "status": response.status_code,
-        "paragraph": pill_paragraph(body),
+        # Every element bearing the product page's price class, with its text.
+        "price_elements": re.findall(
+            r'<span class="%(page_price)s"[^>]*>(.*?)</span>', body, re.S),
         "invented": %(invented)r in body,
         "title": ("Listing %%d" %% lid) in body,
     }
 report["pages"] = pages
-
-# The client-side card, lifted out of the served page rather than out of bot.py,
-# so what the test executes is what a browser would have been handed.
-js = []
-for pattern in (r"const marketplaceCurrentUserId=[^\n]*",
-                r"const marketplaceEsc=[^\n]*",
-                r"function marketplaceListingHtml\(row\)\{[^\n]*"):
-    found = re.search(pattern, grid)
-    js.append(found.group(0).strip() if found else "")
-report["js"] = js
 
 sys.stdout.write("<<<REPORT>>>" + json.dumps(report))
 """
@@ -192,60 +235,38 @@ def price_probe():
     env["PYTHONPATH"] = REPO
     code = _PROBE % {
         "repo": REPO, "rows": _ROWS, "ids": list(ALL_LISTINGS), "invented": INVENTED,
+        "page_price": PAGE_PRICE_CLASS,
     }
     proc = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=env,
                           capture_output=True, text=True, timeout=900)
     return parse_report(proc.stdout, proc.stderr)
 
 
-def _render_client_side(price_probe, rows):
-    """Run the served ``marketplaceListingHtml`` over ``rows`` and return its HTML.
+def _card(price_probe, listing_id):
+    """A listing's grid card, or None when it rendered none."""
+    return price_probe["grid_cards"].get(str(listing_id))
 
-    The twin only exists as rendered markup once it has run, and the whole point
-    of this file is to assert on rendered markup, so it is executed rather than
-    read.
+
+def _elements(card):
+    """The ``(tag, class)`` of every element in a card, in document order.
+
+    The shape of a card rather than its text, so "unpriced renders everything a
+    priced card renders except the price" can be asserted without pinning the
+    card's full markup -- the derived-not-literal discipline the pill version of
+    this file used, carried over. Adding an element to the card therefore does
+    not require editing this file; adding one *only* to unpriced cards does.
     """
-    node = shutil.which("node")
-    if not node:
-        pytest.skip("node is not installed; the client-side card cannot be rendered")
-    js = price_probe["js"]
-    assert all(js), (
-        "the served marketplace page no longer contains the three declarations "
-        "the client-side card is built from (%r); the card was renamed, moved "
-        "or reformatted onto several lines" % (js,))
-    harness = "\n".join(js) + (
-        "\nconsole.log(JSON.stringify(JSON.parse(process.argv[1])"
-        ".map(marketplaceListingHtml)));")
-    proc = subprocess.run([node, "-e", harness, json.dumps(rows)],
-                          capture_output=True, text=True, timeout=120)
-    assert proc.returncode == 0, (
-        "the client-side marketplace card did not run: %s" % proc.stderr[-2000:])
-    return json.loads(proc.stdout)
-
-
-def _paragraph(html):
-    """The pill paragraph of a rendered card, mirroring the probe's extraction."""
-    for para in re.findall(r"<p>.*?</p>", html, re.S):
-        if re.search(r"class=['\"]pill['\"]>", para):
-            return para
-    return None
-
-
-def _pills(paragraph):
-    """The pill texts inside a pill paragraph, in order."""
-    if paragraph is None:
+    if card is None:
         return None
-    return re.findall(r"<span class=['\"]pill['\"]>(.*?)</span>", paragraph, re.S)
+    return re.findall(r'<([a-z0-9]+)\b[^>]*?\bclass="([^"]*)"', card)
 
 
-def _normalized(paragraph):
-    """A paragraph with its quote style flattened.
-
-    The server writes ``class='pill'`` and the client-side twin writes
-    ``class="pill"``. That is not a difference a member can see, and it is the
-    only one the two surfaces are allowed.
-    """
-    return None if paragraph is None else paragraph.replace('"', "'")
+def _card_price_texts(card):
+    """The text of every price element in a card, in order. ``[]`` means none."""
+    if card is None:
+        return None
+    return re.findall(
+        r'<p class="%s[^"]*"[^>]*>(.*?)</p>' % CARD_PRICE_CLASS, card, re.S)
 
 
 def test_the_seed_is_what_these_tests_assume(price_probe):
@@ -269,47 +290,84 @@ def test_the_seed_is_what_these_tests_assume(price_probe):
         % seeded[str(WHITESPACE)])
 
 
+def test_every_seeded_listing_renders_a_card_at_all(price_probe):
+    """Separated out so no assertion below can pass by looking at nothing.
+
+    Each of the tests that follow needs a card to examine, and each used to say
+    so itself. Saying it once here means a visibility or pagination change that
+    dropped these listings from the grid reports as one clear failure rather than
+    as five tests each claiming something about the price.
+    """
+    missing = [l for l in ALL_LISTINGS if _card(price_probe, l) is None]
+    assert missing == [], (
+        "listings %r rendered no grid card, so the price assertions in this file "
+        "would be examining nothing. The seeded seller is approved and visible, "
+        "so this is a grid, visibility or pagination change rather than a price "
+        "one." % missing)
+
+
 def test_a_priced_listing_still_shows_its_price_in_the_grid(price_probe):
-    """The control. Without it, deleting the pill outright passes everything."""
-    pills = _pills(price_probe["grid_paragraphs"].get(str(PRICED)))
-    assert pills is not None, (
-        "the priced listing rendered no card in the grid at all")
-    assert PRICED_LABEL in pills, (
-        "the grid card for a priced listing does not show its price; pills "
-        "were %r" % (pills,))
+    """The control. Without it, deleting the price outright passes everything."""
+    prices = _card_price_texts(_card(price_probe, PRICED))
+    assert prices == [PRICED_LABEL], (
+        "the grid card for a priced listing should print exactly its price once; "
+        "it printed %r" % (prices,))
 
 
 @pytest.mark.parametrize("listing_id", UNPRICED)
-def test_an_unpriced_grid_card_has_no_price_pill(price_probe, listing_id):
+def test_an_unpriced_grid_card_has_no_price_element(price_probe, listing_id):
     """No price means no element, not an element holding prose or nothing.
 
-    Asserted as "the priced card's pills, minus the price" rather than "the
-    card does not contain the phrase", because an empty
-    ``<span class="pill"></span>`` contains no phrase either and is still a
+    Asserted as "the priced card's elements, minus the price element" rather than
+    "the card does not contain the phrase", because an empty
+    ``<p class="mkt-card-price"></p>`` contains no phrase either and is still a
     price the seller did not set. Derived from the priced card rather than
-    written as a literal so that adding a pill to the card does not have to be
-    a change to this file.
+    written as a literal so that adding an element to the card does not have to
+    be a change to this file.
+
+    Two differences are expected, not one: the price element goes, and the body
+    picks up ``is-unpriced``. Removing an element also removes the flex gap above
+    it, so a card that simply dropped its price pulled its seller row and stock
+    line up by 42px and showed them where its neighbours show a price -- the
+    grid's "uniform by construction" claim, quietly false. The flag is how the
+    stylesheet gives that height back without emitting the empty paragraph this
+    test exists to forbid. Both halves are stated so the assertion stays exact:
+    anything *else* that differs is still a failure.
     """
-    pills = _pills(price_probe["grid_paragraphs"].get(str(listing_id)))
-    assert pills is not None, (
-        "listing %d rendered no card in the grid, so this test is not looking "
-        "at an unpriced card -- it is looking at nothing" % listing_id)
-    priced = _pills(price_probe["grid_paragraphs"][str(PRICED)])
-    assert pills == [p for p in priced if p != PRICED_LABEL], (
-        "the grid card for unpriced listing %d rendered %r; it must carry every "
-        "pill the priced card carries (%r) except the price, and no empty or "
-        "invented stand-in for it" % (listing_id, pills, priced))
-    assert "" not in pills, (
-        "the grid card for unpriced listing %d rendered an empty pill, which "
-        "reads as a price set to nothing rather than no price" % listing_id)
+    card = _card(price_probe, listing_id)
+    assert _card_price_texts(card) == [], (
+        "the grid card for unpriced listing %d rendered a price element holding "
+        "%r; no price must mean no element"
+        % (listing_id, _card_price_texts(card)))
+    priced = _elements(_card(price_probe, PRICED))
+    # The expectation below rewrites the body class, so it would also accept a
+    # priced card that carried the flag -- and a priced card carrying the flag
+    # gets the reserved price height *on top of* its real price, which is the
+    # 42px misalignment again, this time on every card in the grid. Pin the
+    # control before deriving from it.
+    assert CARD_BODY_UNPRICED_CLASS not in [cls for _tag, cls in priced], (
+        "the priced control card is flagged %r, so every card reserves height "
+        "for a price it already shows, and the derivation below cannot see it"
+        % CARD_BODY_UNPRICED_CLASS)
+    assert _elements(card) == [
+        (tag, CARD_BODY_UNPRICED_CLASS if cls == CARD_BODY_CLASS else cls)
+        for tag, cls in priced
+        if not cls.startswith(CARD_PRICE_CLASS)
+    ], (
+        "the grid card for unpriced listing %d has a different shape than the "
+        "priced card with its price removed.\n  unpriced: %r\n  priced:   %r"
+        % (listing_id, _elements(card), priced))
+    assert INVENTED not in card, (
+        "the grid card for unpriced listing %d serves the words %r"
+        % (listing_id, INVENTED))
 
 
 def test_the_grid_never_invents_a_price(price_probe):
     """The phrase is gone from the whole served document, script included.
 
-    A weaker claim than the pill assertions above and deliberately kept beside
-    them: it is the one that also covers the inline script's source, and it is
-    the exact regression that shipped.
+    A weaker claim than the per-card assertions above and deliberately kept
+    beside them: it covers every byte of the page rather than the inside of a
+    card, and it is the exact regression that shipped.
     """
     assert not price_probe["grid_invented"], (
         "the marketplace grid still serves the words %r" % INVENTED)
@@ -320,25 +378,21 @@ def test_a_priced_product_page_still_shows_its_price(price_probe):
     page = price_probe["pages"][str(PRICED)]
     assert page["status"] == 200 and page["title"], (
         "the priced listing's product page did not serve (%s)" % page["status"])
-    assert PRICED_LABEL in (_pills(page["paragraph"]) or []), (
-        "the product page for a priced listing does not show its price; pills "
-        "were %r" % (_pills(page["paragraph"]),))
+    assert page["price_elements"] == [PRICED_LABEL], (
+        "the product page for a priced listing should print exactly its price "
+        "once; it printed %r" % (page["price_elements"],))
 
 
 @pytest.mark.parametrize("listing_id", UNPRICED)
-def test_an_unpriced_product_page_has_no_price_pill(price_probe, listing_id):
+def test_an_unpriced_product_page_has_no_price_element(price_probe, listing_id):
     """The page a shared link opens must agree with the card that links to it."""
     page = price_probe["pages"][str(listing_id)]
     assert page["status"] == 200 and page["title"], (
         "listing %d's product page did not serve (%s), so nothing below is "
         "about an unpriced page" % (listing_id, page["status"]))
-    pills = _pills(page["paragraph"])
-    priced = _pills(price_probe["pages"][str(PRICED)]["paragraph"])
-    assert pills == [p for p in priced if p != PRICED_LABEL], (
-        "the product page for unpriced listing %d rendered %r; the priced "
-        "page renders %r" % (listing_id, pills, priced))
-    assert "" not in (pills or []), (
-        "listing %d's product page rendered an empty price pill" % listing_id)
+    assert page["price_elements"] == [], (
+        "listing %d's product page rendered a price element holding %r"
+        % (listing_id, page["price_elements"]))
     assert not page["invented"], (
         "listing %d's product page still serves the words %r"
         % (listing_id, INVENTED))
@@ -347,76 +401,49 @@ def test_an_unpriced_product_page_has_no_price_pill(price_probe, listing_id):
 def test_the_grid_and_the_product_page_price_a_listing_the_same_way(price_probe):
     """Browsing and following a shared link must not disagree about the price.
 
-    The two surfaces build their HTML separately, which is how one of them came
-    to be fixed without the other in the first place. Compared as markup rather
-    than as pill text so a stray separator left behind by one of them fails
-    here too.
+    The two surfaces are now built by one renderer
+    (``services/marketplace_storefront.py``), which is the structural reason they
+    can no longer drift -- but they call it through two different Flask routes
+    reading two different SQL statements, so *which row* each one prices is still
+    answered twice. That is the half of the original divergence that survives the
+    rebuild, and it is what this compares: same price text, and the same answer
+    to "is there a price at all".
     """
     for listing_id in ALL_LISTINGS:
-        grid = price_probe["grid_paragraphs"].get(str(listing_id))
-        page = price_probe["pages"][str(listing_id)]["paragraph"]
-        assert grid is not None and page is not None, (
-            "listing %d rendered no pill paragraph on one of the two surfaces: "
-            "grid=%r page=%r" % (listing_id, grid, page))
-        assert grid == page, (
-            "listing %d renders %r in the grid and %r on its product page"
-            % (listing_id, grid, page))
+        card = [text.strip() for text in _card_price_texts(_card(price_probe, listing_id))]
+        page = [text.strip() for text in price_probe["pages"][str(listing_id)]["price_elements"]]
+        assert card == page, (
+            "listing %d prices as %r in the grid and %r on its product page"
+            % (listing_id, card, page))
 
 
-def test_the_client_side_card_agrees_with_the_server_rendered_one(price_probe):
-    """Search replaces the grid's cards with these, over the API's payload.
+def test_the_grid_ships_no_second_card_renderer(price_probe):
+    """The structural half of this bug family, asserted as absent.
 
-    Rendered by executing the served script, because the two cards are written
-    in different languages in different files and have already drifted once.
-    The rows mirror what ``pulse_marketplace_listing_payload`` emits: a blank
-    ``price_label`` for an unpriced listing.
+    "Request access" reached three sites, and the third was a JavaScript twin of
+    the card -- ``marketplaceListingHtml`` -- that search results were built
+    from. Two renderers of one card is how the fix landed in one of them and not
+    the other, and no amount of testing the server's card can see the twin.
+
+    Search is now a server-rendered GET against this same route, so there is one
+    renderer and nothing to keep in sync. This test holds that: a function
+    shipped to the browser whose name says it builds a listing or a card is the
+    two-renderer problem returning. If that is ever a deliberate choice, restore
+    the two tests this replaced (``test_the_client_side_card_agrees_with_the_
+    server_rendered_one`` and ``..._emits_the_same_markup_as_the_server``, in git
+    history before the storefront rebuild) rather than relaxing this one -- they
+    executed the twin in node and compared bytes, which is the only check that
+    can actually see the drift.
     """
-    rows = [
-        {"id": PRICED, "title": "Listing", "category": "Education",
-         "price_label": PRICED_LABEL, "safety_score": 44},
-        {"id": BLANK, "title": "Listing", "category": "Education",
-         "price_label": "", "safety_score": 44},
-        {"id": WHITESPACE, "title": "Listing", "category": "Education",
-         "price_label": "   ", "safety_score": 44},
-        # A row from a serializer that does not send the key at all.
-        {"id": 0, "title": "Listing", "category": "Education", "safety_score": 44},
-    ]
-    rendered = [_pills(_paragraph(h))
-                for h in _render_client_side(price_probe, rows)]
-    priced, blank, whitespace, missing = rendered
-    assert priced == ["Education", PRICED_LABEL], (
-        "the client-side card does not render a price it was given: %r" % (priced,))
-    for name, pills in (("blank", blank), ("whitespace", whitespace),
-                        ("missing", missing)):
-        assert pills == ["Education"], (
-            "the client-side card rendered %r for a %s price_label; search "
-            "results would price a listing the grid leaves unpriced"
-            % (pills, name))
-
-
-def test_the_client_side_card_emits_the_same_markup_as_the_server(price_probe):
-    """Byte-level agreement with the served card, not just the same pill texts.
-
-    A member must not be able to tell whether a card came from the page load or
-    from a search, so the separators between pills are part of the contract: a
-    server that drops the price pill *and* its trailing space while the twin
-    drops only the pill leaves a double space the eye can catch.
-
-    Compared against the paragraph the grid actually served for the same price
-    rather than against a literal, so this cannot go stale the way a pinned
-    string does when a pill is added to the card.
-    """
-    rows = [{"id": PRICED, "title": "Listing", "category": "Education",
-             "price_label": PRICED_LABEL, "safety_score": 44},
-            {"id": BLANK, "title": "Listing", "category": "Education",
-             "price_label": "", "safety_score": 44}]
-    rendered = _render_client_side(price_probe, rows)
-    for listing_id, html in zip((PRICED, BLANK), rendered):
-        served = _normalized(price_probe["grid_paragraphs"].get(str(listing_id)))
-        twin = _normalized(_paragraph(html))
-        assert twin is not None, (
-            "the client-side card rendered no pill paragraph: %r" % html[:400])
-        assert twin == served, (
-            "for listing %d the client-side card renders %r and the server "
-            "renders %r; one of them is leaving a stray separator or an empty "
-            "element behind" % (listing_id, twin, served))
+    # Anti-vacuity first: if the probe fetched no script at all then the scan
+    # below found nothing because it read nothing.
+    assert price_probe["grid_scripts"], "the probe collected no scripts to scan"
+    assert any(name != "(inline)" for name in price_probe["grid_scripts"]), (
+        "the probe scanned only the inline document; the marketplace page is "
+        "supposed to load %r, so either the asset stopped being referenced or the "
+        "test client could not fetch it -- and a twin living in that file would "
+        "now go unnoticed" % "/static/js/pulse_marketplace.js")
+    assert price_probe["grid_js_card"] == [], (
+        "the marketplace grid ships client-side card renderer(s) %r. A second "
+        "renderer of the same card is what let one of them be fixed and the "
+        "other not." % (price_probe["grid_js_card"],))
