@@ -44946,13 +44946,21 @@ def api_pulse_search():
     )
     add_results(
         "marketplace",
-        """
+        # Reachability is `marketplace_listing_lifecycle.public_sql`, not a copy of
+        # it. The copy this replaced accepted `status IN ('active','approved')`,
+        # and no row in production has ever held either value -- the publication
+        # statuses are `published`/`live`/`active` and every writer uses
+        # `published`. So this bucket returned zero marketplace results for every
+        # query ever typed, while `api_pulse_marketplace_search` -- which does use
+        # the shared predicate -- answered the same question correctly. A search
+        # bucket that is always empty reads as "nothing matched", so there was
+        # nothing to notice.
+        f"""
         SELECT l.id, l.title, l.description, l.short_description, l.category, l.price_label,
                NULLIF(TRIM(ms.display_name),'') AS seller_store_name
         FROM marketplace_listings l
         LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-        WHERE l.status IN ('active','approved')
-          AND COALESCE(l.approval_status,'approved') IN ('approved','review_ready','')
+        WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
           AND (
             COALESCE(l.title,'') LIKE ?
             OR COALESCE(l.description,'') LIKE ?
@@ -92089,7 +92097,19 @@ def pulse_profile_page_for_user(target_user_id):
     following_count = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute("SELECT COUNT(*) AS total FROM pulse_group_members WHERE user_id=?", (target_user_id,))
     group_count = int(dict(cur.fetchone() or {}).get("total") or 0)
-    cur.execute("SELECT * FROM marketplace_listings WHERE seller_user_id=? AND status='active' ORDER BY id DESC LIMIT 6", (target_user_id,))
+    # Reachability is `marketplace_listing_lifecycle.public_sql`: a profile is a
+    # buyer surface, so it must not advertise a listing the visitor could not
+    # reach from Marketplace. The `status='active'` this replaced matched no row
+    # in production -- the publication statuses are `published`/`live`/`active`
+    # and every writer sets `published` -- so this strip was empty on every
+    # profile, including a seller's with hundreds of live listings.
+    cur.execute(
+        "SELECT l.* FROM marketplace_listings l "
+        "LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id "
+        f"WHERE l.seller_user_id=? AND {marketplace_listing_lifecycle.public_sql('l', 'ms')} "
+        "ORDER BY l.id DESC LIMIT 6",
+        (target_user_id,),
+    )
     listings = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT * FROM teacher_profiles WHERE user_id=? LIMIT 1", (target_user_id,))
     teacher = dict(cur.fetchone() or {})

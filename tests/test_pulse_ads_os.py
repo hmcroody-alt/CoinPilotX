@@ -159,13 +159,36 @@ class PulseAdsOsTestCase(unittest.TestCase):
         conn.commit()
         conn.close()
 
-    def make_listing(self, seller=OWNER, status="active", approval="approved", title="OS Listing"):
+    def make_listing(self, seller=OWNER, status="published", approval="approved", title="OS Listing"):
+        """A listing shaped like the ones production holds.
+
+        ``status`` defaulted to ``active``, a value no row in this table has ever
+        held -- the publication statuses are ``published``/``live``/``active`` and
+        every writer sets ``published``. The promotable-inventory picker used to
+        accept ``active`` too, so fixture and surface agreed on a vocabulary
+        neither shared with the database, and the inventory test passed while the
+        feature returned nothing for any real seller.
+
+        The seller row, the stock and the product type are here for the same
+        reason: ``marketplace_listing_lifecycle.public_sql`` asks whether the
+        shop is approved, named, and has something to sell, and a fixture that
+        cannot answer those is not a listing any buyer surface should return.
+        """
         conn = self.db()
         cur = conn.cursor()
         cur.execute(
             """
-            INSERT INTO marketplace_listings (seller_user_id, title, description, status, approval_status, created_at, updated_at)
-            VALUES (?, ?, 'desc', ?, ?, ?, ?)
+            INSERT OR IGNORE INTO marketplace_sellers (user_id, display_name, status, created_at, updated_at)
+            VALUES (?, ?, 'approved', ?, ?)
+            """,
+            (seller, f"Store {seller}", NOW, NOW),
+        )
+        cur.execute(
+            """
+            INSERT INTO marketplace_listings
+            (seller_user_id, title, description, quantity, product_type, listing_type,
+             status, approval_status, created_at, updated_at)
+            VALUES (?, ?, 'desc', 5, 'physical', 'physical', ?, ?, ?, ?)
             """,
             (seller, title, status, approval, NOW, NOW),
         )

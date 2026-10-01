@@ -505,6 +505,7 @@
     "tests/test_marketplace_light_parity.py",
     "tests/test_marketplace_price_label_parity.py",
     "tests/test_marketplace_public_pages.py",
+    "tests/test_marketplace_reachability_is_shared.py",
     "tests/test_marketplace_seo.py",
     "tests/test_marketplace_store_identity.py",
     "tests/test_marketplace_storefront.py",

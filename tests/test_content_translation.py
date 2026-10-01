@@ -389,10 +389,20 @@ def test_event_marketplace_and_support_authorization():
             CREATE TABLE business_os_business_members (
                 business_id TEXT, user_id TEXT, status TEXT
             );
+            -- A listing's reachability is decided by
+            -- marketplace_listing_lifecycle, which asks about the seller's shop
+            -- and the stock as well as the two status axes. The narrower table
+            -- this replaced could not answer those questions, and the gate fails
+            -- closed on a question it cannot answer, so every listing here would
+            -- be withheld -- including the public one asserted below.
             CREATE TABLE marketplace_listings (
                 id INTEGER PRIMARY KEY, seller_user_id INTEGER, title TEXT, description TEXT,
                 short_description TEXT, status TEXT, approval_status TEXT,
+                quantity INTEGER, product_type TEXT, listing_type TEXT,
                 updated_at TEXT, created_at TEXT
+            );
+            CREATE TABLE marketplace_sellers (
+                user_id INTEGER PRIMARY KEY, display_name TEXT, status TEXT
             );
             CREATE TABLE support_tickets (
                 id INTEGER PRIMARY KEY, user_id INTEGER, subject TEXT, message TEXT,
@@ -402,8 +412,14 @@ def test_event_marketplace_and_support_authorization():
         conn.execute("INSERT INTO business_os_events VALUES ('evt_public','biz_1','Launch','Public event','LA','published','v2','v1')")
         conn.execute("INSERT INTO business_os_events VALUES ('evt_draft','biz_1','Draft','Private plan','LA','draft','v2','v1')")
         conn.execute("INSERT INTO business_os_business_members VALUES ('biz_1','7','active')")
-        conn.execute("INSERT INTO marketplace_listings VALUES (1,7,'Public item','Description','Short','active','approved','v2','v1')")
-        conn.execute("INSERT INTO marketplace_listings VALUES (2,7,'Draft item','Description','Short','draft','pending_review','v2','v1')")
+        conn.execute("INSERT INTO marketplace_sellers VALUES (7,'Seven Store','approved')")
+        # `published`, not `active`: no row in this table has ever held `active`,
+        # and the Python mirror this gate replaced accepted only `active` and
+        # `approved`. Fixture and surface agreed on a vocabulary neither shared
+        # with the database, so this assertion passed while the real listing a
+        # shopper asked to translate was always refused.
+        conn.execute("INSERT INTO marketplace_listings VALUES (1,7,'Public item','Description','Short','published','approved',5,'physical','physical','v2','v1')")
+        conn.execute("INSERT INTO marketplace_listings VALUES (2,7,'Draft item','Description','Short','draft','pending_review',5,'physical','physical','v2','v1')")
         conn.execute("INSERT INTO support_tickets VALUES (1,7,'Help','Visible message','STAFF SECRET','open','v2','v1')")
         conn.commit()
     finally:

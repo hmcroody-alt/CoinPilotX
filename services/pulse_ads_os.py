@@ -17,6 +17,7 @@ import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
+from services import marketplace_listing_lifecycle
 from services import pulse_ad_payments, pulse_ads_service, pulse_advertiser_portal
 from services import pulsesoc_promotions
 from services.pulse_ads_service import (
@@ -651,11 +652,22 @@ def _inventory_ids(conn, user_id, kind: str, limit: int) -> list[dict]:
                 (user_id, limit),
             )
         elif kind == "listing":
+            # Promotable means reachable: paying to send traffic to a listing no
+            # buyer query returns is spend with nowhere to land, so the gate is
+            # `marketplace_listing_lifecycle.public_sql` and not a status list
+            # written here.
+            #
+            # The list written here was `IN ('active','review_ready')`, which was
+            # inverted rather than merely empty. Production holds no `active` row
+            # at all, so the only listings it offered were the ones still awaiting
+            # moderation -- a seller was shown exactly the inventory they may not
+            # advertise and none of the inventory they may.
             cur.execute(
-                """
-                SELECT id, created_at FROM marketplace_listings
-                WHERE seller_user_id=? AND LOWER(COALESCE(status,'')) IN ('active','review_ready')
-                ORDER BY id DESC LIMIT ?
+                f"""
+                SELECT l.id, l.created_at FROM marketplace_listings l
+                LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id
+                WHERE l.seller_user_id=? AND {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+                ORDER BY l.id DESC LIMIT ?
                 """,
                 (user_id, limit),
             )
