@@ -180,9 +180,20 @@ for path in %(paths)r:
         # `/pulse/messages/new?q=` is a real page, so Message seller still works
         # with JavaScript off; Save and Report are fetch-only and ship `hidden`
         # until the script binds them. Do not "fix" contact back to a button.
-        "actions": all(
-            re.search(r"<(?:a|button)\b[^>]*\bdata-mkt-%%s=" %% m, body)
-            for m in ("contact", "save", "report")),
+        #
+        # Reported per action rather than as one boolean, so a page that drops
+        # exactly one control says which one. Save and Report must carry *this*
+        # listing's id (`marketplace_storefront.py` renders them from
+        # `listing_id`), which also rules out a control left over from some
+        # other card; Contact carries the *seller's* id, so it is matched on
+        # shape alone.
+        "actions": {
+            "contact seller": bool(re.search(CONTACT, body)),
+            "save": bool(lid) and bool(re.search(
+                r'<(?:a|button)\b[^>]*\bdata-mkt-save="%%s"' %% lid, body)),
+            "report": bool(lid) and bool(re.search(
+                r'<(?:a|button)\b[^>]*\bdata-mkt-report="%%s"' %% lid, body)),
+        },
     }
 report["pages"] = pages
 
