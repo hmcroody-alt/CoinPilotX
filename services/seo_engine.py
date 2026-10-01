@@ -87,6 +87,13 @@ def robots_txt():
         f"Sitemap: {BASE_URL}/sitemap-pages.xml",
         f"Sitemap: {BASE_URL}/sitemap-live.xml",
         f"Sitemap: {BASE_URL}/sitemap-replays.xml",
+        # The Marketplace gets its own sitemap rather than joining
+        # /sitemap-pages.xml for one reason: `sitemap_xml` above stamps today's
+        # date as the `lastmod` of every URL it is given, which is true of a static
+        # landing page and false of a product. A catalogue that claims every item
+        # changed today teaches the crawler to ignore the field. `bot`'s
+        # `sitemap_marketplace_xml` serializes real per-listing timestamps.
+        f"Sitemap: {BASE_URL}/sitemap-marketplace.xml",
         "",
     ])
 

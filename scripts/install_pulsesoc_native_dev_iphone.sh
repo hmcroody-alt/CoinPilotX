@@ -6,19 +6,6 @@ if [[ $# -ne 1 || -z "${1:-}" ]]; then
   exit 64
 fi
 
-# PULSESOC_APS_ENVIRONMENT below states the intent of this build. The Release
-# configuration declares "production" so that a store build gets the entitlement it
-# must have, and PulseSoc.entitlements reads the build setting rather than a literal;
-# this script builds Release but signs for development, so it passes "development"
-# back.
-#
-# Measured, because the obvious assumption is wrong: with CODE_SIGN_STYLE=Automatic
-# Xcode rewrites aps-environment from the *provisioning profile* and ignores whatever
-# the entitlements file resolved to. A Release build here produced an .xcent reading
-# "development" with and without this override. So the override does not change the
-# local product - it keeps the command honest about what is being built, and it is
-# what makes this script correct under manual signing, where the entitlements file is
-# authoritative and a mismatch does fail.
 DEVICE_ID="$1"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NATIVE_DIR="$ROOT_DIR/mobile-native"
@@ -45,8 +32,8 @@ env \
   -u EXPO_PUBLIC_PULSESOC_QA_REELS_STATE \
   EXPO_PUBLIC_PULSE_API_BASE_URL=https://pulsesoc.com \
   xcodebuild \
-    -workspace ios/PulseSoc.xcworkspace \
-    -scheme PulseSoc \
+    -workspace ios/PulseSocNative.xcworkspace \
+    -scheme PulseSocNative \
     -configuration Release \
     -destination "id=$DEVICE_ID" \
     -derivedDataPath "$DERIVED_DATA_PATH" \
@@ -59,7 +46,7 @@ env \
     -allowProvisioningUpdates \
     build
 
-APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release-iphoneos/PulseSoc.app"
+APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release-iphoneos/PulseSocNative.app"
 INFO_PLIST="$APP_PATH/Info.plist"
 
 if [[ ! -s "$APP_PATH/main.jsbundle" ]]; then

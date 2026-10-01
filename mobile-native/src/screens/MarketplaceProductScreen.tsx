@@ -24,8 +24,9 @@
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -38,6 +39,7 @@ import {
   View
 } from "react-native";
 import {
+  fetchMarketplaceListing,
   MarketplaceListing,
   marketplaceSellerAuthor,
   marketplaceWebUrl,
@@ -80,8 +82,46 @@ type ProductAction = "save" | "report" | "message" | "cart" | "buy";
 const MAX_QTY = 20;
 
 export function MarketplaceProductScreen({ route, navigation }: Props) {
-  const listing = route.params?.listing as MarketplaceListing | undefined;
-  const listingId = Number(route.params?.listingId || listing?.id || 0);
+  // A caller that already holds the listing passes it, and nothing is refetched:
+  // an in-app tap from the grid, the seller store or a commerce card should not
+  // put a spinner in front of data it is holding.
+  //
+  // A deep link holds no snapshot -- a universal link carries an id and nothing
+  // else -- so this screen resolves the id itself. Without that, arriving here
+  // from a link meant `listing` was undefined and the unavailable state below
+  // rendered for a product that exists, which is why the deep link used to be
+  // pointed at the grid instead and inherited the grid's "only if search
+  // happened to return it" limit.
+  const snapshot = route.params?.listing as MarketplaceListing | undefined;
+  const listingId = Number(route.params?.listingId || snapshot?.id || 0);
+  const [fetched, setFetched] = useState<MarketplaceListing | undefined>(undefined);
+  const [resolving, setResolving] = useState(!snapshot && listingId > 0);
+  const listing = snapshot || fetched;
+
+  useEffect(() => {
+    if (snapshot || !listingId) {
+      setResolving(false);
+      return;
+    }
+    let active = true;
+    setResolving(true);
+    fetchMarketplaceListing(listingId)
+      .then((item) => {
+        if (active) setFetched(item);
+      })
+      // A failure leaves `fetched` undefined, which falls through to the
+      // unavailable state below. That is the right destination for a withdrawn
+      // listing and an honest one for an unreachable server: the alternative is
+      // an empty product page, and Home is not an answer to "open this listing".
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setResolving(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [listingId, Boolean(snapshot)]);
+
   const { width } = useWindowDimensions();
   // This screen is registered `headerShown: false`, so it owns the whole window
   // including the status bar and the Dynamic Island. Without a top inset the
@@ -127,13 +167,35 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
   // reflected there without either screen knowing about the other.
   const savedState = useSavedState("marketplace", listingId, listing?.saved);
 
+  if (resolving) {
+    return (
+      <View style={styles.unavailable}>
+        <ActivityIndicator color={storeLight.text.muted} />
+      </View>
+    );
+  }
+
   if (!listing || !listingId) {
     return (
       <View style={styles.unavailable}>
         <Ionicons name="pricetag-outline" size={34} color={storeLight.text.muted} />
         <Text style={styles.unavailableTitle}>This item is no longer available.</Text>
-        <Pressable accessibilityRole="button" style={styles.unavailableButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.unavailableButtonText}>Back to Marketplace</Text>
+        {/*
+          A deep link is this screen's whole stack. `goBack()` alone is what
+          trapped a member who arrived from Safari on a withdrawn listing: there
+          was nothing behind this screen, so the only control on the page did
+          nothing at all. Marketplace is the destination when there is no back.
+        */}
+        <Pressable
+          accessibilityRole="button"
+          style={styles.unavailableButton}
+          onPress={() =>
+            navigation.canGoBack()
+              ? navigation.goBack()
+              : navigation.navigate("Tabs", { screen: "Marketplace" })
+          }
+        >
+          <Text style={styles.unavailableButtonText}>Browse Marketplace</Text>
         </Pressable>
       </View>
     );
