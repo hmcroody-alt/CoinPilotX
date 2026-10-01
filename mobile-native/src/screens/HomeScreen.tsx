@@ -38,7 +38,11 @@ import { injectDiscoveryRows } from "../discovery/discoveryRows";
 import { DiscoveryRowView } from "../discovery/DiscoveryRowView";
 import { useHomeDiscovery } from "../discovery/useHomeDiscovery";
 import type { ProductSignal } from "../commerce/productSignal";
-import { injectProductSignalRows, type CommerceFeedRow } from "../commerce/productSignalRows";
+import {
+  commerceListingIdsInPosts,
+  injectProductSignalRows,
+  type CommerceFeedRow
+} from "../commerce/productSignalRows";
 import { useFeedProductSignals } from "../commerce/useFeedProductSignals";
 import { ProductSignalCard } from "../components/ProductSignalCard";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
@@ -54,6 +58,7 @@ import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
+import { useCommerceOverlayNavigation } from "../commerce/useCommerceOverlayNavigation";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
@@ -136,6 +141,7 @@ function useHomeAmbientMotionEnabled() {
 
 export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const navigation = useNavigation<HomeNavigation>();
+  const commerceNavigation = useCommerceOverlayNavigation(navigation);
   const route = useRoute<RouteProp<AppTabParamList, "Home">>();
   const { authState } = useAuth();
   const isFocused = useIsFocused();
@@ -309,7 +315,11 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
           dismissed: discovery.dismissed,
           rotationOffset: discovery.rotationOffset
         }),
-        productSignals.signals
+        productSignals.signals,
+        // A PulseDrop publication is an ordinary post carrying a commerce
+        // overlay, so without this the same listing can render twice on one
+        // page: once as the editorial Signal and once as an injected card.
+        { excludeProductIds: commerceListingIdsInPosts(posts) }
       ),
     [
       posts,
@@ -1063,6 +1073,8 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     return (
       <PostCard
         post={item}
+        onOpenCommerceProduct={commerceNavigation.onOpenCommerceProduct}
+        onOpenCommerceSeller={commerceNavigation.onOpenCommerceSeller}
         busy={guard.isItemBusy(item.id)}
         // §24. Viewability fires all the way through a fling, so without this a
         // hard flick would start and abandon a video per card it passed. No card

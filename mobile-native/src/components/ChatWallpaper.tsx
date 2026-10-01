@@ -24,8 +24,32 @@ type Props = {
  *
  * Background only: it takes no touches, is hidden from accessibility, and
  * carries no information — a conversation is exactly as usable with the
- * wallpaper replaced by a flat fill, which is what the Reduce Transparency and
+ * wallpaper replaced by a flat fill, which is what the high-contrast and
  * White-theme paths below actually do.
+ *
+ * ## What Reduce Transparency is owed here
+ *
+ * Reduce Transparency used to land in that same flat-fill path, and that was
+ * wrong. Its promise is that nothing is layered over anything — it is about
+ * *translucency*, not about colour. A wallpaper spec is two opaque layers (an
+ * opaque `base` and an opaque `gradient`) and three alpha ones (the soft
+ * `shapes`, the `stars`, and the `scrim`). Only the second group is layering.
+ * Collapsing the whole thing to `colors.background` also discarded the opaque
+ * group, which meant a person who had merely switched off blur lost the
+ * approved graphite canvas and got near-black (`#050910`) instead — a palette
+ * substitution nobody asked for, and a visible parity break against every
+ * other device.
+ *
+ * So Reduce Transparency now keeps `base` + `gradient` and drops the three
+ * alpha layers. The result is strictly opaque, still paints in the first
+ * commit, and is the same graphite everyone else sees. High contrast still
+ * takes the flat fill, because that mode genuinely *does* substitute the
+ * palette (`HIGH_CONTRAST_DARK`) and the graphite ramp is not audited against
+ * it.
+ *
+ * For the default wallpaper the two paths happen to be identical anyway —
+ * PulseSoc Graphite has no shapes, no stars and a fully transparent scrim — so
+ * this is the rare accessibility branch that costs the user nothing at all.
  *
  * It is also deliberately dumb. No state, no effects, no timers, no listeners,
  * no animation, no image decode. `memo` plus a string prop means a render of
@@ -42,10 +66,11 @@ export const ChatWallpaper = memo(function ChatWallpaper({ wallpaper, style, tes
   const profile = theme.galacticBackground;
   const spec = resolveChatWallpaper(wallpaper);
 
-  // White theme's promise is a plain page, and Reduce Transparency's promise is
-  // that nothing is layered over anything. Both get the flat theme background:
-  // still opaque, still first-commit, just without the depth.
-  if (!profile.enabled || theme.reduceTransparency) {
+  // White theme's promise is a plain page, and high contrast replaces the
+  // palette outright. Both get the flat theme background: still opaque, still
+  // first-commit, just without the wallpaper. Reduce Transparency is
+  // deliberately NOT in this condition — see the note above.
+  if (!profile.enabled || theme.highContrast) {
     return (
       <View
         testID={testID}
@@ -73,7 +98,14 @@ export const ChatWallpaper = memo(function ChatWallpaper({ wallpaper, style, tes
     );
   }
 
-  const stars = CHAT_WALLPAPER_STARS.slice(0, spec.stars);
+  /**
+   * Reduce Transparency keeps the two opaque layers and drops the three alpha
+   * ones. Everything below this line that is conditional on `opaqueOnly` is an
+   * alpha layer; the `base` and the `gradient` are not, and so are unaffected.
+   */
+  const opaqueOnly = theme.reduceTransparency;
+  const shapes = opaqueOnly ? [] : spec.shapes;
+  const stars = opaqueOnly ? [] : CHAT_WALLPAPER_STARS.slice(0, spec.stars);
   return (
     <View
       testID={testID}
@@ -89,7 +121,7 @@ export const ChatWallpaper = memo(function ChatWallpaper({ wallpaper, style, tes
         background that lets the window show through.
       */}
       <View style={[styles.depth, { opacity: profile.intensity }]}>
-        {spec.shapes.map((shape, index) => (
+        {shapes.map((shape, index) => (
           <View
             key={`shape-${index}`}
             style={{
@@ -125,9 +157,11 @@ export const ChatWallpaper = memo(function ChatWallpaper({ wallpaper, style, tes
       {/*
         Holds the two edges where chrome meets the wallpaper — the header above
         and the composer below — without darkening the middle, which is the part
-        that is supposed to look like a wallpaper.
+        that is supposed to look like a wallpaper. It is an alpha layer, so
+        Reduce Transparency drops it; the edges it was holding belong to the
+        decorated wallpapers, and those have no depth to hold down in this mode.
       */}
-      <LinearGradient colors={spec.scrim} style={StyleSheet.absoluteFill} />
+      {opaqueOnly ? null : <LinearGradient colors={spec.scrim} style={StyleSheet.absoluteFill} />}
     </View>
   );
 });

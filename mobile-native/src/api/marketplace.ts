@@ -470,6 +470,30 @@ export async function searchMarketplace(params: { query?: string; limit?: number
   return { ...data, items };
 }
 
+/**
+ * One listing, by canonical id.
+ *
+ * This is what lets a deep link carry identity instead of a snapshot. A universal
+ * link has an id and nothing else, so before this existed the only buyer-side
+ * read was `searchMarketplace`, and a deep-linked product could only be opened
+ * when its id happened to fall inside the page of results search had just
+ * returned. Anything older left the member on the grid — "Open this listing in
+ * PulseSoc" opening the Marketplace rather than the listing.
+ *
+ * Deliberately the same serializer as search on the wire, so a listing reached by
+ * id and the same listing reached by browsing are the same object. This is not a
+ * second source of commerce truth.
+ */
+export async function fetchMarketplaceListing(listingId: number) {
+  const id = Number(listingId || 0);
+  if (!Number.isInteger(id) || id <= 0) throw new Error("A listing id is required.");
+  const data = await pulseApi<{ ok?: boolean; listing?: MarketplaceListing }>(
+    `/api/pulse/marketplace/listings/${id}`
+  );
+  if (!data.listing) throw new Error("This listing is no longer available.");
+  return normalizeMarketplaceListing(data.listing);
+}
+
 export async function listMarketplaceSellerListings(params: { limit?: number } = {}) {
   const query = new URLSearchParams({
     limit: String(params.limit || 80)

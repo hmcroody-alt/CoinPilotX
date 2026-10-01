@@ -403,6 +403,7 @@
       "a11yVoiceProgress": "语音消息播放进度",
       "a11yVoiceUnavailable": "{{label}}。语音消息不可用。",
       "assistantAlwaysAvailable": "随时在线 · PulseSoc 智能洞察",
+      "assistantConnecting": "正在连接 · PulseSoc 智能洞察",
       "assistantReconnecting": "服务正在重新连接",
       "attachCamera": "相机",
       "attachCameraDetail": "立即拍摄",
@@ -2406,6 +2407,22 @@
       "share": "分享",
       "shop": "商城",
       "openMarketplace": "打开商城"
+    },
+    "pulsedrop": {
+      "label": {
+        "trending": "热门",
+        "newDrop": "新品",
+        "popular": "受欢迎",
+        "topPick": "精选",
+        "discovery": "发现"
+      },
+      "availability": {
+        "unavailable": "已停售",
+        "notPriced": "暂未定价"
+      },
+      "seller": {
+        "visitStore": "查看店铺"
+      }
     }
   },
   "discovery": {

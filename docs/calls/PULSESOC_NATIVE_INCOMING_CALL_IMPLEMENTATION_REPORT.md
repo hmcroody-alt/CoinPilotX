@@ -168,34 +168,22 @@ documented behaviour, **not** an observed result.
 per-user or per-IP rate limit. A signed-in account can originate calls without
 throttling. Not implemented, not tested.
 
-### 3.3 Environment-aware `aps-environment` — IMPLEMENTED, HALF VERIFIED
+### 3.3 Environment-aware `aps-environment` — NOT IMPLEMENTED
 
-Superseded by `b3d3c4e2`. The entitlement is no longer a literal: it expands
-`$(PULSESOC_APS_ENVIRONMENT)`, declared per build configuration — `development` for
-Debug, `production` for Release. `apns-topic` is likewise derived per device from the
-`app_bundle` recorded at registration rather than from one deployment-wide value.
-
-What was proven on hardware (iPhone 16 Pro, Release, development-signed):
+`mobile-native/ios/PulseSoc/PulseSoc.entitlements` contains the hardcoded literal:
 
 ```text
-application-identifier   87ZC69AGSR.com.pulsesoc.app
-aps-environment          development
+aps-environment    development
 ```
 
-The build setting substitutes and the product signs. What was **not** proven, and why
-it cannot be from here: under `CODE_SIGN_STYLE = Automatic` Xcode rewrites
-`aps-environment` from the selected provisioning profile, so the entitlements file is
-advisory on a local build. A Release build with no override — with
-`ProcessProductPackaging` confirmed to have actually re-run, the first attempt having
-silently reused a stale `.xcent` — still produced `development`. The wiring is
-authoritative only under manual signing, which is the path EAS takes for preview and
-store builds, and exercising it needs a distribution profile this machine does not
-have.
+It is not configuration-derived. The backend compensates per token at send time — a
+`BadDeviceToken` is replayed once against the other APNs host and the working host is
+persisted — but the signing configuration itself remains single-environment.
 
-So the literal is gone and the configuration is now capable of expressing both
-environments, but **no artefact carrying `aps-environment: production` has been
-observed**. The backend's per-token host correction remains the thing actually keeping
-development-signed devices working.
+This matters because `BadDeviceToken` is APNs's answer both for a dead token and for a
+live token offered to the wrong host, and misreading it causes token revocation, after
+which the device silently reverts to the ordinary alert push and never rings through
+CallKit again.
 
 ### 3.4 Physical iPhone 16 Pro verification — NOT PERFORMED
 
@@ -214,13 +202,10 @@ The simulator cannot substitute. It receives no APNs pushes, and the ad-hoc sign
 required for Agora strips associated-domains and the team id, so entitlement-gated
 behaviour fails there regardless of what the server does.
 
-### 3.5 Merge and production deployment — DONE
+### 3.5 Merge and production deployment — NOT DONE
 
-Authorized and completed after this report was first written. `7d2f0fc8` is on `main`,
-followed by the docs commits `b15f4a7a` and `edd3bfbb`. Railway auto-deployed and
-`railway status --json` reported `commitHash: b15f4a7a86d5599219b6a8acd2ef6b5bd56cc4d3`;
-the root path answered 200 and `/api/calls/capabilities` answered 401, which is the
-correct auth gate rather than a boot failure. Production runs the compare-and-set fix.
+`7d2f0fc8` exists on a local detached HEAD in an isolated worktree. It has not been
+pushed, merged into `main`, or deployed. No authorization to do so has been given.
 
 ### 3.6 No sweeper worker
 
@@ -267,8 +252,7 @@ messages.
 | --- | --- |
 | No PostgreSQL available locally | The two-thread accept race test cannot run; the concurrency half of the fix is argued, not observed |
 | No physical iPhone 16 Pro verification | Lock screen, terminated app, Silent Mode, Focus, Bluetooth routing all unverified |
-| No Apple Distribution profile | The `production` entitlement cannot be observed in a signed artefact; only the `development` half is proven |
-| No dev/prod bundle split | Both configurations build `com.pulsesoc.app`; `app_bundle` is never reported by the client, so per-device topic derivation is inert |
+| `aps-environment` hardcoded to `development` | Single-environment signing; backend compensation is a mitigation, not a fix |
 | No call-creation rate limit | `/api/calls/start` is unthrottled |
 | No sweeper worker | Stale-call cleanup is request-driven and can stall indefinitely |
 
@@ -276,11 +260,9 @@ messages.
 
 | Blocker | Status |
 | --- | --- |
-| Push of `7d2f0fc8` | Done |
-| Merge to `main` | Done |
-| Production deploy | Done — Railway on `b15f4a7a` |
-| Registering `com.pulsesoc.nativeapp.dev` as an explicit App ID with Push | Needs Apple Developer account access |
-| Apple Distribution signing | Absent; blocks any `production`-entitlement artefact |
+| Push of `7d2f0fc8` | Not authorized |
+| Merge to `main` | Not authorized |
+| Production deploy | Not authorized |
 
 ---
 

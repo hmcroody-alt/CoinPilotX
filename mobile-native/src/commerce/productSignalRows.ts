@@ -59,6 +59,11 @@ export type ProductSignalPlacementOptions = {
   interval?: number;
   /** Hard cap on product rows per feed page. */
   maxRows?: number;
+  /**
+   * Listings already represented by a post on this page, which must not also be
+   * injected as a product row. See {@link commerceListingIdsInPosts}.
+   */
+  excludeProductIds?: Iterable<number>;
 };
 
 /** See the cadence table above before changing either of these. */
@@ -79,6 +84,41 @@ export const PRODUCT_SIGNAL_MAX_ROWS = 2;
 /** Stable, unique, and readable in a `keyExtractor` crash log. */
 export function productSignalRowKey(productId: number, slot: number): string {
   return `product:${productId}:${slot}`;
+}
+
+/**
+ * Listings that already appear as posts on this page.
+ *
+ * ## Why this exists
+ *
+ * The injected rows and the posts come from two places that cannot see each
+ * other: {@link useFeedProductSignals} asks the marketplace directly, while a
+ * PulseDrop publication arrives as an ordinary post carrying a commerce
+ * overlay. Nothing stopped both from landing on the same product, and the
+ * result is the feed showing one listing twice within a few rows — once as an
+ * editorial Signal and once as a bare product card.
+ *
+ * That is not a hypothetical. PulseDrop publishes *because* a listing is
+ * interesting, and the injector asks for the most relevant listings, so the two
+ * select from the same short head of the catalogue by construction. The smaller
+ * the catalogue, the likelier the collision.
+ *
+ * Duck-typed rather than typed against the post model because this module is
+ * generic over `TPost` on purpose — it places rows and knows nothing else about
+ * them, and taking a dependency on the post shape to fix a commerce problem
+ * would undo that. An unrecognised post contributes nothing and is not an error.
+ */
+export function commerceListingIdsInPosts(posts: readonly unknown[]): Set<number> {
+  const ids = new Set<number>();
+  for (const post of posts) {
+    const listingId = (post as { commerce?: { product?: { listing_id?: unknown } } })?.commerce?.product
+      ?.listing_id;
+    const numeric = Number(listingId);
+    // Zero is the "no listing" sentinel the server uses for an overlay whose
+    // listing has been deleted, so it must not become a real exclusion.
+    if (Number.isFinite(numeric) && numeric > 0) ids.add(numeric);
+  }
+  return ids;
 }
 
 /**
@@ -107,7 +147,14 @@ export function injectProductSignalRows<TPost>(
   const interval = Math.max(options.interval ?? PRODUCT_SIGNAL_INTERVAL, 1);
   const maxRows = Math.max(options.maxRows ?? PRODUCT_SIGNAL_MAX_ROWS, 0);
 
-  if (signals.length === 0 || maxRows === 0) return [...rows];
+  // Dropped before placement, not skipped during it, so the cadence still
+  // places `maxRows` products when one is excluded. Filtering inside the loop
+  // would silently cost a slot, which is the wrong trade: the page loses a
+  // product it could have shown in order to avoid one it should not.
+  const excluded = new Set(options.excludeProductIds ?? []);
+  const usable = excluded.size === 0 ? signals : signals.filter((s) => !excluded.has(s.productId));
+
+  if (usable.length === 0 || maxRows === 0) return [...rows];
 
   const out: CommerceFeedRow<TPost>[] = [];
   let organicCount = 0;
@@ -128,12 +175,12 @@ export function injectProductSignalRows<TPost>(
     }
 
     if (placed >= maxRows) continue;
-    if (placed >= signals.length) continue;
+    if (placed >= usable.length) continue;
     if (organicCount < leadIn) continue;
     if ((organicCount - leadIn) % interval !== 0) continue;
     if (index + 1 >= rows.length) continue;
 
-    const signal = signals[placed];
+    const signal = usable[placed];
     out.push({
       type: "product",
       key: productSignalRowKey(signal.productId, placed),
