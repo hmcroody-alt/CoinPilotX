@@ -268,13 +268,39 @@ class TestTheBatchedRead:
         assert overlay["product"]["price_label"] == ""
         assert overlay["availability"]["purchasable"] is False
 
+    def test_a_listing_priced_only_in_its_variants_still_gets_a_buy_cta(self, cursor):
+        """82 of 123 live listings price themselves here and leave the label empty.
+
+        Read through ``commerce_for_posts`` rather than by calling ``overlay``
+        with hand-built variants: the defect this pins was that the read never
+        fetched them, so an ``overlay`` test would have stayed green while every
+        card in the feed said "not priced yet".
+        """
+        self._seed(cursor)
+        cursor.execute("UPDATE marketplace_listings SET price_label='' WHERE id=77")
+        # ``seller_user_id`` and ``variant_key`` are not read by the code under
+        # test, but production declares both NOT NULL -- a variant row without
+        # them is one the database could never hold, so leaving them out would
+        # make this fixture a shape that cannot occur. The seller matches the
+        # listing's, as it must.
+        cursor.execute(
+            "INSERT OR REPLACE INTO marketplace_listing_variants "
+            "(id, listing_id, seller_user_id, variant_key, price_cents, currency, status) "
+            "VALUES (1,77,10,'default',4900,'USD','active')"
+        )
+
+        found = hydration.commerce_for_posts(cursor, [900])
+
+        assert found[900]["availability"]["code"] != "NOT_PRICED"
+        assert found[900]["cta"]["enabled"] is True
+
     def test_attach_merges_in_place_and_leaves_ordinary_posts_untouched(self, cursor):
         self._seed(cursor)
         posts = [{"id": 900}, {"id": 901}, {"id": 903}]
         hydration.attach(cursor, posts)
         assert [("commerce" in post) for post in posts] == [True, True, False]
 
-    def test_reads_the_whole_page_in_one_statement(self, cursor):
+    def test_reads_the_whole_page_in_a_fixed_number_of_statements(self, cursor):
         self._seed(cursor)
         # Counted through a proxy rather than by monkeypatching the cursor:
         # ``connect()`` hands back a raw ``sqlite3.Cursor`` on this engine and
@@ -284,10 +310,29 @@ class TestTheBatchedRead:
         # ``fetchall`` -- rather than a cursor with a patched method.
         counted = _CountingCursor(cursor)
 
-        # A per-row read would be three statements here and three hundred on a
-        # real page, against a pool of eight with a three-second timeout.
+        # The bound is per *table* per chunk, not a literal one. Variants cannot
+        # join into the page read without multiplying its rows, so they are a
+        # second batched statement. What must never appear is a count that grows
+        # with the page: a per-row read would be three statements here and three
+        # hundred on a real page, against a pool of eight with a three-second
+        # timeout. Pinned by counting a page twice the size below -- both fit in
+        # one chunk, which is what makes the two counts comparable.
         hydration.commerce_for_posts(counted, [900, 901, 902])
-        assert len(counted.statements) == 1
+        assert len(counted.statements) == 2
+        assert any("marketplace_listing_variants" in s for s in counted.statements)
+
+        for post_id, listing_id in ((910, 77), (911, 78), (912, 77)):
+            cursor.execute(
+                "INSERT OR REPLACE INTO pulsedrop_publications "
+                "(idempotency_key, surface, listing_id, seller_user_id, editorial_label, "
+                " post_id, state, published_at) "
+                "VALUES (?,'signal',?,10,'NEW_DROP',?,'published','2026-03-01T10:00:00')",
+                (f"hydration-wide-{post_id}", listing_id, post_id),
+            )
+        wider = _CountingCursor(cursor)
+        hydration.commerce_for_posts(wider, [900, 901, 902, 910, 911, 912])
+        assert len(wider.statements) == 2
+
         # And it really did the work -- a subject that returned {} without
         # querying would also "pass" the count above.
         assert sorted(hydration.commerce_for_posts(cursor, [900, 901, 902])) == [900, 901, 902]

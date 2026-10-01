@@ -177,11 +177,33 @@ class MarketplaceListingDetailTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.get_json().get("error_code"), "LISTING_UNAVAILABLE")
 
-    def test_a_signed_out_viewer_is_refused_before_any_listing_is_read(self):
+    def test_a_signed_out_viewer_reads_the_listing_the_link_named(self):
+        """This route used to answer 401, and that broke the product deep link.
+
+        A universal link opened cold from Safari, a push notification and a
+        shared card all arrive with no session, so refusing them made "Open
+        this listing in PulseSoc" land the visitor on the grid instead of the
+        product. It discloses nothing new: the canonical web page for the same
+        id, `pulse_marketplace_listing_page`, already serves these fields to
+        anonymous visitors and to crawlers under the same two predicates.
+        """
         listing_id = self.make_listing()
         self.logout()
         response = self.get(listing_id)
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual((response.get_json().get("item") or {}).get("listing_id"), listing_id)
+
+    def test_a_signed_out_viewer_still_cannot_read_a_hidden_listing(self):
+        """The guard the 401 used to provide has to hold on its own now.
+
+        With the login check gone, every rule that keeps a listing off a buyer
+        surface is the only thing standing between a guessed id and a draft.
+        """
+        listing_id = self.make_listing(status="draft")
+        self.logout()
+        response = self.get(listing_id)
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.get_json().get("error_code"), "LISTING_UNAVAILABLE")
 
 
 if __name__ == "__main__":

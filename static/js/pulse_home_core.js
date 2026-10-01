@@ -984,6 +984,13 @@
     });
   }
 
+  /* The metric chips beside this one already pluralise ("1 Comment" /
+   * "2 Comments"); only the reaction chip was a fixed string, so the commonest
+   * state a new post reaches -- exactly one reaction -- read "1 Reactions". */
+  function reactionTotalLabel(total) {
+    return `${compactNumber(total)} ${count(total) === 1 ? "Reaction" : "Reactions"}`;
+  }
+
   function actionNameFromAttrs(attrs = {}) {
     if (attrs.postLike) return "like";
     if (attrs.postComment) return "comment";
@@ -1092,6 +1099,28 @@
     return button;
   }
 
+  /* Labels that say nothing about the person under whose name they appear.
+   *
+   * `services/pulse_feed_engine.py` builds `primary_label` as a ladder -- Founder,
+   * Verified Creator, Teacher, Marketplace Seller, Livestream Eligible, Trusted
+   * Member -- and its final `else` assigns "Member" to everyone who matched none of
+   * them. So on a young account every card carried a subtitle whose only content
+   * was "this account exists", which is the definition of chrome.
+   *
+   * Suppressed here rather than in the engine on purpose: `primary_label` is read by
+   * eight other surfaces in bot.py plus the creator drawer, each with its own
+   * `|| "Member"` fallback, so an engine returning "" would change nothing except to
+   * route every one of those through an untested branch. Scoping it to the feed
+   * header keeps the blast radius at the one surface the noise was on. The drawer
+   * still shows the label -- there it is the answer to "who is this?", which is what
+   * the reader opened it to ask.
+   */
+  const GENERIC_CREATOR_LABELS = new Set(["", "member", "pulsesoc member", "pulsesoc creator"]);
+
+  function meaningfulCreatorLabel(label) {
+    return GENERIC_CREATOR_LABELS.has(String(label || "").trim().toLowerCase()) ? "" : String(label).trim();
+  }
+
   function renderCreatorHeader(card, post, author, authorName, label) {
     const header = element("header", "post-card-header");
     const identity = element("div", "post-card-identity");
@@ -1107,7 +1136,8 @@
       nameRow.appendChild(badge);
     }
     identity.appendChild(nameRow);
-    identity.appendChild(element("div", "post-card-creator-line", label || "PulseSoc member"));
+    const creatorLine = meaningfulCreatorLabel(label);
+    if (creatorLine) identity.appendChild(element("div", "post-card-creator-line", creatorLine));
     const meta = element("div", "post-card-meta");
     const link = element("a", "", formatTime(post.created_at));
     link.href = postUrl(post);
@@ -1436,7 +1466,7 @@
     reactions.append(
       element("span", "post-reaction-icons", reactionEmojis(post)),
       document.createTextNode(" "),
-      element("span", "post-reaction-total", `${compactNumber(reactionTotal(post))} Reactions`)
+      element("span", "post-reaction-total", reactionTotalLabel(reactionTotal(post)))
     );
     markZero(reactions, reactionTotal(post));
     row.appendChild(reactions);
@@ -1473,11 +1503,12 @@
   // "0 Reactions 0 Comments 0 Reposts 0 Shares 0 Saves", which is a row whose
   // entire content is that nothing has happened yet.
   //
-  // The chip is hidden, never removed. Both writers find these nodes by
-  // selector, so a chip dropped at render time is a chip that silently stops
-  // updating when the first comment lands; hidden, it comes back the moment the
-  // count leaves zero. Derived from the number at every point the number is
-  // written, so the class cannot disagree with the value beside it.
+  // The chip is hidden, never removed. Both writers -- `updateSummary` and
+  // `syncFeedReactionUi` -- find these nodes by dataset selector, so a chip
+  // dropped at render time is a chip that silently stops updating when the
+  // first comment lands; hidden, it comes back the moment the count leaves
+  // zero. Derived from the number at every point the number is written, so the
+  // class cannot disagree with the value beside it.
   function markZero(node, value) {
     node?.classList.toggle("is-zero", count(value) === 0);
   }
@@ -1894,7 +1925,13 @@
     });
     if (Object.keys(counts || {}).length) {
       document.querySelectorAll(`[data-post-id="${postId}"] .post-reaction-emojis`).forEach(node => {
-        node.textContent = `${reactionEmojis({ reaction_counts: counts })} ${compactNumber(total)} Reactions`;
+        // `reactionTotalLabel`, not a hand-built `${n} Reactions`: the initial
+        // render at `renderEngagement` already pluralises through it, and this
+        // is the live-update path over the same node. Spelling the string out
+        // here meant a post sitting at exactly one reaction -- the commonest
+        // state a new post reaches -- rendered "1 Reaction" and then flipped to
+        // "1 Reactions" the moment the count was rewritten in place.
+        node.textContent = `${reactionEmojis({ reaction_counts: counts })} ${reactionTotalLabel(total)}`;
         markZero(node, total);
       });
       document.querySelectorAll(`[data-post-like-count="${postId}"]`).forEach(node => {
@@ -1937,6 +1974,23 @@
     }
   }
 
+  /* Reveals one card's comment composer, for good.
+   *
+   * Every card shipped with an open reply box -- avatar, "Write a comment...",
+   * five tool buttons and a send button, ~80px on every post whether or not the
+   * reader intends to reply. On a feed that is the same box repeated down the
+   * page, and it pushes the next post's content below the fold.
+   *
+   * Opened by the card's own Comment button, which already existed and already
+   * focused this input; the composer is merely hidden until then. Deliberately
+   * one-way: a `:focus-within` reveal would have collapsed the box the moment a
+   * reader clicked anything outside it, taking an unsent draft with it, and no
+   * amount of transition hides that. Once you have asked to reply, the box stays.
+   *
+   * Hidden via a class rather than by not rendering: `sendComment`,
+   * `updateCommentSendState` and the emoji handler all reach these nodes by
+   * dataset selector, so a composer built lazily would be a composer those three
+   * silently fail to find. */
   async function sendComment(postId) {
     const input = document.querySelector(`[data-comment-input="${postId}"]`);
     const sendButtons = document.querySelectorAll(`[data-comment-send="${postId}"]`);
@@ -1997,6 +2051,11 @@
   // template emits `data-open-comments`, the client card builder emits
   // `data-post-comment` -- and only the second was ever handled. Both route
   // here so the behaviour cannot depend on which renderer drew the card.
+  //
+  // The composer is hidden by a class rather than by not being rendered.
+  // `sendComment`, `updateCommentSendState` and the emoji handler all reach
+  // these nodes by dataset selector, so a composer built lazily on first open
+  // would be a composer those three silently fail to find.
   function revealCommentComposer(postId, trigger) {
     if (!postId) return;
     const card = trigger?.closest?.(

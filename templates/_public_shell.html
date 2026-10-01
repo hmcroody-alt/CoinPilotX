@@ -80,7 +80,13 @@ footer a{margin-right:16px;display:inline-block}
 .pulse-delivery__where{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:#7f97a4}
 .pulse-delivery__where select{min-height:36px;border-radius:9px;border:1px solid rgba(110,223,246,.26);background:#0b1626;color:#f2fbff;padding:4px 8px}
 </style>
-<script type="application/ld+json">{{ schema_json|safe }}</script>
+{# Conditional because one page that extends this shell deliberately has no
+   structured data: the 503 a marketplace route serves when it could not read
+   the product or the catalogue. An empty or null graph emitted here would hand
+   a crawler a `Product` object with no price, which is the one thing that page
+   exists to avoid -- see `marketplace_storefront.render_unavailable`. Every
+   other caller passes a real graph, so this changes nothing for them. #}
+{% if schema_json %}<script type="application/ld+json">{{ schema_json|safe }}</script>{% endif %}
 </head>
 <body>
 <main class="wrap">

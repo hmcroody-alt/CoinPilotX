@@ -131,9 +131,28 @@ def _ensure_transfer_group_column(conn) -> None:
 
 
 def ensure_schema(conn=None) -> None:
+    """Create the settlement tables, and the ledger this module posts into.
+
+    The ledger is included because ``settle_paid_transaction`` calls
+    ``ledger.post_entry`` and ``post_entry`` does not create its own tables. The
+    only modules that ever call ``ledger.ensure_schema()`` are seller payouts,
+    reconciliation and the Stripe ledger handler — none of which run at boot and
+    none of which are on the webhook settlement path. So on a database where none
+    of them has run, the *first* Marketplace settlement reached the seller credit
+    and raised ``no such table: ledger_transactions`` — after the transaction had
+    already been marked paid and the order row written, leaving a buyer charged,
+    an order recorded and the seller never credited. Production has never
+    completed a Marketplace settlement, so it has never been past this point.
+    """
     global _TRANSFER_GROUP_COLUMN_READY
     owned = conn is None
     if owned:
+        # Before this module takes its own connection, and only when it owns one:
+        # the ledger's DDL runs on a second connection, so doing this for a
+        # caller that passed one in could block behind that caller's open
+        # transaction. ``settle_paid_transaction`` is the path that needs it and
+        # it always owns the connection.
+        ledger.ensure_schema()
         conn = db.connect()
     try:
         conn.execute("""CREATE TABLE IF NOT EXISTS marketplace_commercial_settlements (

@@ -5,7 +5,8 @@
 sub-second unit suite instead of a boot-the-monolith integration suite. The
 route-level behaviour those two modules feed is covered elsewhere:
 `tests/web_parity/test_marketplace_listing_links.py` for visibility and shared
-links, `tests/test_marketplace_web_cta_destinations.py` for where the buttons go.
+links, `tests/test_marketplace_web_ctas_follow_the_registry.py` for where the
+buttons go.
 
 ## What this file is mostly about
 

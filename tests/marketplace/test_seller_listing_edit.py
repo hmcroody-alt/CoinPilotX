@@ -803,6 +803,24 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
     def unpriced_listing(self):
         return self._make_listing(self.owner, title="Unpriced web lamp", price_label="")
 
+    def _card_for(self, html, listing_id):
+        """Slice one grid card out of a rendered page.
+
+        Asserting against the whole page would let a neighbouring card satisfy a
+        check about this one -- every card in this fixture carries the same
+        seller, so "the seller name is on the page" stays true even if this card
+        dropped it.
+
+        Keyed on the product href rather than the title: a search page echoes the
+        query back in its result count, its filter chips and its input value, all
+        of which precede the grid, so the title's *first* occurrence is not the
+        card. The href is the one string only the card has.
+        """
+        href = f'href="/pulse/marketplace/{listing_id}"'
+        at = html.find(href)
+        self.assertNotEqual(at, -1, f"listing {listing_id} never rendered a card")
+        return html[html.rindex("<li>", 0, at):html.index("</li>", at)]
+
     def test_the_marketplace_grid_renders_and_never_says_request_access(self):
         listing_id = self.unpriced_listing()
         with self.acting_as(self.owner):

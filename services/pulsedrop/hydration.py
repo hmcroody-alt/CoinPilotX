@@ -324,10 +324,11 @@ def commerce_for_posts(cur, post_ids: Iterable[Any]) -> dict[int, dict]:
             # must not fail for that.
             log.warning("pulsedrop_hydration_read_failed count=%s", len(chunk), exc_info=True)
             return out
+        variants = _variants(cur, (row.get("listing_id") for row in rows))
         for row in rows:
             post_id = int(row.get("post_id") or 0)
             if post_id:
-                out[post_id] = overlay(row)
+                out[post_id] = overlay(row, variants.get(int(row.get("listing_id") or 0)) or ())
     return out
 
 
@@ -375,14 +376,19 @@ def commerce_for_post(post_id: Any) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def overlay(row: Mapping[str, Any]) -> dict:
+def overlay(row: Mapping[str, Any],
+            variants: Sequence[Mapping[str, Any]] = ()) -> dict:
     """Build one overlay from a joined publication row.
 
     Split out from the read so it can be tested without a database, and so the
     web surface can call it with a row it fetched for its own reasons.
+
+    ``variants`` defaults to empty so an existing caller keeps working, and an
+    empty sequence resolves exactly to the label the way this did before the
+    variant read existed.
     """
     listing = _listing(row)
-    availability = state(listing)
+    availability = state(listing, variants)
     surface = str(row.get("surface") or SIGNAL).strip().lower() or SIGNAL
     publication_id = int(row.get("publication_id") or 0)
     listing_id = int(row.get("ref_listing_id") or 0)
@@ -424,7 +430,8 @@ def overlay(row: Mapping[str, Any]) -> dict:
     }
 
 
-def state(listing: Mapping[str, Any] | None) -> str:
+def state(listing: Mapping[str, Any] | None,
+          variants: Sequence[Mapping[str, Any]] = ()) -> str:
     """The availability code for a listing row, or :data:`REMOVED` for ``None``.
 
     Order matters and is the order the buyer can do least about first, matching
@@ -449,7 +456,14 @@ def state(listing: Mapping[str, Any] | None) -> str:
         if rule.key == "in_stock":
             return OUT_OF_STOCK
         if rule.key == "priced":
-            return NOT_PRICED
+            # The rule reads the *label*, and the label is not the whole price.
+            # A listing priced only in its variants carries a blank label, so the
+            # rule calls it unpriced while checkout resolves a real amount off the
+            # variant row and takes the order — a buy the card refused to offer.
+            # Overriding here rather than teaching the rule about variants keeps
+            # `_is_priced` equivalent to its SQL twin, which joins no variant table
+            # and is why that rule tests membership in the first place.
+            return AVAILABLE if _price_minor(listing, variants) > 0 else NOT_PRICED
         # `seller_approved`, `seller_named` and `released` all land here. The
         # buyer's next move after each is the same — none — and telling a stranger
         # which of them applies would report a seller's suspension to the public.
@@ -458,7 +472,7 @@ def state(listing: Mapping[str, Any] | None) -> str:
     # *membership*, because it has a SQL twin and must not import `bot`; this
     # tests what the label actually parses to, which is the stricter question and
     # the one checkout asks. A label of "$0.00" satisfies the rule and fails here.
-    if _price_minor(listing) <= 0:
+    if _price_minor(listing, variants) <= 0:
         return NOT_PRICED
     return AVAILABLE
 
@@ -677,28 +691,68 @@ def _listing(row: Mapping[str, Any]) -> dict:
     return listing
 
 
-def _price_minor(listing: Mapping[str, Any]) -> int:
-    """The price in minor units, via the parser checkout itself uses.
+def _variants(cur, listing_ids: Iterable[Any]) -> dict[int, list[dict]]:
+    """Variant rows grouped by listing id — one statement for the whole page.
 
-    Imported from ``bot`` lazily and wrapped, for two reasons. Importing ``bot``
-    at module scope connects to the database and runs ``init_db()``, which this
-    package's docstring promises not to do. And a worker process that never
-    imported ``bot`` must still be able to import this module.
+    Empty on any failure, which degrades every card on the page to its label
+    exactly as this module did before the read existed. A feed read must not
+    fail because a deployment has no variants table.
+    """
+    ids = sorted({int(i) for i in listing_ids if i})
+    if not ids:
+        return {}
+    grouped: dict[int, list[dict]] = {}
+    try:
+        from services.marketplace_price_authority import VARIANT_COLUMNS
+
+        placeholders = ",".join("?" for _ in ids)
+        cur.execute(
+            f"SELECT {VARIANT_COLUMNS} FROM marketplace_listing_variants "
+            f"WHERE listing_id IN ({placeholders})",
+            tuple(ids),
+        )
+        for row in cur.fetchall() or []:
+            variant = dict(row)
+            grouped.setdefault(int(variant.get("listing_id") or 0), []).append(variant)
+    except Exception:
+        log.warning("pulsedrop_variant_read_failed count=%s", len(ids), exc_info=True)
+        return {}
+    return grouped
+
+
+def _price_minor(listing: Mapping[str, Any],
+                 variants: Sequence[Mapping[str, Any]] = ()) -> int:
+    """The price in minor units, via the authority checkout itself uses.
+
+    Variants first, then the label — the same order as
+    ``marketplace_price_authority`` and every other buyer surface. Reading the
+    label alone made a drop card for a variant-only-priced listing report
+    ``NOT_PRICED`` and render no buy CTA, while checkout resolved the variant
+    price and would have taken the order.
+
+    The authority is imported lazily and the whole thing is wrapped, for the same
+    two reasons the ``bot`` parser it replaced was: importing the authority pulls
+    in ``marketplace_web`` and, through it, the database, which this package's
+    docstring promises not to do at module scope; and a worker that never
+    imported those must still be able to import this module.
 
     The fallback is the weaker test the label alone can support. It is weaker in
     a specific direction — an unparseable non-empty label reads as priced — and
     that is the right way to be wrong here, because the alternative strips the
-    CTA off a healthy product on a path where the parser merely was not
+    CTA off a healthy product on a path where the authority merely was not
     available.
     """
     label = str(listing.get("price_label") or "").strip()
     try:
-        from bot import parse_price_label_to_cents
+        from services import marketplace_price_authority as price_authority
 
-        amount, _currency = parse_price_label_to_cents(
-            label, str(listing.get("currency") or "USD")
-        )
-        return int(amount or 0)
+        decision = price_authority.resolve_unit_price(listing, variants)
+        if decision.ok:
+            return int(decision.unit_price_minor or 0)
+        # A range is priced; it just needs a choice the card cannot offer. The low
+        # bound is what the card displays, so the CTA stays and the product page
+        # asks for the option.
+        return int(decision.min_cents or 0)
     except Exception:
         return 1 if label else 0
 

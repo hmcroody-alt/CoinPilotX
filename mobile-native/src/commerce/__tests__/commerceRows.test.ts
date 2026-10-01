@@ -22,6 +22,7 @@ import type { HomeRow } from "../../discovery/discoveryRows";
 import {
   COMMERCE_INTERVAL,
   COMMERCE_LEAD_IN,
+  commerceListingIdsInPosts,
   commerceRowKey,
   injectCommerceRows
 } from "../commerceRows";
@@ -467,5 +468,64 @@ describe("injectCommerceRows — determinism", () => {
     const a = injectCommerceRows(rows, all, { maxRows: 3, now });
     const b = injectCommerceRows(rows, all, { maxRows: 3, now });
     expect(a).toEqual(b);
+  });
+});
+
+/**
+ * A PulseDrop publication is an ordinary post that happens to carry a commerce
+ * overlay, so the feed can show the same listing twice: once as the editorial
+ * Signal PulseDrop published, and once as a tile in a strip a few rows later.
+ * The two sources cannot see each other — `useFeedCommerce` asks commerce
+ * discovery directly — and both select from the most interesting end of the
+ * same catalogue, so on a small catalogue the collision is the expected case
+ * rather than an unlucky one.
+ *
+ * Distinct from `neighbourSellsItsOwnProduct`, which is adjacency only and says
+ * nothing about a duplicate eight rows down.
+ */
+describe("a listing the page already shows as a post", () => {
+  const sellingPost = (postId: number, listingId: number) => ({
+    id: postId,
+    commerce: { pulsedrop: true, publication_id: postId, product: { listing_id: listingId } }
+  });
+
+  it("finds the listings those posts are selling", () => {
+    const ids = commerceListingIdsInPosts([sellingPost(1, 42), { id: 2 }, sellingPost(3, 7)]);
+    expect([...ids].sort((a, b) => a - b)).toEqual([7, 42]);
+  });
+
+  it("treats a post with no overlay, and a deleted listing, as nothing to exclude", () => {
+    // listing_id 0 is the server's "the listing is gone" sentinel. Letting it
+    // become a real exclusion would suppress a legitimate placement.
+    const ids = commerceListingIdsInPosts([
+      { id: 1 },
+      sellingPost(2, 0),
+      { id: 3, commerce: { product: { listing_id: 9 } } },
+      null,
+      undefined,
+      "nonsense"
+    ]);
+    expect(ids.size).toBe(0);
+  });
+
+  it("does not put that listing in a strip", () => {
+    // `placement()` derives listingId from the digits of the placement id, so
+    // p1 is listing 1.
+    const out = injectCommerceRows(postRows(60), placements(6), { excludeListingIds: [1] });
+    expect(stripsOf(out).flat()).not.toContain("p1");
+  });
+
+  it("costs the strip nothing — the next candidate moves up", () => {
+    // Dropped before the windows are cut, not filtered after. Filtering after
+    // would render one tile short, which trades a duplicate for a gap.
+    const clean = injectCommerceRows(postRows(60), placements(6).slice(1));
+    const filtered = injectCommerceRows(postRows(60), placements(6), { excludeListingIds: [1] });
+    expect(stripsOf(filtered)).toEqual(stripsOf(clean));
+    expect(commerceIndexes(filtered)).toEqual(commerceIndexes(clean));
+  });
+
+  it("emits no commerce row when the page already shows every candidate", () => {
+    const out = injectCommerceRows(postRows(60), placements(3), { excludeListingIds: [1, 2, 3] });
+    expect(commerceIndexes(out)).toEqual([]);
   });
 });

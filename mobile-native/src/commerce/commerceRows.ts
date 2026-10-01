@@ -104,6 +104,11 @@ export type CommercePlacementOptions = {
   /** Seller ids the user has told us to stop recommending, same window. */
   dismissedSellerIds?: ReadonlySet<number>;
   /**
+   * Listings this page already shows as posts. See
+   * {@link commerceListingIdsInPosts}.
+   */
+  excludeListingIds?: Iterable<number>;
+  /**
    * Override the "may commerce sit next to this post?" test.
    *
    * Only for tests and for a caller whose posts are not the feed's shape. The
@@ -170,6 +175,40 @@ export function neighbourSellsItsOwnProduct(post: unknown): boolean {
 }
 
 /**
+ * Listings this page already shows as posts.
+ *
+ * The sibling of `neighbourSellsItsOwnProduct`, and not covered by it. That one
+ * is about *adjacency* — a strip must not sit beside a post that is already
+ * selling. This is about *duplication*: the same listing appearing twice on one
+ * page, once as the PulseDrop Signal that published it and once as a tile in a
+ * strip eight rows down. Adjacency says nothing about eight rows down.
+ *
+ * The collision is the expected case rather than an unlucky one. The two
+ * sources cannot see each other — `useFeedCommerce` asks commerce discovery
+ * directly while a publication arrives as an ordinary post — and both select
+ * from the most interesting end of the same catalogue by construction. The
+ * smaller the catalogue, the likelier they agree.
+ *
+ * Reads the canonical guard rather than re-deriving the overlay shape, for the
+ * reason `neighbourSellsItsOwnProduct` gives: a second, weaker test that
+ * disagrees with the first is its own defect. An unrecognised post contributes
+ * nothing and is not an error.
+ */
+export function commerceListingIdsInPosts(posts: readonly unknown[]): Set<number> {
+  const ids = new Set<number>();
+  for (const post of posts) {
+    const commerce = (post as { commerce?: unknown })?.commerce;
+    if (!isPulseCommerceOverlay(commerce)) continue;
+    const listingId = Number(commerce.product?.listing_id);
+    // 0 is the server's "the listing is gone" sentinel for an overlay whose
+    // product was deleted. Letting it become a real exclusion would suppress a
+    // legitimate placement that happens to be missing its id.
+    if (Number.isFinite(listingId) && listingId > 0) ids.add(listingId);
+  }
+  return ids;
+}
+
+/**
  * Defaults mirror `services/commerce_discovery/config.py`.
  *
  * Duplicated rather than fetched because placement must work on the very first
@@ -226,8 +265,17 @@ function expired(placement: CommercePlacement, now: number): boolean {
  * slides into the hole left by the one the user just hid. Dismissal is applied
  * after the windows are cut, where it can only shorten the strip it belongs to.
  */
-function usablePlacements(placements: CommercePlacement[], now: number): CommercePlacement[] {
-  const seenListings = new Set<number>();
+function usablePlacements(
+  placements: CommercePlacement[],
+  now: number,
+  excludeListingIds?: Iterable<number>
+): CommercePlacement[] {
+  // Seeded rather than filtered afterwards, so a listing the page already shows
+  // is indistinguishable from one the strip has already used. Both are "this
+  // listing is spoken for", and dropping it here — before the windows are cut —
+  // means the excluded product costs the page nothing: the next candidate moves
+  // up into its place instead of the strip rendering one tile shorter.
+  const seenListings = new Set<number>(excludeListingIds ?? []);
   const out: CommercePlacement[] = [];
 
   for (const placement of placements) {
@@ -289,7 +337,7 @@ export function injectCommerceRows<TPost>(
     return [...rows];
   }
 
-  const usable = usablePlacements(placements, now);
+  const usable = usablePlacements(placements, now, options.excludeListingIds);
   if (usable.length === 0) return [...rows];
 
   const out: HomeRowWithCommerce<TPost>[] = [];

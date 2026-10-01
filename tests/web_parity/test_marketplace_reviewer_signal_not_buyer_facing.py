@@ -73,11 +73,20 @@ CLEAN_SCORE = 0
 
 ALL_LISTINGS = (RISKY, CLEAN)
 
-#: The pill markup that used to carry it. Matched as a pill rather than as the
+#: The chip markup that used to carry it. Matched as a chip rather than as the
 #: bare word, because both surfaces legitimately serve the sentence "Safety
 #: notice: educational products only" and a substring check for "Safety" would
 #: fail on copy that is fine.
-PILL = re.compile(r"class=['\"]pill['\"]>\s*Safety", re.I)
+#:
+#: Two class families, because the storefront was rebuilt underneath this file.
+#: ``class='pill'`` is what actually shipped the bug and is kept so this stays a
+#: regression test for the thing that happened. ``mkt-badge`` is where a chip
+#: goes today (`marketplace_storefront.badges_html`), and without it these
+#: assertions would have quietly become unfailable: the new markup contains no
+#: ``pill`` class anywhere, so a pattern naming only the old one is satisfied by
+#: construction and would keep passing while a Safety badge sat on the page.
+PILL = re.compile(
+    r"class=['\"][^'\"]*\b(?:pill|mkt-badge)\b[^'\"]*['\"][^>]*>\s*Safety", re.I)
 
 _PROBE = r"""
 import json, re, sys, sqlite3

@@ -142,6 +142,39 @@ _JOINED_TABLES = (
             ("category", "TEXT"),
         ),
     ),
+    (
+        # Read in a second batched statement, not in the join: a listing has many
+        # variants, so joining them would multiply the page. This is where the
+        # real price lives — ``price_label`` is empty on most production rows —
+        # and a suite without the table exercises only the degradation path.
+        #
+        # Every column named in ``marketplace_price_authority.VARIANT_COLUMNS``
+        # has to be here. The read selects them by name and swallows its own
+        # failure, so one missing column turns every variant assertion in this
+        # package into a silent test of the degradation path instead.
+        "marketplace_listing_variants",
+        "id",
+        (
+            ("listing_id", "INTEGER"),
+            ("price_cents", "INTEGER"),
+            ("currency", "TEXT"),
+            ("status", "TEXT"),
+            ("stock_state", "TEXT"),
+            # Not read by hydration, and not in ``VARIANT_COLUMNS``. They are
+            # here because production declares both ``NOT NULL``, so a test that
+            # inserts a variant has to supply them -- and the stub has to own a
+            # column before a test can write it.
+            #
+            # The asymmetry is the point. Omitting them kept this stub readable
+            # and left it *unwritable* in exactly one ordering: once ``monolith``
+            # swaps in production's table, an insert that skips them raises
+            # IntegrityError, while the same test passes against the stub when
+            # the file runs alone. Matching the write contract as well as the
+            # read one is what makes the two orderings agree.
+            ("seller_user_id", "INTEGER"),
+            ("variant_key", "TEXT"),
+        ),
+    ),
 )
 
 

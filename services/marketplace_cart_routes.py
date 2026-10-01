@@ -63,6 +63,7 @@ from services.marketplace_payment_errors import (
 from services import marketplace_quote_service
 from services import marketplace_goods_policy
 from services import marketplace_payment_pause
+from services import marketplace_price_authority as price_authority
 from services import marketplace_reservation_policy as reservation_policy
 from services import marketplace_reservation_schema as reservation_schema
 from services import marketplace_supplier_checkout as supplier_checkout
@@ -228,11 +229,40 @@ def _ensure_reservation_lifecycle_columns(cur) -> None:
 # Line state
 # --------------------------------------------------------------------------
 
-def _listing_price_minor(bot, listing: dict) -> tuple[int, str]:
-    amount, currency = bot.parse_price_label_to_cents(
-        listing.get("price_label") or "", listing.get("currency") or "USD"
-    )
-    return int(amount or 0), currency or "USD"
+def _listing_price_minor(bot, listing: dict, variants: tuple = ()) -> tuple[int, str]:
+    """Unit price for one line, from the authority every buyer surface uses.
+
+    This read ``price_label`` alone, which is empty on 82 of the 123 live listings
+    whose variants carry the real price. A cart line and the product card the
+    buyer tapped were pricing from different columns, so ``_line_state`` below
+    could only ever call those lines ``price_changed`` or refuse them outright.
+
+    ``(0, currency)`` on a refusal, because every caller already treats zero as
+    not purchasable. A caller that must tell the buyer *why* asks
+    :func:`services.marketplace_price_authority.resolve_unit_price` directly.
+    """
+    decision = price_authority.resolve_unit_price(listing, variants)
+    return int(decision.unit_price_minor or 0), decision.currency or "USD"
+
+
+def _variants_by_listing(cur, listing_ids) -> dict[int, list[dict]]:
+    """One read for a whole cart rather than one per line."""
+    ids = sorted({int(i) for i in listing_ids if i})
+    if not ids:
+        return {}
+    grouped: dict[int, list[dict]] = {}
+    try:
+        cur.execute(
+            "SELECT id, listing_id, price_cents, currency, status, stock_state "
+            f"FROM marketplace_listing_variants WHERE listing_id IN ({','.join('?' * len(ids))})",
+            tuple(ids),
+        )
+        for row in cur.fetchall():
+            variant = dict(row)
+            grouped.setdefault(int(variant.get("listing_id") or 0), []).append(variant)
+    except Exception:
+        return {}
+    return grouped
 
 
 def _active_variants(cur, listing_id: int) -> list[dict]:
@@ -565,9 +595,10 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
         """,
         (user_id,),
     )
+    rows = [dict(row) for row in cur.fetchall()]
+    variants_by_listing = _variants_by_listing(cur, (r.get("l_id") for r in rows))
     lines = []
-    for row in cur.fetchall():
-        row = dict(row)
+    for row in rows:
         listing = {k: row.get(k) for k in (
             "seller_user_id", "title", "price_label", "currency", "quantity",
             "status", "approval_status", "seller_status", "delivery_type", "product_type", "listing_type", "cover_image_url",
@@ -950,9 +981,11 @@ def cart_confirm_price(line_id: int):
         row = dict(cur.fetchone() or {})
         if not row:
             return _error("Cart line not found.", 404, code="NOT_FOUND")
-        price_minor, currency = _listing_price_minor(bot, row)
-        if price_minor <= 0:
-            return _error("This item is no longer priced for checkout.", 409, code="ITEM_UNAVAILABLE")
+        decision = price_authority.resolve_unit_price(
+            row, price_authority.fetch_variants(cur, int(row.get("listing_id") or 0)))
+        if not decision.ok:
+            return _error(decision.message, 409, code=decision.error_code)
+        price_minor, currency = int(decision.unit_price_minor or 0), decision.currency
         cur.execute(
             "UPDATE marketplace_cart_items SET price_snapshot_minor=?, currency=?, updated_at=? WHERE id=?",
             (price_minor, currency, _now(), line_id),

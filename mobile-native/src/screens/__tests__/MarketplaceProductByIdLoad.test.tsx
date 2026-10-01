@@ -80,6 +80,7 @@ const LISTING = {
 const navigation = {
   navigate: jest.fn(),
   goBack: jest.fn(),
+  canGoBack: jest.fn(() => true),
   setOptions: jest.fn(),
   addListener: jest.fn(() => () => undefined)
 };
@@ -91,6 +92,8 @@ function renderProduct(params: Record<string, unknown>) {
 beforeEach(() => {
   mockFetchListing.mockReset();
   navigation.goBack.mockClear();
+  navigation.navigate.mockClear();
+  navigation.canGoBack.mockReset().mockReturnValue(true);
 });
 
 describe("a product opened with only an id", () => {
@@ -173,5 +176,40 @@ describe("the two ways a product page can have no product", () => {
     const { getByTestId } = renderProduct({});
     expect(getByTestId("marketplace-product-unavailable")).toBeTruthy();
     expect(mockFetchListing).not.toHaveBeenCalled();
+  });
+});
+
+describe("the only control on the unavailable page", () => {
+  it("goes back when there is somewhere to go back to", async () => {
+    mockFetchListing.mockResolvedValue(null);
+    const { getByText } = renderProduct({ listingId: 9999 });
+
+    fireEvent.press(await waitFor(() => getByText("Browse Marketplace")));
+    expect(navigation.goBack).toHaveBeenCalled();
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it("opens the Marketplace tab for a cold-start arrival with no back stack", async () => {
+    // A link opened from Safari is this screen's whole stack, so `goBack()` has
+    // nothing to pop. Without the fallback the one control on the page did
+    // nothing at all and a member who tapped a withdrawn product was stranded.
+    navigation.canGoBack.mockReturnValue(false);
+    mockFetchListing.mockResolvedValue(null);
+    const { getByText } = renderProduct({ listingId: 9999 });
+
+    fireEvent.press(await waitFor(() => getByText("Browse Marketplace")));
+    expect(navigation.goBack).not.toHaveBeenCalled();
+    expect(navigation.navigate).toHaveBeenCalledWith("Tabs", { screen: "Marketplace" });
+  });
+
+  it("never navigates on its own", async () => {
+    // The headstone has to be a destination, not a redirect: a silent bounce to
+    // Home is indistinguishable from the deep link having resolved to the wrong
+    // screen, which is the bug this surface exists to make visible.
+    mockFetchListing.mockResolvedValue(null);
+    const { getByTestId } = renderProduct({ listingId: 9999 });
+
+    await waitFor(() => expect(getByTestId("marketplace-product-unavailable")).toBeTruthy());
+    expect(navigation.navigate).not.toHaveBeenCalled();
   });
 });

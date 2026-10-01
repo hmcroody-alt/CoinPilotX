@@ -458,6 +458,31 @@ def test_no_listing_card_builds_its_own_product_url():
     assert real("product", 42, source="web") == "/pulse/marketplace/42"
 
 
+def test_the_section_href_is_derived_from_the_route_and_not_typed():
+    """`marketplace_href` is to the storefront what `product_path` is to a listing.
+
+    One function behind roughly fifteen call sites, and until now the only one in
+    this family with no test at all -- the nav entry every page in `PAGES` renders
+    is built by it. The path comes from `marketplace_storefront.BASE_PATH`, so the
+    navigation cannot drift from the route it names. Asserting the derivation
+    *and* the literal is deliberate: the derivation alone would still hold if
+    `BASE_PATH` moved and silently took every link on the site with it.
+
+    The category form is the same derivation plus the slug rule the storefront's
+    filter parser reads, and that pairing is the half worth pinning. A nav link to
+    a department whose slug the parser does not accept lands on an empty grid
+    rather than a filtered one -- which reads as an empty catalogue, not as a
+    broken link, so nothing about it looks like a bug from the outside.
+    """
+    from services import marketplace_storefront
+
+    assert bot.marketplace_href() == marketplace_storefront.BASE_PATH
+    assert bot.marketplace_href() == "/pulse/marketplace"
+    assert bot.marketplace_href("Sneakers & Shoes") == (
+        "/pulse/marketplace?category=sneakers-shoes"
+    )
+
+
 def test_every_documented_exception_is_still_present_in_the_source():
     """An exception that stops matching anything is a stale claim.
 
@@ -808,9 +833,30 @@ def test_the_search_api_payload_stays_canonical(client):
     `mobile-native/src/screens/SearchScreen.tsx` feeds this same `url` to
     `routeNotificationTarget`, which resolves canonical `/pulse/...` paths. An
     app-first url here would be a path the native router has never seen.
+
+    This pinned `?listing={id}` until the web storefront shipped. Both forms
+    satisfy the paragraph above -- `notificationRouting.ts` resolves the path
+    form via its `/^\\/pulse\\/marketplace\\/(\\d+)/` branch and the query form via
+    `extractNumericQueryValue(normalized, "listing")`, both to
+    `MarketplaceProduct` -- so native never distinguished them and the choice
+    was always free on that side. The web is what broke the tie:
+    `marketplace_storefront.Filters.from_args` reads category / q / sort / page
+    and discards the rest, so `?listing=` delivered a 200 on the unfiltered
+    grid. A dead link that answers 200 is worse than one that 404s, because
+    nothing downstream can detect it.
+
+    So the assertion moved to the path form rather than the change being
+    reverted. The query form stays *readable* -- `saveContract.saveTargetFromUrl`
+    matches both shapes so the `?listing=` rows already in `pulse_saved_items`
+    keep resolving -- but nothing new should be minted in it.
     """
     source = _bot_source()
-    assert '"url": f"/pulse/marketplace?listing={r.get(\'id\')}",' in source
+    assert '"url": f"/pulse/marketplace/{r.get(\'id\')}",' in source
+    assert '"url": f"/pulse/marketplace?listing={r.get(\'id\')}",' not in source
+    # The saved-collection writer is the only other place this URL was minted,
+    # and it is read straight into an `href` by the web saved-library renderer.
+    # Pinned here so the two cannot drift back apart.
+    assert 'f"/pulse/marketplace?listing={listing_id}"' not in source
 
 
 # ---------------------------------------------------------------------------

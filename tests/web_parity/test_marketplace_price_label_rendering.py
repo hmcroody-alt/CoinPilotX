@@ -59,6 +59,11 @@ import pytest
 
 from tests.probe_report import parse_report
 
+# Named rather than spelled as a literal so the asset path has one owner. This
+# module pulls in `app_links` and `marketplace_web` only -- no `bot`, so it does
+# not drag the monolith into this process the way the probe subprocess does.
+from services import marketplace_storefront
+
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 #: A listing whose seller priced it. The control: every "no pill" assertion
@@ -130,6 +135,14 @@ with client.session_transaction() as session:
 CARD = re.compile(r'<article class="mkt-card">.*?</article>', re.S)
 CARD_LINK = re.compile(r'class="mkt-card-link" href="/pulse/marketplace/(\d+)"')
 
+# A declaration whose name says it builds a listing, a product or a marketplace
+# card. Deliberately a name match rather than a body match: the point is to
+# notice a second renderer existing at all, and `marketplaceListingHtml`,
+# `renderProductCard` and `listingCardHtml` all are.
+CARD_FN = re.compile(
+    r"(?:function\s+|(?:const|let|var)\s+)"
+    r"(\w*(?:[Ll]isting|[Pp]roduct|[Mm]arketplace)\w*)\s*(?:\(|=\s*(?:\(|function))")
+
 
 def cards_by_listing(html):
     '''Every storefront card on the page, keyed by the listing it links to.
@@ -184,6 +197,20 @@ report["grid_cards_seen"] = len(CARD.findall(grid))
 # renderer that emitted nothing and a probe that could not read what it emitted.
 report["grid_ids_present"] = [str(lid) for lid in %(ids)r
                               if ("Listing %%d" %% lid) in grid]
+# Every script the grid actually loads, so a *client-side* twin of the card can
+# be seen. Nothing the server renders can reveal one, and a twin is how a fix
+# lands in one renderer and not the other.
+scripts = {"(inline)": grid}
+for src in re.findall(r'<script[^>]+src="([^"]+)"', grid):
+    if src.startswith("/") and "marketplace" in src:
+        asset = client.get(src.split("?")[0])
+        if asset.status_code == 200:
+            scripts[src] = asset.get_data(as_text=True)
+report["grid_scripts"] = sorted(scripts)
+report["grid_js_card"] = sorted({
+    "%%s:%%s" %% (where, name)
+    for where, source in scripts.items() for name in CARD_FN.findall(source)
+})
 
 pages = {}
 for lid in %(ids)r:
@@ -369,6 +396,45 @@ def test_every_card_the_grid_rendered_was_attributed_to_a_listing(price_probe):
         "listings %r are on the served page but the probe could not attribute "
         "their cards, so they are invisible to every assertion in this file. "
         "The card's listing-id attribute moved or was renamed." % (unread,))
+
+
+def test_no_marketplace_script_defines_a_card_renderer(price_probe):
+    """The structural half of this bug family, asserted as absent.
+
+    Every other test in this file reads the card the *server* rendered. None of
+    them can see a JavaScript twin -- and a twin is how this bug family spread:
+    "Request access" reached three sites, and the third was `marketplaceListingHtml`,
+    a client-side rebuild of the card that search results were drawn from. Two
+    renderers of one card is how a fix lands in one of them and not the other.
+
+    Deliberately not the same check as
+    `tests/test_marketplace_web_ctas_follow_the_registry.py::test_the_grid_ships_no_second_card_renderer`,
+    which is why this has a different name. That one greps the *rendered body*
+    for the literal `marketplaceListingHtml`, so it sees a twin inlined into the
+    document and cannot see one living in the stylesheet-sibling asset the page
+    loads. This fetches every marketplace script the grid actually references and
+    matches on the *shape* of a declaration rather than on one known name, so
+    `renderProductCard` or `listingCardHtml` are caught too. The two overlap on
+    exactly one case and neither subsumes the other.
+
+    If a second renderer is ever a deliberate choice, restore the two tests this
+    replaced (`test_the_client_side_card_agrees_with_the_server_rendered_one` and
+    `..._emits_the_same_markup_as_the_server`, in git history before the
+    storefront rebuild) rather than relaxing this -- they executed the twin in
+    node and compared bytes, which is the only check that can actually see drift.
+    """
+    # Anti-vacuity first: if the probe fetched no script then the scan below
+    # found nothing because it read nothing.
+    assert price_probe["grid_scripts"], "the probe collected no scripts to scan"
+    assert any(name != "(inline)" for name in price_probe["grid_scripts"]), (
+        "the probe scanned only the inline document; the marketplace grid is "
+        "supposed to load %r, so either the asset stopped being referenced or "
+        "the test client could not fetch it -- and a twin living in that file "
+        "would now go unnoticed" % marketplace_storefront.JS_SRC)
+    assert price_probe["grid_js_card"] == [], (
+        "the marketplace grid ships client-side card renderer(s) %r. A second "
+        "renderer of the same card is what let one of them be fixed and the "
+        "other not." % (price_probe["grid_js_card"],))
 
 
 def test_a_priced_listing_still_shows_its_price_in_the_grid(price_probe):

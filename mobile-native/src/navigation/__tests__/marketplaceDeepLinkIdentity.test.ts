@@ -130,6 +130,19 @@ describe("the target replayed after a signed-out arrival logs in", () => {
       await routeNotificationTarget("/pulse/marketplace");
       expect(navigate).toHaveBeenCalledWith("Tabs", { screen: "Marketplace" });
     }));
+
+  it("opens the product page for a listing id carried in the query", () =>
+    withReadyNavigation(async (navigate) => {
+      // The other spelling of the same link. Notification payloads and older
+      // share cards carry the id as `?listing=` rather than as a path segment,
+      // and both arrive at this one resolver -- so a correction applied only to
+      // the path form would leave that half of real traffic on the catalogue.
+      await routeNotificationTarget(`/pulse/marketplace?listing=${LISTING_ID}`);
+      expect(navigate).toHaveBeenCalledWith(PRODUCT_SCREEN, {
+        listingId: LISTING_ID,
+        title: "Marketplace"
+      });
+    }));
 });
 
 describe("all three doors agree", () => {

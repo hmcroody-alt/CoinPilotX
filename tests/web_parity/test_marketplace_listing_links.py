@@ -106,7 +106,7 @@ REFUSED = {
 STATIC_SIBLING = "/pulse/marketplace/create"
 
 _PROBE = r"""
-import json, re, sys, sqlite3
+import hashlib, json, re, sys, sqlite3
 sys.path.insert(0, %(repo)r)
 import bot
 
@@ -147,10 +147,23 @@ client = app.test_client()
 with client.session_transaction() as session:
     session["account_user_id"] = viewer_id
 
+# The rendered controls, matched as elements that carry an id -- never as bare
+# attribute names. The page ships a script that selects on each of these hooks,
+# so searching the body for `data-mkt-save` alone matches the script and passes
+# with no buttons at all, which is exactly how this check was vacuous when it
+# was first written. Save and Report carry *this listing's* id, so each is
+# matched against the id under test. Contact carries the *seller's* id, and
+# renders as an anchor to a real `/pulse/messages/new` page when the seller has
+# a username and as a script-enabled button when it does not; either element is
+# the action being offered, so both shapes count.
+CONTACT = r'<(?:a|button)\b[^>]*\bdata-mkt-contact="\d+"'
+
 pages = {}
 for path in %(paths)r:
     response = client.get(path)
     body = response.get_data(as_text=True)
+    id_match = re.search(r"/pulse/marketplace/(\d+)$", path)
+    lid = id_match.group(1) if id_match else ""
     pages[path] = {
         "status": response.status_code,
         "location": response.headers.get("Location", ""),
@@ -296,8 +309,11 @@ def test_the_shared_page_offers_the_same_actions_as_a_grid_card(marketplace_prob
     A detail page that rendered the product but dropped Contact/Save/Report
     would still pass every routing check while being a dead end.
     """
-    assert _page(marketplace_probe, PUBLIC)["actions"], (
-        "the listing page is missing one of contact seller, save, or report")
+    actions = _page(marketplace_probe, PUBLIC)["actions"]
+    missing = sorted(name for name, present in actions.items() if not present)
+    assert not missing, (
+        "the listing page rendered without %s, so arriving by a shared link is "
+        "a lesser page than arriving by browsing" % ", ".join(missing))
 
 
 @pytest.mark.parametrize("listing_id", sorted(REFUSED))
@@ -321,11 +337,11 @@ def test_the_grid_only_links_to_listings_it_can_serve(marketplace_probe):
     Written over whatever the grid emitted rather than a fixed list, so a
     future card that links somewhere new is covered without editing this test.
 
-    The card now points at `/open/product/<id>`, the app-first interstitial, so
-    the id is read from there. The listing it names still has to be one this
-    server will serve: that is what the interstitial's App Store fallback and
-    its native destination both resolve to, and it is what a desktop visitor
-    reaches. Moving the button did not make a dead id acceptable.
+    The card points at the canonical `/pulse/marketplace/<id>` — the same URL
+    the app shares and the one the rest of this file is about — so the ids are
+    read straight from the grid's own hrefs. Whichever surface the card links
+    to, the listing it names has to be one this server will serve: a dead id is
+    a 404 the page produced for itself.
     """
     grid = marketplace_probe["grid"]
     assert grid["links"], "the grid links to no listings at all"

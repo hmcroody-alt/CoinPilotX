@@ -4020,6 +4020,30 @@ def app_first_href(destination, resource_id=None):
     return app_links.website_href(destination, resource_id, source="web")
 
 
+def marketplace_href(category=""):
+    """Where a "Marketplace" link on pulsesoc.com points.
+
+    Every navigation entry on the site used to call `marketplace_href()`
+    and land the visitor on `/open/marketplace` — an interstitial asking them to
+    install an iPhone app — because the web Marketplace was a shell page with
+    nothing in it. That was the honest answer then and is the wrong one now: the
+    storefront is a real, public, indexable page, and a nav link that refuses to
+    open the section it names is a dead end in the middle of the site.
+
+    So navigation goes straight to the storefront. The app is still offered, on
+    the destination page itself, by `marketplace_storefront_app_cta` — one
+    invitation on a working page instead of a wall in front of it.
+
+    Routed through a function rather than a literal so the path is derived from
+    `marketplace_storefront.BASE_PATH` and the ~15 call sites cannot drift from
+    the route, which is the same reason `app_first_href` exists.
+    """
+
+    base = marketplace_storefront.BASE_PATH
+    slug = marketplace_web.slugify(str(category or ""))
+    return f"{base}?category={slug}" if slug else base
+
+
 def app_first_link_map_script():
     """The same decision, handed to the scripts that render cards in the browser.
 
@@ -42183,7 +42207,7 @@ def pulse_desktop_top_nav_html(user=None):
         ("Events", "/pulse/events"),
         ("Communities", "/pulse/communities"),
         ("Roast Battle", "/pulse/roast-battle"),
-        ("Marketplace", app_first_href("marketplace")),
+        ("Marketplace", marketplace_href()),
         ("Creator Studio", "/pulse/creator-studio"),
         ("Seller Tools", app_first_href("seller")),
         ("Promote", "/pulse/promote"),
@@ -42967,7 +42991,7 @@ def marketplace_promo_card(compact=False):
     return promotion_card(
         "Marketplace",
         "Discover trusted sellers, creator products, and commerce signals inside the PulseSoc economy.",
-        app_first_href("marketplace"),
+        marketplace_href(),
         "Explore Marketplace",
         "▣",
         "marketplace",
@@ -43689,7 +43713,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         ("Portfolio", "/pulse/portfolio"),
         ("Spaces", "/pulse/spaces"),
         ("Friends", "/pulse/friends"),
-        ("Marketplace", app_first_href("marketplace")),
+        ("Marketplace", marketplace_href()),
         ("Notifications", "/pulse/notifications"),
         ("Messenger", "/pulse/messages"),
         ("Profile", "/pulse/profile"),
@@ -43727,7 +43751,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     drawer_groups = [
         ("Primary", [("Home", "/pulse"), ("Discover", "/pulse/discover"), ("Create Status", "/pulse?create_status=1"), ("Reels", "/pulse/reels"), ("Videos", "/pulse/videos"), ("Live", "/pulse/live"), ("PulseSoc Music", "/pulse/music"), ("Pulse Radio", "/pulse/music#pulse-radio"), *([("PulseSoc Labs", "/pulse/labs")] if user_is_super_user(user) else [])]),
         ("Social", [("Friends", "/pulse/friends"), ("Communities", "/pulse/communities"), ("Groups", "/pulse/groups"), ("Messenger", "/pulse/messages"), ("Notifications", "/pulse/notifications"), ("My Posts", "/pulse/my-posts"), ("Profile", "/pulse/profile")]),
-        ("Creator / Business", [("Creator Studio", "/pulse/creator-studio"), ("Seller Tools", app_first_href("seller")), ("Marketplace", app_first_href("marketplace")), ("Promote", "/pulse/promote"), ("Premium", "/pulse/premium"), ("Portfolio", "/pulse/portfolio")]),
+        ("Creator / Business", [("Creator Studio", "/pulse/creator-studio"), ("Seller Tools", app_first_href("seller")), ("Marketplace", marketplace_href()), ("Promote", "/pulse/promote"), ("Premium", "/pulse/premium"), ("Portfolio", "/pulse/portfolio")]),
         ("Content", [("Events", "/pulse/events"), ("Scam Alerts", "/pulse/scam-alerts"), ("Arena Highlights", "/pulse/arena"), ("Roast Clips", "/pulse/roast-clips"), ("Saved", "/pulse/saved"), ("Collections", "/pulse/collections")]),
         ("Utility", [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera/post"), ("Settings", "/pulse/settings"), ("Help", "/help"), ("Log Out", "/logout")]),
     ]
@@ -44230,6 +44254,7 @@ __DESKTOP_RIGHT_RAIL__
 <script src="/static/js/pulse_media_picker.js?v=bare-asset-tokens-20260930a" defer></script>
 <script src="/static/js/pulse_upload_manager.js?v=cache-sweep-20260930a"></script>
 __APP_FIRST_LINKS__<script src="/static/js/pulse_search_bridge.js?v=cache-sweep-20260930a" defer></script>
+<script src="/static/js/pulse_commerce_card.js?v=commerce-i18n-20260929a" defer></script>
 <script data-pulse-shell-runtime>
 const main=document.querySelector('main');const pulseShellBootStartedAt=Date.now();const pulseBootTrace=[];function pulseBootLog(step,extra={}){const entry={step,ms:Date.now()-pulseShellBootStartedAt,...extra};pulseBootTrace.push(entry);if(pulseBootTrace.length>80)pulseBootTrace.shift();window.__pulseBootTrace=pulseBootTrace;try{console.info('[PulseShell]',entry)}catch(_){}}pulseBootLog('shell-boot-start',{path:location.pathname});const state={feed:main.dataset.feed||'for_you',topic:main.dataset.topic||'',profile:main.dataset.profile||'',offset:0,loading:false,feedReady:false,shellReady:false,pendingPosts:[],pendingPostIds:new Set(),deletedPostIds:new Set(JSON.parse(sessionStorage.getItem('pulseDeletedPostIds')||'[]')),lastUserScrollAt:Date.now(),checkingFeed:false,lastToast:{message:'',at:0}};
 const feedPaths={for_you:'/pulse',following:'/pulse/friends',trending:'/pulse/trending',crypto:'/pulse?feed=crypto',questions:'/pulse/questions',my_posts:'/pulse/my-posts',scam_alerts:'/pulse/scam-alerts',arena_highlights:'/pulse/arena',roast_clips:'/pulse/roast-clips'};
@@ -44429,7 +44454,17 @@ function premiumMarkHtml(author){const mark=author&&author.premium_mark;if(!mark
 		   reactions were e.g. `whale` or `bearish` showed a strip of zeroes and
 		   the real counts appeared nowhere. */
 		function reactionHtml(p){const counts=p.reaction_counts||{};const reacted=Object.keys(counts).filter(k=>Number(counts[k]||0)>0);const keys=[...new Set([...reactionTrayKeys,...reacted,...(p.viewer_reaction?[p.viewer_reaction]:[])])].filter(k=>reactionIcons[k]);return keys.map(k=>{const label=reactions[k]||k;return `<button class="reaction-pill ${p.viewer_reaction===k?'active':''}" title="${esc(label)}" aria-label="${esc(label)} reaction" data-react="${k}" data-post="${p.id}" data-count="${Number(counts[k]||0)}"><span>${reactionIcons[k]}</span> <b data-reaction-count>${Number(counts[k]||0)}</b></button>`}).join('')}
-        function postHtml(p){if(isDeletedPost(p))return '';const author=p.author||{};const label=author.primary_label||author.rank||(author.badges||['Member'])[0]||'Member';const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${encodeURIComponent(t)}">#${esc(t)}</a>`).join('');const profile=author.public_player_id?`/pulse/profile/${encodeURIComponent(author.public_player_id)}`:'/pulse/profile';const canDelete=!!p.can_delete;const follow=(!canDelete&&author.public_player_id)?`<button data-follow-public="${esc(author.public_player_id)}">Follow</button>`:'';const msg=(!canDelete&&author.public_player_id)?`<button data-message="${esc(author.public_player_id)}">Message creator</button>`:'';const edit=canDelete?`<button data-edit-post="${p.id}">Edit post</button>`:'';const del=canDelete?`<button data-delete-post="${p.id}">Delete post</button>`:'';const rep=!canDelete?`<button data-report="post" data-id="${p.id}">Report</button>`:'';const mediaItems=p.media||[];const primaryMedia=mediaItems[0]||{};const mediaType=String(primaryMedia.media_type||'').toLowerCase();const postType=String(p.post_type||'post').toLowerCase();const comments=Number(p.comments_count||p.comment_count||0);const reactionsTotal=Number(p.reactions_count||0);const classSafe=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'post';const ratio=Number(primaryMedia.aspect_ratio||0)||((Number(primaryMedia.width||0)>0&&Number(primaryMedia.height||0)>0)?Number(primaryMedia.width)/Number(primaryMedia.height):0);const orientation=primaryMedia.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'none');const intelligenceClass=[comments>=3?'is-discussion':'',reactionsTotal>=5?'is-trending':'',reactionsTotal>=8?'reaction-heat-high':'',author.premium_mark||author.primary_label?'is-creator-forward':''].filter(Boolean).join(' ');const layoutClass=[mediaItems.length?'has-media':'is-text',mediaType==='video'?'is-video':mediaItems.length>1?'is-carousel':mediaItems.length?'is-image':'',`type-${classSafe(postType)}`,`media-${classSafe(orientation)}`,intelligenceClass].filter(Boolean).join(' ');const module=p.post_type==='scam_report'?`<div class="intel-item"><strong>Scam Shield pulse</strong><br><span class="muted">Risk score ${Number(p.risk_score||0)}. Community-generated warning, educational only.</span></div>`:p.post_type==='poll'?`<div class="intel-item"><strong>Question pulse</strong><br><span class="muted">Educators and community members can answer below.</span></div>`:comments>=3?`<div class="intel-item"><strong>Discussion heat</strong><br><span class="muted">${comments} replies. Open comments to follow the thread.</span></div>`:'';const avatar=author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1));return `<article class="card post live-enter ${layoutClass}" data-post-id="${p.id}" data-post-type="${esc(postType)}" data-media-count="${mediaItems.length}" data-media-orientation="${esc(orientation)}" data-engagement-heat="${comments+reactionsTotal}"><div class="author"><div class="author-main"><span class="avatar">${avatar}</span><div><div class="author-name">${esc(author.display_name||p.author_public_name||'PulseSoc creator')}${premiumMarkHtml(author)}</div><span class="badge">${esc(label)}</span></div></div><div class="post-tools"><button class="post-menu-btn" data-post-menu="${p.id}" aria-label="Post actions">•••</button></div><div class="post-sheet" data-post-sheet="${p.id}">${follow}${msg}<a class="button" href="${esc(p.permalink)}">View post</a><a class="button" href="${profile}">View profile</a><button data-share="${esc(p.permalink)}">Share post</button>${edit}${del}${rep}</div></div>${p.title?`<h2>${esc(p.title)}</h2>`:''}<p>${esc(p.body)}</p>${module}${mediaItems.length?`<div class="media-grid">${mediaHtml(mediaItems)}</div>`:''}<div class="tags">${tags}</div><p class="muted">${smartTimeHtml(p.created_at)} <span class="time-dot">•</span> ${esc(p.post_type||'post')} <span class="time-dot">•</span> <span data-comment-count="${p.id}">${comments}</span> comments <span class="time-dot">•</span> <span data-reaction-total="${p.id}">${reactionsTotal}</span> reactions <span class="time-dot">•</span> <span data-post-view-count="${p.id}">${Number(p.view_count||0)}</span> views</p><div class="reaction-strip">${reactionHtml(p)}</div><div class="quick-actions"><button class="quick-action" data-quick-like="${p.id}">Like</button><button class="quick-action" data-open-comments="${p.id}">Comment</button><button class="quick-action" data-share="${esc(p.permalink)}">Share</button><button class="quick-action" data-save-post="${p.id}">Save</button><button class="quick-action" data-post-menu="${p.id}">More</button></div><section class="inline-comments" data-comment-panel="${p.id}"><div class="typing" data-typing="${p.id}"></div><div class="comments" data-comments="${p.id}"></div><button class="comment-preview-toggle" data-view-comments="${p.id}" hidden>View comments</button><div class="comment-composer"><span class="avatar comment-avatar">${avatar}</span><input class="comment-input" data-comment-input="${p.id}" placeholder="Write comment..."><button class="comment-emoji" data-comment-emoji="${p.id}" type="button">☺</button><button class="comment-send" data-send-comment="${p.id}" type="button">➤</button></div></section></article>`}
+		// The card markup lives in static/js/pulse_commerce_card.js because the
+		// other web renderer (pulse_home_core.js, the `core` boot profile) builds
+		// the same attachment, and two copies would drift. That script is loaded
+		// in the head of every profile, so the global is installed before this
+		// deferred runtime ever calls it; the `?.` is for a cached shell that
+		// predates the asset. `localize` is separate from `postHtml` here, unlike
+		// the `render` path, because this renderer returns a string and nothing is
+		// in the document to translate until the caller has inserted it.
+		function commerceHtml(p){return window.PulseCommerceCard?.postHtml?.(p,{surface:'signal'})||''}
+		function hydrateCommerce(root){window.PulseCommerceCard?.localize?.(root)}
+        function postHtml(p){if(isDeletedPost(p))return '';const author=p.author||{};const label=author.primary_label||author.rank||(author.badges||['Member'])[0]||'Member';const tags=(p.tags||[]).map(t=>`<a class="tag" href="/pulse/topic/${encodeURIComponent(t)}">#${esc(t)}</a>`).join('');const profile=author.public_player_id?`/pulse/profile/${encodeURIComponent(author.public_player_id)}`:'/pulse/profile';const canDelete=!!p.can_delete;const follow=(!canDelete&&author.public_player_id)?`<button data-follow-public="${esc(author.public_player_id)}">Follow</button>`:'';const msg=(!canDelete&&author.public_player_id)?`<button data-message="${esc(author.public_player_id)}">Message creator</button>`:'';const edit=canDelete?`<button data-edit-post="${p.id}">Edit post</button>`:'';const del=canDelete?`<button data-delete-post="${p.id}">Delete post</button>`:'';const rep=!canDelete?`<button data-report="post" data-id="${p.id}">Report</button>`:'';const mediaItems=p.media||[];const primaryMedia=mediaItems[0]||{};const mediaType=String(primaryMedia.media_type||'').toLowerCase();const postType=String(p.post_type||'post').toLowerCase();const comments=Number(p.comments_count||p.comment_count||0);const reactionsTotal=Number(p.reactions_count||0);const classSafe=v=>String(v||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'post';const ratio=Number(primaryMedia.aspect_ratio||0)||((Number(primaryMedia.width||0)>0&&Number(primaryMedia.height||0)>0)?Number(primaryMedia.width)/Number(primaryMedia.height):0);const orientation=primaryMedia.orientation||(ratio?Math.abs(ratio-1)<.08?'square':ratio>1?'landscape':'portrait':'none');const intelligenceClass=[comments>=3?'is-discussion':'',reactionsTotal>=5?'is-trending':'',reactionsTotal>=8?'reaction-heat-high':'',author.premium_mark||author.primary_label?'is-creator-forward':''].filter(Boolean).join(' ');const layoutClass=[mediaItems.length?'has-media':'is-text',mediaType==='video'?'is-video':mediaItems.length>1?'is-carousel':mediaItems.length?'is-image':'',`type-${classSafe(postType)}`,`media-${classSafe(orientation)}`,intelligenceClass].filter(Boolean).join(' ');const module=p.post_type==='scam_report'?`<div class="intel-item"><strong>Scam Shield pulse</strong><br><span class="muted">Risk score ${Number(p.risk_score||0)}. Community-generated warning, educational only.</span></div>`:p.post_type==='poll'?`<div class="intel-item"><strong>Question pulse</strong><br><span class="muted">Educators and community members can answer below.</span></div>`:comments>=3?`<div class="intel-item"><strong>Discussion heat</strong><br><span class="muted">${comments} replies. Open comments to follow the thread.</span></div>`:'';const avatar=author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1));return `<article class="card post live-enter ${layoutClass}" data-post-id="${p.id}" data-post-type="${esc(postType)}" data-media-count="${mediaItems.length}" data-media-orientation="${esc(orientation)}" data-engagement-heat="${comments+reactionsTotal}"><div class="author"><div class="author-main"><span class="avatar">${avatar}</span><div><div class="author-name">${esc(author.display_name||p.author_public_name||'PulseSoc creator')}${premiumMarkHtml(author)}</div><span class="badge">${esc(label)}</span></div></div><div class="post-tools"><button class="post-menu-btn" data-post-menu="${p.id}" aria-label="Post actions">•••</button></div><div class="post-sheet" data-post-sheet="${p.id}">${follow}${msg}<a class="button" href="${esc(p.permalink)}">View post</a><a class="button" href="${profile}">View profile</a><button data-share="${esc(p.permalink)}">Share post</button>${edit}${del}${rep}</div></div>${p.title?`<h2>${esc(p.title)}</h2>`:''}<p>${esc(p.body)}</p>${module}${mediaItems.length?`<div class="media-grid">${mediaHtml(mediaItems)}</div>`:''}${commerceHtml(p)}<div class="tags">${tags}</div><p class="muted">${smartTimeHtml(p.created_at)} <span class="time-dot">•</span> ${esc(p.post_type||'post')} <span class="time-dot">•</span> <span data-comment-count="${p.id}">${comments}</span> comments <span class="time-dot">•</span> <span data-reaction-total="${p.id}">${reactionsTotal}</span> reactions <span class="time-dot">•</span> <span data-post-view-count="${p.id}">${Number(p.view_count||0)}</span> views</p><div class="reaction-strip">${reactionHtml(p)}</div><div class="quick-actions"><button class="quick-action" data-quick-like="${p.id}">Like</button><button class="quick-action" data-open-comments="${p.id}">Comment</button><button class="quick-action" data-share="${esc(p.permalink)}">Share</button><button class="quick-action" data-save-post="${p.id}">Save</button><button class="quick-action" data-post-menu="${p.id}">More</button></div><section class="inline-comments" data-comment-panel="${p.id}"><div class="typing" data-typing="${p.id}"></div><div class="comments" data-comments="${p.id}"></div><button class="comment-preview-toggle" data-view-comments="${p.id}" hidden>View comments</button><div class="comment-composer"><span class="avatar comment-avatar">${avatar}</span><input class="comment-input" data-comment-input="${p.id}" placeholder="Write comment..."><button class="comment-emoji" data-comment-emoji="${p.id}" type="button">☺</button><button class="comment-send" data-send-comment="${p.id}" type="button">➤</button></div></section></article>`}
 const pulseBasePostHtml=postHtml;postHtml=p=>{const music=p?.music||null;const audioUrl=music?.attached_audio_url||music?.audio_url||music?.preview_url||'';const enriched=music?.is_creator_safe&&audioUrl?{...p,media:(p.media||[]).map(m=>({...m,audio_id:music.audio_id||music.track_id||'',music_id:music.track_id||music.audio_id||'',attached_audio_url:audioUrl,audio_title:music.title||'Approved track',audio_artist:music.artist||'PulseSoc Music',audio_duration:music.audio_duration||music.duration_seconds||0,audio_start_time:music.audio_start_time||0,audio_volume:music.audio_volume||1,original_audio_muted:true}))}:p;let html=pulseBasePostHtml(enriched);if(!music?.is_creator_safe||!audioUrl)return html;const audioAttrs=`data-audio-id="${esc(music.audio_id||music.track_id||'')}" data-music-id="${esc(music.track_id||music.audio_id||'')}" data-attached-audio-url="${esc(audioUrl)}" data-audio-title="${esc(music.title||'Approved track')}" data-audio-artist="${esc(music.artist||'PulseSoc Music')}" data-audio-duration="${esc(music.audio_duration||music.duration_seconds||0)}" data-audio-start-time="${esc(music.audio_start_time||0)}" data-audio-volume="${esc(music.audio_volume||1)}" data-original-audio-muted="true"`;html=html.replace(/<div class="pulse-media-wrap/g,`<div ${audioAttrs} class="pulse-media-wrap`).replace(/<video /g,'<video muted data-original-audio-muted="true" ');const player=`<section class="post-music-player" data-post-music="${esc(p.id)}" data-attached-audio-url="${esc(audioUrl)}"><button class="post-music-toggle" type="button" data-toggle-post-music="${esc(p.id)}" aria-label="Play ${esc(music.title||'attached music')}">▶</button><span class="post-music-copy"><strong>${esc(music.title||'Approved track')}</strong><small>${esc(music.artist||'PulseSoc Music')} · Using attached audio · Original audio muted</small></span></section>`;return html.replace('<div class="tags">',player+'<div class="tags">')};let activePostMusicVideo=null;document.addEventListener('click',async e=>{const toggle=e.target.closest('[data-toggle-post-music]');if(!toggle)return;e.preventDefault();e.stopPropagation();const card=toggle.closest('[data-post-id]');const video=card?.querySelector('video');if(!video||!window.PulseMediaRenderer?.hasAttachedAudio?.(video)){toast('Attached music is not available for this post.');return}const enable=toggle.dataset.playing!=='1';if(enable){if(activePostMusicVideo&&activePostMusicVideo!==video)window.PulseMediaRenderer?.pauseAttachedAudio?.(activePostMusicVideo);try{window.PulseMediaRenderer?.forceOriginalAudioMuted?.(video,'post-attached-music');window.PulseMediaRenderer?.setSoundEnabled?.(true);window.PulseMediaRenderer?.setAttachedAudioMuted?.(video,false,true,true);const attachedStarted=await window.PulseMediaRenderer?.playAttachedAudio?.(video,true,true);await video.play();if(!attachedStarted)throw new Error('attached-audio-blocked');activePostMusicVideo=video;toggle.dataset.playing='1';toggle.textContent='❚❚';toggle.setAttribute('aria-label','Pause attached music');toggle.closest('[data-post-music]')?.classList.add('is-playing')}catch(_){toast('Music could not play. Check your device audio settings.')}}else{window.PulseMediaRenderer?.pauseAttachedAudio?.(video);toggle.dataset.playing='0';toggle.textContent='▶';toggle.setAttribute('aria-label','Play attached music');toggle.closest('[data-post-music]')?.classList.remove('is-playing');if(activePostMusicVideo===video)activePostMusicVideo=null}},true);document.addEventListener('pause',e=>{if(!e.target.matches?.('video'))return;const card=e.target.closest('[data-post-id]');const toggle=card?.querySelector('[data-toggle-post-music]');if(toggle){toggle.dataset.playing='0';toggle.textContent='▶';toggle.setAttribute('aria-label','Play attached music')}toggle?.closest('[data-post-music]')?.classList.remove('is-playing');if(activePostMusicVideo===e.target)activePostMusicVideo=null},true);document.addEventListener('pulse:attached-audio-state',e=>{const card=e.target?.closest?.('[data-post-id]');const toggle=card?.querySelector('[data-toggle-post-music]');if(!toggle)return;const playing=e.detail?.state==='playing'&&!e.detail?.muted&&!e.detail?.paused;toggle.dataset.playing=playing?'1':'0';toggle.textContent=playing?'❚❚':'▶';toggle.setAttribute('aria-label',playing?'Pause attached music':'Play attached music');toggle.closest('[data-post-music]')?.classList.toggle('is-playing',playing);if(playing)activePostMusicVideo=card?.querySelector('video')||activePostMusicVideo},true);
 	function commentHtml(c){const a=c.author||{};return `<div class="comment" data-comment-id="${c.id}"><strong>${esc(a.display_name||'PulseSoc user')}${premiumMarkHtml(a)}</strong><p>${esc(c.body||'')}</p><small>${smartTimeHtml(c.created_at)}</small></div>`}
 	async function loadComments(postId,expand=false){const box=document.querySelector(`[data-comments="${postId}"]`);if(!box)return;if(box.dataset.loaded&&box.dataset.expanded===String(Boolean(expand)))return;try{const d=await api(`/api/pulse/posts/${postId}/comments`);const comments=d.comments||[];const visible=expand?comments:comments.slice(0,2);box.innerHTML=visible.map(commentHtml).join('')||'<p class="muted">No comments yet. Start the live thread.</p>';box.dataset.loaded='1';box.dataset.expanded=String(Boolean(expand));const more=document.querySelector(`[data-view-comments="${postId}"]`);if(more){more.hidden=!(comments.length>2&&!expand);more.textContent=`View all ${comments.length} comments`;}}catch(e){box.innerHTML='<p class="muted">Comments temporarily unavailable.</p>'}}
@@ -44451,14 +44486,14 @@ function existingPost(postId){const id=String(postId||'');return state.deletedPo
 function desktopFeedInsightHtml(intel={}){const mood=esc(intel.community_mood||'Curious');const action=esc(intel.suggested_action||'PulseSoc is reading the room and keeping updates calm.');const topics=(intel.trending_topics||[]).slice(0,3).map(t=>`<span class="desktop-signal-pill">#${esc(t.tag)} · ${Number(t.count||0)}</span>`).join('');return `<section class="desktop-feed-intel-card" data-feed-intel-break><span class="desktop-rail-ico">AI</span><div><strong>PulseSoc Intelligence · ${mood}</strong><p class="muted">${action}</p><div class="actions">${topics}</div></div><a class="button" href="/pulse/premium">Open Intelligence</a></section>`}
 function feedHtml(posts,intel={}){return (posts||[]).map((p,i)=>postHtml(p)+(i===1?desktopFeedInsightHtml(intel):'')).join('')}
 function updateNewPulseBanner(){const b=document.getElementById('newPulsesBanner');if(!b)return;const count=state.pendingPosts.length;b.textContent=count?`${count} new PulseSoc${count===1?'':'s'} available`:'New Pulses Available';b.classList.toggle('show',count>0)}
-function prependPostStable(post,forceScroll=false){const feed=document.getElementById('feed');if(!feed||isDeletedPost(post)||document.querySelector(`[data-post-id="${post.id}"]`))return;const before=document.documentElement.scrollHeight;feed.insertAdjacentHTML('afterbegin',postHtml(post));window.CoinPilotTime?.hydrate(feed.firstElementChild);window.PulseMediaRenderer?.hydrate(feed.firstElementChild);loadComments(post.id,false);const after=document.documentElement.scrollHeight;if(!forceScroll&&!readerNearTop())window.scrollBy(0,after-before)}
+function prependPostStable(post,forceScroll=false){const feed=document.getElementById('feed');if(!feed||isDeletedPost(post)||document.querySelector(`[data-post-id="${post.id}"]`))return;const before=document.documentElement.scrollHeight;feed.insertAdjacentHTML('afterbegin',postHtml(post));window.CoinPilotTime?.hydrate(feed.firstElementChild);window.PulseMediaRenderer?.hydrate(feed.firstElementChild);hydrateCommerce(feed.firstElementChild);hydrateCommerce(feed.firstElementChild);loadComments(post.id,false);const after=document.documentElement.scrollHeight;if(!forceScroll&&!readerNearTop())window.scrollBy(0,after-before)}
 function queueNewPost(post){if(isDeletedPost(post)||existingPost(post.id))return;state.pendingPostIds.add(String(post.id));state.pendingPosts.unshift(post);updateNewPulseBanner()}
 function flushPendingPosts(){const posts=state.pendingPosts.splice(0).reverse();state.pendingPostIds.clear();posts.forEach(p=>prependPostStable(p,true));updateNewPulseBanner();const feed=document.getElementById('feed');if(feed)window.scrollTo({top:Math.max(0,feed.offsetTop-92),behavior:'smooth'})}
 function notificationToastKey(ev,p){return `${ev.event_type||ev.type||'event'}:${ev.id||p.notification_id||p.id||p.trace_id||p.message||p.title||''}`}
 function applyLiveEvents(events){(events||[]).forEach(ev=>{const p=ev.payload||{};const livePost=p.post||null;if(['post_deleted','pulse_post_deleted','post_removed','pulse_post_removed'].includes(ev.event_type)){rememberDeletedPost(p.post_id||ev.post_id);return}if((ev.event_type==='new_post'||ev.event_type==='pulse_post_created')&&livePost&&!existingPost(livePost.id)){if(readerNearTop())prependPostStable(livePost,false);else{queueNewPost(livePost);toast(`${esc((livePost.author||{}).display_name||'Someone')} posted a new update`,`new-post:${livePost.id}`)}}if(ev.event_type==='new_comment')applyCommentEvent({post_id:ev.post_id,...p});if(ev.event_type==='reaction_added'||ev.event_type==='reaction_removed')applyReactionEvent(p);if(ev.event_type==='typing_start'){const t=document.querySelector(`[data-typing="${ev.post_id}"]`);if(t){t.textContent=`${esc(p.display_name||'Someone')} is typing...`;clearTimeout(t._timer);t._timer=setTimeout(()=>t.textContent='',3500)}}if(ev.event_type==='typing_stop'){const t=document.querySelector(`[data-typing="${ev.post_id}"]`);if(t)t.textContent=''}if(ev.event_type==='notification_created'||ev.event_type==='friend_request'||ev.event_type==='message_received'||ev.event_type==='livestream_started')toast(p.message||p.title||'New PulseSoc activity.',notificationToastKey(ev,p));state.lastEventId=Math.max(state.lastEventId||0,Number(ev.id||0))})}
 function renderIntel(intel){pulseNetworkUpdate({creatorsOnline:Array.isArray(intel.active_creators)?intel.active_creators.length:pulseNetworkState.creatorsOnline,aiAlerts:Number(intel.open_reports||0)+(Array.isArray(intel.scam_warnings)?intel.scam_warnings.length:0),trendingActivity:(intel.trending_topics||[]).reduce((sum,item)=>sum+Number(item.count||0),0)+Number(intel.posts_today||0),communityMood:intel.community_mood||'Curious'});const topics=(intel.trending_topics||[]).map(t=>`<a class="intel-item" href="/pulse/topic/${encodeURIComponent(t.tag)}">#${esc(t.tag)} · ${t.count}</a>`).join('');const spaces=(intel.top_spaces||[]).map(s=>`<a class="intel-item" href="/pulse/spaces/${encodeURIComponent(s.slug)}">${esc(s.name)} · heat ${Number(s.heat||0)}</a>`).join('');const posts=(intel.top_posts||[]).map(p=>`<a class="intel-item" href="${esc(p.permalink)}">${esc(p.title)}</a>`).join('');const scams=(intel.scam_warnings||[]).map(p=>`<a class="intel-item" href="${esc(p.permalink)}">Scam watch · ${esc(p.title)}</a>`).join('');document.querySelectorAll('[data-daily-mentor-question]').forEach(q=>q.textContent=intel.daily_prompt||'What crypto scam did you almost fall for?');const content=`<div class="intel-item"><strong>${esc(intel.community_mood||'Curious')}</strong><br><span class="muted">Community mood</span></div><div class="intel-item"><strong>${Number(intel.posts_today||0)}</strong><br><span class="muted">Posts today</span></div><div class="intel-item">${esc(intel.suggested_action||'PulseSoc is warming up. Create the first post.')}</div>${topics}${spaces}${posts}${scams}`;document.getElementById('intel').innerHTML=content||'<p class="muted">PulseSoc is warming up. Create the first post.</p>';const mood=document.querySelector('[data-desktop-mood]');if(mood)mood.textContent=intel.community_mood||'Curious';const today=document.querySelector('[data-desktop-posts-today]');if(today)today.textContent=Number(intel.posts_today||0);const action=document.querySelector('[data-desktop-suggested-action]');if(action)action.textContent=intel.suggested_action||'Read the feed, react with intent, and create only when you have useful signal.';const energy=document.querySelector('[data-desktop-energy]');if(energy){const score=Math.max(18,Math.min(96,Number(intel.posts_today||0)*8+42));energy.style.setProperty('--energy',score+'%')}const topicRail=document.querySelector('[data-desktop-trending]');if(topicRail)topicRail.innerHTML=(intel.trending_topics||[]).slice(0,6).map(t=>`<a class="desktop-intel-row" href="/pulse/topic/${encodeURIComponent(t.tag)}"><span class="desktop-rail-ico">#</span><span><strong>#${esc(t.tag)}</strong><small class="muted">${Number(t.count||0)} live signals</small></span></a>`).join('')||'<div class="desktop-intel-row"><span class="desktop-rail-ico">#</span><span><strong>Topics warming up</strong><small class="muted">Create useful signal to start the trend.</small></span></div>';const spaceRail=document.querySelector('[data-desktop-spaces]');if(spaceRail)spaceRail.innerHTML=(intel.top_spaces||[]).slice(0,5).map(s=>`<a class="desktop-intel-row is-live" href="/pulse/spaces/${encodeURIComponent(s.slug)}"><span class="desktop-rail-ico">↗</span><span><strong>${esc(s.name)}</strong><small class="muted">heat ${Number(s.heat||0)}</small></span></a>`).join('')||'<a class="desktop-intel-row is-live" href="/pulse/messages"><span class="desktop-rail-ico">↗</span><span><strong>General PulseSoc</strong><small class="muted">Open the live room layer</small></span></a>';const postRail=document.querySelector('[data-desktop-top-posts]');if(postRail)postRail.innerHTML=(intel.top_posts||[]).slice(0,5).map(p=>`<a class="desktop-intel-row" href="${esc(p.permalink)}"><span class="desktop-rail-ico">AI</span><span><strong>${esc(p.title||'PulseSoc signal')}</strong><small class="muted">High conversation potential</small></span></a>`).join('')||'<div class="desktop-intel-row"><span class="desktop-rail-ico">AI</span><span><strong>Quality signals</strong><small class="muted">Top posts will surface here.</small></span></div>';const liveRail=document.querySelector('[data-desktop-live-activity]');if(liveRail)liveRail.innerHTML=[`<div class="desktop-intel-row is-live"><span class="desktop-rail-ico">●</span><span><strong>${Number(intel.posts_today||0)} signals today</strong><small class="muted">Realtime updates stay calm while you read.</small></span></div>`,...(intel.top_posts||[]).slice(0,2).map(p=>`<a class="desktop-intel-row" href="${esc(p.permalink)}"><span class="desktop-rail-ico">↺</span><span><strong>Active thread</strong><small class="muted">${esc(p.title||'PulseSoc conversation')}</small></span></a>`)].join('');const educatorRail=document.querySelector('[data-desktop-educators]');if(educatorRail)educatorRail.innerHTML='<a class="desktop-intel-row" href="/pulse/teachers"><span class="desktop-rail-ico">T</span><span><strong>Trusted educator highlights</strong><small class="muted">Teacher signals, safety-first lessons, and creator learning.</small></span></a><a class="desktop-intel-row" href="/pulse/premium"><span class="desktop-rail-ico">✦</span><span><strong>Creator intelligence</strong><small class="muted">Upgrade presentation, not manipulation.</small></span></a>';const scamRail=document.querySelector('[data-desktop-scams]');if(scamRail)scamRail.innerHTML=(intel.scam_warnings||[]).slice(0,4).map(p=>`<a class="desktop-intel-row" href="${esc(p.permalink)}"><span class="desktop-rail-ico">!</span><span><strong>Scam watch</strong><small class="muted">${esc(p.title||'Community warning')}</small></span></a>`).join('')||'<div class="desktop-intel-row"><span class="desktop-rail-ico">!</span><span><strong>Scam Shield calm</strong><small class="muted">No active warnings loaded.</small></span></div>'}
 const dailyMentorState={conversationId:null,suggestedPostText:''};function renderDailyMentorMessage(sender,body){document.querySelectorAll('[data-daily-mentor-thread]').forEach(thread=>{thread.insertAdjacentHTML('beforeend',`<div class="daily-mentor-msg ${sender==='user'?'user':'ai'}"><strong>${sender==='user'?'You':'PulseSoc Mentor'}</strong>${esc(body)}</div>`);thread.scrollTop=thread.scrollHeight})}function setDailyMentorStatus(message,thinking=false){document.querySelectorAll('[data-daily-mentor-status]').forEach(el=>{el.textContent=message;el.classList.toggle('daily-mentor-thinking',!!thinking)})}async function dailyMentorRespond(mode,source){const card=source?.closest('[data-daily-mentor-card]')||document.querySelector('[data-daily-mentor-card]');const input=card?.querySelector('[data-daily-mentor-input]');const promptId=card?.dataset.promptId||'wallet-safety-reflection';let message=(input?.value||'').trim();if(mode==='help')message='Help me answer today\\'s reflection with a safe, honest response.';if(!message){toast('Share your answer first.');input?.focus();return}if(mode!=='help'){renderDailyMentorMessage('user',message);input.value=''}setDailyMentorStatus('PulseSoc Mentor is thinking...',true);try{const d=await api('/api/pulse/daily-mentor/respond',{method:'POST',body:JSON.stringify({prompt_id:promptId,user_message:message,conversation_id:dailyMentorState.conversationId})});dailyMentorState.conversationId=d.conversation_id;dailyMentorState.suggestedPostText=d.suggested_post_text||'';renderDailyMentorMessage('ai',d.ai_reply||'I am here with you. What felt risky about that moment?');setDailyMentorStatus('Conversation saved privately. You approve anything before it becomes a PulseSoc post.')}catch(err){setDailyMentorStatus('Mentor could not reply. Tap Send to retry.');if(mode!=='help'&&input)input.value=message;toast(err.message)}}function dailyMentorPreparePost(source){const card=source?.closest('[data-daily-mentor-card]')||document.querySelector('[data-daily-mentor-card]');const text=dailyMentorState.suggestedPostText||card?.querySelector('[data-daily-mentor-input]')?.value||'';if(!text.trim()){toast('Talk with the mentor first, then approve a post draft.');return}expandComposer();document.getElementById('postBody').value=text.trim();document.getElementById('postType').value='scam_report';document.getElementById('postTitle').value='Daily Mentor reflection';document.getElementById('postBody').focus();toast('Draft added to composer. Review it, then publish when ready.')}document.addEventListener('click',e=>{if(e.target.closest('[data-daily-mentor-send]'))dailyMentorRespond('send',e.target);if(e.target.closest('[data-daily-mentor-help]'))dailyMentorRespond('help',e.target);if(e.target.closest('[data-daily-mentor-post]'))dailyMentorPreparePost(e.target)});
-	async function load(reset=false){if(state.loading)return;state.loading=true;pulseBootLog('feed-request-start',{reset,offset:state.offset,feed:state.feed});if(reset){state.offset=0;state.pendingPosts=[];state.pendingPostIds.clear();state.feedReady=false;updateNewPulseBanner();document.getElementById('feed').innerHTML=''}document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.feed===state.feed));document.querySelector('#tabs button.active')?.scrollIntoView({block:'nearest',inline:'center'});try{const d=await api(`/api/pulse/feed?tab=${encodeURIComponent(state.feed)}&topic=${encodeURIComponent(state.topic)}&profile=${encodeURIComponent(state.profile)}&offset=${state.offset}&limit=${pulseFeedPageLimit()}`,{timeoutMs:10000});pulseBootLog('feed-request-finish',{count:(d.posts||[]).length,has_more:!!d.has_more});const posts=visiblePosts(d.posts||[]);const feedNode=document.getElementById('feed');feedNode.insertAdjacentHTML('beforeend',feedHtml(posts,d.intelligence||{})||(state.offset?'':'<section class="card"><p class="muted">No posts yet. Create the first PulseSoc.</p><a class="button primary" href="/pulse#create">Create PulseSoc</a></section>'));state.feedReady=true;state.shellReady=true;pulseBootLog('feed-render-finish',{visible_posts:posts.length,feed_children:feedNode.children.length});pulseBootTask(()=>window.CoinPilotTime?.hydrate(feedNode),'feed-time',0);pulseBootTask(()=>{pulseBootLog('media-hydration-start',{scope:'feed'});window.PulseMediaRenderer?.hydrate(feedNode);pulseBootLog('media-hydration-finish',{scope:'feed'})},'feed-media',80);const warmComments=()=>posts.slice(0,2).forEach(p=>loadComments(p.id,false));if('requestIdleCallback'in window)requestIdleCallback(warmComments,{timeout:1800});else setTimeout(warmComments,900);state.offset=d.next_offset||state.offset;renderIntel(d.intelligence||{});document.getElementById('loadMore').style.display=d.has_more?'inline-flex':'none'}catch(e){state.feedReady=false;pulseBootLog('feed-request-failed',{message:String(e.message||e)});document.getElementById('feed').innerHTML='<section class="card" data-pulse-feed-fallback><p class="muted">'+esc(e.message)+'</p><button class="button primary" type="button" data-retry-pulse-feed>Retry feed</button><a class="button" href="/pulse#create">Create PulseSoc</a></section>';state.shellReady=true;document.getElementById('intel').innerHTML='<p class="muted">PulseSoc intelligence temporarily unavailable.</p>';toast(e.message)}finally{state.loading=false}}
+	async function load(reset=false){if(state.loading)return;state.loading=true;pulseBootLog('feed-request-start',{reset,offset:state.offset,feed:state.feed});if(reset){state.offset=0;state.pendingPosts=[];state.pendingPostIds.clear();state.feedReady=false;updateNewPulseBanner();document.getElementById('feed').innerHTML=''}document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.feed===state.feed));document.querySelector('#tabs button.active')?.scrollIntoView({block:'nearest',inline:'center'});try{const d=await api(`/api/pulse/feed?tab=${encodeURIComponent(state.feed)}&topic=${encodeURIComponent(state.topic)}&profile=${encodeURIComponent(state.profile)}&offset=${state.offset}&limit=${pulseFeedPageLimit()}`,{timeoutMs:10000});pulseBootLog('feed-request-finish',{count:(d.posts||[]).length,has_more:!!d.has_more});const posts=visiblePosts(d.posts||[]);const feedNode=document.getElementById('feed');feedNode.insertAdjacentHTML('beforeend',feedHtml(posts,d.intelligence||{})||(state.offset?'':'<section class="card"><p class="muted">No posts yet. Create the first PulseSoc.</p><a class="button primary" href="/pulse#create">Create PulseSoc</a></section>'));state.feedReady=true;state.shellReady=true;pulseBootLog('feed-render-finish',{visible_posts:posts.length,feed_children:feedNode.children.length});pulseBootTask(()=>window.CoinPilotTime?.hydrate(feedNode),'feed-time',0);pulseBootTask(()=>{pulseBootLog('media-hydration-start',{scope:'feed'});window.PulseMediaRenderer?.hydrate(feedNode);hydrateCommerce(feedNode);hydrateCommerce(feedNode);pulseBootLog('media-hydration-finish',{scope:'feed'})},'feed-media',80);const warmComments=()=>posts.slice(0,2).forEach(p=>loadComments(p.id,false));if('requestIdleCallback'in window)requestIdleCallback(warmComments,{timeout:1800});else setTimeout(warmComments,900);state.offset=d.next_offset||state.offset;renderIntel(d.intelligence||{});document.getElementById('loadMore').style.display=d.has_more?'inline-flex':'none'}catch(e){state.feedReady=false;pulseBootLog('feed-request-failed',{message:String(e.message||e)});document.getElementById('feed').innerHTML='<section class="card" data-pulse-feed-fallback><p class="muted">'+esc(e.message)+'</p><button class="button primary" type="button" data-retry-pulse-feed>Retry feed</button><a class="button" href="/pulse#create">Create PulseSoc</a></section>';state.shellReady=true;document.getElementById('intel').innerHTML='<p class="muted">PulseSoc intelligence temporarily unavailable.</p>';toast(e.message)}finally{state.loading=false}}
 async function checkForNewPosts(){if(document.hidden||state.loading||state.checkingFeed)return;state.checkingFeed=true;try{const d=await api(`/api/pulse/feed?tab=${encodeURIComponent(state.feed)}&topic=${encodeURIComponent(state.topic)}&profile=${encodeURIComponent(state.profile)}&offset=0&limit=6`);visiblePosts(d.posts||[]).slice().reverse().forEach(p=>{if(existingPost(p.id))return;if(readerNearTop())prependPostStable(p,false);else queueNewPost(p)});renderIntel(d.intelligence||{})}catch(e){console.warn('PulseSoc feed calm refresh skipped',e)}finally{state.checkingFeed=false}}
 document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.closest('[data-feed]');if(!b)return;state.feed=b.dataset.feed;history.replaceState(null,'',feedPaths[state.feed]||'/pulse');load(true)});
 const composer=document.getElementById('pulseComposer');const expandComposer=()=>composer?.classList.add('is-expanded');const collapseComposer=()=>composer?.classList.remove('is-expanded');let composerMediaFiles=[];let composerMediaUrls=[];let composerMusicTrackId='';let composerMusicLabel='';let composerMusicAutofocus=false;try{const params=new URLSearchParams(location.search);const storedMusicTrack=params.get('music')||params.get('music_track_id')||sessionStorage.getItem('pulseComposerMusicTrackId')||sessionStorage.getItem('pulseSelectedMusicTrackId');if(storedMusicTrack){composerMusicTrackId=storedMusicTrack;composerMusicLabel=sessionStorage.getItem('pulseVideoPendingMusicLabel')||sessionStorage.getItem('pulseSelectedMusicLabel')||'Selected PulseSoc music';composerMusicAutofocus=true;sessionStorage.removeItem('pulseComposerMusicTrackId');sessionStorage.removeItem('pulseVideoPendingMusicLabel')}}catch(_){}const composerScamActions=document.querySelector('#pulseComposer [data-scam-actions]');const composerHint=document.getElementById('composeMsg');const composerProgress=document.querySelector('#pulseComposer [data-upload-progress]');const composerFileIsVideo=file=>file?.type?.startsWith('video/')||/\\.(mp4|mov|webm|m4v)$/i.test(file?.name||'');const composerHasVideo=()=>{const input=document.getElementById('postMedia');return (composerMediaFiles.length?composerMediaFiles:[...(input?.files||[])]).some(composerFileIsVideo)};function updateComposerMusicVisibility(){const show=document.getElementById('postType')?.value==='video'||composerHasVideo();document.querySelectorAll('#pulseComposer [data-composer-music]').forEach(btn=>{btn.hidden=!show;btn.setAttribute('aria-hidden',show?'false':'true')})}const setComposerType=type=>{const select=document.getElementById('postType');const next=type||select?.value||'text';if(select)select.value=next;document.querySelectorAll('#pulseComposer [data-type]').forEach(x=>{const active=x.dataset.type===next;x.classList.toggle('active',active);x.setAttribute('aria-pressed',active?'true':'false')});document.querySelectorAll('#pulseComposer [data-composer-row-reel]').forEach(x=>{const active=next==='video';x.classList.toggle('active',active);x.setAttribute('aria-pressed',active?'true':'false')});if(composerScamActions)composerScamActions.hidden=next!=='scam_report';updateComposerMusicVisibility();if(composerHint){composerHint.textContent=composerMusicLabel?`Music attached: ${composerMusicLabel}`:next==='video'?'Reel mode selected. Choose a video to preview it before publishing.':next==='poll'?'Write the question you want the community to answer.':next==='scam_report'?'Add the who, what, where, and why so the warning is useful.':'Ready to publish.'}};const resetComposerMediaUrls=()=>{composerMediaUrls.forEach(url=>{try{URL.revokeObjectURL(url)}catch(_){}});composerMediaUrls=[]};const formatComposerSize=file=>{const size=Number(file?.size||0);if(!size)return 'Size pending';if(size>=1024*1024)return (size/1024/1024).toFixed(size>20*1024*1024?0:1)+' MB';return Math.max(1,Math.round(size/1024))+' KB'};const hydrateComposerPreview=()=>{document.querySelectorAll('#postMediaPreview video').forEach(video=>{if(video.dataset.composerPreviewBound==='1')return;video.dataset.composerPreviewBound='1';video.addEventListener('loadedmetadata',()=>{const card=video.closest('[data-selected-media]');const label=card?.querySelector('[data-composer-media-state]');if(label){const seconds=Number(video.duration||0);label.textContent=`Video preview ready${seconds?` · ${Math.floor(seconds/60)}:${String(Math.round(seconds%60)).padStart(2,'0')}`:''}`;}},{once:true});video.play().catch(()=>{});});};const renderComposerMediaPreview=()=>{const preview=document.getElementById('postMediaPreview');if(!preview)return;resetComposerMediaUrls();if(!composerMediaFiles.length){preview.innerHTML='';updateComposerMusicVisibility();window.PulseUploadManager?.render(composerProgress,{stage:'idle',percent:0,message:'Ready to publish.'});return}preview.innerHTML=composerMediaFiles.map((file,index)=>{const url=URL.createObjectURL(file);composerMediaUrls.push(url);const type=file.type||'';const name=file.name||'PulseSoc media';const isVideo=composerFileIsVideo(file);const media=isVideo?`<video src="${esc(url)}" controls playsinline webkit-playsinline preload="metadata" aria-label="${esc(name)} preview"></video>`:`<img src="${esc(url)}" alt="${esc(name)}" loading="eager" decoding="async">`;return `<span class="pulse-selected-media ${isVideo?'is-video':'is-image'}" data-selected-media="${index}">${media}<footer><span><strong>${esc(name)}</strong><small data-composer-media-state>${isVideo?'Video preview loading':'Image preview ready'} · ${esc(type||'media')} · ${formatComposerSize(file)}</small></span><button type="button" data-remove-composer-media="${index}" aria-label="Remove selected media">Remove</button></footer></span>`}).join('');hydrateComposerPreview();updateComposerMusicVisibility();window.PulseUploadManager?.render(composerProgress,{stage:'complete',percent:100,message:`${composerMediaFiles.length} media item${composerMediaFiles.length>1?'s':''} ready to publish.`})};document.getElementById('postBody')?.addEventListener('focus',expandComposer);document.querySelector('[data-collapse-composer]')?.addEventListener('click',collapseComposer);
@@ -44561,13 +44596,11 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js?v=bare-asset-tokens-20260930a" defer></script>', "")
         rendered_html = rendered_html.replace(
             "</body>",
-            # `pulse_commerce_card.js` first: both are `defer`red, deferred
-            # scripts run in document order, and `renderPost` reads the global
-            # it installs. The token on `pulse_home_core.js` moves with it --
-            # `static/` is served immutable for a year, so a renderer change
-            # that keeps its old token reaches nobody who has the page cached.
-            '<script src="/static/js/pulse_commerce_card.js?v=commerce-i18n-20260929a" defer></script>'
-            '<script src="/static/js/pulse_home_core.js?v=commerce-attachment-20260928a" defer></script></body>',
+            # `pulse_commerce_card.js` is in the head of every profile now, not
+            # appended here, because the inline shell runtime needs it too. Both
+            # are `defer`red and deferred scripts run in document order, so the
+            # head one still installs the global before `renderPost` reads it.
+            '<script src="/static/js/pulse_home_core.js?v=reaction-plural-20261001a" defer></script></body>',
             1,
         )
     if boot_profile == "shell_only":
@@ -44968,7 +45001,16 @@ def api_pulse_search():
             "title": r.get("title") or "Marketplace listing",
             "description": (r.get("short_description") or r.get("description") or r.get("seller_store_name") or "Marketplace")[:180],
             "type": "marketplace",
-            "url": f"/pulse/marketplace?listing={r.get('id')}",
+            # The product's canonical URL. `?listing=<id>` was here, and on the web
+            # it was a dead link that looked alive: `Filters.from_args` parses
+            # category / q / sort / page and discards everything else, so a search
+            # result delivered the shopper to the unfiltered Marketplace grid with
+            # a 200 and no error. Native was unaffected either way --
+            # `notificationRouting.ts` resolves the path form in its
+            # `marketplacePathMatch` branch and the query form via
+            # `extractNumericQueryValue(normalized, "listing")`, both to
+            # `MarketplaceProduct` -- so this is a strict improvement, not a trade.
+            "url": f"/pulse/marketplace/{r.get('id')}",
             "meta": r.get("price_label") or r.get("category") or "Marketplace",
         },
     )
@@ -50780,7 +50822,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
         ("Events", "/pulse/events"),
         ("Communities", "/pulse/communities"),
         ("Roast Battle", "/pulse/roast-battle"),
-        ("Marketplace", app_first_href("marketplace")),
+        ("Marketplace", marketplace_href()),
         ("Creator Studio", "/pulse/creator-studio"),
         ("Seller Tools", app_first_href("seller")),
         ("Promote", "/pulse/promote"),
@@ -59288,6 +59330,70 @@ def _marketplace_member_storefront_reply(page, status=200, extra_html=""):
     return response
 
 
+def _marketplace_storefront_unavailable_response(page, user):
+    """The 503 a marketplace route serves when it could not read its data.
+
+    "Could not look it up" and "is not there" are opposite instructions to a
+    crawler and must not collapse into each other. A 404 on a canonical URL
+    retires it from the index -- right for a delisted product, permanently wrong
+    for a busy database -- and an unguarded 500 renders the trace page as the
+    product's contents. 503 with `Retry-After` is the one answer that keeps the
+    URL and brings the crawl back.
+
+    Both audiences are served, because both reach these routes. The member frame
+    cannot be used for the logged-out reader: `pulse_social_shell` calls
+    `require_account()` itself and 302s, so a crawler's product URL would answer
+    with a redirect to /login. The public success frames cannot be used either --
+    they are built from a listing payload, which is exactly what a failed read
+    does not have. So each reader gets the storefront's own rendered apology in
+    the chrome they already had.
+
+    `page` is a `RenderedPage` from `render_unavailable` or from
+    `render_discovery(load_error=True)`, so the wording and the `indexable=False`
+    decision live in the storefront module rather than being restated per route.
+    """
+
+    if user:
+        response = _marketplace_member_storefront_reply(page, status=503)
+    else:
+        response = webhook_app.make_response(render_template(
+            "marketplace_unavailable_public.html",
+            page={
+                "title": page.title,
+                "description": page.meta_description,
+                "canonical": f"{search_visibility.CANONICAL_ORIGIN}{page.canonical_path}",
+                "image": page.og_image or seo_schema.SHARE_IMAGE_URL,
+            },
+            # Never `robots_meta(request.path)` here, even on a path that is
+            # normally indexable: the whole point of the page is that it is not
+            # the product. `follow`, not `nofollow` -- its links are the
+            # marketplace index and a reload of this same URL, both real crawl
+            # paths, and keeping them followable is how the crawler finds its
+            # way back once the read succeeds.
+            robots=search_visibility.NOINDEX_FOLLOW,
+            # Deliberately absent, not merely empty: the shell omits the
+            # `ld+json` block entirely when none is passed, so a crawler that
+            # ignores the 503 still cannot record an empty `Product`.
+            schema_json="",
+            assets_html=page.assets_html,
+            body_html=page.body_html,
+        ))
+        response.headers["Content-Type"] = "text/html; charset=utf-8"
+        response.status_code = 503
+    # Set after the branch because each frame's helper writes a caching header
+    # for a *good* page -- `private, no-store` for the member one, and for the
+    # public one the five-minute shared TTL that makes the real page cheap. That
+    # TTL would pin this apology in front of everyone who follows the same link.
+    # `Retry-After` is the half of the 503 that says "come back"; without it a
+    # crawler may treat the failure as indefinite.
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Retry-After"] = "120"
+    # The frame still varies by cookie even though neither document is cacheable,
+    # so an intermediary that ignores `no-store` cannot cross the two.
+    response.headers["Vary"] = "Cookie"
+    return response
+
+
 def _marketplace_public_index_response(listings):
     """The marketplace grid for a reader with no session -- including Googlebot.
 
@@ -59359,9 +59465,17 @@ def pulse_marketplace_page():
     # answered differently depending on whether you scrolled it or searched it,
     # and the looser answer was the one App Review item 4 is about.
     #
-    # It is also what keeps a card's link honest. The cards now link to
+    # `marketplace_listing_lifecycle.public_sql` answers "is this listing
+    # published and approved". `discovery_visible_sql` answers "is its seller's
+    # account one a buyer may see at all" -- it is what hides QA accounts and
+    # deactivated sellers. This grid used to apply only the first while the
+    # search endpoint applied both, so the same catalogue answered differently
+    # depending on whether you scrolled it or searched it, and the looser answer
+    # was the one App Review item 4 is about.
+    #
+    # It is also what keeps a card's link honest. Cards link to
     # `/pulse/marketplace/<id>`, which applies both predicates, so a grid that
-    # applied fewer would have rendered its own links as 404s.
+    # applied fewer would be rendering its own links as 404s.
     from services.discovery_visibility import discovery_visible_sql
     if not user:
         # Scoped to the anonymous branch rather than run for everyone. The member
@@ -59370,22 +59484,46 @@ def pulse_marketplace_page():
         # from -- and a higher ceiling than 40, so it issues its own query. Leaving
         # this one above the branch meant every signed-in visitor paid for a
         # 40-row read whose result was then discarded.
-        cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
-            FROM marketplace_listings l
-            LEFT JOIN users u ON u.user_id=l.seller_user_id
-            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-            WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
-              AND {discovery_visible_sql('u')}
-            ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
-        listings = [dict(row) for row in cur.fetchall()]
-        # The public grid is built from `pulse_marketplace_listing_payload`, the
-        # same shaping function the mobile API and the public product page use,
-        # rather than from raw rows formatted here. That costs one extra query for
-        # the media rows and buys the thing that matters on a page Google reads: a
-        # card cannot disagree with the product page it links to about the title,
-        # the image or the price.
-        listing_ids = [int(row.get("id") or 0) for row in listings]
-        media_by_listing = pulse_marketplace_media_rows_for_listings(cur, listing_ids)
+        # Guarded for the same reason the member branch below is, and it is the
+        # same failure: an unreadable catalogue answered 500 and rendered the
+        # trace page as the Marketplace's contents. This is the half a crawler
+        # actually fetches, so leaving it bare while the member half answered 503
+        # protected the audience that was not at risk.
+        #
+        # "Empty" is the claim this must not fall back to. `_public_index_response`
+        # treats no rows as an empty catalogue and says so on the page -- true for
+        # a new deployment, and a failed read has not earned it.
+        try:
+            cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
+                FROM marketplace_listings l
+                LEFT JOIN users u ON u.user_id=l.seller_user_id
+                LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+                WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+                  AND {discovery_visible_sql('u')}
+                ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
+            listings = [dict(row) for row in cur.fetchall()]
+            # The public grid is built from `pulse_marketplace_listing_payload`, the
+            # same shaping function the mobile API and the public product page use,
+            # rather than from raw rows formatted here. That costs one extra query for
+            # the media rows and buys the thing that matters on a page Google reads: a
+            # card cannot disagree with the product page it links to about the title,
+            # the image or the price.
+            listing_ids = [int(row.get("id") or 0) for row in listings]
+            media_by_listing = pulse_marketplace_media_rows_for_listings(cur, listing_ids)
+        except Exception:
+            conn.close()
+            app.logger.exception("marketplace public grid read failed")
+            return _marketplace_storefront_unavailable_response(
+                marketplace_storefront.render_discovery(
+                    listings=[],
+                    variants_by_listing={},
+                    filters=marketplace_storefront.Filters.from_args(request.args),
+                    viewer=marketplace_storefront.Viewer(),
+                    app_cta_html=marketplace_storefront_app_cta("marketplace"),
+                    load_error=True,
+                ),
+                user,
+            )
         conn.close()
         return _marketplace_public_index_response([
             pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), []))
@@ -59700,26 +59838,46 @@ def pulse_marketplace_listing_page(listing_id):
     # 404ed for a member 404s here.
     user = require_account()
     from services.discovery_visibility import discovery_visible_sql
+
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute(
-        f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}
-            FROM marketplace_listings l
-            LEFT JOIN users u ON u.user_id=l.seller_user_id
-            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-            WHERE l.id=? AND {marketplace_listing_lifecycle.public_sql('l', 'ms')}
-              AND {discovery_visible_sql('u')}
-            LIMIT 1""",
-        (listing_id,))
-    row = cur.fetchone()
+    # "Could not look it up" and "not found" are opposite instructions and must
+    # not collapse into each other. Unguarded, a failed read here answered 500
+    # and rendered the trace page as the product's contents -- the one status a
+    # canonical product URL must never return. 503 + `Retry-After` keeps the URL
+    # in the index and brings the crawl back; the 404 below retires it, which is
+    # right for a delisted product and permanently wrong for a busy connection.
+    # The grid at `/pulse/marketplace` already answers this way; this is the same
+    # rule on the page the grid links to.
+    try:
+        cur.execute(
+            f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}
+                FROM marketplace_listings l
+                LEFT JOIN users u ON u.user_id=l.seller_user_id
+                LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+                WHERE l.id=? AND {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+                  AND {discovery_visible_sql('u')}
+                LIMIT 1""",
+            (listing_id,))
+        row = cur.fetchone()
+    except Exception:
+        conn.close()
+        app.logger.exception("marketplace listing read failed listing_id=%s", listing_id)
+        return _marketplace_storefront_unavailable_response(
+            marketplace_storefront.render_unavailable(
+                canonical_path=marketplace_storefront.product_path(listing_id)
+            ),
+            user,
+        )
     if not row:
         conn.close()
         # A withdrawn, paused, rejected or never-approved listing is not
         # distinguished from one that never existed, and deliberately so: saying
         # "this was removed" about an id the visitor guessed would confirm the
-        # row exists. It is also what the app shows -- such a listing is not in
-        # search, so the product page is unreachable there too.
+        # row exists. It is also the right answer for a crawler -- a 404 retires
+        # the URL from the index, which is exactly what a delisted product wants,
+        # where a 200 with an apology would keep a dead product ranking.
         abort(404)
     row = dict(row)
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [listing_id])
@@ -60180,7 +60338,21 @@ def api_pulse_marketplace_search():
 
 
 @webhook_app.route("/api/pulse/marketplace/listings/<int:listing_id>", methods=["GET"])
-@auth_required
+@public_route(
+    reason=(
+        "The buyer-side read of one public listing, by canonical id. Every "
+        "field it returns is already served anonymously, to visitors and to "
+        "Googlebot, as HTML with Product structured data by "
+        "`pulse_marketplace_listing_page` at /pulse/marketplace/<id> -- the "
+        "same two visibility predicates, the same serializer -- so this widens "
+        "no disclosure. Anonymous access is the feature: a guest who follows a "
+        "shared product link into the app must see the product the link named. "
+        "No buyer identity, order, payment or seller contact detail is "
+        "returned, and the moderation columns are stripped by the shared "
+        "serializer. Save, cart, report and purchase each require a session and "
+        "are re-authorized by their own routes."
+    )
+)
 def api_pulse_marketplace_listing_detail(listing_id):
     """One listing, by id, for a buyer who arrived holding only the id.
 
@@ -60206,42 +60378,58 @@ def api_pulse_marketplace_listing_detail(listing_id):
     rather than a headstone, which is the difference between "your shop is
     hidden" and "your shop is gone". Reviewer-only columns never reach either of
     them; `pulse_marketplace_listing_payload` strips those for every caller.
+
+    A signed-out caller is answered, not refused. The deep link is the reason:
+    a universal link opened cold from Safari or a shared card arrives with no
+    session, and refusing it means the one thing "Open this listing in PulseSoc"
+    must never do -- land the visitor on the grid instead of the product. It
+    costs no disclosure, because the canonical web page for the same id already
+    serves these fields to anonymous visitors and to crawlers. The owner clause
+    below is simply inert for them: `viewer_id` is 0, so they see exactly the
+    public set.
     """
     init_db()
     user = api_account_user()
-    if not user:
-        return api_error("Login required.", 401)
     listing_id = max(0, safe_int(listing_id, 0))
     if not listing_id:
         return api_error("That listing could not be found.", 404, error_code="LISTING_UNAVAILABLE")
 
     from services.discovery_visibility import discovery_visible_sql
 
-    viewer_id = safe_int(user.get("user_id"), 0)
+    viewer_id = safe_int((user or {}).get("user_id"), 0)
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute(
-        f"""
-        SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
-               l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
-               l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
-               COALESCE(ms.status,'missing') AS seller_status,
-               {marketplace_seller_identity.store_name_select('ms')},
-               COALESCE(u.username,'') AS seller_username
-        FROM marketplace_listings l
-        LEFT JOIN users u ON u.user_id=l.seller_user_id
-        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-        WHERE l.id=?
-          AND (
-                ({marketplace_listing_lifecycle.public_sql("l", "ms")} AND {discovery_visible_sql("u")})
-                OR (? <> 0 AND COALESCE(l.seller_user_id,0)=?)
-              )
-        LIMIT 1
-        """,
-        (listing_id, viewer_id, viewer_id),
-    )
-    row = cur.fetchone()
+    # "Withdrawn" and "could not look it up" have to stay distinguishable: the
+    # client renders a permanent "Product unavailable" for the first and is
+    # entitled to retry the second. Letting this raise would have the app tell a
+    # member their listing was removed because a connection was busy.
+    try:
+        cur.execute(
+            f"""
+            SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
+                   l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
+                   l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
+                   COALESCE(ms.status,'missing') AS seller_status,
+                   {marketplace_seller_identity.store_name_select('ms')},
+                   COALESCE(u.username,'') AS seller_username
+            FROM marketplace_listings l
+            LEFT JOIN users u ON u.user_id=l.seller_user_id
+            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+            WHERE l.id=?
+              AND (
+                    ({marketplace_listing_lifecycle.public_sql("l", "ms")} AND {discovery_visible_sql("u")})
+                    OR (? <> 0 AND COALESCE(l.seller_user_id,0)=?)
+                  )
+            LIMIT 1
+            """,
+            (listing_id, viewer_id, viewer_id),
+        )
+        row = cur.fetchone()
+    except Exception:
+        conn.close()
+        app.logger.exception("marketplace listing read failed listing_id=%s", listing_id)
+        return api_error("Could not load this listing.", 503, error_code="LISTING_READ_FAILED")
     if not row:
         conn.close()
         return api_error("That listing could not be found.", 404, error_code="LISTING_UNAVAILABLE")
@@ -60794,8 +60982,16 @@ def marketplace_transfer_group(metadata):
     return f"marketplace_order:{first}" if first else ""
 
 
-def pulse_finalize_marketplace_settlement(tx, provider_payment_id="", transfer_group=""):
-    """Create the idempotent post-payment seller and fee effects."""
+def pulse_finalize_marketplace_settlement(tx, provider_payment_id="", transfer_group="",
+                                          actor="stripe_webhook"):
+    """Create the idempotent post-payment seller and fee effects.
+
+    ``actor`` is recorded on the settlement and on every ledger entry. It is a
+    parameter rather than the constant it used to be because the webhook is no
+    longer the only trigger: ``pulse_reconcile_missed_marketplace_payments``
+    drives the same settlement when an event never arrived, and an operator
+    reading the ledger has to be able to tell the two apart.
+    """
     tx = dict(tx or {})
     if str(tx.get("item_type") or "") != "marketplace_product":
         return None
@@ -60835,7 +61031,212 @@ def pulse_finalize_marketplace_settlement(tx, provider_payment_id="", transfer_g
     from services import marketplace_settlement_service
     return marketplace_settlement_service.settle_paid_transaction(
         tx, payout_ready=payout_ready, provider_payment_id=provider_payment_id,
-        transfer_group=transfer_group, actor="stripe_webhook")
+        transfer_group=transfer_group, actor=actor)
+
+
+def pulse_settle_marketplace_payment_intent(payment_intent, event_id="", actor="stripe_webhook"):
+    """Record a succeeded Marketplace PaymentIntent. The only path that does.
+
+    This was the body of the ``payment_intent.succeeded`` cart branch, lifted out
+    unchanged so that a second trigger can drive it. On 2026-08-23 a live $0.50
+    charge succeeded and Stripe's event never reached this server, so none of the
+    work below ran: the transaction stayed ``checkout_created``, no order row was
+    written, and the seller was never credited. The money was swept to the
+    platform's own bank a month later with nothing on this side referencing it.
+
+    The repair for that is a reconciliation sweep, and the one thing a sweep must
+    not be is a second implementation of the paragraph below — two copies of
+    "mark paid, capture stock, project the order, credit the seller" is two
+    chances to disagree about what a paid order is. ``marketplace_orders`` in
+    particular has exactly one writer in this file, asserted by
+    ``tests/dropshipping/test_supplier_obligations.py``, and reusing
+    :func:`pulse_upsert_marketplace_order` from here keeps that true.
+
+    Every write is idempotent, because both callers can arrive for the same
+    intent: the status update is a compare-and-swap that refuses a refunded row,
+    the order upsert is an ``ON CONFLICT`` update, and the settlement service
+    keys its ledger entries on the transaction id.
+
+    Returns a summary of what actually changed rather than what was attempted, so
+    the reconciler can report repairs instead of guessing.
+    """
+    payment_intent = dict(payment_intent or {})
+    metadata = dict(payment_intent.get("metadata") or {})
+    tx_ids = [safe_int(value, 0) for value in str(metadata.get("seller_transaction_ids") or "").split(",")]
+    tx_ids = [value for value in tx_ids if value]
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    intent_id = payment_intent.get("id") or ""
+    summary = {"payment_intent_id": intent_id, "transaction_ids": list(tx_ids),
+               "transitioned": [], "already_settled": [], "missing": []}
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    from services import marketplace_cart_routes as marketplace_cart_service
+    marketplace_cart_service._ensure_schema(cur)
+    affected_buyers = set(); affected_sellers = set(); paid_marketplace_txs = []
+    for tx_id in tx_ids:
+        cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
+        tx = dict(cur.fetchone() or {})
+        if not tx:
+            summary["missing"].append(tx_id)
+            continue
+        affected_buyers.add(int(tx.get("buyer_user_id") or 0)); affected_sellers.add(int(tx.get("seller_user_id") or 0))
+        # Guarded so a replayed or late event cannot walk a refunded
+        # order back to paid.
+        cur.execute("""UPDATE seller_transactions SET status='paid', stripe_payment_intent_id=?,
+            updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')""",
+            (intent_id, now, tx_id))
+        # Which list this lands in is the difference between "the webhook did its
+        # job" and "a payment had been sitting unrecorded", so it is measured
+        # from the compare-and-swap rather than inferred afterwards.
+        (summary["transitioned"] if cur.rowcount else summary["already_settled"]).append(tx_id)
+        marketplace_cart_service.capture_inventory_reservation(cur, tx_id, now=now)
+        pulse_upsert_marketplace_order(cur, tx, intent_id, now)
+        if str(tx.get("status") or "") != "refunded":
+            paid_marketplace_txs.append(tx)
+        pulse_emit_payment_checkout_event(
+            cur,
+            {**tx, "status": "paid", "stripe_payment_intent_id": intent_id},
+            "payment_succeeded",
+            status="paid",
+            actor_user_id=tx.get("buyer_user_id") or 0,
+            extra={"stripe_event_id": event_id, "stripe_payment_intent_id": intent_id,
+                   "settlement_actor": actor},
+        )
+    line_ids = [safe_int(value, 0) for value in str(metadata.get("cart_line_ids") or "").split(",")]
+    line_ids = [value for value in line_ids if value]
+    if line_ids:
+        cur.execute(f"DELETE FROM marketplace_cart_items WHERE id IN ({','.join(['?']*len(line_ids))}) AND user_id=?",
+                    (*line_ids, safe_int(metadata.get("buyer_user_id"), 0)))
+    for seller_id in affected_sellers:
+        if seller_id:
+            notify_user(cur, seller_id, "marketplace_order", "New Marketplace order", "A buyer completed payment for your listing.", "/pulse/seller-store?mode=orders")
+    for buyer_id in affected_buyers:
+        if buyer_id:
+            notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
+    conn.commit(); conn.close()
+    # Part of the webhook body this was lifted out of, so it comes along: a
+    # buyer whose order the sweep recovers gets the same receipt as one whose
+    # event arrived on time. A second emit for an order that already mailed is
+    # suppressed downstream by the notification dedupe key.
+    emit_marketplace_paid_order_emails(paid_marketplace_txs)
+    for paid_tx in paid_marketplace_txs:
+        pulse_finalize_marketplace_settlement(paid_tx, intent_id, marketplace_transfer_group(metadata), actor=actor)
+    return summary
+
+
+#: How long a Marketplace transaction may sit unsettled before the sweep treats
+#: a missing ``payment_intent.succeeded`` as lost rather than in flight. Stripe
+#: retries a failing endpoint for hours, so a short window would race a delivery
+#: that is still coming and log an alarm for every checkout in progress.
+MARKETPLACE_RECONCILE_GRACE_MINUTES = 30
+
+
+def pulse_reconcile_missed_marketplace_payments(limit=100, grace_minutes=None, dry_run=True,
+                                               fetch_payment_intent=None):
+    """Find Marketplace payments Stripe took that this server never recorded.
+
+    Why this exists at all: every write in the settlement path hangs off a
+    webhook, so the whole money path assumes delivery. On 2026-08-23 delivery did
+    not happen for a live $0.50 charge and the platform kept the money with no
+    order, no seller credit and no record — for 37 days, because nothing was
+    watching. Stripe's event retention window has since passed that event, so it
+    can never be replayed; a sweep that asks Stripe directly is the only thing
+    that makes a lost event survivable instead of permanent.
+
+    Stripe is the authority here, not the local row and not any client: the
+    PaymentIntent is fetched and its own ``metadata`` is what drives settlement,
+    which is the same data the webhook would have carried.
+
+    It reports by default and repairs only when asked. That follows the rule
+    ``services/business_os/payments/reconciliation.py`` states for every check in
+    it — "detect and report, never repair" — and the incident it files is the part
+    that was actually missing in August: the money was recoverable the whole time,
+    but nothing told anyone it was gone. Repair is a separate decision an operator
+    takes with ``dry_run=False``, because completing a posting credits a seller
+    and is not something to do on a timer without someone having looked.
+
+    When it does repair, the direction of caution is inverted from the
+    reservation sweep on purpose. That sweep defers when unsure, because
+    releasing stock wrongly oversells; this one settles on ``succeeded``, because
+    not recording money that really moved is the failure being closed. Nothing is
+    invented in the process — the figures come from Stripe and from the quote
+    snapshot the checkout already stored — so this completes an interrupted
+    posting rather than adjusting a balance. Everything it calls is idempotent,
+    so racing a webhook that arrives late is harmless.
+
+    ``fetch_payment_intent`` is injected so the suite can drive the whole table
+    without a network, following ``marketplace_reservation_reconciler``.
+    """
+    grace = MARKETPLACE_RECONCILE_GRACE_MINUTES if grace_minutes is None else int(grace_minutes)
+    cutoff = (datetime.utcnow() - timedelta(minutes=max(0, grace))).isoformat(timespec="seconds")
+    if fetch_payment_intent is None:
+        def fetch_payment_intent(intent_id):
+            return stripe.PaymentIntent.retrieve(intent_id)
+    result = {"examined": 0, "repaired": [], "already_settled": [], "unpaid": [],
+              "unreachable": [], "needs_attention": [], "dry_run": bool(dry_run)}
+    conn = db(); conn.row_factory = sqlite3.Row
+    try:
+        rows = [dict(row) for row in conn.execute(
+            """SELECT id, status, stripe_payment_intent_id FROM seller_transactions
+               WHERE item_type='marketplace_product' AND status NOT IN ('paid','refunded')
+                 AND COALESCE(stripe_payment_intent_id,'') != '' AND COALESCE(created_at,'') < ?
+               ORDER BY created_at ASC LIMIT ?""",
+            (cutoff, max(1, int(limit)))).fetchall()]
+    finally:
+        conn.close()
+
+    for row in rows:
+        tx_id = int(row.get("id") or 0)
+        intent_id = str(row.get("stripe_payment_intent_id") or "").strip()
+        result["examined"] += 1
+        try:
+            intent = dict(fetch_payment_intent(intent_id) or {})
+        except Exception:
+            # An outage must not be recorded as "Stripe says unpaid".
+            logging.exception("MARKETPLACE_RECONCILE_PROVIDER_UNREACHABLE tx=%s intent=%s", tx_id, intent_id)
+            result["unreachable"].append(tx_id)
+            continue
+        if str(intent.get("status") or "") != "succeeded":
+            result["unpaid"].append(tx_id)
+            continue
+        metadata = dict(intent.get("metadata") or {})
+        if not str(metadata.get("seller_transaction_ids") or "").strip():
+            # The singular and ad-funding shapes settle through different webhook
+            # branches. Reporting rather than guessing: a wrong settlement shape
+            # would credit the wrong party, and this is real money.
+            logging.error("MARKETPLACE_RECONCILE_UNHANDLED_SHAPE tx=%s intent=%s keys=%s",
+                          tx_id, intent_id, sorted(metadata))
+            result["needs_attention"].append({"transaction_id": tx_id, "payment_intent_id": intent_id,
+                                              "reason": "unrecognised_metadata_shape"})
+            continue
+        logging.error("MARKETPLACE_RECONCILE_MISSED_PAYMENT tx=%s intent=%s local_status=%s dry_run=%s",
+                      tx_id, intent_id, row.get("status"), bool(dry_run))
+        # Filed before any repair is attempted, and outside its success, so the
+        # discrepancy is on the record even if settling it then fails. Keyed on
+        # the transaction and intent so a sweep on a timer does not spam.
+        try:
+            from services.business_os.payments import incidents
+            incidents.ensure_schema()
+            incidents.open_incident(
+                incidents.MISSING_WEBHOOK_EVENT, "seller_payments", severity="critical",
+                summary=f"Stripe took payment for seller transaction {tx_id} but no webhook recorded it",
+                details={"seller_transaction_id": tx_id, "payment_intent_id": intent_id,
+                         "local_status": row.get("status"),
+                         "amount_received_minor": intent.get("amount_received"),
+                         "currency": intent.get("currency"), "repair_applied": not dry_run},
+                related_object=f"seller_transaction:{tx_id}", stripe_ref=intent_id,
+                incident_key=f"marketplace:missed_settlement:{tx_id}:{intent_id}")
+        except Exception:
+            # A reporting failure must not stop the repair below; the log line
+            # above is the fallback record.
+            logging.exception("MARKETPLACE_RECONCILE_INCIDENT_FAILED tx=%s", tx_id)
+        if dry_run:
+            result["repaired"].append({"transaction_id": tx_id, "payment_intent_id": intent_id,
+                                       "applied": False})
+            continue
+        summary = pulse_settle_marketplace_payment_intent(intent, "", actor="reconciliation_sweep")
+        result["repaired"].append({"transaction_id": tx_id, "payment_intent_id": intent_id,
+                                   "applied": True, "transitioned": summary.get("transitioned") or []})
+    return result
 
 
 def pulse_marketplace_reversal_transaction_ids(obj):
@@ -63339,7 +63740,7 @@ def pulse_merchant_profile_page(username):
         listings = [dict(row) for row in cur.fetchall()]
     conn.close()
     if not seller:
-        return pulse_social_shell("Merchant", "Merchant profile not found.", f"<section class='card'><a class='button' href='{app_first_href('marketplace')}'>Back to Marketplace</a></section>")
+        return pulse_social_shell("Merchant", "Merchant profile not found.", f"<section class='card'><a class='button' href='{marketplace_href()}'>Back to Marketplace</a></section>")
     cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(l.get('title') or ''))}</h2><p>{html_escape(clean_html(l.get('short_description') or l.get('description') or ''))}</p><span class='pill'>{html_escape(clean_html(l.get('price_label') or ''))}</span></article>" for l in listings)
     cards_empty = '<article class="card"><h2>No public products yet.</h2></article>'
     main = f"<section class='card'><h2>{html_escape(clean_html(seller.get('display_name') or 'Merchant'))}</h2><p><span class='pill'>Verified merchant</span> <span class='pill'>Trust {100-int(seller.get('risk_score') or 0)}</span></p><p>{html_escape(clean_html(seller.get('bio') or ''))}</p></section><section class='grid'>{cards or cards_empty}</section>"
@@ -63437,7 +63838,7 @@ def pulse_creator_monetization_page():
     steps = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in readiness.get("next_steps", []))
     body = f"""
     <section class='grid'><div class='card'><h2>Creator Readiness</h2><p class='metric'>{readiness['readiness_score']}%</p><p>{'Ready to prepare monetized tools.' if readiness['ready'] else 'Keep building trust before paid tools unlock.'}</p></div><div class='card'><h2>Audience Growth</h2><p class='metric'>{counts['posts']}</p><p>PulseSoc posts published.</p></div><div class='card'><h2>Revenue Placeholder</h2><p class='metric'>$0</p><p>Real payout release stays off until compliance is ready.</p></div></section>
-    <section class='card'><h2>Your Next Unlock</h2><ul>{steps}</ul><div class='actions'><a class='button primary' href='{app_first_href('marketplace')}'>Prepare Marketplace Product</a><a class='button' href='/pulse/teacher-dashboard'>Open Teacher Tools</a><a class='button' href='/pulse/live'>Livestream Readiness</a></div></section>
+    <section class='card'><h2>Your Next Unlock</h2><ul>{steps}</ul><div class='actions'><a class='button primary' href='{marketplace_href()}'>Prepare Marketplace Product</a><a class='button' href='/pulse/teacher-dashboard'>Open Teacher Tools</a><a class='button' href='/pulse/live'>Livestream Readiness</a></div></section>
     <section class='grid'>{product_cards}</section>
     """
     return pulse_social_shell("Creator Monetization", "Trust-first creator revenue readiness for premium tools, courses, marketplace products, and livestream monetization placeholders.", body)
@@ -87982,7 +88383,7 @@ def pulse_discover_page():
             ],
         )
         + "<section class='card' id='apps'><h2>Apps</h2><div class='actions'>"
-        f"<a class='button' href='/pulse/communities'>Communities</a><a class='button' href='{app_first_href('marketplace')}'>Marketplace</a>"
+        f"<a class='button' href='/pulse/communities'>Communities</a><a class='button' href='{marketplace_href()}'>Marketplace</a>"
         "<a class='button' href='/pulse/music'>Music</a><a class='button' href='/pulse/events'>Events</a>"
         "<a class='button' href='/pulse/creator-studio'>Creator Studio</a><a class='button' href='/pulse/promote'>Promote</a>"
         "<a class='button' href='/business-os'>Business OS</a>"
@@ -88045,7 +88446,7 @@ def pulse_promote_page():
     main = pulse_gateway_card_html(
         "Promote",
         "Start promotion from owned content only. Campaign launch remains gated by growth readiness, billing, and review.",
-        [("My Posts", "/pulse/my-posts"), ("Marketplace", app_first_href("marketplace")), ("Creator Studio", "/pulse/creator-studio")],
+        [("My Posts", "/pulse/my-posts"), ("Marketplace", marketplace_href()), ("Creator Studio", "/pulse/creator-studio")],
         [("Launch Without Content", "Choose an owned post, Reel, or listing first."), ("Estimated Reach", "Forecasting provider is not configured; fake reach is not shown.")],
     )
     return pulse_social_shell("Promote", "A safe gateway to owner-only PulseSoc promotion tools.", main)
@@ -88088,7 +88489,7 @@ def pulse_seller_tools_gateway_page():
     main = pulse_gateway_card_html(
         "Seller Tools",
         "Seller tools use marketplace and dashboard seller APIs. Revenue, orders, and billing are not fabricated.",
-        [("Seller Dashboard", app_first_href("seller_dashboard")), ("Create Product", app_first_href("marketplace_create")), ("Marketplace", app_first_href("marketplace"))],
+        [("Seller Dashboard", app_first_href("seller_dashboard")), ("Create Product", app_first_href("marketplace_create")), ("Marketplace", marketplace_href())],
         [("Synthetic Sales Demo", "Fake sales and order data are not shown.")],
     )
     return pulse_social_shell("Seller Tools", "Seller storefront, product, and promotion readiness tools.", main)
@@ -92120,7 +92521,7 @@ def pulse_profile_page_for_user(target_user_id):
     premium_html = pulse_premium_mark_html(ident.get("premium_mark"))
     if is_owner:
         action_html = "<a class='button primary' href='/pulse/profile/edit'>Edit Profile</a><button type='button' data-share-profile>Share Profile</button><a class='button' href='/account'>Settings</a>"
-        more_tools_html = f"<a href='/pulse/profile/edit'>Profile Controls</a><a href='/account'>Account</a><a href='/privacy-center'>Privacy</a><a href='/pulse/teachers'>Teacher Status</a><a href='{app_first_href('marketplace')}'>Marketplace</a><a href='/pulse/music'>PulseSoc Music</a><a href='/pulse/creator/dashboard'>Creator Tools</a><a href='/pulse/live'>Livestream Studio</a><a href='/arena'>Arena Call Signs</a>"
+        more_tools_html = f"<a href='/pulse/profile/edit'>Profile Controls</a><a href='/account'>Account</a><a href='/privacy-center'>Privacy</a><a href='/pulse/teachers'>Teacher Status</a><a href='{marketplace_href()}'>Marketplace</a><a href='/pulse/music'>PulseSoc Music</a><a href='/pulse/creator/dashboard'>Creator Tools</a><a href='/pulse/live'>Livestream Studio</a><a href='/arena'>Arena Call Signs</a>"
     else:
         action_html = f"<button class='primary profile-action-primary' data-follow-public='{html_escape(clean_html(ident['public_player_id']))}'><span aria-hidden='true'>＋</span> Follow</button><button class='profile-action-message' data-message-public='{html_escape(clean_html(ident['public_player_id']))}'><span aria-hidden='true'>◇</span> Message</button><button class='profile-action-more' type='button' data-profile-more-toggle aria-label='More actions' aria-expanded='false'>•••</button>"
         more_tools_html = f"<button class='profile-sheet-action' data-friend-public='{html_escape(clean_html(ident['public_player_id']))}'><span class='profile-sheet-icon' aria-hidden='true'>＋</span><span><strong>Add Friend</strong><small>Send a connection request</small></span></button><button class='profile-sheet-action' data-share-profile><span class='profile-sheet-icon' aria-hidden='true'>↗</span><span><strong>Share Profile</strong><small>Send this profile securely</small></span></button><div class='profile-sheet-divider' role='separator'></div><button class='profile-sheet-action profile-sheet-safety' data-open-report-profile><span class='profile-sheet-icon' aria-hidden='true'>!</span><span><strong>Report Profile</strong><small>Alert the PulseSoc safety team</small></span></button><button class='profile-sheet-action profile-sheet-danger' data-open-block-profile><span class='profile-sheet-icon' aria-hidden='true'>⊘</span><span><strong>Block User</strong><small>Stop contact and hide their activity</small></span></button>"
@@ -92193,6 +92594,153 @@ def pulse_profile_page_for_user(target_user_id):
     """
     script = script.replace("__TARGET_USER_ID__", str(target_user_id))
     return pulse_social_shell(f"{ident['name']} Profile", "PulseSoc social identity hub with posts, followers, groups, marketplace, teacher status, and safe messaging. Arena call signs stay in battle areas.", main, "", script, show_intro=False)
+
+
+def pulse_commerce_card_html(post):
+    """The product attachment, rendered server-side for the post permalink.
+
+    The two feed surfaces build this card in JavaScript from the same payload
+    (``static/js/pulse_commerce_card.js``), and a third implementation is a cost.
+    It is paid here for one reason: this page is the only post surface that is
+    publicly indexable, and a card assembled after load is a card a crawler never
+    sees. The product would be absent from exactly the page whose purpose is to
+    be found.
+
+    The two renderers are held to the same field names by
+    ``tests/pulsedrop/test_client_contract.py``. Styling and all click/impression
+    behaviour are genuinely shared -- one stylesheet, one delegated listener --
+    so what is duplicated is the markup and nothing else.
+
+    Returns ``""`` for every post without a live commerce overlay, which is all
+    of them except PulseDrop publications.
+    """
+    commerce = (post or {}).get("commerce") or {}
+    product = commerce.get("product") or {}
+    if commerce.get("pulsedrop") is not True or not product:
+        return ""
+    listing_id = safe_int(product.get("listing_id"), 0)
+    if listing_id <= 0:
+        return ""
+
+    seller = commerce.get("seller") or {}
+    cta = commerce.get("cta") or {}
+    availability = commerce.get("availability") or {}
+    # `user_id` first, and from `seller` rather than `attribution`: `_seller` in
+    # `services/pulsedrop/hydration.py` emits the merchant's id under `user_id`,
+    # and `seller_user_id` is the pre-rename spelling it has never sent. Reading
+    # only the alias resolved to None, so `safe_int(..., 0)` stamped
+    # `data-commerce-seller='0'` on every server-rendered commerce card since
+    # the feature shipped -- the same miss as the blank thumbnail above, in the
+    # same function, for the same reason.
+    #
+    # `attribution.seller_user_id` does carry the right value, but it is the
+    # publication's attribution block; this attribute is about the merchant, and
+    # the two are only equal because a drop's publisher is its seller today.
+    # Taking it from `seller` keeps the attribute true if that ever stops
+    # holding. The alias is still read as a fallback so an already-stored
+    # payload does not regress to 0.
+    seller_user_id = safe_int(
+        seller.get("user_id") or seller.get("seller_user_id"), 0
+    )
+    token = str((commerce.get("attribution") or {}).get("token") or "")
+    surface = str(commerce.get("surface") or "signal")
+
+    def _with_attribution(route):
+        base = str(route or "").strip()
+        if not base:
+            return ""
+        params = {"src": "social_post", "surface": surface, "post": str(post.get("id") or ""), "listing": str(listing_id)}
+        if token:
+            params["pd"] = token
+        return base + ("&" if "?" in base else "?") + urlencode(params)
+
+    # `cta.route` is empty for every state the marketplace would 404 on, which is
+    # how a withdrawn listing keeps its card and loses its tap.
+    product_href = _with_attribution(cta.get("route")) if cta.get("enabled") else ""
+    store_href = _with_attribution(seller.get("route")) if seller.get("route") else ""
+
+    title = str(product.get("title") or "").strip()
+    price = str(product.get("price_label") or "").strip()
+    store = str(seller.get("store_name") or seller.get("username") or "").strip()
+    badge = str((commerce.get("label") or {}).get("fallback") or "Discover").strip()
+    state = str(availability.get("fallback") or "").strip()
+    # `cover_image_url` first: that is the only name `_product` in
+    # `services/pulsedrop/hydration.py` has ever emitted. Reading `image_url`
+    # alone meant this card rendered a blank square for every product PulseDrop
+    # has ever published -- the same spelling bug the app's `PulseCommerceProduct`
+    # type and `pulse_commerce_card.js` were both corrected for, fixed in those
+    # two and missed here. This is the server-rendered half, so it is the copy a
+    # crawler indexes and the copy a reader sees before any JavaScript runs.
+    #
+    # Both names are read, in the same order and for the same reason as the JS
+    # card: the spelling was wrong, the intent was not, and a payload that still
+    # carries the legacy alias must not regress to a blank.
+    image = str(product.get("cover_image_url") or product.get("image_url") or "").strip()
+
+    esc = lambda value: html_escape(clean_html(str(value or "")))
+
+    # The overlay ships a translation key beside every fallback it writes. The
+    # English fallback stays in the HTML -- this is the indexable surface, and a
+    # crawler should read words -- and `pulse_i18n.js` swaps the text for the
+    # reader's language once it loads. Same markers the JS card emits, so the
+    # two are still the same card.
+    def i18n_attr(block):
+        key = str((block or {}).get("i18n_key") or "").strip()
+        return f" data-i18n='{esc(key)}'" if key else ""
+
+    track = (
+        f"data-commerce-listing='{listing_id}' data-commerce-post='{esc(post.get('id'))}' "
+        f"data-commerce-token='{esc(token)}' data-commerce-surface='{esc(surface)}' "
+        f"data-commerce-seller='{seller_user_id}'"
+    )
+
+    picture = (
+        f"<img class='pulse-commerce-thumb' src='{esc(image)}' alt='' loading='lazy' decoding='async' width='72' height='72'>"
+        if image
+        else "<span class='pulse-commerce-thumb'></span>"
+    )
+    thumb = (
+        f"<a {track} data-commerce-click='product' href='{esc(product_href)}' tabindex='-1' aria-hidden='true'>{picture}</a>"
+        if product_href
+        else picture
+    )
+    title_html = (
+        (
+            f"<a class='pulse-commerce-title' {track} data-commerce-click='product' href='{esc(product_href)}'>{esc(title)}</a>"
+            if product_href
+            else f"<span class='pulse-commerce-title'>{esc(title)}</span>"
+        )
+        if title
+        else ""
+    )
+    price_html = f"<span class='pulse-commerce-price'>{esc(price)}</span>" if price else ""
+    seller_html = (
+        (
+            f"<a class='pulse-commerce-seller' {track} data-commerce-click='store' href='{esc(store_href)}'>{esc(store)}</a>"
+            if store_href
+            else f"<span class='pulse-commerce-seller'>{esc(store)}</span>"
+        )
+        if store
+        else ""
+    )
+    dot = "<span class='time-dot'>•</span>" if price_html and seller_html else ""
+    meta = f"<p class='pulse-commerce-meta'>{price_html}{dot}{seller_html}</p>" if (price_html or seller_html) else ""
+    action = (
+        f"<a class='pulse-commerce-cta' {track} data-commerce-click='product'{i18n_attr(cta)} href='{esc(product_href)}'>{esc(cta.get('fallback') or 'View product')}</a>"
+        if product_href
+        else (f"<span class='pulse-commerce-state'{i18n_attr(availability)}>{esc(state)}</span>" if state else "")
+    )
+    store_row = (
+        f"<a class='pulse-commerce-store' {track} data-commerce-click='store' href='{esc(store_href)}'>Visit store ›</a>"
+        if store_href
+        else ""
+    )
+    return (
+        f"<section class='pulse-commerce' {track} aria-label='{esc(commerce.get('accessibility_text') or title)}'>{thumb}"
+        f"<div class='pulse-commerce-body'><div class='pulse-commerce-top'>"
+        f"<span class='pulse-commerce-badge'{i18n_attr(commerce.get('label'))}>{esc(badge)}</span>{action}</div>"
+        f"{title_html}{meta}{store_row}</div></section>"
+    )
 
 
 @webhook_app.route("/pulse/post/<int:post_id>", methods=["GET"])
@@ -92935,7 +93483,7 @@ def pulse_videos_page():
       <main class='videos-main videos-mobile-fallback'>
         <header class='videos-mobile-header' aria-label='Mobile Videos header'><div class='videos-mobile-topline'><div class='videos-mobile-left'><button class='videos-mobile-icon videos-mobile-menu' type='button' data-videos-drawer-open aria-label='Open navigation'>☰</button><h1>Videos</h1></div><div class='videos-mobile-actions'><button class='videos-mobile-icon' type='button' data-mobile-video-search aria-label='Search videos'>⌕</button><a class='videos-mobile-icon videos-mobile-alert' data-header-notifications href='/pulse/notifications' aria-label='Notifications'>{PULSE_NOTIFICATION_BELL_ICON}<span class='pulse-notification-badge' data-alert-unread data-notification-unread hidden>0</span></a><a class='videos-mobile-avatar' href='/pulse/profile' aria-label='Profile'>{mobile_avatar}</a></div></div><p>Discover high-quality videos from creators</p></header>
         <div class='videos-mobile-drawer-backdrop' data-videos-drawer-backdrop aria-hidden='true'></div>
-        <aside class='videos-mobile-drawer' data-videos-mobile-drawer aria-hidden='true' aria-label='PulseSoc navigation'><div class='videos-drawer-head'><strong>PulseSoc</strong><button class='videos-drawer-close' type='button' data-videos-drawer-close aria-label='Close navigation'>×</button></div><nav class='videos-drawer-nav'><a href='/pulse'>Home</a><a href='/pulse/videos' aria-current='page'>Videos</a><a href='/pulse/reels'>Reels</a><a href='/pulse/music'>Music</a><a href='/pulse/live'>Live</a><a href='/pulse/messages'>Messages</a><a href='/pulse/notifications'>Alerts</a><a href='{app_first_href('marketplace')}'>Marketplace</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/pulse/premium'>Premium</a><a href='/pulse/profile'>Profile</a></nav></aside>
+        <aside class='videos-mobile-drawer' data-videos-mobile-drawer aria-hidden='true' aria-label='PulseSoc navigation'><div class='videos-drawer-head'><strong>PulseSoc</strong><button class='videos-drawer-close' type='button' data-videos-drawer-close aria-label='Close navigation'>×</button></div><nav class='videos-drawer-nav'><a href='/pulse'>Home</a><a href='/pulse/videos' aria-current='page'>Videos</a><a href='/pulse/reels'>Reels</a><a href='/pulse/music'>Music</a><a href='/pulse/live'>Live</a><a href='/pulse/messages'>Messages</a><a href='/pulse/notifications'>Alerts</a><a href='{marketplace_href()}'>Marketplace</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/pulse/premium'>Premium</a><a href='/pulse/profile'>Profile</a></nav></aside>
         <header class='videos-title-row'><div><h1>Videos</h1><p>Discover high-quality videos from creators around the world.</p></div><form class='video-search-bar' data-video-search><input type='search' data-video-search-input placeholder='Search videos or creators' autocomplete='off' aria-label='Search videos'><button type='submit'>Search</button></form></header>
         <nav class='video-category-chips' aria-label='Video categories'>{category_html}</nav>
         <section class='video-toolbar'><div><label class='sr-only' for='videoSort'>Sort videos</label><select id='videoSort' data-video-sort><option value='recent'>Most Recent</option><option value='trending'>Trending</option><option value='most_viewed'>Most Viewed</option><option value='top_rated'>Top Rated</option></select></div><div class='video-view-toggle' aria-label='Video view mode'><button type='button' class='active' data-video-view='grid'>Grid</button><button type='button' data-video-view='list'>List</button></div></section>
@@ -93314,7 +93862,7 @@ def pulse_video_detail_page(video_id):
       </header>
       <div class='video-watch-shell'>
         <aside class='video-watch-left-rail' aria-label='Video navigation'>
-          <a href='/pulse'>⌂ Home</a><a href='/pulse' >▤ Feed</a><a href='/pulse/reels'>▻ Reels</a><a class='active' href='/pulse/videos'>▶ Videos</a><a href='/pulse/status'>◴ Status</a><a href='/pulse/groups'>♧ Groups</a><a href='/pulse/events'>◇ Events</a><a href='{app_first_href('marketplace')}'>▧ Marketplace</a><a href='/pulse/premium/intelligence'>✦ Pulse AI</a><a href='/pulse/music'>♪ Pulse Music</a><a href='/pulse/bookmarks'>▱ Bookmarks</a><a href='/pulse/settings/privacy'>Privacy Center</a><a href='/pulse/help'>Help & Support</a><div class='video-watch-premium'><strong>Go Premium</strong><p class='muted'>Unlock creator-grade video tools.</p></div>
+          <a href='/pulse'>⌂ Home</a><a href='/pulse' >▤ Feed</a><a href='/pulse/reels'>▻ Reels</a><a class='active' href='/pulse/videos'>▶ Videos</a><a href='/pulse/status'>◴ Status</a><a href='/pulse/groups'>♧ Groups</a><a href='/pulse/events'>◇ Events</a><a href='{marketplace_href()}'>▧ Marketplace</a><a href='/pulse/premium/intelligence'>✦ Pulse AI</a><a href='/pulse/music'>♪ Pulse Music</a><a href='/pulse/bookmarks'>▱ Bookmarks</a><a href='/pulse/settings/privacy'>Privacy Center</a><a href='/pulse/help'>Help & Support</a><div class='video-watch-premium'><strong>Go Premium</strong><p class='muted'>Unlock creator-grade video tools.</p></div>
         </aside>
         <main class='video-watch-main'>
       <article class='card video-detail-card'>
@@ -100983,7 +101531,16 @@ def api_pulse_payments_checkout():
             WHERE l.id=? LIMIT 1""", (item_id,))
         item = dict(cur.fetchone() or {})
         seller_user_id = int(item.get("seller_user_id") or 0)
-        amount_cents, currency = parse_price_label_to_cents(item.get("price_label") or "", item.get("currency") or "USD")
+        # Priced through the same authority every buyer surface uses. Parsing
+        # `price_label` here charged from a field that is empty on 82 of 123 live
+        # listings whose variants carry the real price, and that disagreed with the
+        # displayed amount on 3 more. The authority refuses rather than guessing,
+        # so the number on the shelf and the number charged cannot differ.
+        from services import marketplace_price_authority
+        buy_variant_id = safe_int(payload.get("variant_id"), 0) or None
+        price_decision = marketplace_price_authority.resolve_for_listing(cur, item, buy_variant_id)
+        amount_cents = int(price_decision.unit_price_minor or 0)
+        currency = price_decision.currency
         title = item.get("title") or "Marketplace product"
         seller_type = "merchant"
     elif item_type == "course":
@@ -101030,6 +101587,21 @@ def api_pulse_payments_checkout():
     if seller_user_id == int(buyer["user_id"]):
         conn.close()
         return api_error("You cannot buy your own item.", 400)
+    if item_type == "marketplace_product" and not price_decision.ok:
+        conn.close()
+        # A range is reported with its bounds because the only fix available to
+        # the buyer is to pick one, and the client cannot offer that choice
+        # without knowing a choice is what is missing.
+        range_detail = (
+            {"price_min_cents": price_decision.min_cents,
+             "price_max_cents": price_decision.max_cents}
+            if price_decision.error_code == marketplace_price_authority.VARIANT_REQUIRED
+            else {}
+        )
+        return api_error(price_decision.message, 409,
+                         error_code=price_decision.error_code,
+                         error=price_decision.error_code,
+                         currency=price_decision.currency, **range_detail)
     if amount_cents <= 0:
         conn.close()
         return api_error("This item is currently free or not priced for checkout.", 400)
@@ -101087,6 +101659,7 @@ def api_pulse_payments_checkout():
         from services import marketplace_quote_service
         commercial_quote = marketplace_quote_service.create_quote(
             listing_id=item_id, seller_id=seller_user_id, quantity=buy_quantity,
+            variant_id=price_decision.variant_id,
             unit_price_minor=amount_cents, currency=currency, live_fee_bps=fee_bps,
         )
         amount_cents = commercial_quote["buyer_total_minor"]
@@ -101435,13 +102008,30 @@ def _creator_checkout_for_item(buyer, item_type, item_id, plan_key=""):
     amount_cents = 0
     currency = "USD"
     if item_type == "product":
+        # This lane predates the Marketplace commerce stack and reads
+        # `marketplace_listings` directly: no quote, no reservation, no goods
+        # policy and no fulfillment gate. No client calls it, but it is
+        # registered and session-authenticated, so a Marketplace card charge is
+        # reachable through it. The pause is a deliberate control and must hold
+        # on every lane that can start one, not only on the lane the app uses.
+        from services import marketplace_payment_pause
+        if marketplace_payment_pause.marketplace_card_payments_paused():
+            conn.close()
+            return api_error(
+                marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_MESSAGE, 503,
+                error_code=marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_CODE,
+                error=marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_CODE,
+                **marketplace_payment_pause.card_unavailable_payload(),
+            )
         cur.execute("SELECT * FROM marketplace_listings WHERE id=? LIMIT 1", (int(item_id or 0),))
         item = dict(cur.fetchone() or {})
         seller_user_id = int(item.get("seller_user_id") or 0)
         seller_type = "merchant"
         checkout_item_type = "product"
         title = item.get("title") or "Marketplace product"
-        amount_cents, currency = parse_price_label_to_cents(item.get("price_label") or "", item.get("currency") or "USD")
+        from services import marketplace_price_authority
+        product_price = marketplace_price_authority.resolve_for_listing(cur, item)
+        amount_cents, currency = int(product_price.unit_price_minor or 0), product_price.currency
         approved = approved_marketplace_seller_for_user(cur, seller_user_id)
     elif item_type == "course":
         cur.execute("SELECT * FROM pulse_courses WHERE id=? LIMIT 1", (int(item_id or 0),))
@@ -103270,11 +103860,19 @@ def api_pulse_marketplace_listing_save():
         VALUES (?, ?, 'marketplace', ?, ?, ?, ?, '', ?, ?, ?, ?)
         ON CONFLICT(user_id, content_type, content_id) DO UPDATE SET collection_id=excluded.collection_id, title=excluded.title, preview_text=excluded.preview_text, thumbnail_url=excluded.thumbnail_url, updated_at=excluded.updated_at
         """,
-        # `?listing=<id>`, not a bare `/pulse/marketplace`. The saved row is a
-        # reference to one listing, and the client's target resolver already
-        # parses this exact shape; writing the tab root meant every saved product
-        # in the library opened the Marketplace tab instead of the product.
-        (user["user_id"], collection_id, str(listing_id), title, preview, thumbnail, f"/pulse/marketplace?listing={listing_id}", json.dumps({"listing_id": listing_id}), now, now),
+        # The listing's canonical URL. The saved row is a reference to one product,
+        # and this column is read straight into an `href` by the web saved-library
+        # renderer, so its value is a link a person clicks.
+        #
+        # It was `?listing=<id>`, chosen when the only consumer was the native
+        # resolver, which parses that shape. The web storefront does not: it reads
+        # four query keys and ignores the rest, so every saved product in the web
+        # library opened the unfiltered Marketplace. The path form fixes that and
+        # costs native nothing -- `notificationRouting.ts` resolves
+        # `/pulse/marketplace/<id>` to `MarketplaceProduct` directly, and
+        # `saveContract.saveTargetFromUrl` now matches both shapes so the
+        # `?listing=` rows already in `pulse_saved_items` keep working.
+        (user["user_id"], collection_id, str(listing_id), title, preview, thumbnail, f"/pulse/marketplace/{listing_id}", json.dumps({"listing_id": listing_id}), now, now),
     )
     conn.commit(); conn.close()
     return jsonify({"ok": True, "saved": True, "is_saved": True, "changed": not currently_saved, "content_type": "marketplace", "content_id": str(listing_id), "message": "Product saved."})
@@ -115678,52 +116276,13 @@ def stripe_webhook():
         # singular branch below, because the buy-now sheet writes both keys.
         marketplace_pi = metadata.get("cart_checkout") == "1" and metadata.get("seller_transaction_ids")
         if marketplace_pi:
-            tx_ids = [safe_int(value, 0) for value in str(metadata.get("seller_transaction_ids") or "").split(",")]
-            tx_ids = [value for value in tx_ids if value]
-            now = datetime.utcnow().isoformat(timespec="seconds")
-            intent_id = payment_intent.get("id") or ""
-            conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-            from services import marketplace_cart_routes as marketplace_cart_service
-            marketplace_cart_service._ensure_schema(cur)
-            affected_buyers = set(); affected_sellers = set(); paid_marketplace_txs = []
-            for tx_id in tx_ids:
-                cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
-                tx = dict(cur.fetchone() or {})
-                if not tx:
-                    continue
-                affected_buyers.add(int(tx.get("buyer_user_id") or 0)); affected_sellers.add(int(tx.get("seller_user_id") or 0))
-                # Guarded so a replayed or late event cannot walk a refunded
-                # order back to paid.
-                cur.execute("""UPDATE seller_transactions SET status='paid', stripe_payment_intent_id=?,
-                    updated_at=? WHERE id=? AND status NOT IN ('paid','refunded')""",
-                    (intent_id, now, tx_id))
-                marketplace_cart_service.capture_inventory_reservation(cur, tx_id, now=now)
-                pulse_upsert_marketplace_order(cur, tx, intent_id, now)
-                if str(tx.get("status") or "") != "refunded":
-                    paid_marketplace_txs.append(tx)
-                pulse_emit_payment_checkout_event(
-                    cur,
-                    {**tx, "status": "paid", "stripe_payment_intent_id": intent_id},
-                    "payment_succeeded",
-                    status="paid",
-                    actor_user_id=tx.get("buyer_user_id") or 0,
-                    extra={"stripe_event_id": event_id, "stripe_payment_intent_id": intent_id},
-                )
-            line_ids = [safe_int(value, 0) for value in str(metadata.get("cart_line_ids") or "").split(",")]
-            line_ids = [value for value in line_ids if value]
-            if line_ids:
-                cur.execute(f"DELETE FROM marketplace_cart_items WHERE id IN ({','.join(['?']*len(line_ids))}) AND user_id=?",
-                            (*line_ids, safe_int(metadata.get("buyer_user_id"), 0)))
-            for seller_id in affected_sellers:
-                if seller_id:
-                    notify_user(cur, seller_id, "marketplace_order", "New Marketplace order", "A buyer completed payment for your listing.", "/pulse/seller-store?mode=orders")
-            for buyer_id in affected_buyers:
-                if buyer_id:
-                    notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
-            conn.commit(); conn.close()
-            emit_marketplace_paid_order_emails(paid_marketplace_txs)
-            for paid_tx in paid_marketplace_txs:
-                pulse_finalize_marketplace_settlement(paid_tx, intent_id, marketplace_transfer_group(metadata))
+            # Body lifted to `pulse_settle_marketplace_payment_intent` so the
+            # reconciliation sweep can drive the same settlement when an event
+            # never arrives. Two implementations of "mark paid, capture stock,
+            # project the order, credit the seller" would be two chances to
+            # disagree about what a paid order is. This branch owns the webhook
+            # bookkeeping below it and nothing else.
+            pulse_settle_marketplace_payment_intent(payment_intent, event_id, actor="stripe_webhook")
             resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or None
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")

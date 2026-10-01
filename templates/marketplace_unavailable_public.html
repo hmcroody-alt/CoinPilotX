@@ -1,0 +1,37 @@
+{#
+  The 503 a marketplace route serves to a logged-out reader -- including
+  Googlebot -- when it could not read the product or the catalogue.
+
+  WHY THIS TEMPLATE EXISTS
+  ------------------------
+  Neither of the two success frames can serve this state. `pulse_social_shell`
+  calls `require_account()` and 302s, so routing a logged-out reader through the
+  member frame would answer a canonical product URL with a redirect to /login --
+  for a crawler, the URL stops being a product at all. The public frames
+  (`marketplace_product_public.html`, `marketplace_index_public.html`) are built
+  from a listing payload, which is precisely what a failed read does not have.
+
+  So this is the same frame the public success pages use, with the storefront's
+  own rendered apology dropped into it. The body comes from
+  `marketplace_storefront.render_unavailable` or from `render_discovery` with
+  `load_error=True` -- the same two renderings a signed-in member gets -- so the
+  two audiences are told the same thing in their own chrome, and the wording
+  lives in one place rather than being restated here.
+
+  WHAT IS DELIBERATELY ABSENT
+  ---------------------------
+  No `schema_json`. The shell only emits the `ld+json` block when one is passed,
+  and this page passes none on purpose: a crawler that ignores the 503 must not
+  be handed an empty `Product`. The `noindex` the route sets is the second half
+  of the same guard, and the canonical stays the real URL so a crawler that
+  keeps it keeps the right one.
+#}
+{% extends "_public_shell.html" %}
+
+{% block content %}
+  {# The storefront stylesheet the body's classes are written against. In the
+     content block rather than the head because this template has no head block
+     to extend, and an unstyled apology is a worse failure than a late one. #}
+  {{ assets_html|safe }}
+  {{ body_html|safe }}
+{% endblock %}

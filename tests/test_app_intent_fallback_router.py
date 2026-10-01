@@ -153,6 +153,40 @@ class AppIntentFallbackRouterTest(unittest.TestCase):
                 response = self.client.get("/pulse/post/5?pulse_app=1", headers=headers)
                 self.assertNotEqual(response.headers.get("Location"), APP_STORE)
 
+    def test_a_marketplace_url_the_hook_passes_through_survives_an_unreadable_db(self):
+        """The failure mode the storefront rebuild introduced, pinned here.
+
+        Once `marketplace`/`product` became `web_equivalent`, the hook stopped
+        interstitialling them and started handing the request to a real view --
+        and this file's fixture has no tables, so that view meets a read failure on
+        every request. It answered 500 with a stack-trace page as the product's
+        contents. This is the one status a canonical product URL must not return.
+
+        503 with `Retry-After` is the answer, and 404 would be a worse bug than the
+        500: a 404 on a canonical URL retires it from the search index, which is
+        right for a delisted product and permanently wrong for a database hiccup.
+        The two statuses mean opposite things and the route must not conflate them.
+
+        Asserted for the crawler as well as the visitor: no `Product` structured
+        data on a page that has no product, and `noindex` so a crawler ignoring the
+        status still cannot record the apology as the product.
+        """
+        for path in ("/pulse/marketplace/9", "/pulse/marketplace"):
+            with self.subTest(path=path):
+                response = self.client.get(f"{path}?pulse_app=1", headers=MAC)
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.headers.get("Retry-After"), "120")
+                # A shared cache must not pin the failure in front of everyone who
+                # follows the same link.
+                self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+                body = response.get_data(as_text=True)
+                self.assertNotIn("application/ld+json", body)
+                self.assertIn("noindex", body)
+                # The error state, not the empty one. "No products" is a claim about
+                # the catalogue that a failed read has not earned.
+                self.assertIn("could not load", body)
+                self.assertNotIn("No products are listed yet", body)
+
     def test_non_ios_gets_the_interstitial_where_no_web_page_exists(self):
         """A desktop visitor is told, not redirected.
 
@@ -188,6 +222,10 @@ class AppIntentFallbackRouterTest(unittest.TestCase):
 
         Two different destinations must produce two different headings, or the
         page is not carrying the member's intent through at all.
+
+        Both examples are app-only surfaces. The marketplace listing used to be
+        one of the pair; it is now a real web page, and asserting an interstitial
+        heading for it would assert the opposite of what the site does.
         """
         composer = self.client.get(
             "/pulse/marketplace/create?pulse_app=1", headers=MAC
@@ -224,6 +262,41 @@ class AppIntentFallbackRouterTest(unittest.TestCase):
                     self.assertNotIn(
                         app_links.APP_STORE_QR_ASSET, response.get_data(as_text=True)
                     )
+
+    def test_a_marketplace_url_the_hook_passes_through_survives_an_unreadable_db(self):
+        """The failure that pass-through exposes, pinned rather than tolerated.
+
+        Once `marketplace` and `product` became `web_equivalent` the hook stopped
+        interstitialling them and started handing the request to a real view --
+        and this file's fixture has no tables, so that view meets a read failure
+        on every request. It answered 500, rendering the trace page as the
+        product's contents, which is the one status a canonical product URL must
+        never return.
+
+        503 with `Retry-After` is the answer, and 404 would be worse than the
+        500: a 404 on a canonical URL retires it from the search index, right for
+        a delisted product and permanently wrong for a database hiccup. The two
+        statuses are opposite instructions and the route must not conflate them.
+
+        Asserted for the crawler as well as the visitor -- no `Product`
+        structured data on a page that has no product, and `noindex` so a crawler
+        ignoring the status still cannot record the apology as the product.
+        """
+        for path in ("/pulse/marketplace/9", "/pulse/marketplace"):
+            with self.subTest(path=path):
+                response = self.client.get(f"{path}?pulse_app=1", headers=MAC)
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.headers.get("Retry-After"), "120")
+                # A shared cache must not pin the failure in front of everyone
+                # who follows the same link.
+                self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+                body = response.get_data(as_text=True)
+                self.assertNotIn("application/ld+json", body)
+                self.assertIn("noindex", body)
+                # The error state, not the empty one. "No products" is a claim
+                # about the catalogue that a failed read has not earned.
+                self.assertIn("could not load", body)
+                self.assertNotIn("No products are listed yet", body)
 
     def test_the_interstitial_is_not_indexable(self):
         # It is a handoff, not content; the resource is indexed at its own URL.

@@ -168,8 +168,10 @@ reached Flask. That inference is the whole mechanism, and on-site it is wrong.
 
 `bot.app_first_href(destination, resource_id=None)` is the single caller. Every
 Marketplace button on the website goes through it. No page hand-writes a
-Marketplace path, and `tests/test_marketplace_web_ctas_follow_the_registry.py`
-scans the whole of `bot.py` to keep it that way — the source layer is what
+Marketplace path either way — the web paths come from `bot.marketplace_href()`
+and `marketplace_storefront.product_path()`, the app paths from
+`app_first_href` — and `tests/test_marketplace_web_ctas_follow_the_registry.py`
+scans the whole of `bot.py` to keep it that way. The source layer is what
 survives the file growing, and the render layer over seven real pages is what
 proves the source layer is measuring something.
 

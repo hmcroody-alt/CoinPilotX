@@ -306,8 +306,22 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
       <View style={styles.unavailable} testID="marketplace-product-unavailable">
         <Ionicons name="pricetag-outline" size={34} color={storeLight.text.muted} />
         <Text style={styles.unavailableTitle}>This item is no longer available.</Text>
-        <Pressable accessibilityRole="button" style={styles.unavailableButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.unavailableButtonText}>Back to Marketplace</Text>
+        {/*
+          A deep link is this screen's whole stack. `goBack()` alone is what
+          trapped a member who arrived from Safari on a withdrawn listing: there
+          was nothing behind this screen, so the only control on the page did
+          nothing at all. Marketplace is the destination when there is no back.
+        */}
+        <Pressable
+          accessibilityRole="button"
+          style={styles.unavailableButton}
+          onPress={() =>
+            navigation.canGoBack()
+              ? navigation.goBack()
+              : navigation.navigate("Tabs", { screen: "Marketplace" })
+          }
+        >
+          <Text style={styles.unavailableButtonText}>Browse Marketplace</Text>
         </Pressable>
       </View>
     );

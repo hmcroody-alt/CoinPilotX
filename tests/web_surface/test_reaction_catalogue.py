@@ -176,9 +176,19 @@ CACHE_PINNED_ASSETS = {
     # the commerce-attachment web render (6f6526e9d), which did the
     # delivery-critical half right -- it moved bot.py to
     # ?v=commerce-attachment-20260928a in the same commit as the edit.
+    #
+    # Re-pinned again at `reaction-plural-20261001a` for the forward-port merge,
+    # which routed the live reaction-count update through `reactionTotalLabel`
+    # instead of a hand-built `${n} Reactions`. Worth the token on its own: the
+    # bug it fixes is only visible to a browser that already holds this file,
+    # which is exactly the population a stale token strands. Note the previous
+    # token name was shared with `pulse-commerce-attachment.css` above -- that
+    # file is unchanged here, so it deliberately keeps the old one. The two
+    # assets are pinned independently; a shared name was a coincidence of the
+    # commit that introduced them, not a coupling.
     "static/js/pulse_home_core.js": (
-        "commerce-attachment-20260928a",
-        "1b54ff0e9f348c7ff7a2a1e552a5a561a3dce95d618095e6c0d15ae1dfb5c94a",
+        "reaction-plural-20261001a",
+        "b404254d904ecc7ce00ddab881aea04e51b23454df3837680e8d3bbeeffbe731",
     ),
     # `pulse_i18n.js` *is* the catalogue, so a returning browser holding last
     # week's copy has last week's words and renders an English chip beside a

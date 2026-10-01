@@ -37,7 +37,11 @@ import { injectAds } from "../feed/injectAds";
 import { HomeRow, injectDiscoveryRows } from "../discovery/discoveryRows";
 import { DiscoveryRowView } from "../discovery/DiscoveryRowView";
 import { useHomeDiscovery } from "../discovery/useHomeDiscovery";
-import { HomeRowWithCommerce, injectCommerceRows } from "../commerce/commerceRows";
+import {
+  commerceListingIdsInPosts,
+  HomeRowWithCommerce,
+  injectCommerceRows
+} from "../commerce/commerceRows";
 import { CommerceFeedCard } from "../commerce/CommerceFeedCard";
 import { useFeedCommerce } from "../commerce/useFeedCommerce";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
@@ -331,7 +335,12 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         commerce.placements,
         {
           dismissedPlacementIds: commerce.dismissedPlacementIds,
-          dismissedSellerIds: commerce.dismissedSellerIds
+          dismissedSellerIds: commerce.dismissedSellerIds,
+          // A PulseDrop publication is an ordinary post carrying a commerce
+          // overlay, so without this the same listing can render twice on one
+          // page: once as the editorial Signal and once as a tile in a strip
+          // further down.
+          excludeListingIds: commerceListingIdsInPosts(posts)
         }
       ),
     [
