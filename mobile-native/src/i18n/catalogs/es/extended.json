@@ -1222,7 +1222,10 @@
       "storeMediaViewerTitle": "Contenido de la tienda",
       "statusApprovedLive": "Aprobado o publicado",
       "statusPendingReview": "Pendiente de revisión",
-      "statusRemoved": "Retirado"
+      "statusRemoved": "Retirado",
+      "status": {
+        "price_needed": "Falta el precio"
+      }
     },
     "orders": {
       "title": "Pedidos",
