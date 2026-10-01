@@ -25,18 +25,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, View, Animated } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
+  connectionIsUsable,
+  connectionNeedsAttention,
   getImportCart,
-  getSupplierStatus,
+  listImportedProducts,
+  listSupplierConnections,
   stateForError,
   type DropshippingScope,
   type DropshippingState,
-  type StoreSupplierStatus,
-  type SupplierStatus
+  type SupplierConnection
 } from "../../api/dropshipping";
 import { StoreHeader, StoreQuickLinkGrid, StoreStatusStrip } from "../../components/store";
 import { DropshippingStateView, EnvironmentBadge, ProviderBadge, stateIsUnactionable, stateOwnsScreen } from "../../components/dropshipping/DropshippingStates";
-import { AttentionBadge, OperatingModeBanner } from "../../components/dropshipping/SupplierHealth";
-import { NEXT_ACTION_COPY, ordersCopy, syncCopy } from "./supplierStatusCopy";
 import { useDropshippingScope } from "./useDropshippingScope";
 import { useFormatters } from "../../i18n/hooks";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../../navigation/BottomNavVisibility";
@@ -50,28 +50,17 @@ const SECTION_COUNT = Object.keys(SLOT).length;
 
 type Props = {
   route?: { params?: RootStackParamList["Dropshipping"] };
-  navigation: {
-    navigate: (...args: any[]) => void;
-    goBack?: () => void;
-    /**
-     * Optional because a screen rendered outside a navigator has no event bus —
-     * the tiles still work there, they just do not re-read on return.
-     */
-    addListener?: (event: "focus", listener: () => void) => () => void;
-  };
+  navigation: { navigate: (...args: any[]) => void; goBack?: () => void };
 };
 
 /**
- * A connection the hub can act on.
+ * Counts the hub shows on its tiles.
  *
- * `CONNECTED` is the server's word, read rather than re-derived. This screen
- * used to call `connectionIsUsable` on a connections-list row and the Suppliers
- * screen read a status string, which is how one screen showed a green dot over
- * the connection the other was asking the merchant to reconnect.
+ * Both are `null` until they load and stay `null` if they fail. A tile that says
+ * "0 items" about a cart whose request errored is worse than one that says
+ * nothing — the merchant believes their cart emptied.
  */
-function usable(supplier: SupplierStatus): boolean {
-  return supplier.connectionState === "CONNECTED";
-}
+type HubCounts = { cart: number | null; products: number | null };
 
 export function DropshippingHubScreen({ route, navigation }: Props) {
   const formatters = useFormatters();
@@ -80,27 +69,18 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
   const entrance = useStoreEntrance(SECTION_COUNT, reducedMotion);
   const scopeStatus = useDropshippingScope();
 
-  const [status, setStatus] = useState<StoreSupplierStatus | null>(null);
-  /**
-   * The one count `/supplier-status` does not carry. Everything else on these
-   * tiles now comes from that one payload; the cart is a separate resource with
-   * its own screen, so it stays a separate request — and stays `null` when it
-   * fails, because a tile saying "Nothing selected yet" about a cart whose
-   * request errored tells the merchant their cart emptied.
-   */
-  const [cart, setCart] = useState<number | null>(null);
+  const [connections, setConnections] = useState<SupplierConnection[] | null>(null);
+  const [counts, setCounts] = useState<HubCounts>({ cart: null, products: null });
   const [state, setState] = useState<DropshippingState>("LOADING");
   const [refreshing, setRefreshing] = useState(false);
 
   const scope: DropshippingScope | null =
     scopeStatus.status.phase === "ready" ? scopeStatus.status.scope : null;
 
-  const suppliers = useMemo(() => status?.suppliers || [], [status]);
-
-  const active = useMemo(
-    () => suppliers.find(usable) || suppliers[0] || null,
-    [suppliers]
-  );
+  const active = useMemo(() => {
+    const rows = connections || [];
+    return rows.find(connectionIsUsable) || rows[0] || null;
+  }, [connections]);
 
   const load = useCallback(
     async (mode: "initial" | "refresh" = "initial") => {
@@ -108,30 +88,29 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
       if (mode === "refresh") setRefreshing(true);
       else setState("LOADING");
       try {
-        const next = await getSupplierStatus(scope);
-        setStatus(next);
-        const connected = next.suppliers.find(usable) || null;
-        if (!connected) {
+        const rows = await listSupplierConnections(scope);
+        setConnections(rows);
+        const usable = rows.find(connectionIsUsable) || null;
+        if (!usable) {
           // No usable connection is EMPTY, not an error: the merchant has not
-          // started yet. The cart stays null because there is nothing to count.
-          setCart(null);
-          setState(next.suppliers.length === 0 ? "EMPTY" : "SUPPLIER_DISCONNECTED");
+          // started yet. The counts stay null because there is nothing to count.
+          setCounts({ cart: null, products: null });
+          setState(rows.length === 0 ? "EMPTY" : "SUPPLIER_DISCONNECTED");
           return;
         }
-        try {
-          setCart((await getImportCart(scope, connected.connectionId)).count);
-        } catch {
-          // A cart this hub could not read must not take down the six tiles that
-          // do not depend on it.
-          setCart(null);
-        }
+        // Settled, not all: a failed cart count must not blank the products
+        // count, and neither should take the screen down. Each stays null on
+        // its own failure.
+        const [cart, products] = await Promise.allSettled([
+          getImportCart(scope, usable.id),
+          listImportedProducts(scope, usable.id, { limit: 1 })
+        ]);
+        setCounts({
+          cart: cart.status === "fulfilled" ? cart.value.count : null,
+          products: products.status === "fulfilled" ? products.value.count : null
+        });
         setState("READY");
       } catch (error) {
-        // Cleared, not kept. A stale payload behind an error screen is how a
-        // sandbox banner survives a failed read and describes a state nobody
-        // checked — the same rule the Suppliers screen holds.
-        setStatus(null);
-        setCart(null);
         setState(stateForError(error));
       } finally {
         setRefreshing(false);
@@ -156,43 +135,6 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
     if (scopeStatus.status.phase === "ready") load("refresh").catch(() => undefined);
     else scopeStatus.reload();
   }, [load, scopeStatus]);
-
-  /**
-   * Re-read when the merchant comes back to this screen.
-   *
-   * Every number on these tiles describes work done on the *other* screens —
-   * "33 ready to import" is the cart the Import cart screen just drained, and
-   * "66 imported" is what the run it reports added. Without this the hub answers
-   * out of whatever it read when it first mounted, so finishing a 32-product
-   * import and tapping back leaves the seller looking at the counts from before
-   * they started. Seen 2026-09-27: cart was truly 1, the tile still said 33.
-   *
-   * That is the same failure this screen family was just fixed for — the app
-   * asserting something about the store that is not true — and it is worse here
-   * than a plain stale read, because the hub is where a merchant goes to decide
-   * whether the import worked at all.
-   *
-   * `"refresh"` and not `"initial"`: a return to a screen that already has data
-   * must not blank six populated tiles back to the loading state. And no phase
-   * check — `load` already returns early without a scope, so a focus that
-   * arrives before the scope resolves, or after it failed, is a no-op and cannot
-   * overwrite the state that failure produced.
-   *
-   * The navigator's own `focus` event, and not `useFocusEffect`: the hook re-runs
-   * whenever its callback's identity changes, and this screen's `load` is rebuilt
-   * the moment the scope resolves — so the hook fires a second time *during
-   * mount*, racing the mount load. A ref that swallows the first call does not
-   * help, because the swallowed one is the mount call and the racing one is the
-   * second. The event fires only on a real focus transition, and the listener is
-   * attached after this screen's first focus has already been delivered.
-   * `PresenceHubScreen` reloads the same way.
-   */
-  useEffect(() => {
-    if (typeof navigation.addListener !== "function") return undefined;
-    return navigation.addListener("focus", () => {
-      load("refresh").catch(() => undefined);
-    });
-  }, [load, navigation]);
 
   /* -------------------------------------------------------------- *
    * Navigation
@@ -224,7 +166,7 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
         openSuppliers();
         return;
       }
-      navigation.navigate(routeName, { connectionId: active.connectionId, title });
+      navigation.navigate(routeName, { connectionId: active.id, title });
     },
     [active, navigation, openSuppliers]
   );
@@ -235,16 +177,12 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
 
   const missingScope = scopeStatus.status.phase === "missing" ? scopeStatus.status.gap : null;
 
-  const connectedCount = suppliers.filter(usable).length;
-  const sync = syncCopy(active?.syncState ?? null);
-  const orders = ordersCopy(active?.orders ?? null);
-
   const stateBlock = stateOwnsScreen(state) ? (
     <DropshippingStateView
       state={state}
       subject="Dropshipping"
       onRetry={state === "UNAUTHORIZED" ? null : refresh}
-      onFixConnection={suppliers.length > 0 ? openSuppliers : null}
+      onFixConnection={connections && connections.length > 0 ? openSuppliers : null}
       reducedMotion={reducedMotion}
       skeletonRows={3}
       empty={
@@ -266,9 +204,8 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
               : {
                   title: "Sell products you don't have to stock.",
                   body:
-                    "Connect a supplier, browse their catalogue, and import what you want to sell. " +
-                    "PulseSoc prices it by your rule and publishes it to your store — anything it " +
-                    "can't publish safely stays a draft and tells you why."
+                    "Connect a supplier, browse their catalogue, and import products as drafts. " +
+                    "You set your own price and nothing goes live until you publish it."
                 }
       }
     />
@@ -287,102 +224,51 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
           label: "Find products",
           subtitle: "Browse your supplier's catalogue",
           onPress: withConnection("DropshippingCatalog", "Find products"),
-          attention: active.nextAction === "IMPORT_FIRST_PRODUCT",
           reducedMotion
         },
         {
           icon: "cart-outline",
           label: "Import cart",
           subtitle:
-            cart === null
+            counts.cart === null
               ? "Ready when you are"
-              : cart === 0
+              : counts.cart === 0
                 ? "Nothing selected yet"
-                : `${formatters.count(cart)} ready to import`,
+                : `${formatters.count(counts.cart)} ready to import`,
           onPress: withConnection("DropshippingCart", "Import cart"),
           reducedMotion
         },
         {
           icon: "cube-outline",
           label: "Products",
-          // Imported and live, not imported alone. A merchant who imported
-          // twelve products and published none has a store with nothing in it,
-          // and "12 imported" is the sentence that hid that.
-          //
-          // `products.live`, never `products.published`: this said "live" over
-          // the published count, so a catalogue with 62 products at quantity 0
-          // read "101 imported · 101 live" while buyers could reach 39. The
-          // clause is dropped entirely when the server did not send the number,
-          // because "0 live" is a worse answer than no answer.
           subtitle:
-            active.products.imported === 0
-              ? "Nothing imported yet"
-              : active.products.live === null
-                ? `${formatters.count(active.products.imported)} imported`
-                : `${formatters.count(active.products.imported)} imported · ${formatters.count(
-                    active.products.live
-                  )} live`,
+            counts.products === null
+              ? "Everything you've imported"
+              : counts.products === 0
+                ? "Nothing imported yet"
+                : `${formatters.count(counts.products)} imported`,
           onPress: withConnection("DropshippingProducts", "Dropshipping products"),
-          attention: active.nextAction === "REVIEW_DRAFTS",
           reducedMotion
         },
         {
           icon: "people-outline",
           label: "Suppliers",
-          // Connected out of total, because the difference is the whole point:
-          // "2 connected" over one working supplier and one revoked credential
-          // is the count that sends a merchant to look somewhere else for the
-          // reason nothing imports.
-          subtitle:
-            suppliers.length === connectedCount
-              ? `${formatters.count(connectedCount)} connected`
-              : `${formatters.count(connectedCount)} of ${formatters.count(
-                  suppliers.length
-                )} working`,
+          subtitle: `${formatters.count((connections || []).length)} connected`,
           onPress: openSuppliers,
-          attention: suppliers.length !== connectedCount,
           reducedMotion
         },
         {
           icon: "receipt-outline",
           label: "Supplier orders",
-          // Counted through `/supplier-status`, which counts them through the
-          // same derivation the orders screen lists. Falls back to describing
-          // the screen when the server could not read them — never to "0", which
-          // would be a claim about sales a buyer has already paid for.
-          subtitle: orders.label,
-          // Connection-scoped, like every other entry here: the obligations
-          // list is per supplier connection, so this must go through
-          // `withConnection` or it lands on a screen that can only say EMPTY.
-          onPress: withConnection("DropshippingOrders", "Supplier orders"),
-          attention: orders.attention,
+          subtitle: "Orders sent to your supplier",
+          onPress: () => navigation.navigate("DropshippingOrders", { title: "Supplier orders" }),
           reducedMotion
         },
         {
           icon: "sync-outline",
           label: "Sync & issues",
-          subtitle:
-            active.issues.products > 0
-              ? `${formatters.count(active.issues.products)} need${
-                  active.issues.products === 1 ? "s" : ""
-                } a decision`
-              : sync.label,
+          subtitle: "What needs your attention",
           onPress: withConnection("DropshippingSync", "Sync & issues"),
-          attention: active.issues.products > 0 || sync.tone === "warn",
-          reducedMotion
-        },
-        {
-          icon: "options-outline",
-          // Three nouns and an ampersand fitted the tile in the mock and not on
-          // a phone: "Pricing, publishing, Marketplace" rendered as "Pricing,
-          // publishing, Mark…". Two lines of subtitle are available, so the
-          // string is written to fit them rather than to list every setting.
-          label: "Import settings",
-          subtitle: "Your pricing and publishing rules",
-          // Not `withConnection`: the policy belongs to the storefront, so this is
-          // the one tile here that is reachable and useful with no supplier chosen.
-          onPress: () =>
-            navigation.navigate("DropshippingImportPolicy", { title: "Import settings" }),
           reducedMotion
         }
       ]}
@@ -397,7 +283,7 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
   const stripText = (() => {
     if (scopeStatus.status.phase === "ready" && active) {
       return `${scopeStatus.status.storeName || "Your store"} · ${
-        usable(active) ? "Supplier connected" : "Supplier needs attention"
+        connectionIsUsable(active) ? "Supplier connected" : "Supplier needs attention"
       }`;
     }
     if (missingScope === "NO_STORE") return "Dropshipping · No store yet";
@@ -465,7 +351,7 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
       <Animated.View style={entrance.styleFor(SLOT.strip)}>
         <StoreStatusStrip
           text={stripText}
-          open={Boolean(active && usable(active))}
+          open={Boolean(active && connectionIsUsable(active))}
           actionLabel={stripAction?.label}
           onAction={stripAction?.onPress}
           reducedMotion={reducedMotion}
@@ -489,32 +375,30 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
           ) : null}
         </Animated.View>
 
-        {active && status ? (
+        {active ? (
           <Animated.View style={[styles.block, entrance.styleFor(SLOT.tiles)]}>
-            {/* Above the tiles, not below them. A merchant who believes a sandbox
-                order shipped is a merchant with an angry customer, and the note
-                that used to say so sat under seven tiles they had to scroll
-                past. Always rendered — see `OperatingModeBanner`. */}
-            <OperatingModeBanner status={status} testID="hub-operating-mode" />
             <View style={styles.supplierRow}>
               <ProviderBadge provider={active.provider} />
               <EnvironmentBadge environment={active.environment} />
-              <AttentionBadge
-                needsAttention={active.needsAttention}
-                testID="hub-supplier-attention"
-              />
+              {connectionNeedsAttention(active) ? (
+                <Text style={styles.attention}>Needs attention</Text>
+              ) : null}
             </View>
-            {/* The one thing to do next, chosen by the server and said in full.
-                Without it the merchant reads seven tiles and picks; with it the
-                tile that is flagged also has a sentence explaining why. */}
-            {active.nextAction ? (
-              <Text style={styles.nextStep} testID="hub-next-step">
-                {NEXT_ACTION_COPY[active.nextAction].body}
-              </Text>
-            ) : null}
             <Text style={styles.sectionTitle}>Your dropshipping workflow</Text>
             {tiles}
           </Animated.View>
+        ) : null}
+
+        {/* Stated on the hub rather than only in the report, because a merchant
+            who believes a sandbox order shipped is a merchant with an angry
+            customer. */}
+        {active && String(active.environment).toUpperCase() !== "PRODUCTION" ? (
+          <View style={styles.sandboxNote}>
+            <Text style={styles.sandboxNoteText}>
+              This supplier is connected in sandbox. Products import normally, but no order is
+              really placed and nothing ships.
+            </Text>
+          </View>
         ) : null}
       </ScrollView>
     </View>
@@ -541,8 +425,8 @@ const styles = StyleSheet.create({
   content: { paddingTop: storeLight.space.section, gap: storeLight.space.section },
   block: { paddingHorizontal: storeLight.space.card, gap: storeLight.space.gutter },
   sectionTitle: { fontSize: 16, fontWeight: "700", color: storeLight.text.primary },
-  supplierRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-  nextStep: { fontSize: 13, color: storeLight.text.primary, lineHeight: 19 },
+  supplierRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  attention: { fontSize: 11, fontWeight: "700", color: storeLight.status.warning },
   ctaWrap: { alignItems: "flex-start" },
   cta: {
     minHeight: storeLight.size.tapTarget,
@@ -554,5 +438,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
     overflow: "hidden"
-  }
+  },
+  sandboxNote: {
+    marginHorizontal: storeLight.space.card,
+    padding: storeLight.space.card,
+    borderRadius: storeLight.radius.card,
+    backgroundColor: storeLight.bg.warning,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: storeLight.border.warning
+  },
+  sandboxNoteText: { fontSize: 12, color: storeLight.text.primary, lineHeight: 17 }
 });

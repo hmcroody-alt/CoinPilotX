@@ -25,14 +25,8 @@ import {
   listMarketplaceSellerListings,
   listMarketplaceSellerOrders,
   loadCachedSellerStore,
-  loadSellerMetrics,
-  READINESS_CODES,
-  type ListingBulkEligibility,
-  type ListingReadiness,
-  type ListingReviewVerdict,
   type MarketplaceListing,
   type MarketplaceSellerOrder,
-  type SellerMetrics,
   type SellerStoreSnapshot
 } from "./marketplace";
 import { isFlagValueOn } from "../core/envFlag";
@@ -72,13 +66,15 @@ export const STORE_MOCK_DATA_GAPS: readonly StoreDataGap[] = [
   // there is no store-level switch, so the strip reports "open" unless every
   // listing is paused. A real flag would be authoritative.
   { field: "Store open / paused", needs: "seller-level storefront status flag" },
-  // RESOLVED -- "no stock tracked" vs "zero in stock". This entry named its own
-  // fix ("quantity preserved as null through listing normalization, or an
-  // explicit tracks_stock flag") and both halves now exist:
-  // `normalizeMarketplaceListing` no longer coerces the null away, and the
-  // seller route attaches a server verdict that says UNKNOWN_INVENTORY outright.
-  // `listingHealth` reports it as `unknown_stock`. Kept as a comment rather than
-  // deleted, because the gap being closeable at all was the useful finding.
+  // MOCK-DATA: "no stock tracked" vs "zero in stock". `normalizeMarketplaceListing`
+  // coerces quantity with `Number(item.quantity || 0)`, so the two collapse into
+  // 0 before this module sees them. `product_type` is used as a stand-in below,
+  // which is right for digital, course and service listings but cannot express a
+  // physical listing whose seller simply does not track stock.
+  {
+    field: "Stock tracked / not tracked",
+    needs: "quantity preserved as null through listing normalization, or an explicit tracks_stock flag"
+  },
   // MOCK-DATA: store restriction and suspension. `storeReadiness` has five rungs
   // where the review's ladder has seven; Restricted and Suspended are missing
   // because no seller-level enforcement flag reaches this app. Guessing them
@@ -99,70 +95,16 @@ export const STORE_MOCK_DATA_GAPS: readonly StoreDataGap[] = [
  * render site because the tab counts, the attention banner and the row LED all
  * have to agree on what "low" means.
  */
-export type StoreListingHealth =
-  | "in_stock"
-  | "low_stock"
-  | "out_of_stock"
-  /**
-   * Published, but nobody has counted the stock — so a buyer cannot complete a
-   * purchase and the seller has not been told why. Distinct from `out_of_stock`
-   * on purpose: the two have different fixes ("restock" vs "tell us how many you
-   * have"), and collapsing them is the defect this state exists to end.
-   */
-  | "unknown_stock"
-  /**
-   * Submitted, waiting on approval. Distinct from `hidden` because nothing is
-   * wrong and there is nothing to fix — the listing is doing exactly what the
-   * seller just asked it to do.
-   *
-   * It used to land in `hidden` by fall-through rather than by choice, so the
-   * moment a seller published, the row they were watching changed from "Draft —
-   * not published" to "Hidden from buyers · Restock": the one status update in
-   * the flow that tells them their work went backwards, plus a remedy for a
-   * problem they do not have.
-   */
-  | "pending_review"
-  | "hidden"
-  | "draft";
+export type StoreListingHealth = "in_stock" | "low_stock" | "out_of_stock" | "hidden" | "draft";
 
 /**
- * At or below this quantity a listing is "low".
- *
- * NO LONGER AN AUTHORITY. The server owns this number — it is
- * `LOW_STOCK_THRESHOLD` in `services/business_os/marketplace/listing_readiness.py`
- * — and `listingHealth` reads the server's `LOW_STOCK` code rather than
- * comparing against this. It survives only as the FALLBACK used when a payload
- * carries no verdict at all (an older cached snapshot), and is exported because
- * `deriveRows`' callers and the tests still name the boundary.
- *
- * Keeping a second copy of a rule is what put a threshold the server had never
- * heard of in front of merchants. If the two ever need to differ, that is a
- * server change, not an edit here.
+ * At or below this quantity a listing is "low". A single named threshold so the
+ * banner, the tab count and the row never disagree.
  */
 export const LOW_STOCK_THRESHOLD = 5;
 
 function normalizedStatus(listing: MarketplaceListing): string {
   return String(listing.status || listing.approval_status || "draft").toLowerCase();
-}
-
-/**
- * The statuses that mean "submitted, no decision recorded yet".
- *
- * Mirrors `AWAITING_DECISION_STATES` in
- * `services/marketplace_listing_lifecycle.py`, which is the authority — both
- * values reach the `status` column (the seller resume route copies
- * `review_ready` onto it, and submit/re-review writes `pending_review`).
- *
- * Matched exactly rather than by substring. `SellerStoreScreen.statusKey` tests
- * `raw.includes("review")`, which also swallows `blocked_review` — a listing the
- * safety engine stopped at risk >= 70. That one is genuinely hidden and must
- * keep falling through to `hidden`; calling it "In review" would tell a seller
- * to wait for a decision that has already gone against them.
- */
-const AWAITING_REVIEW_STATES = ["pending_review", "review_ready"];
-
-function isAwaitingReview(status: string): boolean {
-  return AWAITING_REVIEW_STATES.includes(status);
 }
 
 /**
@@ -174,15 +116,19 @@ const STOCKLESS_PRODUCT_TYPES = ["digital", "course", "service", "event", "booki
 /**
  * A listing's stock count, or `null` when the listing does not have one.
  *
- * The trap this function was written around is now fixed upstream:
- * `normalizeMarketplaceListing` used to apply `Number(item.quantity || 0)`
- * before any listing reached this module, so an untracked quantity arrived
- * indistinguishable from a real zero and `product_type` was the only signal
- * left. The normalizer preserves the null now, so the count below is the true
- * one and the type check is merely the first of two reasons to have none.
+ * Two traps, both of which turn "this listing has no stock concept" into
+ * "out of stock" and hide the listing from the seller's own active tab:
  *
- * `Number(null)` is `0`, not `NaN`, so every not-a-number case is still caught
- * before coercion rather than after it.
+ * 1. `Number(null)` is `0`, not `NaN`. A JSON payload reporting
+ *    `"quantity": null` reads as zero unless it is checked before coercion.
+ * 2. More importantly, `normalizeMarketplaceListing` has *already* applied
+ *    `Number(item.quantity || 0)` by the time any listing reaches this module,
+ *    so an absent quantity is indistinguishable from a real zero. The
+ *    normalizer is shared with several screens and is left alone.
+ *
+ * `product_type` is the signal that survives normalization, so it is checked
+ * first. A physical listing still falls through to its quantity, which is what
+ * the tabs and the attention banner are counting.
  */
 function stockCount(listing: MarketplaceListing): number | null {
   const productType = String(listing.product_type || "").toLowerCase();
@@ -195,116 +141,36 @@ function stockCount(listing: MarketplaceListing): number | null {
 }
 
 /**
- * The stock half of the health state, taken from the SERVER'S verdict.
- *
- * Returns `null` when the payload carries no verdict, so the caller can fall
- * back rather than read absence as "fine". An unrecognised code is likewise not
- * a clean bill of health — only the explicit absence of every stock code is.
- */
-function serverStockHealth(listing: MarketplaceListing): StoreListingHealth | null {
-  const verdict = listing.readiness;
-  if (!verdict || !Array.isArray(verdict.warnings)) return null;
-  const warnings = verdict.warnings;
-  if (warnings.includes(READINESS_CODES.OUT_OF_STOCK)) return "out_of_stock";
-  if (warnings.includes(READINESS_CODES.UNKNOWN_INVENTORY)) return "unknown_stock";
-  if (warnings.includes(READINESS_CODES.LOW_STOCK)) return "low_stock";
-  return "in_stock";
-}
-
-/**
  * Follows the same status vocabulary `SellerStoreScreen.statusKey` already uses,
  * so the two screens cannot disagree about what a listing is.
- *
- * Two halves, and only one of them is this module's business. Whether a listing
- * is a draft, paused or hidden is a *presentation* question about the seller's
- * own store, answered from the status columns here. Whether it can be sold is a
- * *rule*, and the rule has an owner on the server —
- * `services/business_os/marketplace/listing_readiness.py`, which is in turn
- * bound by test to the checkout code that actually decides. So the stock state
- * is read from `listing.readiness`, not recomputed.
- *
- * The local derivation stays only as a fallback for payloads with no verdict:
- * cached snapshots from older builds, and the public search endpoint, which
- * deliberately omits readiness because it is merchant-internal. Reaching that
- * fallback means the answer is a guess, and the guess is the one that used to be
- * wrong in both directions — through the old normalizer an untracked quantity
- * read `out_of_stock` (a false alarm), and called directly with the field absent
- * it read `in_stock` (a false all-clear).
  */
 export function listingHealth(listing: MarketplaceListing): StoreListingHealth {
   const status = normalizedStatus(listing);
-
-  // Publication first, and from the server.
-  //
-  // `listing_state` is stamped by `pulse_marketplace_seller_listing_payload`
-  // using the same `listing_state()` the seller metrics aggregate counts with,
-  // so the Active tab here and the "Live listings" tile on Business OS are one
-  // definition rather than two that happen to agree. The local branch below
-  // reached the same verdict by substring — and substring matching over this
-  // vocabulary is why an untouched draft carrying
-  // `approval_status='pending_review'` is a trap.
-  const state = String(listing.listing_state || "").toLowerCase();
-  if (state) {
-    if (state === "draft") return "draft";
-    if (state === "pending_review") return "pending_review";
-    // `suppressed` and `removed`: paused, rejected, blocked or deleted. Not
-    // live, and no stock story worth telling.
-    if (state !== "live") return "hidden";
-  } else {
-    // Only reachable for a payload written before the stamp existed — an old
-    // cached snapshot. Kept deliberately small, and it must never be extended:
-    // the moment it gains a rule the server does not have, the two definitions
-    // have forked again.
-    const publication = String(listing.publication_state || listing.status || "").toLowerCase();
-    if (!["published", "live", "active"].includes(publication)) {
-      if (publication.includes("draft")) return "draft";
-      if (isAwaitingReview(publication)) return "pending_review";
-      return "hidden";
-    }
-    if (status.includes("draft")) return "draft";
-    if (
-      status.includes("pause") ||
-      status.includes("reject") ||
-      status.includes("blocked") ||
-      status.includes("removed") ||
-      status.includes("delete")
-    ) {
-      return "hidden";
-    }
+  const publication = String(listing.publication_state || listing.status || "").toLowerCase();
+  if (!["published", "live", "active"].includes(publication)) {
+    return publication.includes("draft") ? "draft" : "hidden";
   }
-
-  const fromServer = serverStockHealth(listing);
-  if (fromServer) return fromServer;
-
+  if (status.includes("draft")) return "draft";
+  if (
+    status.includes("pause") ||
+    status.includes("reject") ||
+    status.includes("blocked") ||
+    status.includes("removed") ||
+    status.includes("delete")
+  ) {
+    return "hidden";
+  }
   const quantity = stockCount(listing);
   // A digital or service listing has no meaningful stock count. Treating an
   // absent quantity as zero would mark every course in the store out of stock.
-  if (quantity === null) {
-    if (status.includes("stock")) return "out_of_stock";
-    // A stockless TYPE is genuinely fine. A physical listing whose quantity
-    // simply did not arrive is not, and saying "in stock" about it is a promise
-    // this build cannot keep.
-    const productType = String(listing.product_type || "").toLowerCase();
-    const stockless = STOCKLESS_PRODUCT_TYPES.some((type) => productType.includes(type));
-    return stockless ? "in_stock" : "unknown_stock";
-  }
+  if (quantity === null) return status.includes("stock") ? "out_of_stock" : "in_stock";
   if (quantity <= 0) return "out_of_stock";
   if (quantity <= LOW_STOCK_THRESHOLD) return "low_stock";
   return "in_stock";
 }
 
-/**
- * Health states that need the seller to do something. Drives the banner.
- *
- * `unknown_stock` is here because the server refuses checkout for it: a listing
- * nobody can buy is the seller's problem whether the cause is an empty shelf or
- * an uncounted one.
- */
-const NEEDS_ATTENTION: readonly StoreListingHealth[] = [
-  "low_stock",
-  "out_of_stock",
-  "unknown_stock"
-];
+/** Health states that need the seller to do something. Drives the banner. */
+const NEEDS_ATTENTION: readonly StoreListingHealth[] = ["low_stock", "out_of_stock"];
 
 /* ------------------------------------------------------------------ *
  * Rows
@@ -318,44 +184,8 @@ export type StoreListingRow = {
   currency: string;
   quantity: number | null;
   health: StoreListingHealth;
-  /**
-   * The server's verdict, carried through so the row can name what is missing
-   * instead of rendering a gap as silence.
-   *
-   * `null` when the payload carried none. A row must treat that as "not told",
-   * not as "nothing wrong" — the difference matters because the fallback path
-   * exists for cached snapshots, and an old snapshot has no news, not good news.
-   */
-  readiness: ListingReadiness | null;
-  /**
-   * Why this listing was rejected, restricted or sent back for changes.
-   *
-   * `null` when the payload carried none — "not told", not "nothing wrong". The
-   * row's stock copy for a rejected listing is "Hidden from buyers", which
-   * states the effect and none of the cause; this is the cause, and it is the
-   * only thing on the seller's screen that can tell them what to fix.
-   */
-  review: ListingReviewVerdict | null;
-  /**
-   * What a bulk action would do to this row, as decided by the server function
-   * the batch itself uses. `null` when the payload carried none — and a caller
-   * must read that as "not eligible", not as "go ahead".
-   */
-  bulkEligibility: ListingBulkEligibility | null;
   /** Units of this listing sold in the trailing 7 days. Derived from orders. */
   unitsSold7d: number;
-  /**
-   * Where the product is filed, so the bulk move face can offer the aisles this
-   * store already uses.
-   *
-   * Empty string, not null, for a listing with no category. The distinction the
-   * other nullable fields here draw — "not told" versus "nothing" — does not
-   * apply: `category` is a plain column every listing payload carries, and
-   * `MISSING_CATEGORY` is how the readiness verdict reports its absence. A row
-   * with `""` is uncategorised, which is a fact and not a gap in the snapshot.
-   */
-  category: string;
-  subcategory: string;
   // MOCK-DATA: no review aggregate exists, so these stay null and the row
   // renders without a star line rather than with an invented one.
   rating: number | null;
@@ -384,33 +214,36 @@ function dayIndex(date: Date): number {
   );
 }
 
-/*
- * `orderDate`, `orderMinorAmount` and `isOpenOrder` used to live here. They
- * were this screen's private answer to "is this an order" and "is this money",
- * and they disagreed with Business OS's answer and with the server's. Every one
- * of them has been deleted rather than reworked: a second definition that
- * happens to be correct today is still a second definition, and the next status
- * word added to checkout would have split them again.
- *
- * `isOpenOrder` in particular matched by substring over
- * ["pending","paid","processing","awaiting","confirmed"], in a vocabulary that
- * contains `cash_pending`, `checkout_created` and `checkout_failed`.
- *
- * The answers now come from `snapshot.metrics`, computed by
- * `services/business_os/marketplace/seller_metrics.py`.
- */
+function orderDate(order: MarketplaceSellerOrder): Date | null {
+  if (!order.created_at) return null;
+  const parsed = new Date(order.created_at);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function orderMinorAmount(order: MarketplaceSellerOrder): number {
+  const amount = Number(order.gross_amount_cents ?? order.amount_cents ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+/** Orders that have not been fulfilled yet. */
+const OPEN_ORDER_STATUSES = ["pending", "paid", "processing", "awaiting", "confirmed"];
+
+function isOpenOrder(order: MarketplaceSellerOrder): boolean {
+  const status = String(order.status || "pending").toLowerCase();
+  if (status.includes("cancel") || status.includes("refund")) return false;
+  if (status.includes("complete") || status.includes("delivered") || status.includes("fulfilled")) {
+    return false;
+  }
+  return OPEN_ORDER_STATUSES.some((candidate) => status.includes(candidate));
+}
 
 /* ------------------------------------------------------------------ *
  * KPIs
  * ------------------------------------------------------------------ */
 
 export type StoreKpis = {
-  /**
-   * Today's confirmed takings, in minor units, from the server. `null` when the
-   * metrics call failed — the screen shows "—" rather than a number this
-   * client made up out of the raw order rows.
-   */
-  salesTodayMinor: number | null;
+  /** Today's gross, in minor units. Formatted by the caller. */
+  salesTodayMinor: number;
   currency: string;
   /**
    * Change against the *same weekday* last week, as a ratio (0.12 = +12%).
@@ -419,10 +252,9 @@ export type StoreKpis = {
    * a store's first week should not report "+100%".
    */
   salesTrend: number | null;
-  /** Seven daily totals, oldest first, for the sparkline. Empty when unknown. */
+  /** Seven daily totals, oldest first, for the sparkline. */
   sparkline: number[];
-  /** Orders awaiting the seller's action. `null` when unknown. */
-  openOrders: number | null;
+  openOrders: number;
   // MOCK-DATA: needs order.ship_by.
   shippingToday: number | null;
   // MOCK-DATA: needs a seller impressions endpoint.
@@ -435,44 +267,41 @@ export type StoreKpis = {
 };
 
 /**
- * Reads the server's canonical metrics. Derives nothing.
- *
- * This function used to bucket `snapshot.orders` by day with no status filter
- * at all, so every checkout a buyer opened and abandoned was counted as money
- * the seller had taken. Production read $0.00 only because the newest abandoned
- * checkout happened to be two days old. `openOrders` used a substring filter
- * over a hand-written status list, which is a second definition of "order"
- * living on the phone.
- *
- * Both questions are now answered once, on the server, by
- * `services/business_os/marketplace/seller_metrics.py`. When metrics is absent
- * the money and order figures return `null` — the caller renders "—". A number
- * this screen invented for itself is what the mission was called to remove, so
- * there is no local fallback path to fall back to.
+ * `now` is injected rather than read from the clock so the whole KPI block is
+ * testable, and so a cached snapshot can be rendered against the time it was
+ * captured rather than against the time the app was reopened.
  */
-export function deriveKpis(snapshot: SellerStoreSnapshot): StoreKpis {
-  const metrics = snapshot.metrics;
-  if (!metrics) {
-    return {
-      salesTodayMinor: null,
-      currency: "USD",
-      salesTrend: null,
-      sparkline: [],
-      openOrders: null,
-      shippingToday: null,
-      views7d: null,
-      viewsTrend: null,
-      sellerRating: null,
-      onTimeDispatch: null
-    };
-  }
+export function deriveKpis(
+  snapshot: SellerStoreSnapshot,
+  now: Date = new Date()
+): StoreKpis {
+  const today = dayIndex(now);
+  const currency = String(snapshot.orders.find((order) => order.currency)?.currency || "USD");
+
+  const byDay = new Map<number, number>();
+  snapshot.orders.forEach((order) => {
+    const date = orderDate(order);
+    if (!date) return;
+    const day = dayIndex(date);
+    byDay.set(day, (byDay.get(day) || 0) + orderMinorAmount(order));
+  });
+
+  const salesTodayMinor = byDay.get(today) || 0;
+  const lastWeekSameDay = byDay.get(today - 7);
+  const salesTrend =
+    lastWeekSameDay && lastWeekSameDay > 0
+      ? (salesTodayMinor - lastWeekSameDay) / lastWeekSameDay
+      : null;
+
+  // Oldest first, so the sparkline reads left to right like a calendar.
+  const sparkline = Array.from({ length: 7 }, (_, offset) => byDay.get(today - 6 + offset) || 0);
 
   return {
-    salesTodayMinor: metrics.today_sales_minor,
-    currency: metrics.currency || "USD",
-    salesTrend: metrics.sales_trend_ratio ?? null,
-    sparkline: metrics.sales_last_7_days_minor || [],
-    openOrders: metrics.open_orders,
+    salesTodayMinor,
+    currency,
+    salesTrend,
+    sparkline,
+    openOrders: snapshot.orders.filter(isOpenOrder).length,
     shippingToday: null,
     views7d: null,
     viewsTrend: null,
@@ -485,26 +314,27 @@ export function deriveKpis(snapshot: SellerStoreSnapshot): StoreKpis {
  * Listing rows and tabs
  * ------------------------------------------------------------------ */
 
-/**
- * Units sold per listing over the trailing 7 days, from the server.
- *
- * This was derived here, from every order row, skipping only statuses
- * containing "cancel" or "refund". That is how the seller's Store screen came
- * to read **Sold · 7 days: 3** against a store that had never sold anything:
- * three `checkout_created` rows from 2026-09-20 — buyers who opened checkout
- * and left — were counted as three units. It also counted rows rather than
- * units, so a line for three of the same product sold one.
- */
-function unitsSoldByListing(snapshot: SellerStoreSnapshot): Map<string, number> {
+/** Units sold per listing over the trailing 7 days, keyed by listing id. */
+function unitsSoldByListing(orders: MarketplaceSellerOrder[], now: Date): Map<string, number> {
+  const cutoff = dayIndex(now) - 6;
   const counts = new Map<string, number>();
-  const sold = snapshot.metrics?.units_sold_last_7_days_by_listing;
-  if (!sold) return counts;
-  Object.keys(sold).forEach((key) => counts.set(key, Number(sold[key]) || 0));
+  orders.forEach((order) => {
+    const date = orderDate(order);
+    if (!date || dayIndex(date) < cutoff) return;
+    const status = String(order.status || "").toLowerCase();
+    if (status.includes("cancel") || status.includes("refund")) return;
+    const key = String(order.item_id ?? "");
+    if (!key) return;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
   return counts;
 }
 
-export function deriveRows(snapshot: SellerStoreSnapshot): StoreListingRow[] {
-  const sold = unitsSoldByListing(snapshot);
+export function deriveRows(
+  snapshot: SellerStoreSnapshot,
+  now: Date = new Date()
+): StoreListingRow[] {
+  const sold = unitsSoldByListing(snapshot.orders, now);
   return snapshot.listings.map((listing) => {
     const id = Number(listing.listing_id ?? listing.id);
     return {
@@ -515,12 +345,7 @@ export function deriveRows(snapshot: SellerStoreSnapshot): StoreListingRow[] {
       currency: String(listing.currency || "USD"),
       quantity: stockCount(listing),
       health: listingHealth(listing),
-      readiness: listing.readiness ?? null,
-      review: listing.review ?? null,
-      bulkEligibility: listing.bulk_eligibility ?? null,
       unitsSold7d: sold.get(String(id)) || 0,
-      category: String(listing.category || ""),
-      subcategory: String(listing.subcategory || ""),
       rating: null,
       reviewCount: null
     };
@@ -540,27 +365,9 @@ const TAB_MATCHERS: Record<StoreTabKey, (row: StoreListingRow) => boolean> = {
   all: () => true,
   active: (row) => row.health === "in_stock" || row.health === "low_stock",
   low: (row) => row.health === "low_stock",
-  // `unknown_stock` sits here rather than under Active because the server will
-  // not let a buyer check it out. Filing a listing nobody can order under
-  // "Active" is the false all-clear that hides the problem; the row's own copy
-  // is what keeps it distinct from a genuine sell-out.
-  out: (row) =>
-    row.health === "out_of_stock" ||
-    row.health === "unknown_stock" ||
-    row.health === "hidden",
+  out: (row) => row.health === "out_of_stock" || row.health === "hidden",
   drafts: (row) => row.health === "draft"
 };
-
-/**
- * `pending_review` matches no tab but `all`, and that is the intended reading.
- *
- * It is not Active (a buyer cannot order it), not Drafts (the seller submitted
- * it — leaving Drafts is the visible proof the publish worked), and not Out,
- * which colours its count via `needsAttention` and would raise an alarm over a
- * listing that is simply waiting its turn. Back when it fell into `hidden` it
- * did land in Out, so publishing a product *added one to the seller's problem
- * count*. The row stays reachable on All, which is the tab the screen opens on.
- */
 
 export function filterRows(rows: StoreListingRow[], tab: StoreTabKey): StoreListingRow[] {
   return rows.filter(TAB_MATCHERS[tab]);
@@ -584,7 +391,7 @@ export type StoreAttention = {
   count: number;
   /** The tab the "Fix now" link should open. */
   target: StoreTabKey;
-  kind: "out_of_stock" | "unknown_stock" | "low_stock";
+  kind: "out_of_stock" | "low_stock";
 };
 
 /**
@@ -598,11 +405,6 @@ export type StoreAttention = {
 export function deriveAttention(rows: StoreListingRow[]): StoreAttention | null {
   const out = rows.filter((row) => row.health === "out_of_stock").length;
   if (out > 0) return { count: out, target: "out", kind: "out_of_stock" };
-  // Ranked below a real sell-out and above low stock. Like a sell-out it is a
-  // live loss -- checkout refuses these -- but it outranks nothing, because a
-  // seller who genuinely has none left should hear that first.
-  const unknown = rows.filter((row) => row.health === "unknown_stock").length;
-  if (unknown > 0) return { count: unknown, target: "out", kind: "unknown_stock" };
   const low = rows.filter((row) => row.health === "low_stock").length;
   if (low > 0) return { count: low, target: "low", kind: "low_stock" };
   return null;
@@ -908,12 +710,6 @@ export type StoreSectionState<T> =
 export type StoreLoadResult = {
   listings: StoreSectionState<MarketplaceListing[]>;
   orders: StoreSectionState<MarketplaceSellerOrder[]>;
-  /**
-   * The canonical counts. A third leg, settled separately: the row lists are
-   * what the seller scrolls and the metrics are what the KPI tiles read, and
-   * either can fail without the other being wrong.
-   */
-  metrics: SellerMetrics | null;
   /** Set when the payload came from cache because the network was unavailable. */
   cachedAt: string | null;
   offline: boolean;
@@ -929,10 +725,9 @@ export type StoreLoadResult = {
  * loader is left alone — other screens depend on its behaviour.
  */
 export async function loadStoreDashboard(): Promise<StoreLoadResult> {
-  const [listings, orders, metrics] = await Promise.allSettled([
+  const [listings, orders] = await Promise.allSettled([
     listMarketplaceSellerListings({ limit: 80 }),
-    listMarketplaceSellerOrders(),
-    loadSellerMetrics()
+    listMarketplaceSellerOrders()
   ]);
 
   const bothFailed = listings.status === "rejected" && orders.status === "rejected";
@@ -944,7 +739,6 @@ export async function loadStoreDashboard(): Promise<StoreLoadResult> {
       return {
         listings: { status: "ok", data: cached.listings },
         orders: { status: "ok", data: cached.orders },
-        metrics: cached.metrics || null,
         cachedAt: cached.cached_at || null,
         offline: true
       };
@@ -960,7 +754,6 @@ export async function loadStoreDashboard(): Promise<StoreLoadResult> {
       orders.status === "fulfilled"
         ? { status: "ok", data: orders.value.orders || [] }
         : { status: "error", message: "Orders didn't load." },
-    metrics: metrics.status === "fulfilled" ? metrics.value : null,
     cachedAt: null,
     offline: false
   };
@@ -971,7 +764,6 @@ export function snapshotFrom(result: StoreLoadResult): SellerStoreSnapshot {
   return {
     listings: result.listings.status === "ok" ? result.listings.data : [],
     orders: result.orders.status === "ok" ? result.orders.data : [],
-    metrics: result.metrics,
     cached_at: result.cachedAt || undefined
   };
 }

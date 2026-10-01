@@ -239,15 +239,7 @@ MESSAGE_IDEMPOTENCY_INDEX = "idx_comm_v2_messages_client_idem"
 # protection at all.
 MESSAGE_IDEMPOTENCY_TABLE = "comm_v2_messages"
 MESSAGE_IDEMPOTENCY_COLUMNS = ("conversation_id", "sender_user_id", "client_message_id")
-# The predicate must match `_message_for_client_id` exactly, including its
-# deleted_at filter. Uniqueness enforced over a wider set of rows than the
-# lookup consults is not a stricter guarantee, it is a broken one: the insert
-# would be refused for a row the recovery SELECT cannot see, `winner` would come
-# back None, and a resend after a delete would raise instead of sending.
-MESSAGE_IDEMPOTENCY_PREDICATE = (
-    "client_message_id IS NOT NULL AND client_message_id <> '' "
-    "AND COALESCE(deleted_at, '') = ''"
-)
+MESSAGE_IDEMPOTENCY_PREDICATE = "client_message_id IS NOT NULL AND client_message_id <> ''"
 
 # The four states this installer can end in. They are determined by inspection,
 # never by reading a driver's error string: exception text is a presentation
@@ -267,10 +259,7 @@ IDEMPOTENCY_INDEX_INSTALL_ERROR = "install_error"
 # interleaving.
 #
 # The predicate excludes blank ids because legacy rows and server-authored
-# messages carry none, and NULLs must not collide with each other. It excludes
-# deleted rows for a different reason: a client id names a logical message, and
-# once the sender has deleted that message the id is free again -- which is the
-# rule `_message_for_client_id` already applies when it decides a resend is new.
+# messages carry none, and NULLs must not collide with each other.
 _MESSAGE_IDEMPOTENCY_INDEX_SQL = (
     f"CREATE UNIQUE INDEX IF NOT EXISTS {MESSAGE_IDEMPOTENCY_INDEX} "
     f"ON {MESSAGE_IDEMPOTENCY_TABLE} ({', '.join(MESSAGE_IDEMPOTENCY_COLUMNS)}) "
@@ -350,14 +339,6 @@ def _normalise_predicate(raw: str) -> str:
     as `client_message_id <> ''` comes back as
     `(client_message_id <> ''::text)`. Comparing the raw strings would report a
     correct index as malformed.
-
-    What it does NOT do is normalise spacing inside an expression: PostgreSQL
-    prints `COALESCE(deleted_at, ''::text)` with a space after the comma, and
-    collapsing runs of whitespace will not close that gap. So
-    MESSAGE_IDEMPOTENCY_PREDICATE is written in the server's own spelling, and
-    test_the_postgres_rendering_of_the_real_predicate_reads_back_as_correct
-    holds it there. Getting this wrong fails closed -- the index installs and
-    then fails its own read-back -- which is survivable, but silent.
     """
     text = (raw or "").lower()
     text = text.replace("::text", "").replace("::character varying", "")
@@ -447,30 +428,14 @@ def _index_shape_is_correct(inspected: dict) -> bool:
 
 
 def _count_message_idempotency_duplicates(cur) -> tuple[int, int]:
-    """(groups, rows beyond one per logical message).
-
-    Positional indexing, and never ``list(row)`` — the two disagree by engine.
-
-    SQLite hands back a ``sqlite3.Row``, which is a sequence, so ``list(row)``
-    is ``[18, 46]``. PostgreSQL hands back a ``services.db.CompatRow``, which is
-    a ``Mapping``, so ``list(row)`` is ``['group_count', 'row_total']`` — the
-    column *names*. ``int('group_count')`` is a ValueError.
-
-    That is precisely what production did: this function raised on every boot,
-    the caller's blanket ``except Exception`` recorded ``install_error`` with
-    ``error_class=ValueError``, and the real answer — blocked by 18 groups of
-    historical duplicates, which is a correct and actionable state with a
-    named remedy — never reached the log. The whole suite stayed green because
-    the suite runs on SQLite, where ``list(row)`` means the other thing.
-
-    Both engines agree on ``row[0]``, so ask for the column by position.
-    """
+    """(groups, rows beyond one per logical message)."""
     cur.execute(_MESSAGE_IDEMPOTENCY_DUPLICATE_SQL)
     row = cur.fetchone()
     if not row:
         return 0, 0
-    groups = int(row[0] or 0)
-    total = int(row[1] or 0)
+    values = list(row)
+    groups = int(values[0] or 0)
+    total = int(values[1] or 0)
     return groups, max(total - groups, 0)
 
 
@@ -555,25 +520,6 @@ def _ensure_message_idempotency_index(cur, conn) -> dict:
             conn.rollback()
         except Exception:
             pass
-        # The traceback goes to the log, not into the status dict.
-        #
-        # The status line is deliberately content-free -- no conversation ids,
-        # no sender ids, no client ids -- because operational telemetry is read
-        # by more people and retained in more places than the database is. That
-        # constraint is right, and it is why `error_class` is all the line
-        # carries. But `error_class` alone is not a diagnosis: production said
-        # `ValueError` on every boot for as long as anyone had looked, and the
-        # class name is the same whether the fault is in the catalog query, the
-        # duplicate count, or the row handling in between.
-        #
-        # A traceback names a file and a line and has no user data in it, so it
-        # is both safe here and the thing that was missing. Logged separately at
-        # exception level so the structured line stays machine-parseable.
-        logging.exception(
-            "PULSE_COMM_V2_IDEMPOTENCY_INDEX_FAILED index=%s error_class=%s",
-            MESSAGE_IDEMPOTENCY_INDEX,
-            type(exc).__name__,
-        )
         return _record_message_idempotency_health(
             _idempotency_status(
                 IDEMPOTENCY_INDEX_INSTALL_ERROR,
@@ -692,12 +638,6 @@ def _ensure_columns(bot, cur, conn) -> None:
         ("mux_asset_id", "TEXT"),
         ("mux_playback_id", "TEXT"),
         ("mux_status", "TEXT"),
-        # Which of Mux's two playback policies this row's playback id was minted
-        # under. Not derivable at read time: a signed id served without a token
-        # is a 403, and a public id is watchable by anyone who has ever seen the
-        # URL. Empty means "public", which is what every row written before
-        # messenger started requesting signed playback actually is.
-        ("mux_playback_policy", "TEXT"),
         ("scan_status", "TEXT DEFAULT 'approved'"),
         ("created_at", "TEXT"),
     ], conn=conn)
@@ -941,11 +881,7 @@ CONTROL_SETTING_DEFAULTS = {
     },
     "appearance": {
         "theme": "dark_galaxy",
-        # Defaults only fill gaps: `_merge_control_settings` layers the stored
-        # row over this dict, so a conversation somebody explicitly set to
-        # `deep_space` keeps `deep_space`, and a conversation nobody has ever
-        # touched now reports PulseSoc Cosmic.
-        "wallpaper": "pulsesoc_cosmic",
+        "wallpaper": "deep_space",
         "bubble_color": "cyan",
         "font_size": "medium",
         "density": "balanced",
@@ -998,7 +934,7 @@ CONTROL_SETTING_ALLOWED = {
     },
     "appearance": {
         "theme": {"dark_galaxy", "pulse_green", "deep_space", "nebula", "cyber_night", "solar_flame", "ocean_signal", "royal_purple", "haiti_night", "creator_gold"},
-        "wallpaper": {"default", "pulsesoc_cosmic", "deep_space", "neon_planet", "galaxy_grid", "pulse_horizon", "alien_city", "cosmic_ocean", "aurora_signal", "dark_nebula", "star_tunnel", "minimal_black"},
+        "wallpaper": {"default", "deep_space", "neon_planet", "galaxy_grid", "pulse_horizon", "alien_city", "cosmic_ocean", "aurora_signal", "dark_nebula", "star_tunnel", "minimal_black"},
         "bubble_color": {"cyan", "purple", "rose", "orange", "green", "gold", "blue"},
         "font_size": {"small", "medium", "large", "extra_large"},
         "density": {"compact", "balanced", "relaxed"},
@@ -2024,11 +1960,6 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                 push_metadata = {
                     "conversation_id": int(conversation_id),
                     "conversationId": int(conversation_id),
-                    "schemaVersion": 1,
-                    "notificationType": "message",
-                    "messageNamespace": "comm_v2",
-                    "recipientUserId": int(recipient_id),
-                    "sentAt": message.get("created_at") or _now(),
                     "message_id": message_id,
                     "messageId": message_id,
                     "sender_id": int(user_id),
@@ -2460,17 +2391,6 @@ def _attach_foundation_media(cur, user_id: int, conversation_id: int, message_id
         raw_type = str(media.get("media_type") or "file").lower()
         media_type = "image" if raw_type == "photo" else "voice" if raw_type == "voice" else raw_type
         download_url = f"/api/messages/media/{int(foundation_id)}/download"
-        # The processing job has normally already produced a poster by the time
-        # the message referencing the attachment is sent, and this row is the
-        # only place the conversation read path looks for one. Storing "" here
-        # -- which is what this did -- is what left every photo and video in a
-        # thread posterless. Conditional on the key, so "no preview yet" stays a
-        # distinguishable state rather than becoming a URL that 404s.
-        thumbnail_url = (
-            f"/api/messages/media/{int(foundation_id)}/thumbnail"
-            if str(media.get("thumbnail_key") or "")
-            else ""
-        )
         duration_seconds = max(0.0, float(media.get("duration_ms") or 0) / 1000.0)
         attachment_public_id = _public_id("att")
         now = _now()
@@ -2492,7 +2412,7 @@ def _attach_foundation_media(cur, user_id: int, conversation_id: int, message_id
                 download_url,
                 "",
                 download_url if media_type in {"video", "voice", "audio"} else "",
-                thumbnail_url,
+                "",
                 media.get("mime_type") or "",
                 int(media.get("size_bytes") or 0),
                 int(media.get("size_bytes") or 0),
@@ -2521,7 +2441,7 @@ def _attach_foundation_media(cur, user_id: int, conversation_id: int, message_id
             "url": download_url,
             "cdn_url": "",
             "playback_url": download_url if media_type in {"video", "voice", "audio"} else "",
-            "thumbnail_url": thumbnail_url,
+            "thumbnail_url": "",
             "mime_type": media.get("mime_type") or "",
             "file_size": int(media.get("size_bytes") or 0),
             "file_size_bytes": int(media.get("size_bytes") or 0),
@@ -2536,31 +2456,6 @@ def _attach_foundation_media(cur, user_id: int, conversation_id: int, message_id
             "UPDATE message_attachments SET message_id=?, upload_status='attached', updated_at=? WHERE id=?",
             (int(message_id), now, int(foundation_id)),
         )
-        # Hand the video to Mux, which is how every other video on PulseSoc is
-        # delivered and the one thing this path has never done -- the three Mux
-        # columns above are inserted empty, so a conversation video is served as
-        # a progressive byte range while a reel of the same file streams
-        # adaptively.
-        #
-        # Queued here rather than at upload-finish because the ingest writes
-        # into the row created immediately above; enqueued any earlier it would
-        # race the user's own send. Asynchronous on purpose: `create_mux_asset`
-        # is an outbound HTTP call that inspects the source before it returns,
-        # and sending a message must not wait on Mux -- nor fail if Mux is down.
-        #
-        # Gated on `raw_type`, the foundation's own vocabulary, and not on
-        # `media_type` above -- that one has already been translated for the
-        # wire (`photo` becomes `image`). The two agree on "video" today purely
-        # by coincidence, and `process_attachment` checks the foundation
-        # spelling, so reading the translated name here would make the two ends
-        # of this job disagree the moment the translation gains a case.
-        if raw_type == "video":
-            try:
-                from services import messenger_media_foundation as _foundation
-
-                _foundation.enqueue_mux_ingest(cur, int(foundation_id))
-            except Exception as exc:
-                logging.warning("COMM_V2_MUX_INGEST_QUEUE_SKIPPED attachment_id=%s error=%s", foundation_id, str(exc)[:200])
         out.append(_attachment_payload(attachment_row))
     return out
 
@@ -2602,39 +2497,8 @@ def _prepare_attachment_media(cur, media: dict, media_id: int) -> dict:
     return out
 
 
-def _is_adaptive_manifest(value: Any) -> bool:
-    """Is this URL a streaming playlist rather than a file you can save?
-
-    Deliberately a shape test on the path, ignoring the query string: a signed
-    Mux manifest is ``.../vod.m3u8?token=...``, so anything that inspected the
-    whole URL would stop recognising a manifest the moment it was signed --
-    which is exactly the case that matters.
-
-    Both of Mux's playlist formats are named. HLS is what messenger serves
-    today; DASH is one configuration change away, and a downloader handed an
-    ``.mpd`` fails the same way for the same reason.
-    """
-    path = str(value or "").split("?", 1)[0].split("#", 1)[0].strip().lower()
-    return path.endswith(".m3u8") or path.endswith(".mpd")
-
-
 def _attachment_payload(row: dict) -> dict:
-    """The one canonical attachment payload for every comm_v2 read/write path.
-
-    This function must exist EXACTLY ONCE at module scope. A second module-scope
-    definition silently shadows this one for all four call sites above it, which
-    is how the read path lost ``media_upload_id``/``width``/``height``/
-    ``waveform``/``playback_url`` in production. See
-    ``tests/test_messenger_media_gallery.py``.
-
-    It accepts three row shapes and must degrade without raising on any of them:
-      * a bare ``SELECT *`` from ``comm_v2_attachments`` (no message columns)
-      * that row JOINed to ``comm_v2_messages``/``users`` (media history)
-      * a hand-built dict from the send path
-    """
-    media_type = str(row.get("media_type") or "file").lower()
     mux_playback_id = row.get("mux_playback_id") or ""
-    mux_playback_policy = str(row.get("mux_playback_policy") or "").strip().lower()
     playback_url = row.get("playback_url") or ""
     if mux_playback_id and not playback_url:
         try:
@@ -2643,123 +2507,26 @@ def _attachment_payload(row: dict) -> dict:
             playback_url = media_service.mux_playback_urls(mux_playback_id).get("hls_url") or ""
         except Exception:
             playback_url = ""
-    # Messenger videos are ingested under Mux's `signed` playback policy, because
-    # a conversation is private and a public playback id is an unguessable URL
-    # rather than an access check. The consequence is that the bare HLS URL is a
-    # 403 -- so for these rows the manifest URL cannot be a stored column, it has
-    # to be minted per request, behind the membership check that got us here.
-    #
-    # Three things this must not do, in order of how badly they would show up:
-    #
-    #   * serve a bare `stream.mux.com` URL. It 403s, and a 403 manifest paints
-    #     black with no error, which is the exact failure the media mission
-    #     exists to remove. This block is the single place that is enforced, on
-    #     purpose: the branch above can derive a bare URL from the playback id,
-    #     the webhook could store one, and a caller could hand one in. Gating
-    #     each of those separately would be three guards, two of which no test
-    #     could distinguish from this one -- so they would rot unnoticed. Every
-    #     row that any of them can reach reaches here, because they all require
-    #     the same `mux_playback_id` this block keys on.
-    #   * sign before `ready`. Mux issues the playback id at asset-creation time,
-    #     minutes before a manifest exists, and a token on a 404 is still a 404.
-    #   * fail to broken when signing is unavailable. No keys, or a key that no
-    #     longer parses, means fall back to the progressive download URL: slow,
-    #     membership-checked, and it works.
-    if mux_playback_policy == "signed" and mux_playback_id:
-        signed_hls = ""
-        if str(row.get("mux_status") or "").strip().lower() == "ready":
-            try:
-                from services import mux_live_service
-
-                signed_hls = mux_live_service.signed_playback_url(mux_playback_id) or ""
-            except Exception:
-                signed_hls = ""
-        if signed_hls:
-            playback_url = signed_hls
-        elif "stream.mux.com" in playback_url and "token=" not in playback_url:
-            playback_url = row.get("url") or ""
     cdn_url = row.get("cdn_url") or row.get("valid_url") or row.get("media_url") or row.get("public_url") or row.get("url") or ""
-    thumbnail_url = row.get("thumbnail_url") or row.get("poster_url") or ""
-    if media_type == "video" and playback_url:
-        url = playback_url
-    else:
-        url = row.get("url") or cdn_url or playback_url or thumbnail_url or ""
-    # The downloadable file, kept as a separate field from the playback source.
-    #
-    # `url` is what a PLAYER is pointed at, and for a Mux-backed video that is an
-    # HLS manifest -- a text playlist naming segments, not a movie. Save to
-    # Photos and Share hand `url` to a downloader, so a client with no other
-    # field to read would write a `.m3u8` into the photo library and report a
-    # failure about a video the user is watching. The two really are different
-    # resources and the wire has to say so, rather than leaving every client to
-    # re-derive it from the URL's shape.
-    #
-    # `row["url"]` is the right source because that column is written with the
-    # durable original for every path that reaches here -- foundation rows store
-    # `/api/messages/media/<id>/download`, which is progressive, membership
-    # checked, and the same bytes that were uploaded.
-    #
-    # A manifest is refused rather than passed through: an empty `download_url`
-    # makes a client fall back to `url` and fail honestly, which is strictly
-    # better than silently saving a playlist as if it were the video.
-    download_url = ""
-    for candidate in (row.get("url") or "", cdn_url):
-        if candidate and not _is_adaptive_manifest(candidate):
-            download_url = candidate
-            break
+    url = playback_url if (row.get("media_type") or "").lower() == "video" and playback_url else (row.get("url") or cdn_url)
     try:
         waveform = json.loads(row.get("waveform_json") or "[]")
     except Exception:
         waveform = []
-    # Recover the poster for foundation-backed media.
-    #
-    # `_attach_foundation_media` wrote `thumbnail_url=''` for every attachment it
-    # ever inserted, so in production every image and video in a conversation
-    # arrives with no poster even though the processing job generated one and
-    # stored its key -- verified against conversation 6, where all seven
-    # image/video rows have a `thumbnail_key` and all seven ship an empty
-    # `thumbnail_url`. The consequence is the gallery's, not the bubble's: the
-    # tapped item carries the bitmap the thread already decoded, but its
-    # neighbours have nothing to show while their full-resolution asset
-    # downloads, so swiping lands on black. Black is never the loading state.
-    #
-    # Derived rather than joined because it is a pure function of the foundation
-    # id -- the same id this row already carries -- and because adding
-    # `message_attachments` to the media-history JOIN would make every
-    # conversation read depend on a table that the comm_v2 read path does not
-    # otherwise touch. The route answers 404 when no preview exists yet, which
-    # every client already renders as "no poster", so the not-yet-processed case
-    # degrades to exactly the behaviour this replaces.
-    #
-    # Deliberately computed AFTER `url`: `thumbnail_url` is the last fallback in
-    # that chain, and a poster must never become the thing the player is asked
-    # to play.
-    if (
-        not thumbnail_url
-        and str(row.get("storage_provider") or "") == "messenger_media_foundation"
-        and media_type in {"image", "photo", "video"}
-    ):
-        foundation_id = int(row.get("media_upload_id") or 0)
-        if foundation_id > 0:
-            thumbnail_url = f"/api/messages/media/{foundation_id}/thumbnail"
     return {
         "id": int(row.get("id") or row.get("media_upload_id") or 0),
         "attachment_id": int(row.get("id") or 0),
         "attachment_public_id": row.get("attachment_public_id") or "",
         "media_upload_id": int(row.get("media_upload_id") or row.get("id") or 0),
-        "message_id": int(row.get("message_id") or 0),
         "media_type": row.get("media_type") or "file",
         "url": url,
-        "download_url": download_url,
         "cdn_url": cdn_url,
         "playback_url": playback_url,
-        "thumbnail_url": thumbnail_url,
+        "thumbnail_url": row.get("thumbnail_url") or row.get("poster_url") or "",
         "mime_type": row.get("mime_type") or "",
         "file_size": int(row.get("file_size") or row.get("file_size_bytes") or 0),
-        "file_size_bytes": int(row.get("file_size_bytes") or row.get("file_size") or 0),
+        "file_size_bytes": int(row.get("file_size_bytes") or 0),
         "duration_seconds": float(row.get("duration_seconds") or row.get("duration") or 0),
-        "width": int(row.get("width") or 0),
-        "height": int(row.get("height") or 0),
         "waveform": waveform if isinstance(waveform, list) else [],
         "voice_note": bool(int(row.get("voice_note") or 0)),
         "storage_provider": row.get("storage_provider") or "",
@@ -2767,11 +2534,6 @@ def _attachment_payload(row: dict) -> dict:
         "mux_asset_id": row.get("mux_asset_id") or "",
         "mux_playback_id": mux_playback_id,
         "mux_status": row.get("mux_status") or "",
-        "mux_playback_policy": mux_playback_policy,
-        "created_at": row.get("created_at") or row.get("message_created_at") or "",
-        "sender_user_id": int(row.get("sender_user_id") or row.get("uploader_user_id") or 0),
-        "sender_display_name": row.get("sender_display_name") or "Pulse member",
-        "body_preview": _safe_preview(row.get("body") or "", row.get("message_type") or "", "")[:180],
     }
 
 
@@ -3107,61 +2869,21 @@ def list_messages(user_id: int, conversation_ref: int | str, filters: dict | Non
         typing = typing_state(user_id, conversation_id, existing_conn=(conn, cur)).get("typing") or []
         read_state_committed = False
         try:
-            # mark_read walks every message id in the conversation ascending; the
-            # delivery loop below only covers the page just fetched, which is the
-            # high end of that same range. Running the page first would take a
-            # lock on id 100 before id 1, inverting the order a concurrent /read
-            # uses and closing a deadlock cycle on comm_v2_read_receipts. Calling
-            # mark_read first keeps this transaction's first-acquisition order
-            # ascending; the loop then only re-touches rows it already holds.
-            mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False,
-                      through_message_id=max((int(m.get("id") or 0) for m in raw_messages), default=0))
-            incoming_ids = sorted(
-                int(message.get("id") or 0)
-                for message in raw_messages
-                if int(message.get("sender_user_id") or 0) != int(user_id)
-            )
-            if incoming_ids:
-                # Placeholders are generated from the id count, never interpolated
-                # from a value; the ids themselves are still bound.
-                placeholders = ",".join("?" for _ in incoming_ids)
-                # This exists for the case mark_read above cannot cover: delivery
-                # is recorded even when the user has read receipts switched off,
-                # which is the whole reason a "Delivered" tick outlives a "Read"
-                # one. When receipts are on, mark_read has already written these
-                # rows and the anti-join here matches nothing.
-                #
-                # The loop this replaced re-stamped every incoming message on the
-                # page on every fetch. delivered_at was already set on all of
-                # them, so the only column that changed was updated_at, which
-                # nothing reads -- re-opening a conversation took a row lock per
-                # message on the page to write nothing observable.
-                cur.execute(
-                    f"""
-                    INSERT OR IGNORE INTO comm_v2_read_receipts
-                    (message_id, conversation_id, user_id, delivered_at, created_at, updated_at)
-                    SELECT m.id, ?, ?, ?, ?, ?
-                    FROM comm_v2_messages m
-                    WHERE m.conversation_id=? AND m.id IN ({placeholders})
-                      AND NOT EXISTS (
-                          SELECT 1 FROM comm_v2_read_receipts r
-                          WHERE r.message_id=m.id AND r.user_id=?
-                      )
-                    ORDER BY m.id ASC
-                    """,
-                    (conversation_id, int(user_id), now, now, now, conversation_id, *incoming_ids, int(user_id)),
-                )
-                # Only reachable for a receipt that exists with no delivered_at.
-                # Both writers stamp it at insert, so today this matches no rows
-                # and takes no locks; it is kept as the repair path rather than
-                # deleted, because "no row can have an empty delivered_at" is a
-                # whole-codebase invariant that a third writer could break.
-                cur.execute(
-                    f"UPDATE comm_v2_read_receipts SET delivered_at=?, updated_at=? "
-                    f"WHERE user_id=? AND conversation_id=? AND message_id IN ({placeholders}) "
-                    f"AND COALESCE(delivered_at,'')=''",
-                    (now, now, int(user_id), conversation_id, *incoming_ids),
-                )
+            for message in raw_messages:
+                if int(message.get("sender_user_id") or 0) != int(user_id):
+                    cur.execute(
+                        """
+                        INSERT OR IGNORE INTO comm_v2_read_receipts
+                        (message_id, conversation_id, user_id, delivered_at, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (int(message.get("id") or 0), conversation_id, int(user_id), now, now, now),
+                    )
+                    cur.execute(
+                        "UPDATE comm_v2_read_receipts SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), updated_at=? WHERE message_id=? AND user_id=?",
+                        (now, now, int(message.get("id") or 0), int(user_id)),
+                    )
+            mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False)
             conn.commit()
             read_state_committed = True
         except Exception as exc:
@@ -3354,7 +3076,7 @@ def search_people(user_id: int, query: str = "", filters: dict | None = None) ->
         conn.close()
 
 
-def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, commit: bool = True, through_message_id: int | None = None) -> dict:
+def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, commit: bool = True) -> dict:
     disabled = _disabled("mark_read")
     if disabled:
         return disabled
@@ -3365,64 +3087,28 @@ def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, com
         if access != "ok":
             return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
         conversation_id = int(conversation["id"])
-        cur.execute("SELECT COALESCE(MAX(id),0) AS max_id FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' AND (? IS NULL OR id<=?)", (conversation_id, through_message_id, through_message_id))
+        cur.execute("SELECT COALESCE(MAX(id),0) AS max_id FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')=''", (conversation_id,))
         max_id = int(_row(cur.fetchone()).get("max_id") or 0)
         now = _now()
         cur.execute(
-            """UPDATE comm_v2_participants SET last_read_message_id=MAX(COALESCE(last_read_message_id,0),?), last_read_at=?,
-            unread_count=(SELECT COUNT(*) FROM comm_v2_messages m WHERE m.conversation_id=? AND m.sender_user_id!=?
-              AND m.id>MAX(COALESCE(comm_v2_participants.last_read_message_id,0),?) AND COALESCE(m.deleted_at,'')=''),
-            last_seen_at=?, updated_at=? WHERE conversation_id=? AND user_id=?""",
-            (max_id, now, conversation_id, int(user_id), max_id, now, now, conversation_id, int(user_id)),
+            "UPDATE comm_v2_participants SET last_read_message_id=?, last_read_at=?, unread_count=0, last_seen_at=?, updated_at=? WHERE conversation_id=? AND user_id=?",
+            (max_id, now, now, now, conversation_id, int(user_id)),
         )
         if _read_receipts_allowed(cur, user_id, conversation_id):
-            # ORDER BY is load-bearing, not cosmetic: the INSERT takes a row lock
-            # per receipt, and two concurrent requests from the same user target
-            # the identical (message_id, user_id) keys. Without a fixed order
-            # Postgres is free to hand back the same set in two different orders
-            # and the two transactions deadlock on the unique index.
-            #
-            # Both statements are also bounded to rows that still need writing.
-            # The per-row loop this replaced re-stamped every message from
-            # everyone else, from id 1, on every read event -- two statements per
-            # message, so a 10k-message conversation held ~20k row locks for the
-            # length of the transaction. Ordering alone stops a cycle forming;
-            # holding almost no locks is what keeps the window short.
-            cur.execute(
-                """
-                INSERT OR IGNORE INTO comm_v2_read_receipts
-                (message_id, conversation_id, user_id, delivered_at, seen_at, read_at, created_at, updated_at)
-                SELECT m.id, ?, ?, ?, ?, ?, ?, ?
-                FROM comm_v2_messages m
-                WHERE m.conversation_id=? AND m.id<=? AND m.sender_user_id!=? AND COALESCE(m.deleted_at,'')=''
-                  AND NOT EXISTS (
-                      SELECT 1 FROM comm_v2_read_receipts r
-                      WHERE r.message_id=m.id AND r.user_id=?
-                  )
-                ORDER BY m.id ASC
-                """,
-                (conversation_id, int(user_id), now, now, now, now, now, conversation_id, max_id, int(user_id), int(user_id)),
-            )
-            # Anti-joining on the receipt row, rather than bounding the scan by
-            # comm_v2_participants.last_read_message_id, is deliberate. A
-            # watermark skips rows permanently: _read_receipts_allowed gates only
-            # this block and not the watermark update above, and ids come from a
-            # sequence that can commit out of order, so a message can become
-            # visible below a watermark that has already passed it. A missing
-            # receipt row is self-healing; a passed watermark is not.
-            #
-            # read_at therefore records the first read rather than the most
-            # recent. Every consumer of these columns tests them for emptiness
-            # and none reads the timestamp back, so that is not observable --
-            # and refreshing them would put the O(N) write back.
-            cur.execute(
-                """
-                UPDATE comm_v2_read_receipts
-                SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), seen_at=?, read_at=?, updated_at=?
-                WHERE user_id=? AND conversation_id=? AND message_id<=? AND COALESCE(read_at,'')=''
-                """,
-                (now, now, now, now, int(user_id), conversation_id, max_id),
-            )
+            cur.execute("SELECT id FROM comm_v2_messages WHERE conversation_id=? AND id<=? AND sender_user_id!=? AND COALESCE(deleted_at,'')=''", (conversation_id, max_id, int(user_id)))
+            for row in cur.fetchall():
+                cur.execute(
+                    """
+                    INSERT OR IGNORE INTO comm_v2_read_receipts
+                    (message_id, conversation_id, user_id, delivered_at, seen_at, read_at, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (int(row["id"]), conversation_id, int(user_id), now, now, now, now, now),
+                )
+                cur.execute(
+                    "UPDATE comm_v2_read_receipts SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), seen_at=?, read_at=?, updated_at=? WHERE message_id=? AND user_id=?",
+                    (now, now, now, now, int(row["id"]), int(user_id)),
+                )
         if commit:
             conn.commit()
             if max_id:
@@ -3908,6 +3594,24 @@ def _attachment_filter_clause(kind: str) -> str:
     return ""
 
 
+def _attachment_payload(row: dict) -> dict:
+    url = row.get("playback_url") or row.get("cdn_url") or row.get("url") or row.get("thumbnail_url") or ""
+    return {
+        "id": int(row.get("id") or 0),
+        "message_id": int(row.get("message_id") or 0),
+        "media_type": row.get("media_type") or "file",
+        "mime_type": row.get("mime_type") or "",
+        "file_size_bytes": int(row.get("file_size_bytes") or row.get("file_size") or 0),
+        "duration_seconds": float(row.get("duration_seconds") or 0),
+        "url": url,
+        "thumbnail_url": row.get("thumbnail_url") or "",
+        "created_at": row.get("created_at") or row.get("message_created_at") or "",
+        "sender_user_id": int(row.get("sender_user_id") or 0),
+        "sender_display_name": row.get("sender_display_name") or "Pulse member",
+        "body_preview": _safe_preview(row.get("body") or "", row.get("message_type") or "", "")[:180],
+    }
+
+
 def conversation_control_media(user_id: int, conversation_ref: int | str, filters: dict | None = None) -> dict:
     disabled = _disabled("conversation_control_media")
     if disabled:
@@ -3941,168 +3645,6 @@ def conversation_control_media(user_id: int, conversation_ref: int | str, filter
         )
         items = [_attachment_payload(_row(row)) for row in cur.fetchall()]
         return _ok({"conversation": _conversation_payload(cur, conversation, user_id), "items": items, "kind": kind, "count": len(items)})
-    finally:
-        conn.close()
-
-
-#: The full-screen chat gallery is a *visual* gallery. Voice notes keep their
-#: waveform player and documents keep their document card; neither is ever an
-#: item you can swipe onto, so neither is ever in this collection.
-MEDIA_HISTORY_KINDS = ("image", "video")
-
-#: The canonical order for the whole feature, in one place, so the inline thread
-#: and the viewer cannot disagree about what "item 17" means.
-#:
-#: `comm_v2_attachments.id` is a monotonic insert-order key and attachments are
-#: inserted while their message is being sent, so ascending `a.id` is the same
-#: sequence the thread renders. It is also a single integer, which is what makes
-#: keyset paging here honest: an OFFSET page would silently shift every index
-#: when new media arrives mid-session (requirement: a new message must not move
-#: the item the viewer is currently on).
-MEDIA_HISTORY_ORDER_SQL = "a.id"
-
-
-def _media_history_clause(media_type: str) -> tuple[str, str]:
-    """(sql, normalized_kind) for the gallery filter.
-
-    Unlike `_attachment_filter_clause`, an unrecognised value does NOT widen to
-    "everything" — it falls back to image+video. Widening here would put voice
-    notes and PDFs into a swipeable photo gallery, so the default has to be the
-    narrow one.
-    """
-    normalized = str(media_type or "").strip().lower()
-    image_sql = "(LOWER(COALESCE(a.media_type,'')) IN ('image','photo','gif') OR LOWER(COALESCE(a.mime_type,'')) LIKE 'image/%')"
-    video_sql = "(LOWER(COALESCE(a.media_type,''))='video' OR LOWER(COALESCE(a.mime_type,'')) LIKE 'video/%')"
-    if normalized in {"image", "images", "photo", "photos"}:
-        return f"AND {image_sql}", "image"
-    if normalized in {"video", "videos"}:
-        return f"AND {video_sql}", "video"
-    return f"AND ({image_sql} OR {video_sql})", "all"
-
-
-def conversation_media_history(user_id: int, conversation_ref: int | str, filters: dict | None = None) -> dict:
-    """One paginated, membership-authorized page of the conversation's media.
-
-    This is the only supported source for the chat media gallery. The client
-    must not assemble the collection from mounted message cells: cells are
-    recycled and windowed, so a collection built from them is a collection of
-    whatever happened to be on screen, which is why tapping the 17th photo used
-    to open the first.
-
-    Paging is keyset on `a.id`, in both directions, because the viewer needs to
-    walk backwards from the tapped item as readily as forwards:
-      * `before_id` -> the page immediately OLDER than that id
-      * `after_id`  -> the page immediately NEWER than that id
-      * neither     -> the newest page
-    `items` always comes back in canonical ascending order regardless of which
-    direction was asked for, so the caller can splice a page onto either end of
-    its collection without re-sorting.
-    """
-    disabled = _disabled("conversation_media_history")
-    if disabled:
-        return disabled
-    filters = filters or {}
-    try:
-        limit = max(1, min(int(filters.get("limit") or 60), 120))
-    except Exception:
-        limit = 60
-    try:
-        before_id = max(0, int(filters.get("before_id") or 0))
-    except Exception:
-        before_id = 0
-    try:
-        after_id = max(0, int(filters.get("after_id") or 0))
-    except Exception:
-        after_id = 0
-    clause, kind = _media_history_clause(filters.get("media_type") or filters.get("kind") or "")
-    conn, cur = _open_db()
-    try:
-        conversation, conversation_id, error = _control_conversation(cur, user_id, conversation_ref)
-        if error:
-            # `_control_conversation` is the authorization boundary. Changing the
-            # conversation id in the URL has to fail here and not reach a query,
-            # so nothing below this line may be reordered above it.
-            return error
-
-        visibility = f"""
-            FROM comm_v2_attachments a
-            JOIN comm_v2_messages m ON m.id=a.message_id
-            LEFT JOIN comm_v2_message_deletions d ON d.message_id=m.id AND d.user_id=?
-            LEFT JOIN users u ON u.user_id=m.sender_user_id
-            WHERE a.conversation_id=?
-              AND COALESCE(a.scan_status,'approved')!='blocked'
-              AND COALESCE(m.deleted_at,'')=''
-              AND d.id IS NULL
-              {clause}
-        """
-        base_args = [int(user_id), int(conversation_id)]
-
-        cur.execute(f"SELECT COUNT(*) AS total {visibility}", tuple(base_args))
-        total = int(_row(cur.fetchone()).get("total") or 0)
-
-        # Fetch limit+1 so "is there another page" is an observed fact rather
-        # than an inference from a full page.
-        if after_id:
-            cur.execute(
-                f"""SELECT a.*, m.body, m.message_type, m.created_at AS message_created_at, m.sender_user_id,
-                           COALESCE(u.display_name,u.username,'Pulse member') AS sender_display_name
-                    {visibility} AND {MEDIA_HISTORY_ORDER_SQL} > ?
-                    ORDER BY {MEDIA_HISTORY_ORDER_SQL} ASC LIMIT ?""",
-                tuple(base_args + [after_id, limit + 1]),
-            )
-            rows = [_row(row) for row in cur.fetchall()]
-            has_newer = len(rows) > limit
-            rows = rows[:limit]
-        elif before_id:
-            cur.execute(
-                f"""SELECT a.*, m.body, m.message_type, m.created_at AS message_created_at, m.sender_user_id,
-                           COALESCE(u.display_name,u.username,'Pulse member') AS sender_display_name
-                    {visibility} AND {MEDIA_HISTORY_ORDER_SQL} < ?
-                    ORDER BY {MEDIA_HISTORY_ORDER_SQL} DESC LIMIT ?""",
-                tuple(base_args + [before_id, limit + 1]),
-            )
-            rows = [_row(row) for row in cur.fetchall()]
-            has_older = len(rows) > limit
-            rows = list(reversed(rows[:limit]))
-        else:
-            cur.execute(
-                f"""SELECT a.*, m.body, m.message_type, m.created_at AS message_created_at, m.sender_user_id,
-                           COALESCE(u.display_name,u.username,'Pulse member') AS sender_display_name
-                    {visibility}
-                    ORDER BY {MEDIA_HISTORY_ORDER_SQL} DESC LIMIT ?""",
-                tuple(base_args + [limit + 1]),
-            )
-            rows = [_row(row) for row in cur.fetchall()]
-            has_older = len(rows) > limit
-            rows = list(reversed(rows[:limit]))
-
-        items = [_attachment_payload(row) for row in rows]
-        oldest_id = int(items[0].get("attachment_id") or 0) if items else 0
-        newest_id = int(items[-1].get("attachment_id") or 0) if items else 0
-
-        if after_id:
-            # We paged forwards, so "older" is whatever sits below the page we
-            # asked from, not below the page we got back.
-            cur.execute(f"SELECT COUNT(*) AS total {visibility} AND {MEDIA_HISTORY_ORDER_SQL} <= ?", tuple(base_args + [after_id]))
-            has_older = int(_row(cur.fetchone()).get("total") or 0) > 0
-        elif newest_id:
-            cur.execute(f"SELECT COUNT(*) AS total {visibility} AND {MEDIA_HISTORY_ORDER_SQL} > ?", tuple(base_args + [newest_id]))
-            has_newer = int(_row(cur.fetchone()).get("total") or 0) > 0
-        else:
-            has_newer = False
-
-        return _ok({
-            "conversation_id": int(conversation_id),
-            "conversation_public_id": conversation.get("public_id") or "",
-            "media_type": kind,
-            "items": items,
-            "count": len(items),
-            "total": total,
-            "has_older": bool(has_older),
-            "has_newer": bool(has_newer),
-            "oldest_id": oldest_id,
-            "newest_id": newest_id,
-        })
     finally:
         conn.close()
 
@@ -4569,9 +4111,6 @@ def set_reaction(user_id: int, message_id: int, reaction_type: str = "heart") ->
         conn.close()
 
 
-MESSAGE_EDIT_WINDOW = timedelta(minutes=15)
-
-
 def edit_message(user_id: int, message_id: int, payload: dict | None = None) -> dict:
     disabled = _disabled("edit_message")
     if disabled:
@@ -4589,7 +4128,7 @@ def edit_message(user_id: int, message_id: int, payload: dict | None = None) -> 
         if int(message.get("sender_user_id") or 0) != int(user_id):
             return _err("You can only edit your own messages.", 403, "forbidden")
         created = datetime.fromisoformat(str(message.get("created_at") or _now()))
-        if datetime.now(timezone.utc) - created > MESSAGE_EDIT_WINDOW:
+        if datetime.now(timezone.utc) - created > timedelta(minutes=int(payload.get("edit_window_minutes") or 15)):
             return _err("This message can no longer be edited.", 403, "edit_window_expired")
         now = _now()
         metadata = _json_loads(message.get("metadata_json"), {}) or {}

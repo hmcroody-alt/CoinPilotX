@@ -16,7 +16,6 @@ from decimal import Decimal, InvalidOperation
 import requests
 
 from .errors import SupplierError
-from .normalize import transit_days
 from .quota import DurableCJQuota
 
 BASE_URL = "https://developers.cjdropshipping.com/api2.0/v1"
@@ -366,27 +365,7 @@ class CJAdapter:
             raise SupplierError("SUPPLIER_NOT_FOUND", http_status=404, endpoint=path, provider_code=code)
         if code == 1603003:
             raise SupplierError("DUPLICATE_SUPPLIER_ORDER", http_status=409, ambiguous_write=True, endpoint=path, provider_code=code)
-        # CJ has two success envelopes, not one.
-        #
-        # Most endpoints answer `{"code": 200, "result": true, "success": true,
-        # "message": "Success"}`. A minority answer `{"code": 0, "success": true,
-        # "message": null}` with no `result` key at all. Measured against the live
-        # account on 2026-09-22, `shop/getShops` and `product/globalWarehouseList`
-        # use the second form while `setting/get`, `product/getCategory`,
-        # `product/listV2`, `shopping/pay/getBalance` and
-        # `webhook/product/subscribe/list` use the first.
-        #
-        # Requiring `code == 200` therefore rejected two endpoints that had
-        # succeeded and returned data. The cost was not abstract: the merchant's
-        # only CJ shop was discarded on arrival, so fulfilment could never be set
-        # up, and `connection_shops` reported the 422 as "this account has no
-        # shops" -- a sentence about the account that was really a sentence about
-        # this line.
-        #
-        # `0` is admitted only as a code. The affirmative below is unchanged and
-        # still required, so a body that says `success: false` is still a
-        # rejection whatever its code, and a body that affirms nothing is too.
-        if code not in (200, 0) or (body.get("result") is not True and body.get("success") is not True) or body.get("result") is False or body.get("success") is False:
+        if code != 200 or (body.get("result") is not True and body.get("success") is not True) or body.get("result") is False or body.get("success") is False:
             raise SupplierError("SUPPLIER_REJECTED", http_status=422, ambiguous_write=write and code in (1600000, 1600301),
                                 endpoint=path, provider_code=code)
         data = body.get("data")
@@ -574,32 +553,6 @@ class CJAdapter:
 
     @staticmethod
     def _warehouse_stock(data, *, variant):
-        """One warehouse row, with `state` answering "did anyone count this".
-
-        `state` used to demand `verifiedWarehouse == 1` before it would say
-        IN_STOCK, on the reading that "only verified units are sellable". That
-        reading is not what the field means and it made the importer unusable:
-        `verifiedWarehouse` separates stock CJ has audited in its own warehouse
-        (1) from stock the supplier reports at the factory (2), and CJ sells
-        both -- `product/listV2` takes `verifiedWarehouse` as an optional
-        *filter* whose omitted value is "all", so unverified products are in the
-        catalogue a merchant browses by default.
-
-        Measured, not argued: all 29 `supplier_snapshots` rows of kind
-        `inventory` in production carry `verifiedWarehouse: 2` on every variant
-        warehouse, with real counts beside them (11,830 units on one). Every one
-        of them read UNKNOWN, so every variant of every imported product read
-        UNKNOWN, so `drafts._validate` returned UNKNOWN_INVENTORY and refused to
-        publish all 22 supplier listings this store has ever imported. A rule
-        that rejects 100% of a provider's catalogue is not a safety property.
-
-        UNKNOWN is for a warehouse nobody counted -- `total` absent or
-        unreadable. A count CJ has not audited is still a count, and the
-        distinction survives in `verified` for any reader that wants to say
-        something about lead time. What must not happen, and still does not, is
-        a missing count becoming zero: `total is None` stays UNKNOWN and only an
-        explicit 0 is OUT_OF_STOCK.
-        """
         data = _dict(data)
         total = _number(data.get("totalInventory" if variant else "totalInventoryNum"))
         verified = data.get("verifiedWarehouse") if type(data.get("verifiedWarehouse")) is int and data.get("verifiedWarehouse") in (1, 2) else None
@@ -607,7 +560,7 @@ class CJAdapter:
             "total": total, "cj": _number(data.get("cjInventory" if variant else "cjInventoryNum")),
             "factory": _number(data.get("factoryInventory" if variant else "factoryInventoryNum")),
             "verified": verified,
-            "state": "OUT_OF_STOCK" if total == 0 else "IN_STOCK" if total is not None and total > 0 else "UNKNOWN",
+            "state": "OUT_OF_STOCK" if total == 0 else "IN_STOCK" if total is not None and total > 0 and verified == 1 else "UNKNOWN",
             "subwarehouses": [{"stock_id": _text(_dict(s).get("stockId"), 200), "cj": _number(s.get("inventory")), "factory": _number(s.get("factoryInventory"))} for s in _list(data.get("stock") or [])]}
 
     def get_inventory(self, pid, vid=None):
@@ -655,23 +608,13 @@ class CJAdapter:
         for quote in data:
             quote = _dict(quote)
             option = _dict(quote.get("option") or {})
-            # CJ states aging on the quote and, for some channels, only on the
-            # nested option. Reading both is strictly wider than reading one:
-            # the fallback fires exactly where the old value was already blank.
-            aging = quote.get("arrivalTime")
-            if aging is None or not str(aging).strip():
-                aging = option.get("arrivalTime")
             quotes.append({"service": _text(option.get("enName"), 200), "channel_id": _text(quote.get("channelId"), 200),
                 "option_id": _text(quote.get("optionId"), 200), "origin": row["srcAreaCode"], "destination": row["destAreaCode"],
                 "base": _money(quote.get("postage")), "provider_total": _money(quote.get("totalPostageFee")),
                 "tax": _money(quote.get("taxesFee")), "tariff": _money(quote.get("tariff")),
                 "clearance": _money(quote.get("clearanceOperationFee")), "remote_fee": _money(quote.get("remoteFee")),
                 "discount_fee": _money(quote.get("discountFee")), "wrap_postage": _money(quote.get("wrapPostage")),
-                "currency": "USD", "weight_grams": row["weight"], "estimated_transit": _text(aging, 200),
-                # `estimated_transit` keeps CJ's exact words; `transit` is the
-                # typed read, or None when CJ said nothing a range can be made
-                # from. No consumer may parse the string for itself.
-                "transit": transit_days(aging),
+                "currency": "USD", "weight_grams": row["weight"], "estimated_transit": _text(quote.get("arrivalTime"), 200),
                 "restrictions": [_text(_dict(t).get("msgEn"), 1000) for t in _list(quote.get("ruleTips", []), maximum=100)],
                 "available": not bool(quote.get("error") or quote.get("errorEn")), "quoted_at": _now(), "guaranteed": False})
         return {"quotes": quotes, "points_info": self.points_info, "state": "QUOTED" if quotes else "UNSUPPORTED_ROUTE"}
@@ -694,55 +637,10 @@ class CJAdapter:
             "products": [{"vid": _id(_dict(p).get("vid"), provider=True), "quantity": _number(p.get("quantity"))} for p in _list(data.get("productList", []))]}
 
     def create_sandbox_fulfillment(self, payload):
-        """Place a CJ order that is accepted, charged for nothing, and shipped never.
-
-        Unchanged in behaviour by the live split: it still refuses anything
-        ``require_sandbox`` refuses and still demands an explicit ``isSandbox=1``.
-        What moved out is the part that was never about sandbox -- payload shape,
-        the POST, the identity read-back -- so that the live twin below shares
-        one validated request builder instead of a copy that drifts from it.
-        """
         from .policy import require_sandbox
         require_sandbox(payload)
         if self.environment != "SANDBOX":
             raise SupplierError("PRODUCTION_FULFILLMENT_DISABLED", http_status=409)
-        return self._create_fulfillment(payload)
-
-    def create_live_fulfillment(self, payload):
-        """Place a real CJ order against a real balance. Spends money.
-
-        Separate from the sandbox method rather than a branch inside it, and the
-        difference is who reads what. ``_create_fulfillment`` is forty lines of
-        shape validation that everyone reads and nobody fears; putting an
-        ``if live:`` inside it would have hidden the only irreversible decision
-        in this file behind the most-skimmed code in it, and turned every
-        existing sandbox test into a test of a function that can now spend.
-
-        There is no boolean parameter selecting between the two, and there must
-        not be one. :func:`fulfillment.dispatch` chooses by the intent's own
-        frozen ``isSandbox``, so an intent created in sandbox cannot be
-        dispatched live even if the deployment flips while the row sits in the
-        outbox -- which is precisely the property a parameter would destroy.
-
-        ``require_live`` refuses until :func:`policy.live_fulfillment_path_exists`
-        is edited in source, so today this raises for every caller. It is not
-        dead code: the tests reach it by flipping that function, which is the
-        same act the money approval will be.
-        """
-        from .policy import require_live
-        require_live(payload)
-        if self.environment != "LIVE":
-            raise SupplierError("PRODUCTION_FULFILLMENT_DISABLED", http_status=409)
-        return self._create_fulfillment(payload)
-
-    def _create_fulfillment(self, payload):
-        """Validate, POST, and prove the order that came back is the one we asked for.
-
-        Holds no opinion about sandbox or live on purpose -- both callers above
-        have already formed theirs, and a second opinion here would be a second
-        place to get it wrong. ``isSandbox`` is passed through as given, having
-        been checked for the value each caller requires.
-        """
         if type(payload.get("payType")) is not int or payload["payType"] != 3:
             raise SupplierError("FUNDING_NOT_READY", http_status=409)
         if type(payload.get("orderFlow")) is not int or payload["orderFlow"] != 1:
@@ -796,38 +694,8 @@ class CJAdapter:
         return {"order_id": order_id, "tracking": normalized, "state": "OBSERVED" if normalized else "UNKNOWN"}
 
     def get_balance(self):
-        """CJ answers with an object, not a number, and the parts are not interchangeable.
-
-        The live account sends
-        ``{"amount": 0.0, "noWithdrawalAmount": 0.0, "freezeAmount": 0.0}``.
-        Until 2026-09-22 this handed that whole dict to ``_money``, which takes
-        only a scalar, so every balance read against the real provider raised
-        ``MALFORMED_PROVIDER_RESPONSE`` -- the call has never once succeeded in
-        production. The fixture that kept it green passed a bare ``"42.25"``,
-        a shape CJ does not send, which is the same fault the shop list had:
-        the suite asserting a dialect the provider never speaks.
-
-        ``amount`` is the spendable balance and is the only figure a funding
-        decision may read. ``freezeAmount`` is held against orders already in
-        flight and ``noWithdrawalAmount`` is credit that can buy goods but
-        cannot be withdrawn. Both are reported, because a merchant staring at a
-        zero balance needs to know whether money exists elsewhere -- and
-        neither is folded into ``balance``, because a funding gate that counts
-        held money is a funding gate that overdraws.
-
-        The scalar branch is kept rather than removed. CJ has already been
-        found to answer one question in two shapes (see the envelope note in
-        ``_request``), so reading a number as a number costs one line and
-        assumes nothing.
-        """
         data = self._request("GET", "shopping/pay/getBalance", critical=True)
-        if isinstance(data, dict):
-            return {"balance": _money(data.get("amount")),
-                    "frozen": _money(data.get("freezeAmount")),
-                    "non_withdrawable": _money(data.get("noWithdrawalAmount")),
-                    "currency": "USD", "funding_enabled": False}
-        return {"balance": _money(data), "frozen": None, "non_withdrawable": None,
-                "currency": "USD", "funding_enabled": False}
+        return {"balance": _money(data), "currency": "USD", "funding_enabled": False}
 
     def get_subscriptions(self, shop_id, *, page=1, size=20):
         shop_id = _id(shop_id)

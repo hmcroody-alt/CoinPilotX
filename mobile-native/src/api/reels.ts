@@ -3,9 +3,6 @@ import { PULSE_API_BASE_URL, PULSESOC_QA_REELS_FIXTURES } from "./config";
 import { mediaDisplayUrl, PulseAuthor, PulseComment, PulseMedia, normalizeComments } from "./feed";
 import { pulseApi } from "./pulseApi";
 import { isLikelyExpiringMediaUrl, mediaRecordForCache } from "../media/mediaContract";
-import { readJsonCacheEntry, writeJsonCache } from "../core/cache";
-import type { PulseCommerceOverlay } from "./pulseCommerceOverlay";
-import { commerceOverlayForCache } from "./pulseCommerceOverlay";
 
 const REELS_CACHE_KEY = "pulsesoc.native.reels.feed";
 const REELS_CACHE_META_KEY = "pulsesoc.native.reels.feed.meta";
@@ -26,13 +23,6 @@ export type PulseReelAudio = {
   /** Music is already digitally mixed into the uploaded MP4; do not attach a second player. */
   audio_baked_in?: boolean;
   original_audio_muted?: boolean;
-  /**
-   * The owner has taken this track down. The track is still attached -- the
-   * post, its caption and its engagement are untouched -- but no url will be
-   * served for it and nothing should try to load one.
-   */
-  audio_unavailable?: boolean;
-  audio_unavailable_state?: string;
 };
 
 export type PulseReel = {
@@ -55,15 +45,6 @@ export type PulseReel = {
   transcoding_status?: string;
   moderation_status?: string;
   availability?: string;
-  /**
-   * The author's audience decision, as `pulse_reel_payload` emits it:
-   * `post.get("visibility") or merged.get("visibility") or "public"`. Distinct
-   * from `visibility_state`, which is about whether this Reel can be seen at
-   * all right now — a public Reel can be unavailable and a private one can be
-   * perfectly healthy. `sharing/reelShare.ts` reads this one, as an allowlist
-   * of the single literal `"public"`.
-   */
-  visibility?: string;
   visibility_state?: string;
   restriction_reason?: string;
   deleted_at?: string;
@@ -88,14 +69,6 @@ export type PulseReel = {
   post_type?: string;
   live_session_id?: number;
   viewer_follows_author?: boolean;
-  /**
-   * Live commerce, present only on a PulseDrop publication.
-   *
-   * Absent -- not null -- on every ordinary Reel, so `reel.commerce` is a
-   * truthiness test rather than a two-step one. Never cached: see
-   * `commerceOverlayForCache`, which the reels cache writer runs first.
-   */
-  commerce?: PulseCommerceOverlay;
   live?: {
     live_session_id?: number;
     status?: string;
@@ -207,41 +180,33 @@ export async function listReels(params: { lane?: string; category?: string; limi
 }
 
 export async function loadCachedReels(lane = "for_you") {
-  return (await loadCachedReelsSnapshot(lane)).reels;
+  try {
+    const cached = await AsyncStorage.getItem(reelsCacheKey(lane)) || (lane === "for_you" ? await AsyncStorage.getItem(REELS_CACHE_KEY) : null);
+    if (!cached) return [];
+    return normalizeReels(JSON.parse(cached) as PulseReel[]);
+  } catch {
+    await AsyncStorage.removeItem(REELS_CACHE_KEY).catch(() => undefined);
+    return [];
+  }
 }
 
-/**
- * Reels used to keep its cache age in a second key written alongside the data.
- * Two keys for one fact is two ways to be wrong: a write that lands and a meta
- * write that fails leaves a feed permanently claiming 1970, and a clear of one
- * without the other leaves an age describing content that is gone. The envelope
- * in `src/core/cache` carries `storedAt` inside the same write as the value, so
- * the two cannot disagree.
- *
- * The sidecar is still *read* — only as a fallback, and only when the value came
- * back with an unknown age, which is exactly the case of an install that cached
- * reels under the old format and has not refreshed since. Once anything writes
- * through `cacheReels` the sidecar is deleted and never consulted again.
- */
 export async function loadCachedReelsSnapshot(lane = "for_you") {
-  const entry =
-    (await readJsonCacheEntry<PulseReel[]>(reelsCacheKey(lane), normalizeReels)) ||
-    (lane === "for_you" ? await readJsonCacheEntry<PulseReel[]>(REELS_CACHE_KEY, normalizeReels) : null);
-  if (!entry) return { reels: [] as PulseReel[], cachedAt: 0 };
-  if (entry.storedAt !== null) return { reels: entry.value, cachedAt: entry.storedAt };
+  const reels = await loadCachedReels(lane);
   let cachedAt = 0;
   try {
-    cachedAt = Number((await AsyncStorage.getItem(`${REELS_CACHE_META_KEY}.${lane}`)) || 0);
+    const raw = await AsyncStorage.getItem(`${REELS_CACHE_META_KEY}.${lane}`);
+    cachedAt = Number(raw || 0);
   } catch {
     cachedAt = 0;
   }
-  return { reels: entry.value, cachedAt: Number.isFinite(cachedAt) ? cachedAt : 0 };
+  return { reels, cachedAt };
 }
 
 export async function cacheReels(reels: PulseReel[], lane = "for_you") {
-  await writeJsonCache(reelsCacheKey(lane), reels.slice(0, 50).map(reelForCache));
-  // Last write wins only if there is no second writer left to disagree with.
-  await AsyncStorage.removeItem(`${REELS_CACHE_META_KEY}.${lane}`).catch(() => undefined);
+  await Promise.all([
+    AsyncStorage.setItem(reelsCacheKey(lane), JSON.stringify(reels.slice(0, 50).map(reelForCache))),
+    AsyncStorage.setItem(`${REELS_CACHE_META_KEY}.${lane}`, String(Date.now()))
+  ]);
 }
 
 export async function loadCachedReelDetail(reelId: number) {
@@ -266,84 +231,6 @@ export async function getReelDetail(reelId: number) {
   const detail = { reel, comments };
   await AsyncStorage.setItem(reelDetailCacheKey(reelId), JSON.stringify(detail)).catch(() => undefined);
   return detail;
-}
-
-/**
- * What the server will say about a reel to someone who has only been sent a
- * link to it.
- *
- * Deliberately a *different shape* from `PulseReel`, and the difference is the
- * feature. A `PulseReel` carries playback urls, Mux ids and storage keys
- * because the player needs them; this carries a still frame, a name and a line
- * of caption because a card draws exactly those. Typing it as a narrow record
- * rather than as `Partial<PulseReel>` means a future edit cannot quietly start
- * reading `playback_url` off a preview -- there is no such field to read, and
- * the compiler says so at the call site rather than at review time.
- */
-export type PulseReelSharePreview = {
-  reel_id: number;
-  /** Absolute. What an external share sends and what a tap opens. */
-  canonical_url: string;
-  /** The in-app path, from the server's own routing vocabulary. */
-  path: string;
-  caption: string;
-  /** A still, never a playlist. `""` when the reel has no frame yet. */
-  poster_url: string;
-  media_type: string;
-  duration_seconds: number;
-  author: { display_name: string; username: string; avatar_url: string };
-};
-
-const reelPreviewCacheKey = (reelId: number) => `pulsesoc.native.reels.preview.${reelId}`;
-
-function normalizeReelSharePreview(raw: unknown, reelId: number): PulseReelSharePreview | null {
-  const record = (raw || {}) as Record<string, unknown>;
-  const id = Number(record.reel_id || reelId || 0);
-  if (!Number.isFinite(id) || id <= 0) return null;
-  const author = (record.author || {}) as Record<string, unknown>;
-  return {
-    reel_id: id,
-    canonical_url: String(record.canonical_url || ""),
-    path: String(record.path || `/pulse/reels/${id}`),
-    caption: String(record.caption || ""),
-    poster_url: String(record.poster_url || ""),
-    media_type: String(record.media_type || "video"),
-    duration_seconds: Number(record.duration_seconds || 0) || 0,
-    author: {
-      display_name: String(author.display_name || ""),
-      username: String(author.username || "").replace(/^@/, ""),
-      avatar_url: String(author.avatar_url || "")
-    }
-  };
-}
-
-/**
- * The by-id read of a reel. New; until this shipped there was none.
- *
- * `listReels` is a *ranked page*, so "fetch reel 38" could only ever be
- * "fetch some reels and hope 38 is among them" -- which is why a reel link
- * pasted into Messenger stayed a naked url while a post link became a card.
- * A card is only allowed to exist where the preview can be fetched with the
- * same request a tap makes, and for reels there was no such request.
- *
- * The response is cached on success so an offline reader still sees the card
- * they were already shown rather than watching it degrade to "unavailable".
- * Failures are not cached here at all; `entityPreview.ts` decides which of
- * them are answers and which are weather.
- */
-export async function getReelSharePreview(reelId: number) {
-  const data = await pulseApi<{ ok?: boolean; reel?: unknown }>(`/api/pulse/reels/${reelId}`);
-  const preview = normalizeReelSharePreview(data.reel, reelId);
-  if (preview) await writeJsonCache(reelPreviewCacheKey(reelId), preview);
-  return preview;
-}
-
-/** Whatever this device already holds for the reel. Only consulted offline. */
-export async function loadCachedReelSharePreview(reelId: number) {
-  const entry = await readJsonCacheEntry<PulseReelSharePreview | null>(reelPreviewCacheKey(reelId), (value) =>
-    normalizeReelSharePreview(value, reelId)
-  );
-  return entry?.value || null;
 }
 
 export async function listReelComments(reelId: number) {
@@ -588,25 +475,12 @@ function reelForCache(reel: PulseReel): PulseReel {
   if (audio?.audio_url && isLikelyExpiringMediaUrl(audio.audio_url)) delete audio.audio_url;
   if (audio?.attached_audio_url && isLikelyExpiringMediaUrl(audio.attached_audio_url)) delete audio.attached_audio_url;
   if (audio?.preview_url && isLikelyExpiringMediaUrl(audio.preview_url)) delete audio.preview_url;
-  // The commerce overlay is stripped of everything perishable before it is
-  // written, for the same reason an expiring media URL is: a cached value that
-  // *looks* current is worse than a missing one. Pixels, captions and author
-  // names do not change, so they cache correctly. Price, stock, availability
-  // and the call to action change constantly, and a restored reel showing
-  // "$49.00" from three days ago is a specific false claim under a verified
-  // badge. What survives is which product it is and who sells it, which renders
-  // as a product card awaiting refresh.
-  return {
-    ...reel,
-    media: (reel.media || []).map(mediaRecordForCache),
-    audio,
-    commerce: commerceOverlayForCache(reel.commerce),
-  };
+  return { ...reel, media: (reel.media || []).map(mediaRecordForCache), audio };
 }
 
 function reelsQaFixtures(): PulseReel[] {
   const video = "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8";
-  const poster = `${PULSE_API_BASE_URL}/static/brand/pulsesoc-logo-20260913.png`;
+  const poster = `${PULSE_API_BASE_URL}/static/brand/pulsesoc-logo-20260813.png`;
   const author = { user_id: 9001, display_name: "Nova Signal", username: "novasignal", public_player_id: "qa-nova" };
   return normalizeReels([
     { id: 81001, reel_id: 81001, title: "A living signal", caption: "Video stays dominant. Comments remain hidden until you ask for them. #PulseSoc #Future", author, video_url: video, poster_url: poster, processing_status: "ready", reactions_count: 1284, reaction_counts: { fire: 740, smart: 544 }, comments_count: 86, share_count: 31, view_count: 18420, preview_comments: qaComments(81001) },

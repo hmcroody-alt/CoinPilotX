@@ -27,10 +27,8 @@ import {
   attachmentIdFromMediaUrl,
   grantMessengerMediaAccess,
   isProtectedMessengerMediaUrl,
-  messengerMediaCacheIdentity,
   resetMessengerMediaAccess,
   resolveCanonicalMessengerMediaId,
-  resolveMessengerMediaAccess,
   resolveMessengerMediaAccessUrl
 } from "../messengerMediaAccess";
 
@@ -156,37 +154,6 @@ describe("canonical media identity", () => {
     expect(resolveCanonicalMessengerMediaId(undefined, "https://cdn.example.com/o.jpg").id).toBe(0);
     expect(resolveCanonicalMessengerMediaId({ mediaUploadId: 0, attachmentId: 0 }, "").id).toBe(0);
     expect(resolveCanonicalMessengerMediaId({ mediaUploadId: -4 }, "").id).toBe(0);
-  });
-});
-
-describe("the cache identity keeps the two id spaces apart", () => {
-  /**
-   * The same divergence as above, one layer down. `resolveCanonicalMessengerMediaId`
-   * decides which id to *ask the server for*; this decides what the downloaded
-   * file is *filed under on disk*. Both ids are row ids in different tables, so
-   * collapsing them to a bare integer gives two unrelated attachments one cache
-   * entry — and the entry passes every integrity check, because its recorded size
-   * does match the file sitting there. The person just opens the wrong document.
-   */
-  it("never gives two tables' row 7 the same identity", () => {
-    expect(messengerMediaCacheIdentity({ mediaUploadId: 7 })).toBe("media_upload:7");
-    expect(messengerMediaCacheIdentity({ attachmentId: 7 })).toBe("attachment:7");
-    expect(messengerMediaCacheIdentity({ mediaUploadId: 7 })).not.toBe(
-      messengerMediaCacheIdentity({ attachmentId: 7 })
-    );
-  });
-
-  it("keeps the foundation id ahead of the transport id, as the access path does", () => {
-    // Production shape: attachment_id=422 and media_upload_id=33 on one message.
-    expect(messengerMediaCacheIdentity({ attachmentId: 422, mediaUploadId: 33 })).toBe("media_upload:33");
-  });
-
-  it("has no identity rather than a made-up one", () => {
-    // Null falls the cache through to URL keying. A placeholder would be a third
-    // id space, and the widest one — every attachment without ids would share it.
-    expect(messengerMediaCacheIdentity({})).toBeNull();
-    expect(messengerMediaCacheIdentity(undefined)).toBeNull();
-    expect(messengerMediaCacheIdentity({ mediaUploadId: 0, attachmentId: 0 })).toBeNull();
   });
 });
 
@@ -389,119 +356,5 @@ describe("account isolation", () => {
     mockPulseApi.mockResolvedValueOnce(grant(42, "user-b"));
     resetMessengerMediaAccess();
     await expect(resolveMessengerMediaAccessUrl(42)).resolves.toContain("mt=user-b");
-  });
-});
-
-describe("the preview and the original are different objects", () => {
-  /**
-   * The defect: the renderer called the access hook twice with the same
-   * identity, once for the bubble's thumbnail and once for the full asset. Both
-   * resolved the same attachment id, so both came back as the same `/download`
-   * URL. "Thumbnail-first" therefore downloaded every original at full size,
-   * and a video bubble handed an entire movie to an image loader. One grant now
-   * carries both URLs, and they are not the same URL.
-   */
-  function grantWithPreview(attachmentId: number, token = "tok") {
-    return {
-      ...grant(attachmentId, token),
-      thumbnail_access_url: `/api/messages/media/${attachmentId}/thumbnail?mt=${token}`
-    };
-  }
-
-  it("one grant carries both URLs and they address different routes", async () => {
-    mockPulseApi.mockResolvedValue(grantWithPreview(42));
-    const access = await resolveMessengerMediaAccess(42);
-    expect(access.url).toContain("/download");
-    expect(access.thumbnailUrl).toContain("/thumbnail");
-    expect(access.thumbnailUrl).not.toBe(access.url);
-    // Painting the bubble and opening the viewer cost one request between them.
-    expect(mockPulseApi).toHaveBeenCalledTimes(1);
-  });
-
-  it("an unprocessed attachment reports no preview rather than the original", async () => {
-    // The server omits the field until the pipeline has produced a preview.
-    // Substituting `url` here is exactly how a thumbnail slot becomes a
-    // full-asset download, so the absence has to survive as an absence.
-    mockPulseApi.mockResolvedValue(grant(43));
-    const access = await resolveMessengerMediaAccess(43);
-    expect(access.url).toContain("/download");
-    expect(access.thumbnailUrl).toBe("");
-  });
-
-  it("a re-granted identity picks up a preview that did not exist before", async () => {
-    // Processing finishes after the message arrives, so the first grant of a
-    // just-sent video legitimately has no preview and a later one does.
-    mockPulseApi.mockResolvedValueOnce(grant(44, "first"));
-    expect((await resolveMessengerMediaAccess(44)).thumbnailUrl).toBe("");
-
-    resetMessengerMediaAccess();
-    mockPulseApi.mockResolvedValueOnce(grantWithPreview(44, "second"));
-    expect((await resolveMessengerMediaAccess(44)).thumbnailUrl).toContain("/thumbnail?mt=second");
-  });
-
-  it("the recovery path carries the preview through to the corrected identity", async () => {
-    // A stale transport id 404s and the proven alternate is used instead. The
-    // corrected grant must not lose its preview on the way out.
-    mockPulseApi
-      .mockRejectedValueOnce(new FakeApiError(404, "attachment_not_found"))
-      .mockResolvedValueOnce(grantWithPreview(33));
-    await expect(grantMessengerMediaAccess({ id: 41, alternates: [33] })).resolves.toMatchObject({
-      attachmentId: 33,
-      thumbnailUrl: "https://pulsesoc.com/api/messages/media/33/thumbnail?mt=tok"
-    });
-  });
-});
-
-/**
- * A grant has to be loadable, not merely correct.
- *
- * The server mints site-relative paths. A browser resolves those against the
- * current origin; React Native has no origin, and the two native loaders each
- * fail silently and differently — AVPlayer rejects the URL with
- * NSURLErrorUnsupportedURL (-1002) and draws a black rectangle, `<Image>` drops
- * the URI before it reaches the network and draws nothing. Both read to a user
- * as "the media area is black", with no error anywhere to explain it.
- *
- * This shipped: the chat bubble re-absolutized on its own, so inline media
- * looked healthy while the fullscreen viewer, Save to Photos and Share — every
- * other consumer of the same grant — were handed a URL that cannot be fetched.
- * These assertions are on the module rather than on a screen for that exact
- * reason: the guarantee has to hold for consumers that do not exist yet.
- */
-describe("a grant is loadable by a native player, not just well-formed", () => {
-  it("absolutizes the access URL the server returns as a site-relative path", async () => {
-    mockPulseApi.mockResolvedValue(grant(87));
-    const access = await resolveMessengerMediaAccess(87);
-    expect(access.url).toBe("https://pulsesoc.com/api/messages/media/87/download?mt=tok");
-    // The property that matters, stated directly: a native loader can open it.
-    expect(access.url.startsWith("https://")).toBe(true);
-  });
-
-  it("absolutizes the preview URL too, so the poster is not the black frame", async () => {
-    mockPulseApi.mockResolvedValue({
-      ...grant(87),
-      thumbnail_access_url: "/api/messages/media/87/thumbnail?mt=tok"
-    });
-    const access = await resolveMessengerMediaAccess(87);
-    expect(access.thumbnailUrl).toBe("https://pulsesoc.com/api/messages/media/87/thumbnail?mt=tok");
-  });
-
-  it("leaves an absolute URL alone rather than doubling the origin", async () => {
-    // Signed R2 URLs already carry their own host. Prefixing one would produce
-    // `https://pulsesoc.comhttps://…`, which fails in a completely new way.
-    mockPulseApi.mockResolvedValue({
-      ok: true,
-      access_url: "https://media.r2.example/obj?sig=abc",
-      expires_in: 900
-    });
-    expect((await resolveMessengerMediaAccess(88)).url).toBe("https://media.r2.example/obj?sig=abc");
-  });
-
-  it("keeps an absent preview absent instead of inventing a bare origin", async () => {
-    // `absoluteApiUrl("")` must stay "": a thumbnail slot holding the site root
-    // would load the homepage HTML into an <Image> and report a decode failure
-    // for media that is simply still processing.
-    mockPulseApi.mockResolvedValue(grant(89));
-    expect((await resolveMessengerMediaAccess(89)).thumbnailUrl).toBe("");
   });
 });

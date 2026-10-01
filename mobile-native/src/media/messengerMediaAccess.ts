@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { absoluteApiUrl } from "../api/config";
 import { pulseApi } from "../api/pulseApi";
-import { namespacedMediaId } from "./mediaCache";
 
 /**
  * Messenger media access URLs.
@@ -27,58 +25,10 @@ const PROTECTED_DOWNLOAD_RE = /\/api\/messages\/media\/(\d+)\/download(?:$|[?#])
 /** Renew a little before real expiry so an in-flight load never races it. */
 const RENEW_MARGIN_MS = 60_000;
 
-/**
- * What the bubble needs to draw a card before any pixel of media arrives.
- *
- * The server has always sent this — `/access` embeds the whole attachment row —
- * and this module used to read two URLs off that response and drop the rest. So
- * the renderer knew a video existed but not its shape, its length, or whether
- * the poster was still being made, and the only card it could honestly draw was
- * a file card with the filename on it.
- *
- * `processingStatus` is the difference between "no poster yet" and "no poster
- * ever", which are the same empty string in `thumbnailUrl` and must not look the
- * same on screen.
- */
-export type MessengerMediaMeta = {
-  mediaType: string;
-  durationMs: number;
-  width: number;
-  height: number;
-  processingStatus: string;
-  sizeBytes: number;
-  filename: string;
-};
-
-export const EMPTY_MESSENGER_MEDIA_META: MessengerMediaMeta = {
-  mediaType: "",
-  durationMs: 0,
-  width: 0,
-  height: 0,
-  processingStatus: "",
-  sizeBytes: 0,
-  filename: ""
-};
-
-/**
- * One grant, both URLs, and the row they describe.
- *
- * The preview and the original are two different objects behind one
- * authorization decision, so they are granted together and cached together.
- * Asking for them separately is what the previous renderer did, and because both
- * requests resolved the same attachment id they came back as the same
- * `/download` URL: the "thumbnail" was the full asset, and every bubble paid for
- * two grants to learn that.
- *
- * `thumbnailUrl` is empty when the pipeline has not produced a preview yet. That
- * is a real state, not a missing value — the caller shows a placeholder rather
- * than substituting the original, which for a 90-minute video would mean
- * downloading gigabytes to paint a card.
- */
-type AccessEntry = { url: string; thumbnailUrl: string; meta: MessengerMediaMeta; expiresAt: number };
+type AccessEntry = { url: string; expiresAt: number };
 
 const accessCache = new Map<number, AccessEntry>();
-const inflight = new Map<number, Promise<AccessEntry>>();
+const inflight = new Map<number, Promise<string>>();
 
 export function isProtectedMessengerMediaUrl(url?: string | null): boolean {
   return PROTECTED_DOWNLOAD_RE.test(String(url || ""));
@@ -119,27 +69,6 @@ export type MessengerMediaIdentity = {
    */
   attachmentIdIsFoundationMedia?: boolean;
 };
-
-/**
- * The identity a messenger attachment is cached under.
- *
- * Same preference as `resolveCanonicalMessengerMediaId` — foundation id first,
- * transport id only as a fallback — but the answer is namespaced rather than a
- * bare integer, because these two ids come from different tables and their
- * sequences overlap. `media_upload_id = 7` and `attachment_id = 7` are two
- * different files; collapsed to `7` they become one cache entry, and one of the
- * two messages opens the other's attachment. See `namespacedMediaId`.
- *
- * This does NOT separate the two tables that both feed `media_upload_id` (a
- * Comm-v2 upload and a foundation `message_attachments` row). The payload
- * carries no discriminator for that, so it cannot be fixed on this side.
- */
-export function messengerMediaCacheIdentity(identity?: MessengerMediaIdentity | null): string | null {
-  return (
-    namespacedMediaId("media_upload", identity?.mediaUploadId) ??
-    namespacedMediaId("attachment", identity?.attachmentId)
-  );
-}
 
 export type CanonicalMessengerMediaId = {
   id: number;
@@ -227,7 +156,7 @@ function isExpiredGrant(error: unknown): boolean {
   return errorStatus(error) === 410 || code === "media_grant_expired" || code === "media_token_expired";
 }
 
-export type MessengerMediaGrant = { url: string; thumbnailUrl: string; meta: MessengerMediaMeta; attachmentId: number };
+export type MessengerMediaGrant = { url: string; attachmentId: number };
 
 /**
  * Request a grant for `canonical`, with exactly ONE bounded recovery attempt.
@@ -245,82 +174,27 @@ export async function grantMessengerMediaAccess(
   canonical: Pick<CanonicalMessengerMediaId, "id" | "alternates">
 ): Promise<MessengerMediaGrant> {
   try {
-    return { ...(await resolveMessengerMediaAccess(canonical.id)), attachmentId: canonical.id };
+    return { url: await resolveMessengerMediaAccessUrl(canonical.id), attachmentId: canonical.id };
   } catch (error) {
     if (isExpiredGrant(error)) {
       invalidateMessengerMediaAccess(canonical.id);
-      return { ...(await resolveMessengerMediaAccess(canonical.id)), attachmentId: canonical.id };
+      return { url: await resolveMessengerMediaAccessUrl(canonical.id), attachmentId: canonical.id };
     }
     const alternate = isMissingMedia(error) ? canonical.alternates[0] || 0 : 0;
     if (!alternate) throw error;
-    return { ...(await resolveMessengerMediaAccess(alternate)), attachmentId: alternate };
+    return { url: await resolveMessengerMediaAccessUrl(alternate), attachmentId: alternate };
   }
 }
 
-function nonNegative(value: unknown): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
-function readMeta(attachment: Record<string, unknown> | undefined): MessengerMediaMeta {
-  const row = attachment || {};
-  return {
-    mediaType: String(row.media_type || ""),
-    durationMs: nonNegative(row.duration_ms),
-    width: nonNegative(row.width),
-    height: nonNegative(row.height),
-    processingStatus: String(row.processing_status || ""),
-    sizeBytes: nonNegative(row.size_bytes),
-    filename: String(row.filename || "")
-  };
-}
-
-/**
- * A grant is only useful if a native loader can actually fetch it.
- *
- * `/access` mints site-relative paths — `/api/messages/media/87/download?mt=…`.
- * A browser resolves those against the current origin. React Native has no
- * origin, and the two native loaders fail in two DIFFERENT silent ways:
- *
- *   - AVPlayer rejects a relative URL with NSURLErrorUnsupportedURL (-1002) and
- *     renders a black rectangle. `onPlaybackStatusUpdate` reports
- *     `isLoaded: false` with no `error` field, so the viewer cannot even tell
- *     that it failed.
- *   - `<Image>` drops the relative URI before it reaches CFNetwork, so there is
- *     no request and no error at all — just an empty box.
- *
- * Both present as "the media area is black", which is precisely the failure this
- * mission exists to kill. Absolutizing HERE rather than in each renderer is the
- * point: this module is the single authority for messenger media URLs, and
- * every consumer past it (chat bubble, conversation gallery, fullscreen viewer,
- * save-to-photos, share) inherits a URL that is loadable by construction. The
- * chat bubble happened to re-absolutize on its own, which is why inline media
- * looked healthy while every other consumer of the same grant was broken.
- *
- * `absoluteApiUrl` is the codebase's existing rule for this, already carrying
- * the same lesson from the feed's blank-avatar bug. It leaves `https:`, `data:`
- * and `file:` untouched, so a grant the server returns as an R2 signed URL
- * passes through unchanged.
- */
-async function requestAccessUrl(attachmentId: number): Promise<AccessEntry> {
-  const response = await pulseApi<{
-    ok?: boolean;
-    access_url?: string;
-    thumbnail_access_url?: string;
-    expires_in?: number;
-    attachment?: Record<string, unknown>;
-  }>(`/api/messages/media/${attachmentId}/access`);
-  const url = absoluteApiUrl(response.access_url);
+async function requestAccessUrl(attachmentId: number): Promise<string> {
+  const response = await pulseApi<{ ok?: boolean; access_url?: string; expires_in?: number }>(
+    `/api/messages/media/${attachmentId}/access`
+  );
+  const url = String(response.access_url || "");
   if (!url) throw new Error("messenger_media_access_url_missing");
   const ttlMs = Math.max(0, Number(response.expires_in || 0)) * 1000;
-  const entry: AccessEntry = {
-    url,
-    thumbnailUrl: absoluteApiUrl(response.thumbnail_access_url),
-    meta: readMeta(response.attachment),
-    expiresAt: Date.now() + ttlMs
-  };
-  accessCache.set(attachmentId, entry);
-  return entry;
+  accessCache.set(attachmentId, { url, expiresAt: Date.now() + ttlMs });
+  return url;
 }
 
 /**
@@ -331,12 +205,10 @@ async function requestAccessUrl(attachmentId: number): Promise<AccessEntry> {
  * change is that simultaneous media loads stop looking like suspicious
  * concurrent session activity.
  */
-export async function resolveMessengerMediaAccess(
-  attachmentId: number
-): Promise<{ url: string; thumbnailUrl: string; meta: MessengerMediaMeta }> {
+export async function resolveMessengerMediaAccessUrl(attachmentId: number): Promise<string> {
   if (!Number.isFinite(attachmentId) || attachmentId <= 0) throw new Error("messenger_media_attachment_required");
   const cached = accessCache.get(attachmentId);
-  if (cached && cached.expiresAt - RENEW_MARGIN_MS > Date.now()) return cached;
+  if (cached && cached.expiresAt - RENEW_MARGIN_MS > Date.now()) return cached.url;
   const pending = inflight.get(attachmentId);
   if (pending) return pending;
   const request = requestAccessUrl(attachmentId).finally(() => inflight.delete(attachmentId));
@@ -344,24 +216,8 @@ export async function resolveMessengerMediaAccess(
   return request;
 }
 
-/** The original asset's URL. Kept for callers that never show a preview. */
-export async function resolveMessengerMediaAccessUrl(attachmentId: number): Promise<string> {
-  return (await resolveMessengerMediaAccess(attachmentId)).url;
-}
-
 type AccessSnapshot = {
   url: string;
-  /**
-   * The preview's URL, or "" when the pipeline has not produced one. Never a
-   * copy of `url`: a renderer that treats an empty preview as "use the original"
-   * turns a thumbnail slot into a full-asset download.
-   */
-  thumbnailUrl: string;
-  /**
-   * The attachment row behind the grant. Empty until the grant resolves, so a
-   * renderer must treat zeroes as "not known yet" rather than as measurements.
-   */
-  meta: MessengerMediaMeta;
   loading: boolean;
   failed: boolean;
   /** The canonical id returned a true 404. Retrying will not help. */
@@ -399,8 +255,6 @@ export function useMessengerMediaAccessUrl(
   const unavailableFor = useRef("");
   const [state, setState] = useState<AccessSnapshot>(() => ({
     url: needsGrant ? "" : fallbackUrl,
-    thumbnailUrl: "",
-    meta: EMPTY_MESSENGER_MEDIA_META,
     loading: needsGrant,
     failed: false,
     unavailable: false
@@ -408,37 +262,21 @@ export function useMessengerMediaAccessUrl(
 
   useEffect(() => {
     if (!needsGrant) {
-      setState({ url: fallbackUrl, thumbnailUrl: "", meta: EMPTY_MESSENGER_MEDIA_META, loading: false, failed: false, unavailable: false });
+      setState({ url: fallbackUrl, loading: false, failed: false, unavailable: false });
       return;
     }
     let active = true;
-    setState((previous) => ({
-      url: previous.url,
-      thumbnailUrl: previous.thumbnailUrl,
-      meta: previous.meta,
-      loading: true,
-      failed: false,
-      unavailable: false
-    }));
+    setState((previous) => ({ url: previous.url, loading: true, failed: false, unavailable: false }));
     const alternates = alternateKey ? alternateKey.split(",").map(Number).filter((id) => id > 0) : [];
     grantMessengerMediaAccess({ id: canonicalId, alternates })
       .then((granted) => {
-        if (active) {
-          setState({
-            url: granted.url,
-            thumbnailUrl: granted.thumbnailUrl,
-            meta: granted.meta,
-            loading: false,
-            failed: false,
-            unavailable: false
-          });
-        }
+        if (active) setState({ url: granted.url, loading: false, failed: false, unavailable: false });
       })
       .catch((error) => {
         if (!active) return;
         const gone = isMissingMedia(error);
         if (gone) unavailableFor.current = identityKey;
-        setState({ url: "", thumbnailUrl: "", meta: EMPTY_MESSENGER_MEDIA_META, loading: false, failed: true, unavailable: gone });
+        setState({ url: "", loading: false, failed: true, unavailable: gone });
       });
     return () => {
       active = false;

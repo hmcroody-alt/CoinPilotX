@@ -37,15 +37,6 @@
  *
  * This screen is that reach. Until it existed the row said "Connected and
  * working" over a connection that could not ship anything.
- *
- * ## Health is read, never derived
- *
- * Every verdict on this screen comes from `/supplier-status`. It used to come
- * from `listSupplierConnections` crossed with whatever else the screen happened
- * to have, which is how this screen and the hub reached different answers about
- * the same connection at the same moment. The row below contains no rule for
- * deciding whether a supplier is healthy; the closest it gets is choosing which
- * button to draw for a `nextAction` the server picked.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -54,14 +45,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   bindConnectionShop,
   checkConnectionHealth,
-  getSupplierStatus,
+  connectionCanFulfil,
+  connectionIsUsable,
+  connectionNeedsAttention,
   listConnectionShops,
-  requestSupplierResync,
+  listSupplierConnections,
   stateForError,
   type ConnectionShop,
   type DropshippingState,
-  type StoreSupplierStatus,
-  type SupplierStatus
+  type SupplierConnection
 } from "../../api/dropshipping";
 import { StoreHeader } from "../../components/store";
 import {
@@ -70,12 +62,6 @@ import {
   ProviderBadge,
   stateOwnsScreen
 } from "../../components/dropshipping/DropshippingStates";
-import {
-  AttentionBadge,
-  HealthRowList,
-  OperatingModeBanner
-} from "../../components/dropshipping/SupplierHealth";
-import { NEXT_ACTION_COPY, actionIsBlocking, healthRows } from "./supplierStatusCopy";
 import { useDropshippingScope } from "./useDropshippingScope";
 import { useFormatters } from "../../i18n/hooks";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../../navigation/BottomNavVisibility";
@@ -119,12 +105,7 @@ const STATUS_COPY: Record<string, string> = {
  */
 const SHOP_REASON_COPY: Record<string, string> = {
   api_shop_binding_required: "Your supplier won't take orders for this shop from an outside app.",
-  ambiguous_shop_name: "Shares its name with another shop, so an order has no single destination.",
-  // Separated from the line above because the merchant's next move differs. A
-  // switched-off shop is theirs to switch back on; a Shopify storefront is the
-  // wrong kind of shop forever. Told the same sentence, the first merchant goes
-  // looking for a problem with the shop's type that does not exist.
-  shop_disabled: "Switched off in your supplier's console. Turn it back on there to use it."
+  ambiguous_shop_name: "Shares its name with another shop, so an order has no single destination."
 };
 
 /** An open shop picker: which connection it belongs to, and what it has to show. */
@@ -134,49 +115,22 @@ type ShopPickerState = {
   shops: ConnectionShop[];
 };
 
-/**
- * How far a button's label may grow under the OS text-size setting.
- *
- * Capped rather than uncapped because these labels sit inside pills with a
- * minimum tap height: at the largest accessibility sizes an uncapped
- * "Choose fulfilment shop" pushes its own pill past the card edge, which is the
- * defect this file exists to close. Two lines plus this ceiling is the point at
- * which the longest label still fits the narrowest supported card.
- */
-const ACTION_MAX_FONT_SCALE = 1.4;
-
-/** One button on a supplier row, ordered by the row rather than by JSX position. */
-type RowAction = {
-  key: string;
-  label: string;
-  accessibilityLabel: string;
-  onPress: () => void;
-  busy?: boolean;
-};
-
 export function SuppliersScreen({ route, navigation }: Props) {
   const formatters = useFormatters();
   const reducedMotion = useLogiNexusReducedMotion();
   const insets = useSafeAreaInsets();
   const scopeStatus = useDropshippingScope();
 
-  const [status, setStatus] = useState<StoreSupplierStatus | null>(null);
+  const [connections, setConnections] = useState<SupplierConnection[]>([]);
   const [state, setState] = useState<DropshippingState>("LOADING");
   const [refreshing, setRefreshing] = useState(false);
   const [checking, setChecking] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState<string | null>(null);
-  // What the last "Sync now" actually queued, per connection. Held rather than
-  // discarded because the request only *starts* the work — telling the merchant
-  // "synced" the moment it returns would be the §21 defect on a control instead
-  // of on a badge.
-  const [syncNote, setSyncNote] = useState<Record<string, string>>({});
   // At most one picker is open, so there is no arrangement in which two
   // connections are being bound at once and the second overwrites the first.
   const [picker, setPicker] = useState<ShopPickerState | null>(null);
   const [binding, setBinding] = useState<string | null>(null);
 
   const scope = scopeStatus.status.phase === "ready" ? scopeStatus.status.scope : null;
-  const suppliers = status?.suppliers ?? [];
 
   const load = useCallback(
     async (mode: "initial" | "refresh" = "initial") => {
@@ -184,16 +138,14 @@ export function SuppliersScreen({ route, navigation }: Props) {
       if (mode === "refresh") setRefreshing(true);
       else setState("LOADING");
       try {
-        const result = await getSupplierStatus(scope);
-        setStatus(result);
-        setState(result.suppliers.length === 0 ? "EMPTY" : "READY");
+        const rows = await listSupplierConnections(scope);
+        setConnections(rows);
+        setState(rows.length === 0 ? "EMPTY" : "READY");
       } catch (error) {
         // The list failing is an error about the list. It is never EMPTY —
         // "you have no suppliers" is a claim, and a failed request cannot
-        // support it. The previous payload goes with it for the same reason:
-        // leaving a stale banner reading "Real fulfilment OFF" beside an error
-        // states a platform fact this render has no evidence for.
-        setStatus(null);
+        // support it.
+        setConnections([]);
         setState(stateForError(error));
       } finally {
         setRefreshing(false);
@@ -210,63 +162,17 @@ export function SuppliersScreen({ route, navigation }: Props) {
   }, [load, scopeStatus.status]);
 
   const runHealthCheck = useCallback(
-    async (supplier: SupplierStatus) => {
+    async (connection: SupplierConnection) => {
       if (!scope) return;
-      setChecking(supplier.connectionId);
+      setChecking(connection.id);
       try {
-        await checkConnectionHealth(scope, supplier.connectionId);
+        await checkConnectionHealth(scope, connection.id);
       } catch {
         // Swallowed on purpose: the check's answer is the refreshed list below,
         // not this call's return. A thrown health check still means the list
         // should be re-read, and the new status is what the merchant reads.
       } finally {
         setChecking(null);
-        await load("refresh").catch(() => undefined);
-      }
-    },
-    [load, scope]
-  );
-
-  /**
-   * "Sync now": queue a re-read of this supplier's data.
-   *
-   * The sentence afterwards says *started*, never *done*. The request returns
-   * when the jobs are queued and a background worker drains them, so a merchant
-   * told "synced" would read the same stale costs back off the screen and
-   * conclude the button is broken. A truncated catalogue is said out loud for
-   * the same reason: silently syncing part of it sends them hunting for a
-   * failure that is really a cap.
-   */
-  const runResync = useCallback(
-    async (supplier: SupplierStatus) => {
-      if (!scope) return;
-      const id = supplier.connectionId;
-      setSyncing(id);
-      setSyncNote((current) => ({ ...current, [id]: "" }));
-      try {
-        const result = await requestSupplierResync(scope, id);
-        setSyncNote((current) => ({
-          ...current,
-          [id]: result.truncated
-            ? `Refreshing the first ${result.maxProducts} products. Sync again when it finishes to cover the rest.`
-            : result.queuedProducts > 0
-              ? `Refreshing your connection and ${result.queuedProducts} product${
-                  result.queuedProducts === 1 ? "" : "s"
-                }. New figures appear here once it finishes.`
-              : "Checking your connection. The result appears here once it finishes."
-        }));
-      } catch (error) {
-        // Named as a failure to *start*, which is what actually happened. "Sync
-        // failed" would describe a sync that never ran.
-        setSyncNote((current) => ({
-          ...current,
-          [id]:
-            stateForError(error) === "UNAUTHORIZED"
-              ? "Sign in again to refresh this supplier."
-              : "Couldn't start a refresh just now. Try again in a moment."
-        }));
-      } finally {
-        setSyncing(null);
         await load("refresh").catch(() => undefined);
       }
     },
@@ -287,14 +193,13 @@ export function SuppliersScreen({ route, navigation }: Props) {
    * makes the refusals below reachable at all.
    */
   const openPicker = useCallback(
-    async (supplier: SupplierStatus) => {
+    async (connection: SupplierConnection) => {
       if (!scope) return;
-      const connectionId = supplier.connectionId;
-      setPicker({ connectionId, state: "LOADING", shops: [] });
+      setPicker({ connectionId: connection.id, state: "LOADING", shops: [] });
       try {
-        const result = await listConnectionShops(scope, connectionId);
+        const result = await listConnectionShops(scope, connection.id);
         setPicker({
-          connectionId,
+          connectionId: connection.id,
           // EMPTY is a real answer here and says something specific: the
           // supplier account owns no shop at all. It is not a failure, and the
           // copy below must not read as one, because the merchant's next move
@@ -303,7 +208,7 @@ export function SuppliersScreen({ route, navigation }: Props) {
           shops: result.shops
         });
       } catch (error) {
-        setPicker({ connectionId, state: stateForError(error), shops: [] });
+        setPicker({ connectionId: connection.id, state: stateForError(error), shops: [] });
       }
     },
     [scope]
@@ -366,58 +271,43 @@ export function SuppliersScreen({ route, navigation }: Props) {
       />
 
       <FlatList
-        data={stateBlock ? [] : suppliers}
-        keyExtractor={(item) => item.connectionId}
+        data={stateBlock ? [] : connections}
+        keyExtractor={(item) => item.id}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load("refresh")} />}
         contentContainerStyle={[
           styles.content,
           { paddingBottom: Math.max(insets.bottom, 16) + BOTTOM_NAV_CONTENT_CLEARANCE }
         ]}
-        ListHeaderComponent={
-          <View style={styles.block}>
-            {/* Above the rows and above the error, because it is the sentence
-                that tells a merchant whether anything they do on this screen
-                results in a parcel. Drawn whenever the payload arrived at all,
-                including when every connection on it is broken. */}
-            {status ? <OperatingModeBanner status={status} testID="supplier-operating-mode" /> : null}
-            {stateBlock}
-          </View>
-        }
+        ListHeaderComponent={stateBlock ? <View style={styles.block}>{stateBlock}</View> : null}
         renderItem={({ item }) => (
           <SupplierRow
-            supplier={item}
-            relative={formatters.relative}
-            checking={checking === item.connectionId}
-            syncing={syncing === item.connectionId}
-            syncNote={syncNote[item.connectionId] || null}
+            connection={item}
+            checking={checking === item.id}
+            lastVerifiedText={
+              item.lastVerifiedAt ? `Checked ${formatters.relative(item.lastVerifiedAt)}` : null
+            }
             onCheck={() => runHealthCheck(item)}
-            onSync={() => runResync(item)}
-            onBrowse={() =>
-              navigation.navigate("DropshippingCatalog", {
-                connectionId: item.connectionId,
-                title: "Find products"
-              })
+            onBrowse={
+              connectionIsUsable(item)
+                ? () =>
+                    navigation.navigate("DropshippingCatalog", {
+                      connectionId: item.id,
+                      title: "Find products"
+                    })
+                : null
             }
-            onReviewProducts={() =>
-              navigation.navigate("DropshippingProducts", {
-                connectionId: item.connectionId,
-                title: "Products"
-              })
+            // Offered only where it can succeed. A connection whose credential
+            // is expired cannot read a shop list either, so a picker on it would
+            // open straight onto a reauth error.
+            onChooseShop={
+              connectionIsUsable(item) && !connectionCanFulfil(item) ? () => openPicker(item) : null
             }
-            onReviewIssues={() =>
-              navigation.navigate("DropshippingSync", {
-                connectionId: item.connectionId,
-                title: "Sync & issues"
-              })
-            }
-            onReconnect={openConnect}
-            onChooseShop={() => openPicker(item)}
-            picker={picker && picker.connectionId === item.connectionId ? picker : null}
+            picker={picker && picker.connectionId === item.id ? picker : null}
             binding={binding}
             reducedMotion={reducedMotion}
             onReloadShops={() => openPicker(item)}
             onClosePicker={() => setPicker(null)}
-            onPickShop={(shopId) => chooseShop(item.connectionId, shopId)}
+            onPickShop={(shopId) => chooseShop(item.id, shopId)}
           />
         )}
         ListFooterComponent={
@@ -438,17 +328,11 @@ export function SuppliersScreen({ route, navigation }: Props) {
 }
 
 function SupplierRow({
-  supplier,
-  relative,
+  connection,
   checking,
-  syncing,
-  syncNote,
+  lastVerifiedText,
   onCheck,
-  onSync,
   onBrowse,
-  onReviewProducts,
-  onReviewIssues,
-  onReconnect,
   onChooseShop,
   picker,
   binding,
@@ -457,19 +341,13 @@ function SupplierRow({
   onClosePicker,
   onPickShop
 }: {
-  supplier: SupplierStatus;
-  relative: (iso: string) => string;
+  connection: SupplierConnection;
   checking: boolean;
-  syncing: boolean;
-  /** What the last "Sync now" on this row reported, if there was one. */
-  syncNote: string | null;
+  lastVerifiedText: string | null;
   onCheck: () => void;
-  onSync: () => void;
-  onBrowse: () => void;
-  onReviewProducts: () => void;
-  onReviewIssues: () => void;
-  onReconnect: () => void;
-  onChooseShop: () => void;
+  onBrowse: (() => void) | null;
+  /** Absent when this connection already has a shop, or cannot read a list. */
+  onChooseShop: (() => void) | null;
   /** The open picker, when it is this row's. */
   picker: ShopPickerState | null;
   binding: string | null;
@@ -478,166 +356,91 @@ function SupplierRow({
   onClosePicker: () => void;
   onPickShop: (externalShopId: string) => void;
 }) {
-  const connected = supplier.connectionState === "CONNECTED";
-  const action = supplier.nextAction;
-  const copy = action ? NEXT_ACTION_COPY[action] : null;
-
+  const needsAttention = connectionNeedsAttention(connection);
+  const status = connection.status.toUpperCase();
+  const canFulfil = connectionCanFulfil(connection);
   // The provider's own message wins when it sent one — it is more specific than
-  // anything this app can say — but it is only ever shown to the merchant who
-  // owns the connection, never logged. Otherwise the reason is the server's
-  // chosen next action, so the sentence and the button below it cannot
-  // disagree: a button reading "Reconnect" beside a line reading "Connected"
-  // is the state merchants report as a bug.
+  // anything this table can say — but it is only ever shown to the merchant who
+  // owns the connection, never logged.
+  //
+  // "Connected and working" is withheld from a connection with no fulfilment
+  // shop, because it is not true of one: every order it receives is refused.
+  // That sentence is what this row said before the picker below existed, and a
+  // merchant who reads it has no reason to look for anything else to do.
   const detail =
-    supplier.message ||
-    copy?.body ||
-    STATUS_COPY[supplier.connectionState] ||
-    (connected ? STATUS_COPY.CONNECTED : supplier.connectionState);
-
-  /**
-   * One action is the answer to "what do I do next?", and the rest are things
-   * the merchant *may* do.
-   *
-   * Before this the row offered three pills of equal weight in a single
-   * non-wrapping flex row, which did two bad things at once: the third pill was
-   * clipped off the right edge of the card on every iPhone narrower than a Pro
-   * Max, and the one action that actually unblocks fulfilment looked no more
-   * important than a health check. Promoting the server's `nextAction` — rather
-   * than rendering whatever happens to be non-null in source order — is what
-   * makes the next step legible, and it is the same ordering every other
-   * surface sees, because it was decided once on the server.
-   */
-  const PRESS: Record<string, () => void> = {
-    RECONNECT_SUPPLIER: onReconnect,
-    CHOOSE_FULFILLMENT_SHOP: onChooseShop,
-    RETRY_SYNC: onSync,
-    RESOLVE_PRODUCT_ISSUES: onReviewIssues,
-    IMPORT_FIRST_PRODUCT: onBrowse,
-    REVIEW_DRAFTS: onReviewProducts
-  };
-  // Suppressed while the picker is open: the primary would be "Choose fulfilment
-  // shop" and the list it opens is already on screen.
-  const primary: RowAction | null =
-    action && copy && !(action === "CHOOSE_FULFILLMENT_SHOP" && picker)
-      ? {
-          key: action,
-          label: action === "RETRY_SYNC" && syncing ? "Starting…" : copy.button,
-          accessibilityLabel: `${copy.button} for this supplier${syncing ? ", starting" : ""}`,
-          onPress: PRESS[action],
-          busy: action === "RETRY_SYNC" && syncing
-        }
-      : null;
-
-  const secondaries: RowAction[] = [
-    // Demoted rather than dropped when it is not the primary: a merchant with
-    // setup left to do still needs a way into the catalogue. Withheld entirely
-    // from a connection that is not connected, because every search on it fails
-    // — an offer that cannot succeed is worse than no offer.
-    ...(connected && primary?.key !== "IMPORT_FIRST_PRODUCT"
-      ? [
-          {
-            key: "browse",
-            label: "Find products",
-            accessibilityLabel: "Find products from this supplier",
-            onPress: onBrowse
-          }
-        ]
-      : []),
-    ...(connected && primary?.key !== "RETRY_SYNC"
-      ? [
-          {
-            key: "sync",
-            label: syncing ? "Starting…" : "Sync now",
-            accessibilityLabel: `Refresh this supplier's products${syncing ? ", starting" : ""}`,
-            onPress: onSync,
-            busy: syncing
-          }
-        ]
-      : []),
-    {
-      key: "check",
-      label: checking ? "Checking…" : "Check connection",
-      accessibilityLabel: `Check this supplier connection${checking ? ", checking" : ""}`,
-      onPress: onCheck,
-      busy: checking
-    }
-  ];
+    connection.message ||
+    (status === "CONNECTED" && !canFulfil
+      ? "Connected. Importing and publishing work; orders need a fulfilment shop."
+      : STATUS_COPY[status]) ||
+    connection.status;
 
   return (
     <View style={styles.row}>
       <View style={styles.rowTop}>
-        <ProviderBadge provider={supplier.provider} />
-        <EnvironmentBadge environment={supplier.environment} />
+        <ProviderBadge provider={connection.provider} />
+        <EnvironmentBadge environment={connection.environment} />
         <View style={styles.spacer} />
-        <AttentionBadge
-          needsAttention={supplier.needsAttention}
-          testID={`supplier-attention-${supplier.connectionId}`}
+        <View
+          style={[
+            styles.dot,
+            {
+              backgroundColor: needsAttention
+                ? storeLight.status.warning
+                : connectionIsUsable(connection)
+                  ? storeLight.status.success
+                  : storeLight.status.neutral
+            }
+          ]}
         />
       </View>
 
       <Text style={styles.rowTitle}>
-        {supplier.externalShopId ? `Shop ${supplier.externalShopId}` : "Supplier account"}
+        {connection.externalShopId ? `Shop ${connection.externalShopId}` : "Supplier account"}
       </Text>
-      <Text
-        style={[styles.rowDetail, supplier.needsAttention ? styles.rowDetailWarning : null]}
-        testID={`supplier-detail-${supplier.connectionId}`}
-      >
-        {detail}
-      </Text>
-      {supplier.lastVerifiedAt ? (
-        <Text style={styles.rowMeta}>{`Checked ${relative(supplier.lastVerifiedAt)}`}</Text>
-      ) : null}
+      <Text style={[styles.rowDetail, needsAttention ? styles.rowDetailWarning : null]}>{detail}</Text>
+      {lastVerifiedText ? <Text style={styles.rowMeta}>{lastVerifiedText}</Text> : null}
 
-      <HealthRowList
-        rows={healthRows(supplier, relative)}
-        testID={`supplier-health-${supplier.connectionId}`}
-      />
-
-      {syncNote ? (
-        <Text style={styles.syncNote} testID={`supplier-sync-note-${supplier.connectionId}`}>
-          {syncNote}
+      {/* Production fulfilment is off at the platform level while the funding
+          kill-switch is closed. Saying so here stops a merchant concluding the
+          connection is broken when it is deliberately limited. */}
+      {!connection.productionFulfillmentEnabled ? (
+        <Text style={styles.rowMeta}>
+          Importing works. Sending real orders to this supplier is switched off platform-wide.
         </Text>
       ) : null}
 
-      {primary ? (
+      <View style={styles.rowActions}>
         <Pressable
-          style={[styles.primary, action && !actionIsBlocking(action) ? styles.primaryOptional : null]}
-          onPress={primary.onPress}
-          disabled={primary.busy}
+          style={styles.secondary}
+          onPress={onCheck}
+          disabled={checking}
           accessibilityRole="button"
-          accessibilityState={{ disabled: Boolean(primary.busy) }}
-          accessibilityLabel={primary.accessibilityLabel}
-          testID={`supplier-primary-action-${supplier.connectionId}`}
+          accessibilityState={{ disabled: checking }}
+          accessibilityLabel={`Check this supplier connection${checking ? ", checking" : ""}`}
         >
-          <Text style={styles.primaryText} numberOfLines={2} maxFontSizeMultiplier={ACTION_MAX_FONT_SCALE}>
-            {primary.label}
-          </Text>
+          <Text style={styles.secondaryText}>{checking ? "Checking…" : "Check connection"}</Text>
         </Pressable>
-      ) : null}
-
-      {secondaries.length > 0 ? (
-        <View style={styles.rowActions} testID={`supplier-secondary-actions-${supplier.connectionId}`}>
-          {secondaries.map((rowAction) => (
-            <Pressable
-              key={rowAction.key}
-              style={styles.secondary}
-              onPress={rowAction.onPress}
-              disabled={rowAction.busy}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: Boolean(rowAction.busy) }}
-              accessibilityLabel={rowAction.accessibilityLabel}
-            >
-              <Text
-                style={styles.secondaryText}
-                numberOfLines={2}
-                maxFontSizeMultiplier={ACTION_MAX_FONT_SCALE}
-              >
-                {rowAction.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
+        {onChooseShop && !picker ? (
+          <Pressable
+            style={styles.secondary}
+            onPress={onChooseShop}
+            accessibilityRole="button"
+            accessibilityLabel="Choose a fulfilment shop for this supplier"
+          >
+            <Text style={styles.secondaryText}>Choose fulfilment shop</Text>
+          </Pressable>
+        ) : null}
+        {onBrowse ? (
+          <Pressable
+            style={styles.primary}
+            onPress={onBrowse}
+            accessibilityRole="button"
+            accessibilityLabel="Find products from this supplier"
+          >
+            <Text style={styles.primaryText}>Find products</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       {picker ? (
         <ShopPicker
@@ -688,7 +491,7 @@ function ShopPicker({
       empty={{
         title: "This supplier account has no shops.",
         body:
-          "Orders go to a shop your supplier's console sets up to accept them from outside apps. Create one there, then check again below. Importing and publishing keep working in the meantime."
+          "Orders go to a shop your supplier's console sets up to accept them from outside apps. Create one there, then reopen this list. Importing and publishing keep working in the meantime."
       }}
     />
   ) : null;
@@ -709,26 +512,6 @@ function ShopPicker({
       </View>
 
       {block}
-      {/*
-        The empty state is the one state where the merchant's next move happens
-        somewhere else entirely — in their supplier's console — and then they
-        come back. `DropshippingStateView` gives `EMPTY` no button anywhere in
-        the app, correctly: an empty list is usually an invitation to create
-        something *here*, and a "Try again" on it would just redraw nothing.
-        Here it is the opposite. The list will have changed, and without this
-        the only way to find out is to close the picker and reopen it, which
-        the copy has to ask for in words. Reading it again is the whole action.
-      */}
-      {picker.state === "EMPTY" ? (
-        <Pressable
-          style={styles.pickerRecheck}
-          onPress={onReload}
-          accessibilityRole="button"
-          accessibilityLabel="Check for shops again"
-        >
-          <Text style={styles.secondaryText}>Check again</Text>
-        </Pressable>
-      ) : null}
       {block
         ? null
         : picker.shops.map((shop) => {
@@ -776,90 +559,29 @@ const styles = StyleSheet.create({
   },
   rowTop: { flexDirection: "row", alignItems: "center", gap: 8 },
   spacer: { flex: 1 },
+  dot: { width: 10, height: 10, borderRadius: 5 },
   rowTitle: { fontSize: 15, fontWeight: "700", color: storeLight.text.primary },
   rowDetail: { fontSize: 13, color: storeLight.text.muted, lineHeight: 18 },
   rowDetailWarning: { color: storeLight.status.warning, fontWeight: "600" },
   rowMeta: { fontSize: 11, color: storeLight.text.muted },
-  /**
-   * What the last "Sync now" actually did, kept until the next one.
-   *
-   * It sits above the button rather than replacing its label because the request
-   * finishes when the work is *queued*, not when it is done: a button that said
-   * "Synced" would be a claim about the provider that this screen has no
-   * evidence for. The figures below it change on the next `/supplier-status`.
-   */
-  syncNote: { fontSize: 11, color: storeLight.text.muted, lineHeight: 16, marginTop: 6 },
-  /**
-   * `flexWrap` is the line that fixes the clipped action.
-   *
-   * Without it this row laid three pills out in a single line that was wider
-   * than the card, and React Native does not scroll or shrink an overflowing
-   * row — it simply draws the remainder outside the parent's bounds, where it
-   * is both invisible and untappable. Wrapping plus a `flexBasis` under half
-   * the row means at most two buttons share a line and a third moves down
-   * instead of off.
-   */
-  rowActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 },
+  rowActions: { flexDirection: "row", gap: 8, marginTop: 6 },
   secondary: {
-    // `flexBasis` just under half leaves room for the gap, so two pills fit a
-    // line and a third wraps. `flexGrow` then lets a lone pill on the last line
-    // take the full width rather than sitting at an arbitrary 47%.
-    flexGrow: 1,
-    flexBasis: "47%",
-    minWidth: 0,
     minHeight: storeLight.size.tapTarget,
-    alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: storeLight.radius.pill,
     borderWidth: 1,
     borderColor: storeLight.border.secondaryButton
   },
-  secondaryText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: storeLight.text.primary,
-    textAlign: "center"
-  },
-  /**
-   * Full width, and above the secondaries rather than beside them. The primary
-   * is the answer to "what next?", and a pill of the same size in the same row
-   * as two others cannot carry that meaning.
-   */
+  secondaryText: { fontSize: 13, fontWeight: "600", color: storeLight.text.primary },
   primary: {
-    alignSelf: "stretch",
     minHeight: storeLight.size.tapTarget,
-    alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 8,
     paddingHorizontal: 16,
-    marginTop: 8,
     borderRadius: storeLight.radius.pill,
     backgroundColor: storeLight.cta.from
   },
-  /**
-   * The same button, outlined, when the server's next action is an invitation
-   * rather than a blocker.
-   *
-   * "Review drafts" and "Find products" are things a working supplier offers;
-   * "Reconnect supplier" is something a broken one demands. Drawing both as the
-   * one filled call-to-action is how a merchant learns to stop reading it — and
-   * the day the credential is actually revoked, the button that says so looks
-   * exactly like the one that has been suggesting they browse a catalogue.
-   * `cta.text` is near-black, so it stays legible once the fill is gone.
-   */
-  primaryOptional: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: storeLight.select.selectedBorder
-  },
-  primaryText: {
-    fontSize: 13,
-    fontWeight: "800",
-    color: storeLight.cta.text,
-    textAlign: "center"
-  },
+  primaryText: { fontSize: 13, fontWeight: "800", color: storeLight.cta.text },
   picker: {
     marginTop: 10,
     paddingTop: 10,
@@ -871,12 +593,6 @@ const styles = StyleSheet.create({
   pickerTitle: { fontSize: 13, fontWeight: "700", color: storeLight.text.primary },
   pickerClose: {
     minHeight: storeLight.size.tapTarget,
-    justifyContent: "center",
-    paddingHorizontal: 8
-  },
-  pickerRecheck: {
-    minHeight: storeLight.size.tapTarget,
-    alignSelf: "flex-start",
     justifyContent: "center",
     paddingHorizontal: 8
   },

@@ -9,23 +9,6 @@
 
   const messages = {
     en: {
-      // PulseDrop commerce attachment. The overlay ships these keys beside an
-      // English fallback and the native card renders through them; the web card
-      // read the fallback alone, so a member on a translated post met an English
-      // badge and an English button. Copied verbatim from the app's catalogue
-      // (mobile-native/src/i18n/catalogs/<lang>/extended.json) so the two
-      // surfaces say the same words, not two translations of one idea.
-      "commerce:pulsedrop.label.trending": "Trending",
-      "commerce:pulsedrop.label.newDrop": "New drop",
-      "commerce:pulsedrop.label.popular": "Popular",
-      "commerce:pulsedrop.label.topPick": "Top pick",
-      "commerce:pulsedrop.label.discovery": "Discover",
-      "commerce:pulsedrop.cta.viewProduct": "View product",
-      "commerce:pulsedrop.seller.visitStore": "Visit store",
-      "commerce:pulsedrop.availability.unavailable": "No longer available",
-      "commerce:pulsedrop.availability.notPriced": "Not priced yet",
-      "commerce:marketplace.outOfStock": "Out of stock",
-      "commerce:marketplace.statusRemoved": "Removed",
       "settings.saved": "Settings saved.",
       "language.saved": "Language preference saved.",
       "auth.login_required": "Login required.",
@@ -94,23 +77,6 @@
       "pulse.call.try_again": "Try Again"
     },
     es: {
-      // PulseDrop commerce attachment. The overlay ships these keys beside an
-      // English fallback and the native card renders through them; the web card
-      // read the fallback alone, so a member on a translated post met an English
-      // badge and an English button. Copied verbatim from the app's catalogue
-      // (mobile-native/src/i18n/catalogs/<lang>/extended.json) so the two
-      // surfaces say the same words, not two translations of one idea.
-      "commerce:pulsedrop.label.trending": "Tendencias",
-      "commerce:pulsedrop.label.newDrop": "Novedad",
-      "commerce:pulsedrop.label.popular": "Popular",
-      "commerce:pulsedrop.label.topPick": "Nuestra selección",
-      "commerce:pulsedrop.label.discovery": "Descubre",
-      "commerce:pulsedrop.cta.viewProduct": "Ver producto",
-      "commerce:pulsedrop.seller.visitStore": "Ver tienda",
-      "commerce:pulsedrop.availability.unavailable": "Ya no está disponible",
-      "commerce:pulsedrop.availability.notPriced": "Sin precio aún",
-      "commerce:marketplace.outOfStock": "Sin existencias",
-      "commerce:marketplace.statusRemoved": "Retirado",
       "settings.saved": "Configuracion guardada.",
       "language.saved": "Idioma guardado.",
       "auth.login_required": "Inicia sesion.",
@@ -138,23 +104,6 @@
       "welcome.manual.cta": "Entrar a la galaxia"
     },
     fr: {
-      // PulseDrop commerce attachment. The overlay ships these keys beside an
-      // English fallback and the native card renders through them; the web card
-      // read the fallback alone, so a member on a translated post met an English
-      // badge and an English button. Copied verbatim from the app's catalogue
-      // (mobile-native/src/i18n/catalogs/<lang>/extended.json) so the two
-      // surfaces say the same words, not two translations of one idea.
-      "commerce:pulsedrop.label.trending": "Tendances",
-      "commerce:pulsedrop.label.newDrop": "Nouveauté",
-      "commerce:pulsedrop.label.popular": "Populaire",
-      "commerce:pulsedrop.label.topPick": "Notre sélection",
-      "commerce:pulsedrop.label.discovery": "Découvrir",
-      "commerce:pulsedrop.cta.viewProduct": "Voir le produit",
-      "commerce:pulsedrop.seller.visitStore": "Voir la boutique",
-      "commerce:pulsedrop.availability.unavailable": "Plus disponible",
-      "commerce:pulsedrop.availability.notPriced": "Prix non défini",
-      "commerce:marketplace.outOfStock": "Rupture de stock",
-      "commerce:marketplace.statusRemoved": "Retirée",
       "settings.saved": "Parametres enregistres.",
       "language.saved": "Langue enregistree.",
       "auth.login_required": "Connexion requise.",
@@ -182,23 +131,6 @@
       "welcome.manual.cta": "Entrer dans la galaxie"
     },
     ht: {
-      // PulseDrop commerce attachment. The overlay ships these keys beside an
-      // English fallback and the native card renders through them; the web card
-      // read the fallback alone, so a member on a translated post met an English
-      // badge and an English button. Copied verbatim from the app's catalogue
-      // (mobile-native/src/i18n/catalogs/<lang>/extended.json) so the two
-      // surfaces say the same words, not two translations of one idea.
-      "commerce:pulsedrop.label.trending": "Sa k cho",
-      "commerce:pulsedrop.label.newDrop": "Nouvo rive",
-      "commerce:pulsedrop.label.popular": "Popilè",
-      "commerce:pulsedrop.label.topPick": "Chwa nou",
-      "commerce:pulsedrop.label.discovery": "Dekouvri",
-      "commerce:pulsedrop.cta.viewProduct": "Gade pwodwi a",
-      "commerce:pulsedrop.seller.visitStore": "Gade boutik la",
-      "commerce:pulsedrop.availability.unavailable": "Li pa disponib ankò",
-      "commerce:pulsedrop.availability.notPriced": "Pa gen pri ankò",
-      "commerce:marketplace.outOfStock": "Li fini",
-      "commerce:marketplace.statusRemoved": "Retire",
       "settings.saved": "Paramet yo anrejistre.",
       "language.saved": "Lang lan anrejistre.",
       "auth.login_required": "Ou dwe konekte.",
@@ -259,11 +191,8 @@
     document.documentElement.dir = rtlLanguages.has(base) ? "rtl" : "ltr";
     document.documentElement.dataset.preferredLanguage = normalized;
     document.documentElement.dataset.translationFallback = messages[normalized] ? "native" : messages[base] ? "base" : "english";
-    // Swept before the event, not after: a listener that reads the DOM it just
-    // translated -- the commerce card rebuilds an `aria-label` out of its own
-    // translated chips -- would otherwise read the previous language's text.
-    translateMarkedNodes();
     document.dispatchEvent(new CustomEvent("PulseLanguageChanged", { detail: { language: normalized } }));
+    translateMarkedNodes();
     return normalized;
   }
 
@@ -350,10 +279,6 @@
     getLanguage: () => normalize(document.documentElement.dataset.preferredLanguage || readCachedLanguage()),
     setLanguage,
     t,
-    // Exported for markup that arrives after the DOMContentLoaded sweep. Feed
-    // and reel cards are appended on scroll, so without a way to translate a
-    // subtree they stay in the server's fallback language for the session.
-    translateMarkedNodes,
     applyLanguage,
     loadServerLanguage,
     supportsLanguage: (language) => languagePattern.test(String(language || "").trim().toLowerCase().replace("_", "-").slice(0, 16)),

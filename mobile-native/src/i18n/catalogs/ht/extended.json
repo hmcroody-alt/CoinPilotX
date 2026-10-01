@@ -358,31 +358,44 @@
       "requests_other": "{{count}} demann mesaj"
     },
     "chat": {
+      "placeholder": "Mesaj…",
+      "typing": "{{name}} ap ekri…",
+      "typingMultiple": "Plizyè moun ap ekri…",
+      "delivered": "Rive",
+      "read": "Li",
+      "sent": "Voye",
+      "failed": "Li pa rive",
+      "tapToRetry": "Tape pou eseye ankò",
+      "editedLabel": "Modifye",
+      "deletedMessage": "Mesaj sa a siprime",
+      "replyingTo": "W ap reponn {{name}}",
+      "forwarded": "Transfere",
+      "attachPhoto": "Foto",
+      "attachFile": "Fichye",
+      "attachVoice": "Mesaj vokal",
+      "recordingVoice": "L ap anrejistre…",
+      "slideToCancel": "Glise pou w anile",
+      "newMessagesDivider": "Nouvo mesaj",
+      "encryptedNotice": "Mesaj yo kripte lè y ap voye.",
+      "emptyTitle": "Di yon bonjou",
+      "emptyBody": "Se isit la konvèsasyon w lan kòmanse.",
       "a11yAddAttachment": "Ajoute yon atachman",
       "a11yAddEmoji": "Ajoute yon emoji ki souri",
       "a11yBack": "Tounen nan konvèsasyon yo",
       "a11yBackFive": "Retounen 5 segonn annaryè",
-      "a11yCancelEdit": "Anile modifikasyon an",
       "a11yCancelReply": "Anile repons lan",
       "a11yCancelUndxAction": "Anile aksyon UNDX la",
       "a11yCloseAttachmentSheet": "Fèmen meni atachman an",
-      "a11yCloseForward": "Fèmen voye ankò",
-      "a11yCloseInfo": "Fèmen enfòmasyon mesaj la",
       "a11yComposer": "Espas pou ekri mesaj",
       "a11yComposerUndx": "Espas pou ekri mesaj UNDX",
       "a11yConfirmUndxAction": "Konfime aksyon UNDX la",
       "a11yDiscardRecording": "Jete anrejistreman vokal la",
       "a11yDismissStatus": "Inyore estati mesaj la",
       "a11yForwardFive": "Avanse 5 segonn",
-      "a11yGalleryPhotoPosition": "Foto {{sender}}, {{position}} sou {{total}}",
-      "a11yGalleryVideoPosition": "Videyo {{sender}}, {{position}} sou {{total}}",
       "a11yGifAttachment": "{{label}}. Atachman GIF.",
-      "a11yGridPhotoTile": "{{label}}. Foto {{position}} sou {{total}}.",
-      "a11yGridVideoTile": "{{label}}. Videyo {{position}} sou {{total}}.",
       "a11yImageAttachment": "{{label}}. Atachman imaj.",
       "a11yOpenControls": "Louvri kontwòl konvèsasyon an",
       "a11yOpenUndxResult": "Louvri rezilta {{type}} a",
-      "a11yOpensDocument": "Ouvri nan vizyonè dokiman ou",
       "a11yOpensViewer": "Sa louvri afichaj ekran plen an",
       "a11yPauseVoice": "Fè poz nan mesaj vokal la",
       "a11yPlayVoice": "Jwe mesaj vokal la",
@@ -392,7 +405,6 @@
       "a11yRecordingVoice": "L ap anrejistre mesaj vokal. {{duration}}",
       "a11yRetryLoad": "Eseye chaje mesaj yo ankò",
       "a11yRetryVoice": "Eseye mesaj vokal la ankò",
-      "a11ySaveEdit": "Anrejistre modifikasyon an",
       "a11ySend": "Voye mesaj la",
       "a11yStartAudioCall": "Kòmanse yon apèl vokal",
       "a11yStartVideoCall": "Kòmanse yon apèl videyo",
@@ -401,26 +413,20 @@
       "a11yUndxAttachmentsOff": "Atachman pa disponib nan UNDX",
       "a11yUndxVoiceOff": "Mesaj vokal pa disponib nan UNDX",
       "a11yUploadingAttachment": "L ap voye atachman an monte",
-      "a11yVideoAttachment": "Videyo, peze pou jwe l",
-      "a11yVideoAttachmentDuration": "Videyo, {{duration}}, peze pou jwe l",
       "a11yVoiceDuration": "Dire {{duration}}",
       "a11yVoiceProgress": "Kote mesaj vokal la rive",
       "a11yVoiceUnavailable": "{{label}}. Mesaj vokal pa disponib.",
       "assistantAlwaysAvailable": "Toujou disponib · Entèlijans PulseSoc",
-      "assistantConnecting": "Koneksyon ap fèt · Entèlijans PulseSoc",
       "assistantReconnecting": "Sèvis la ap rekonekte",
       "attachCamera": "Kamera",
       "attachCameraDetail": "Pran l kounye a",
       "attachDocument": "Dokiman",
       "attachDocumentDetail": "Fichye an sekirite",
-      "attachFile": "Fichye",
-      "attachPhoto": "Foto",
       "attachPhotoDetail": "Imaj optimize",
       "attachRecordingNow": "L ap anrejistre kounye a",
       "attachStopSend": "Kanpe epi voye",
       "attachVideo": "Videyo",
       "attachVideoDetail": "Jiska 2 minit",
-      "attachVoice": "Mesaj vokal",
       "attachVoiceNote": "Nòt vokal",
       "attachVoiceNoteDetail": "Mesaj odyo rapid",
       "attachmentFailedTitle": "Atachman an pa pase",
@@ -442,33 +448,12 @@
       "deleteForMe": "Siprime pou mwen",
       "deleteHidden": "Mesaj la kache sou aparèy sa a.",
       "deleteRequested": "Nou mande pou siprime mesaj la.",
-      "deletedMessage": "Mesaj sa a siprime",
       "deletedMessageBody": "Mesaj sa a siprime.",
-      "delivered": "Rive",
-      "durationMinutes": "{{minutes}} minit",
-      "durationMinutesSeconds": "{{minutes}} minit {{seconds}} segonn",
-      "durationSeconds": "{{seconds}} segonn",
-      "editEmpty": "Yon mesaj ou modifye pa ka vid.",
-      "editFailed": "Nou pa t ka modifye mesaj sa a.",
-      "editSaved": "Mesaj la modifye.",
-      "editedLabel": "Modifye",
-      "editingMessage": "W ap modifye mesaj la",
-      "emptyBody": "Se isit la konvèsasyon w lan kòmanse.",
       "emptyThreadBody": "Mesaj nan konvèsasyon sa a ap parèt isit la.",
-      "emptyTitle": "Di yon bonjou",
-      "encryptedNotice": "Mesaj yo kripte lè y ap voye.",
-      "failed": "Li pa rive",
       "fileAttachment": "Atachman fichye",
       "filePickerFailed": "Selektè fichye a pa t ka louvri.",
       "fileSharingUnavailableTitle": "Pataj fichye pa disponib",
-      "forwardFailed": "Nou pa t ka voye mesaj sa a.",
-      "forwardNoConversations": "Pa gen lòt konvèsasyon pou voye l.",
-      "forwardSend": "Voye bay {{total}}",
-      "forwardSent": "Voye bay {{total}}.",
-      "forwarded": "Transfere",
       "forwardedSignal": "Siyal transfere",
-      "galleryUnavailable": "Pa disponib",
-      "galleryUnavailableOffline": "Pa disponib san koneksyon",
       "headerCachedHistory": "Istorik nan kach",
       "headerLiveChannel": "Kanal ann dirèk",
       "headerReconnecting": "L ap rekonekte",
@@ -476,26 +461,6 @@
       "imageAttachment": "Atachman imaj",
       "imagePickerFailed": "Selektè imaj la pa t ka louvri.",
       "imageSharingUnavailableTitle": "Pataj imaj pa disponib",
-      "infoDelivered": "Livre",
-      "infoDeliveredAt": "Livre",
-      "infoDuration": "Dire",
-      "infoEditedAt": "Modifye",
-      "infoForwarded": "Voye ankò",
-      "infoForwardedYes": "Wi",
-      "infoFrom": "Soti nan",
-      "infoId": "ID mesaj la",
-      "infoRead": "Li",
-      "infoReadAt": "Li",
-      "infoReadGroup": "Omwen yon moun li l",
-      "infoSent": "Voye",
-      "infoSentAt": "Voye",
-      "infoSize": "Gwosè",
-      "infoStatus": "Estati",
-      "infoType": "Kalite",
-      "infoTypeMedia": "Medya",
-      "infoTypeText": "Tèks",
-      "infoTypeUnavailable": "Pa disponib",
-      "infoTypeVoice": "Mesaj vokal",
       "liveVoiceKicker": "VWA ANN DIRÈK",
       "loadFailed": "Mesaj yo pa t ka chaje.",
       "loadFailedBody": "PulseSoc pa t ka chaje konvèsasyon sa a. Tape eseye ankò pou w rekonekte ak istorik mesaj ofisyèl la.",
@@ -510,16 +475,12 @@
       "microphoneUnavailableTitle": "Mikwo pa disponib",
       "moderatedMessageBody": "Mesaj sa a pa disponib apre revizyon sekirite a.",
       "muteBlock": "Silansye / Bloke",
-      "newMessagesDivider": "Nouvo mesaj",
-      "openDocument": "Peze pou ouvri",
       "openViewer": "Louvri afichaj la",
       "openingBody": "L ap chaje istorik konvèsasyon an sou sèvè a.",
-      "openingDocument": "Ap ouvri…",
       "openingTitle": "Konvèsasyon an ap louvri",
       "pendingRemoved": "Mesaj lokal ki t ap tann lan retire.",
       "photosUnavailableBody": "Bay aksè ak foto yo nan Paramèt pou w pataje yon imaj.",
       "photosUnavailableTitle": "Foto pa disponib",
-      "placeholder": "Mesaj…",
       "presenceActivityDirect": "{{activity}} · Dirèk",
       "presenceOffline": "Pa anliy",
       "presenceOnline": "Anliy",
@@ -529,14 +490,11 @@
       "reactPending": "Ou ka reyaji sou mesaj k ap tann yo apre sèvè a fin aksepte yo.",
       "reactionFailed": "Reyaksyon an pa pase.",
       "reactionSent": "Reyaksyon an voye.",
-      "read": "Li",
       "realtimeReconnecting": "Koneksyon dirèk la ap rekonekte. Istorik mesaj yo rete vizib.",
       "recordingDiscarded": "Anrejistreman vokal la jete.",
       "recordingFailed": "Anrejistreman vokal la pa t ka kòmanse.",
       "recordingNoFile": "Anrejistreman an pa bay okenn fichye odyo.",
       "recordingStarted": "L ap anrejistre mesaj vokal la… tape mikwo a ankò pou w voye l.",
-      "recordingVoice": "L ap anrejistre…",
-      "replyingTo": "W ap reponn {{name}}",
       "reportConversationTitle": "Siyale Konvèsasyon an",
       "reportFailed": "Siyalman an pa pase.",
       "reportPending": "Ou pa ka siyale mesaj k ap tann yo toutan sèvè a poko aksepte yo.",
@@ -545,17 +503,12 @@
       "retryFailedSend": "Eseye voye l ankò",
       "sendFailed": "Nou pa t ka voye mesaj la.",
       "sendingVoice": "L ap voye mesaj vokal la…",
-      "sent": "Voye",
       "showingCached": "N ap montre mesaj ki nan kach yo pandan PulseSoc ap rekonekte.",
-      "slideToCancel": "Glise pou w anile",
       "stateReconnecting": "L AP REKONEKTE",
       "stateRecording": "L AP ANREJISTRE",
       "stateSecureReady": "AN SEKIRITE · PARE",
       "stateSendingMedia": "L AP VOYE MEDYA",
       "stateUndxReady": "UNDX · PARE",
-      "tapToRetry": "Tape pou eseye ankò",
-      "typing": "{{name}} ap ekri…",
-      "typingMultiple": "Plizyè moun ap ekri…",
       "undxActionFailed": "Aksyon UNDX la pa pase.",
       "undxActionFinished": "Aksyon UNDX la fini.",
       "undxAttachmentsUnsupported": "Pou kounye a, UNDX aksepte sèlman konvèsasyon tèks nan Messenger natif la. Atachman rete nan konvèsasyon ant moun toutan sèvè a poko louvri medya pou asistan an.",
@@ -581,8 +534,6 @@
       "uploadingAttachment": "L ap voye atachman an monte…",
       "videoAttachment": "Atachman videyo",
       "videoPickerFailed": "Selektè videyo a pa t ka louvri.",
-      "videoPosterFailed": "Apèsi a pa disponib",
-      "videoProcessing": "Y ap trete videyo a…",
       "videoSharingUnavailableTitle": "Pataj videyo pa disponib",
       "videosUnavailableBody": "Bay aksè ak foto yo nan Paramèt pou w pataje yon videyo.",
       "videosUnavailableTitle": "Videyo pa disponib",
@@ -593,8 +544,7 @@
       "voiceSent": "Mesaj vokal la voye.",
       "voiceUnavailable": "Mesaj vokal pa disponib",
       "voiceUnavailableTitle": "Mesaj vokal pa disponib",
-      "yourMessage": "mesaj ou a",
-      "moreReactions": "Plis reyaksyon"
+      "yourMessage": "mesaj ou a"
     },
     "group": {
       "createGroup": "Kreye yon gwoup",
@@ -1012,7 +962,6 @@
           "minimalBlack": "Nwa Senp",
           "neonPlanet": "Planèt Neyon",
           "pulseHorizon": "Orizon Pulse",
-          "pulsesocCosmic": "PulseSoc Grafit",
           "starTunnel": "Tinèl Zetwal"
         }
       },
@@ -1091,140 +1040,9 @@
         "voiceReader": "Lektè Vokal",
         "wallpaper": "Fon Ekran"
       }
-    },
-    "postCard": {
-      "a11yOpen": "Ouvri piblikasyon PulseSoc {{author}} la",
-      "a11yOpenGeneric": "Ouvri piblikasyon PulseSoc sa a",
-      "cta": "Gade piblikasyon an →",
-      "eyebrow": "PIBLIKASYON PULSESOC",
-      "forbidden": "Kontni sa a pa disponib pou ou.",
-      "loading": "N ap chaje piblikasyon an…",
-      "missing": "Piblikasyon sa a pa disponib ankò.",
-      "unavailable": "Kontni an pa disponib",
-      "video": "Videyo"
-    },
-    "profileCard": {
-      "eyebrow": "PWOFIL PULSESOC",
-      "cta": "Gade pwofil la →",
-      "loading": "N ap chaje pwofil la…",
-      "forbidden": "Pwofil sa a pa disponib pou ou.",
-      "missing": "Pwofil sa a pa disponib ankò.",
-      "unavailable": "Pwofil la pa disponib",
-      "a11yOpen": "Ouvri pwofil PulseSoc {{author}} la",
-      "a11yOpenGeneric": "Ouvri pwofil PulseSoc sa a"
-    },
-    "reelCard": {
-      "eyebrow": "REEL PULSESOC",
-      "cta": "Gade Reel la →",
-      "loading": "N ap chaje Reel la…",
-      "forbidden": "Kontni sa a pa disponib pou ou.",
-      "missing": "Reel sa a pa disponib ankò.",
-      "unavailable": "Reel la pa disponib",
-      "play": "Jwe",
-      "a11yOpen": "Ouvri Reel PulseSoc {{author}} la",
-      "a11yOpenGeneric": "Ouvri Reel PulseSoc sa a"
-    },
-    "messageActions": {
-      "openLink": "Louvri lyen an",
-      "copyLink": "Kopye lyen an",
-      "shareLink": "Pataje lyen an",
-      "saveToPhotos": "Sere nan Foto",
-      "translate": "Tradui",
-      "forward": "Voye bay",
-      "info": "Enfòmasyon mesaj",
-      "chooseLink": "Ki lyen?",
-      "closeMenu": "Fèmen meni mesaj la",
-      "reactWith": "Reyaji ak {{emoji}}"
     }
   },
   "commerce": {
-    "discovery": {
-      "label": {
-        "recommended": "Rekòmande nan Marketplace",
-        "trending": "Tandans sou PulseSoc",
-        "sponsored": "Peye"
-      },
-      "subtitle": {
-        "matches_your_interests": "Dapre sa ou renmen",
-        "because_you_viewed": "Paske ou te gade atik sanblab",
-        "related_to_this_post": "An rapò ak sa w ap gade a",
-        "similar_to_this_product": "Sanble ak pwodwi sa a",
-        "from_sellers_you_follow": "Nan men vandè ou swiv",
-        "trending": "Tandans sou PulseSoc kounye a",
-        "new_arrival": "Fèk ajoute nan Marketplace",
-        "popular": "Popilè pami achtè yo",
-        "new_to_marketplace": "Nouvo nan Marketplace"
-      },
-      "action": {
-        "viewProduct": "Gade pwodwi a",
-        "save": "Sere",
-        "saved": "Sere deja",
-        "seeAll": "Gade tout"
-      },
-      "menu": {
-        "title": "Opsyon rekòmandasyon",
-        "hide": "Kache sa a",
-        "notInterested": "Mwen pa enterese",
-        "seeFewer": "Montre mwen mwens konsa",
-        "hideSeller": "Pa rekòmande vandè sa a",
-        "why": "Poukisa m ap wè sa?",
-        "snooze": "Kache sijesyon Marketplace pou 30 jou"
-      },
-      "why": {
-        "title": "Poukisa m ap wè sa?",
-        "loading": "N ap verifye…",
-        "unavailable": "Nou pa ka eksplike rekòmandasyon sa a kounye a.",
-        "factorsTitle": "Sou kisa li baze",
-        "close": "Fèmen"
-      },
-      "factor": {
-        "relevance": "Jan li koresponn ak sa ou t ap gade",
-        "quality": "Kalite anons lan",
-        "predicted_interest": "Bagay ou te enterese ladan yo anvan",
-        "conversion_probability": "Konbyen fwa achtè achte atik konsa",
-        "seller_reliability": "Istwa vandè a",
-        "freshness": "Depi kilè anons lan pibliye",
-        "exploration_bonus": "Bay nouvo anons yon chans",
-        "diversity_bonus": "Montre ou plizyè vandè diferan"
-      },
-      "module": {
-        "recommended_for_you": "Rekòmande pou ou",
-        "because_you_viewed": "Paske ou te gade",
-        "similar_to_this_product": "Pwodwi ki sanble",
-        "you_might_also_like": "Ou ka renmen sa yo tou",
-        "trending": "Tandans",
-        "new_arrivals": "Nouvo rive",
-        "from_sellers_you_follow": "Nan men vandè ou swiv",
-        "new_to_marketplace": "Nouvo nan Marketplace",
-        "popular": "Popilè"
-      },
-      "tagging": {
-        "open": "Take pwodwi",
-        "title": "Pwodwi ou yo",
-        "subtitle": "Chwazi sou kisa pòs sa a ye",
-        "cap": "Jiska {{max}} pou chak pòs",
-        "selected": "{{selected}} sou {{max}} chwazi",
-        "loading": "N ap chaje pwodwi ou yo…",
-        "empty": "Ou pa gen okenn pwodwi ankò",
-        "emptyHint": "Pwodwi ou mete sou Marketplace ap parèt isit la.",
-        "error": "Nou pa t kapab chaje pwodwi ou yo",
-        "errorHint": "Sa pa vle di ou pa gen youn. Tanpri eseye ankò.",
-        "retry": "Eseye ankò",
-        "wontShow": "Li pap parèt",
-        "wontShowHint": "Ou ka take l, men achtè yo pap wè l jiskaske sa ranje.",
-        "done": "Fini",
-        "blocked": {
-          "not_purchasable": "Pa disponib pou achte",
-          "no_cover_image": "Li bezwen yon foto kouvèti",
-          "no_resolvable_price": "Li bezwen yon pri",
-          "moderation_flagged": "Anba revizyon",
-          "listing_risk": "Pa kalifye pou parèt",
-          "seller_risk": "Magazen ou pa kalifye pou parèt",
-          "unknown_reason": "Nou pa ka montre l kounye a"
-        },
-        "cleared": "Etikèt pwodwi retire: se sèlman pòs nan fil la ki pote yo."
-      }
-    },
     "marketplace": {
       "title": "Marketplace",
       "browse": "Gade",
@@ -1317,18 +1135,15 @@
       "storeOfflineNotice": "N ap montre metadone vandè/boutik ou te anrejistre yo.",
       "storeKicker": "Kontwòl Marketplace",
       "storefrontReadiness": "Preparasyon boutik la",
-      "storeHeroCopy": "Se PulseSoc ki deside tout bagay: apwobasyon vandè, revizyon pwodwi, peman, vèsman ak livrezon.",
+      "storeHeroCopy": "Apwobasyon vandè, revizyon pwodwi, peman, vèsman, konfyans ak livrezon rete anba kontwòl sèvè a.",
       "loadingSellerControls": "Kontwòl vandè yo ap chaje",
       "sellerToolsLoadFailed": "Zouti vandè yo pa t ka chaje.",
       "metricListingsLoaded": "Anons ki chaje",
-      "metricPublished": "Pibliye",
       "metricActiveReviewReady": "Aktif/pare pou revizyon",
       "metricPendingReview": "K ap tann revizyon",
       "metricOrdersLoaded": "Kòmann ki chaje",
       "merchantApplication": "Demann machann",
-      "merchantApplicationCopy": "Fè yon demann pou vann sou PulseSoc. Demann lan mennen ou etap pa etap sou kiyès ou ye, kisa w ap vann, ak ki dokiman nou verifye. Repons ou yo anrejistre atò atò, epi se yon moun nan ekip revizyon nou an ki pran chak desizyon.",
-      "openSellerApplication": "Louvri demann vandè a",
-      "openSellerApplicationHint": "Louvri demann vandè a, kote ou ka kòmanse oswa kontinye repons ou yo",
+      "merchantApplicationCopy": "Voye demann vandè natif la nan pwen sèvis vandè ki egziste a. Se PulseSoc ki fè verifikasyon dokiman ak revizyon administratif apre nou fin resevwa demann ou.",
       "sellerDisplayNamePlaceholder": "Non vandè a ki afiche",
       "sellerBioPlaceholder": "Di sa w ap vann ak jan sa ede moun k ap achte yo",
       "saving": "L ap anrejistre…",
@@ -1342,7 +1157,6 @@
       "sellerInventory": "Envantè vandè a",
       "sellerInventoryCopy": "Modifye chan anons vandè a genyen yo epi kontwole vizibilite atravè revizyon Marketplace PulseSoc la. Vizibilite piblik nan Marketplace la rete anba apwobasyon.",
       "emptyInventory": "Envantè vandè a parèt apre yo fin kreye oswa chaje pwodwi.",
-      "productNotYours": "Pwodwi sa a pa nan boutik ou. Li ka retire, oswa lyen an ka montre yon lòt vandè anons li.",
       "editListingTitle": "Modifye anons #{{id}}",
       "saveAndReview": "Anrejistre epi Voye pou Revizyon",
       "addMedia": "Ajoute Medya",
@@ -1350,13 +1164,13 @@
       "resuming": "L ap repran…",
       "resumeReview": "Repran Revizyon an",
       "removing": "L ap retire…",
-      "editorFooterNote": "Chanjman ou yo anrejistre nan boutik PulseSoc ou a, epi anons lan retounen nan revizyon Marketplace la chak fwa kontni l chanje. Peman, vèsman, livrezon ak konfli jere sou pulsesoc.com.",
+      "editorFooterNote": "Chanjman yo anrejistre sou sèvè a epi yo retounen nan revizyon Marketplace la lè kontni an chanje. Peman, vèsman, livrezon, konfli ak aksyon founisè rete nan limit founisè natif yo.",
       "listingUpdatedReview": "Anons lan mete ajou epi li pase nan revizyon.",
       "listingUpdateFailed": "Anons lan pa t ka mete ajou.",
       "listingUpdated": "Anons lan mete ajou.",
       "listingStatusUpdateFailed": "Estati anons lan pa t ka mete ajou.",
       "productMediaGallery": "Galri medya pwodwi a",
-      "productMediaGalleryCopy": "Tape sou nenpòt eleman pou ouvri l an plen ekran. Tout sa afichaj la pa ka jwe ap parèt kòm yon apèsi fiks.",
+      "productMediaGalleryCopy": "Galri a sèvi ak menm done medya Marketplace la ak menm afichaj medya natif pataje a. Medya ki pa aksepte tonbe sou yon solisyon an sekirite anndan afichaj la.",
       "openStoreMediaA11y": "Louvri medya boutik {{index}}",
       "mediaFallback": "Medya",
       "openMedia": "Louvri medya a",
@@ -1364,37 +1178,18 @@
       "ordersAndPayouts": "Kòmann ak vèsman",
       "ordersAndPayoutsCopy": "Kòmann, frè vandè, konfigirasyon Stripe Connect, peman ak lage vèsman rete anba kontwòl founisè a ak sèvè a.",
       "noSellerOrders": "Pa gen kòmann vandè ki chaje.",
-      "orderMerchandiseLine": "Machandiz {{merchandise}} · Kredi livrezon {{shipping}}",
-      "orderFeeLine": "Frè PulseSoc {{rate}} · Ajisteman ranbousman {{refunds}}",
-      "orderNetEarningsLine": "Revni nèt {{net}} · {{state}}",
-      "orderBlockedLine": "Bloke: {{reason}}. Rezoud pwoblèm sa a anvan vèsman an.",
       "checking": "N ap tcheke…",
       "connectPayouts": "Konekte Vèsman yo",
       "payoutChecked": "Konfigirasyon vèsman an tcheke.",
       "payoutUnavailable": "Konfigirasyon vèsman an poko disponib.",
-      "policyFixNeedsReview": "Sa a mande yon revizyon règleman nou pa ka fini nan aplikasyon an. Chanje detay pwodwi a, oswa kontakte sipò a sou pulsesoc.com.",
       "payoutManagedNote": "Se PulseSoc ak founisè peman li a ki jere konfigirasyon vèsman ak lage vèsman. N ap fè w konnen lè vèsman w yo pare.",
-      "termsAcceptedLabel": "Aksepte",
-      "reviewAndAccept": "Li epi aksepte",
-      "termsAcceptedNotice": "Ou aksepte Frè ak Kondisyon Marketplace yo.",
-      "termsAcceptFailed": "Nou pa t ka anrejistre akseptasyon kondisyon yo.",
       "trustAndEligibility": "Konfyans ak kalifikasyon",
       "verification": "Verifikasyon",
-      "trustCopy": "Pou kounye a, fòm taks, konfigirasyon bank, konfli, ranbousman, livrezon ak revizyon PulseSoc fèt sou sit entènèt PulseSoc la, pa nan aplikasyon an.",
+      "trustCopy": "Fòm taks avanse, konfigirasyon bank, konfli, ranbousman, livrezon ak revizyon administratif rete sou wout wèb/founisè ki an sekirite yo toutan pòt kontwòl QA natif yo poko pare.",
       "storeMediaViewerTitle": "Medya boutik",
       "statusApprovedLive": "Apwouve/ann dirèk",
       "statusPendingReview": "K ap tann revizyon",
-      "statusRemoved": "Retire",
-      "status": {
-        "live": "Aktif",
-        "store_offline": "Boutik pa aktif",
-        "store_name_needed": "Boutik bezwen yon non",
-        "paused": "An poz",
-        "draft": "Bouyon",
-        "rejected": "Rejte"
-      },
-      "dropshipping": "Pwodwi enpòte",
-      "dropshippingCopy": "Pwodwi ou enpòte nan men yon founisè, ansanm ak sa yo k ap tann revizyon toujou."
+      "statusRemoved": "Retire"
     },
     "orders": {
       "title": "Kòmann",
@@ -1514,52 +1309,6 @@
       "statusInReview": "Anba revizyon",
       "pauseCampaign": "Mete kanpay la an poz",
       "resumeCampaign": "Repran kanpay la"
-    },
-    "sellerAccess": {
-      "checking": "N ap tcheke estati vandè w la…",
-      "retry": "Eseye ankò",
-      "unreadableTitle": "Nou pa t kapab tcheke estati vandè w la",
-      "unreadableBody": "Boutik ou an anfòm — se tcheke a sèlman nou pa t rive fè. Eseye ankò nan yon ti moman.",
-      "noApplicationTitle": "Kòmanse vann sou PulseSoc",
-      "noApplicationBody": "Fè yon demann pou yon kont vandè pou ouvri boutik ou, mete pwodwi sou lis epi resevwa kòmann.",
-      "noApplicationCta": "Fè demann pou vann",
-      "draftTitle": "Fini demann vandè w la",
-      "draftBody": "Demann ou an sove kòm bouyon. Kontinye kote w te rete a — boutik ou ouvri kou yo apwouve l.",
-      "draftCta": "Kontinye demann nan",
-      "reviewTitle": "Demann ou an anba revizyon",
-      "reviewBody": "N ap tcheke enfòmasyon w yo. W ap resevwa yon notifikasyon kou gen yon desizyon — nou pa bezwen anyen lòt nan men w kounye a.",
-      "reviewCta": "Gade estati demann nan",
-      "moreInfoTitle": "Nou bezwen yon ti jan plis enfòmasyon",
-      "moreInfoBody": "Demann ou an sispann jiskaske w voye sa moun k ap revize yo mande a.",
-      "moreInfoCta": "Konplete chanjman yo mande yo",
-      "declinedTitle": "Demann vandè w la pa t apwouve",
-      "declinedBody": "Ouvri demann ou an pou wè rezon an epi si w ka fè demann ankò.",
-      "declinedCta": "Gade estati demann nan",
-      "suspendedTitle": "Boutik ou sispann",
-      "suspendedBody": "Ou pa ka mete sou lis ni vann pandan boutik ou sispann. Ou toujou ka wè kòmann ou yo epi jere ranbousman ak diskisyon.",
-      "suspendedCta": "Gade kòmann ki egziste yo",
-      "suspendedSupportCta": "Kontakte sipò"
-    },
-    "sellerPayments": {
-      "sectionTitle": "Peman ak kat",
-      "setupRequiredLabel": "Konfigirasyon obligatwa",
-      "setupRequiredBody": "Achtè yo poko ka peye w ak kat. Konekte enfòmasyon peman w yo ak Stripe pou w kòmanse pran peman ak kat.",
-      "setupRequiredCta": "Konfigire peman yo",
-      "setupInProgressLabel": "Konfigirasyon an ap fèt",
-      "setupInProgressBody": "Ou kòmanse konfigire peman ak kat, men Stripe bezwen kèk enfòmasyon anplis nan men w.",
-      "setupInProgressCta": "Kontinye konfigirasyon an",
-      "actionRequiredLabel": "Aksyon obligatwa",
-      "actionRequiredBody": "Stripe bezwen yon bagay nan men w anvan w ka pran peman ak kat.",
-      "actionRequiredCta": "Konplete konfigirasyon an",
-      "underReviewLabel": "Anba revizyon",
-      "underReviewBody": "Stripe ap revize enfòmasyon w yo. Sa pran yon ti tan anjeneral epi li pa bezwen anyen nan men w.",
-      "readyLabel": "Pare",
-      "readyBody": "Peman ak kat aktive. Achtè yo ka peye w ak kat lè y ap fè peman an.",
-      "restrictedLabel": "Limite",
-      "restrictedBody": "Stripe limite peman ak kat sou kont ou. Ouvri Stripe pou w wè sa ki nesesè.",
-      "restrictedCta": "Ouvri Stripe",
-      "unavailableLabel": "Pa disponib",
-      "unavailableBody": "Peman ak kat pa disponib sou PulseSoc kounye a. Lòt metòd peman w yo pa afekte."
     },
     "business": {
       "title": "Biznis",
@@ -2619,26 +2368,6 @@
       "upcomingBody": "N ap bati yo. Ou pral wè yo isit la lè yo louvri.",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "Pati sa a nan Business OS poko gen yon paj. Tounen nan Business OS pou chwazi yon lòt seksyon."
-    },
-    "pulsedrop": {
-      "label": {
-        "trending": "Sa k cho",
-        "newDrop": "Nouvo rive",
-        "popular": "Popilè",
-        "topPick": "Chwa nou",
-        "discovery": "Dekouvri"
-      },
-      "availability": {
-        "unavailable": "Li pa disponib ankò",
-        "notPriced": "Pa gen pri ankò"
-      },
-      "cta": {
-        "viewProduct": "Gade pwodwi a"
-      },
-      "seller": {
-        "openSeller": "Louvri boutik {{name}}",
-        "visitStore": "Gade boutik la"
-      }
     }
   },
   "discovery": {
@@ -3102,39 +2831,7 @@
       "reportFailed": "Rapò a pa t ka voye.",
       "selectedForFeedComposer": "{{title}} chwazi pou konpozitè aktyalite a.",
       "selectedForReel": "{{title}} chwazi pou reel la.",
-      "selectedForStatus": "{{title}} chwazi pou estati a.",
-      "ownerSectionTitle": "Kontwòl pwopriyetè a",
-      "ownerManage": "Jere",
-      "ownerClose": "Fèmen",
-      "ownerLoading": "N ap tcheke mizik sa a…",
-      "ownerRetry": "Eseye ankò",
-      "ownerImpactTitle": "Anvan ou deside",
-      "ownerImpactUses": "Tache ak {{count}} Reel, pòs ak estati.",
-      "ownerImpactReports": "{{count}} rapò ki louvri.",
-      "ownerCdnCaveat": "Retire l anpeche PulseSoc bay fichye a, men kopi ki deja nan memwa aparèy yo ap kontinye jwe jiskaske mizik la efase nèt. Karantèn efase fichye a menm.",
-      "ownerLegalHold": "Mizik sa a anba yon rezèv legal. Li pa ka efase nèt.",
-      "ownerReason": "Rezon",
-      "ownerNote": "Nòt",
-      "ownerNotePlaceholder": "Ajoute yon nòt (obligatwa pou OTHER ak pou tout efasman nèt)",
-      "ownerActionsTitle": "Aksyon",
-      "ownerTakedown": "Retire",
-      "ownerQuarantine": "Mete an karantèn",
-      "ownerQuarantineHint": "Sa kanpe jwe a epi efase fichye ki sere a. Dosye mizik la ak istwa li rete.",
-      "ownerRestore": "Remèt",
-      "ownerSchedulePurge": "Pwograme efasman nèt",
-      "ownerCancelPurge": "Anile efasman nèt",
-      "ownerPurge": "Efasman nèt",
-      "ownerPurgeExplainer": "Efasman nèt retire son an pou tout tan. Pòs, Reel ak estati ki te sèvi avè l rete — son yo vin silans.",
-      "ownerStepUpTitle": "Modpas",
-      "ownerStepUpPlaceholder": "Antre modpas ou ankò",
-      "ownerStepUpAction": "Konfime se ou menm",
-      "ownerStepUpGranted": "Konfime. Efasman nèt louvri pou {{seconds}} segonn.",
-      "ownerPurgeConfirm": "Ekri {{id}} pou konfime",
-      "ownerPurgeAction": "Efase nèt",
-      "ownerAuditTitle": "Istwa",
-      "ownerAuditEmpty": "Pa gen okenn aksyon anrejistre pou mizik sa a.",
-      "ownerApplied": "{{action}} aplike.",
-      "ownerNoChange": "Li te deja nan eta sa a — anyen pa chanje."
+      "selectedForStatus": "{{title}} chwazi pou estati a."
     }
   },
   "settings": {
@@ -3172,7 +2869,7 @@
       "signOut": "Dekonekte",
       "signOutSubtitle": "Dekonekte sou aparèy sa a sèlman.",
       "signOutConfirmTitle": "Dekonekte nan PulseSoc?",
-      "signOutConfirmBody": "W ap rete konekte sou lòt aparèy ou yo. Bouyon ou poko pibliye ak medya ou telechaje sou aparèy sa a ap efase.",
+      "signOutConfirmBody": "W ap rete konekte sou lòt aparèy ou yo. Bouyon ak telechajman ou yo sou aparèy sa a rete la.",
       "signOutEverywhere": "Dekonekte sou tout aparèy",
       "signOutEverywhereSubtitle": "Sa fèmen tout sesyon PulseSoc, ata sa a.",
       "signOutEverywhereConfirmTitle": "Dekonekte sou tout aparèy?",
@@ -3232,11 +2929,6 @@
           "title": "Lang ak rejyon",
           "subtitle": "Lang aplikasyon an, tradiksyon, fòma lè",
           "keywords": "lang langue language tradui tradiksyon rejyon region fizo orè timezone fòma lè 24 èdtan"
-        },
-        "commerce": {
-          "title": "Sijesyon Marketplace",
-          "subtitle": "Sijesyon pwodwi, konbyen fwa, poze",
-          "keywords": "marketplace sijesyon rekòmandasyon pwodwi acha fil reels frekans poze pèsonalize komès magazen"
         },
         "storage": {
           "title": "Espas ak done",
@@ -3784,16 +3476,7 @@
       "copied": "Kopye",
       "share": "Pataje",
       "unavailable": "Lyen envitasyon ou poko pare.",
-      "fairness": "Envite moun ou konnen vre. Kalite konte plis pase kantite.",
-      "message": {
-        "default": "Alo! M ap itilize PulseSoc. Ann konekte la pou nou rete an kontak.\n\nVin jwenn mwen sou PulseSoc:",
-        "casual": "Alo — mwen sou PulseSoc kounye a. Vin pase yon ti tan la.\n\nAntre isit la:",
-        "network": "M ap bati rezo m sou PulseSoc e mwen ta renmen konekte avè w la.\n\nVin jwenn mwen sou PulseSoc:",
-        "discovery": "Se sou PulseSoc m ap jwenn moun ak piblikasyon ki merite swiv. Mwen kwè w ta renmen l.\n\nGade yon ti kou:",
-        "short": "Vin jwenn mwen sou PulseSoc:",
-        "handle": "Se @{{username}} mwen ye la.",
-        "subject": "Vin jwenn mwen sou PulseSoc"
-      }
+      "fairness": "Envite moun ou konnen vre. Kalite konte plis pase kantite."
     },
     "missions": {
       "heading": "Misyon",
@@ -4579,19 +4262,122 @@
         "UNKNOWN": "Pa disponib"
       },
       "features": {
+        "privateFacts": {
+          "label": "Enfòmasyon prive",
+          "hint": "Enfòmasyon verifye ki anrejistre sou zafè w."
+        },
+        "capitalGraph": {
+          "label": "Graf kapital",
+          "hint": "Kijan byen, antite ak obligasyon w yo konekte."
+        },
+        "privateBriefings": {
+          "label": "Rapò prive",
+          "hint": "Rapò ki soti nan pwòp dosye w yo."
+        },
         "relationshipIntelligence": {
           "label": "Entèlijans relasyon",
           "hint": "Moun ak òganizasyon ki antoure zafè w."
         },
+        "privateShield": {
+          "label": "Boukliye prive",
+          "hint": "Li veye si enfòmasyon prive w parèt deyò."
+        },
+        "breachMonitoring": {
+          "label": "Siveyans fuit done",
+          "hint": "Alèt lè enfòmasyon w parèt nan yon fuit ki konnen."
+        },
+        "documentIntelligence": {
+          "label": "Entèlijans dokiman",
+          "hint": "Li rale enfòmasyon nan dokiman w bay yo."
+        },
+        "humanConcierge": {
+          "label": "Konsyèj imen",
+          "hint": "Yon moun ki okipe demann yo pou ou."
+        },
+        "operations": {
+          "label": "Operasyon",
+          "hint": "Obligasyon, desizyon, demann, risk ak opòtinite w ap swiv."
+        },
         "privateMeetings": {
           "label": "Reyinyon Prive",
           "hint": "Reyinyon an sekirite ak yon sal datant ak kontwòl pou moun k ap resevwa a."
+        },
+        "privateConversations": {
+          "label": "Konvèsasyon prive",
+          "hint": "Konvèsasyon biwo a, klase epi lye ak travay ou."
         }
       },
       "entry": {
         "heading": "Biwo prive",
         "hint": "Sant prive w pou entèlijans ak operasyon lavi w.",
         "lockedHint": "Enkli nan {{tier}}."
+      },
+      "facts": {
+        "subtitle": "Sèlman sa ki anrejistre pou ou. Anyen pa dedwi nan aktivite piblik ou.",
+        "loading": "N ap chaje dosye w yo…",
+        "why": "Poukisa ou konnen sa?",
+        "source": "Sous",
+        "sourceUnknown": "Pa anrejistre",
+        "verified": "Verifikasyon",
+        "observedLabel": "Obsève",
+        "observed": "Obsève {{date}}",
+        "confidence": "Konfyans",
+        "hasDocument": "Gen yon dokiman sous nan dosye a.",
+        "close": "Fèmen",
+        "stale": "Depase",
+        "empty": {
+          "title": "Pa gen anyen la a ankò",
+          "body": "Poko gen okenn enfòmasyon verifye ki ajoute."
+        },
+        "notEntitled": {
+          "title": "Ou bezwen monte plan",
+          "body": "Enfòmasyon prive enkli nan {{tier}}.",
+          "bodyGeneric": "Enfòmasyon prive pa enkli nan plan w kounye a."
+        },
+        "disabled": {
+          "title": "Fèmen tanporèman",
+          "body": "Enfòmasyon prive fèmen pou kounye a. Dosye w yo pa touche."
+        },
+        "notImplemented": {
+          "title": "Poko disponib",
+          "body": "Sa a poko bati."
+        },
+        "unavailable": {
+          "title": "Pa disponib",
+          "body": "Nou pa t ka li dosye w yo kounye a. Eseye ankò talè."
+        },
+        "error": {
+          "title": "Yon bagay pa mache",
+          "body": "Nou pa t ka chaje dosye w yo."
+        },
+        "add": {
+          "open": "Ajoute yon enfòmasyon",
+          "title": "Anrejistre yon enfòmasyon",
+          "domain": "Domèn",
+          "factType": "Kalite enfòmasyon",
+          "factTypeHint": "egz.: nimewo paspò",
+          "valueType": "Kalite valè",
+          "value": "Valè",
+          "save": "Anrejistre",
+          "cancel": "Anile",
+          "failed": "Nou pa t ka anrejistre sa kounye a."
+        }
+      },
+      "domains": {
+        "GENERAL": "Jeneral",
+        "FINANCIAL": "Finansye",
+        "LEGAL": "Legal",
+        "HEALTH": "Sante",
+        "FAMILY": "Fanmi",
+        "IDENTITY": "Idantite",
+        "SECURITY": "Sekirite"
+      },
+      "verification": {
+        "VERIFIED": "Verifye",
+        "SOURCED": "Gen sous",
+        "SELF_REPORTED": "Ou menm ki di l",
+        "ESTIMATED": "Estime",
+        "NEEDS_REVIEW": "Bezwen revizyon"
       },
       "security": {
         "title": "Sekirite biwo a",
@@ -4684,6 +4470,457 @@
           "failed": "Reyinisyalizasyon an echwe. Verifye modpas ou epi eseye ankò."
         }
       },
+      "operations": {
+        "title": "Operasyon",
+        "subtitle": "Obligasyon, evènman, desizyon, demann, risk ak opòtinite — anrejistre epi swiv nan yon sèl kote.",
+        "loading": "N ap chaje dosye ou yo…",
+        "cancel": "Anile",
+        "save": "Anrejistre",
+        "move": "Deplase",
+        "writeFailed": "Chanjman sa a pa t anrejistre.",
+        "empty": {
+          "title": "Anyen pa anrejistre"
+        },
+        "views": {
+          "obligations": "Obligasyon",
+          "events": "Evènman",
+          "decisions": "Desizyon",
+          "requests": "Demann",
+          "risks": "Risk",
+          "opportunities": "Opòtinite"
+        },
+        "add": {
+          "obligations": "Anrejistre yon obligasyon",
+          "events": "Anrejistre yon evènman",
+          "decisions": "Anrejistre yon desizyon",
+          "requests": "Anrejistre yon demann",
+          "risks": "Anrejistre yon risk",
+          "opportunities": "Anrejistre yon opòtinite"
+        },
+        "emptyBody": {
+          "obligations": "Poko gen okenn obligasyon anrejistre.",
+          "events": "Poko gen okenn evènman anrejistre.",
+          "decisions": "Poko gen okenn desizyon anrejistre.",
+          "requests": "Poko gen okenn demann anrejistre.",
+          "risks": "Poko gen okenn risk anrejistre.",
+          "opportunities": "Poko gen okenn opòtinite anrejistre."
+        },
+        "notEntitled": {
+          "title": "Ou bezwen yon plan pi wo",
+          "body": "Operasyon enkli avèk {{tier}}.",
+          "bodyGeneric": "Operasyon pa enkli nan plan ou genyen kounye a."
+        },
+        "disabled": {
+          "title": "Pa disponib",
+          "body": "Operasyon fèmen pou kounye a."
+        },
+        "notImplemented": {
+          "title": "Nan preparasyon",
+          "body": "Pati sa a nan biwo ou toujou ap prepare."
+        },
+        "unavailable": {
+          "title": "Pa disponib",
+          "body": "Nou pa t ka jwenn Operasyon. Dosye ou yo pa chanje."
+        },
+        "error": {
+          "title": "Yon bagay pa mache",
+          "body": "Nou pa t ka chaje dosye ou yo."
+        },
+        "due": "Delè {{date}}",
+        "occurred": "Rive {{date}}",
+        "outcome": "Rezilta: {{outcome}}",
+        "form": {
+          "title": "Tit",
+          "question": "Kesyon",
+          "kind": "Kalite",
+          "details": "Detay",
+          "due": "Dat limit (AAAA-MM-JJ)"
+        },
+        "status": {
+          "OPEN": "Ouvè",
+          "RESOLVED": "Rezoud",
+          "DISMISSED": "Rejte",
+          "RECORDED": "Anrejistre",
+          "UNDER_REVIEW": "Anba revizyon",
+          "DECIDED": "Deside",
+          "ABANDONED": "Abandone",
+          "IN_PROGRESS": "Ap fèt",
+          "WAITING_ON_USER": "Ap tann ou",
+          "WAITING_ON_PROVIDER": "Ap tann founisè a",
+          "COMPLETED": "Fini",
+          "CANCELED": "Anile",
+          "MONITORING": "Ap swiv",
+          "MITIGATED": "Diminye",
+          "ACCEPTED": "Aksepte",
+          "NEW": "Nouvo",
+          "REVIEWING": "Ap evalye",
+          "INTERESTED": "Enterese",
+          "PASSED": "Kite pase",
+          "CLOSED": "Fèmen",
+          "OVERDUE": "An reta",
+          "DUE_SOON": "Prèt pou rive"
+        },
+        "overview": {
+          "heading": "Apèsi",
+          "loading": "N ap chaje apèsi w la…",
+          "unavailable": "Nou pa t kapab chaje apèsi w la. Sa yo se pa zewo.",
+          "needsAttention": "Bezwen atansyon",
+          "dueToday": "Delè jodi a",
+          "overdue": "An reta",
+          "pendingDecisions": "Desizyon k ap tann",
+          "dueThisWeek": "Delè semèn sa a",
+          "highRisks": "Gwo risk",
+          "openRequests": "Demann ouvè",
+          "awaitingResponse": "K ap tann repons ou",
+          "opportunities": "Opòtinite",
+          "recentlyCompleted": "Fèk fini",
+          "recentWindow": "Dènye {{days}} jou",
+          "queue": "Liy atansyon",
+          "queueEmpty": "Anyen pa bezwen atansyon w.",
+          "truncated": "Montre {{shown}} sou {{total}}.",
+          "notTracked": "Pa swiv",
+          "reason": {
+            "OVERDUE": "An reta",
+            "HIGH_RISK": "Gwo risk",
+            "DUE_SOON": "Delè pwoche",
+            "RESPONSE_REQUIRED": "Bezwen repons ou",
+            "MISSING_REQUIRED_CONTEXT": "Bezwen revizyon",
+            "DECISION_REQUIRED": "Desizyon ouvè",
+            "BLOCKED": "K ap tann founisè a"
+          },
+          "expiringOpportunities": "Opòtinite k ap ekspire"
+        }
+      },
+      "capital": {
+        "title": "Graf kapital",
+        "subtitle": "Sa ou genyen, sa ki kouvri li, ak kijan tout bagay konekte — ak jan yo konnen chak moso byen.",
+        "loading": "N ap chaje graf ou a…",
+        "views": {
+          "coverage": "Kouvèti",
+          "documents": "Dokiman",
+          "holdings": "Byen yo",
+          "obligations": "Obligasyon",
+          "overview": "Apèsi",
+          "structure": "Estrikti",
+          "cash_flow": "Depans",
+          "exposure": "Konsantrasyon"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "{{count}} jiskaprezan",
+        "factCount": "{{count}} fè anrejistre",
+        "empty": {
+          "title": "Anyen pa anrejistre",
+          "openPortfolio": "Ouvri pòtfèy la"
+        },
+        "emptyBody": {
+          "holdings": "Poko gen avwa ki anrejistre. Avwa ou ajoute nan Pòtfèy ou ap parèt isit la epi yo ap konekte otomatikman ak Graf Kapital ou.",
+          "coverage": "Poko gen okenn kouvèti anrejistre.",
+          "structure": "Poko gen okenn estrikti anrejistre.",
+          "documents": "Poko gen dokiman kapital ki konekte."
+        },
+        "denied": {
+          "title": "Pa parèt",
+          "body": "Kesyon sa a pa t jwenn repons."
+        },
+        "notFound": {
+          "title": "Pa jwenn",
+          "body": "Pa gen okenn antite konsa nan biwo ou."
+        },
+        "notEntitled": {
+          "title": "Ou bezwen yon plan pi wo",
+          "body": "Graf kapital enkli avèk {{tier}}.",
+          "bodyGeneric": "Graf kapital pa enkli nan plan ou genyen kounye a."
+        },
+        "disabled": {
+          "title": "Pa disponib",
+          "body": "Graf kapital fèmen pou kounye a."
+        },
+        "notImplemented": {
+          "title": "Nan preparasyon",
+          "body": "Pati sa a nan biwo ou toujou ap prepare."
+        },
+        "unavailable": {
+          "title": "Pa disponib",
+          "body": "Nou pa t ka jwenn graf ou a. Dosye ou yo pa chanje."
+        },
+        "error": {
+          "title": "Yon bagay pa mache",
+          "body": "Nou pa t ka chaje graf ou a."
+        },
+        "conflicts": {
+          "title": "Enfòmasyon ki kontredi",
+          "disagree": "De sous pa dakò"
+        },
+        "stale": {
+          "title": "Depase orizon freshè li",
+          "age": "{{days}} jou"
+        },
+        "truth": {
+          "KNOWN": "Konnen",
+          "INFERRED": "Dedwi",
+          "ESTIMATED": "Estime",
+          "STALE": "Demode",
+          "MISSING": "Manke",
+          "CONFLICTING": "Kontradiktwa",
+          "PRO_REVIEW": "Bezwen revizyon"
+        },
+        "nodeType": {
+          "PERSON": "Moun",
+          "BUSINESS": "Biznis",
+          "PROPERTY": "Pwopriyete",
+          "INSURANCE_POLICY": "Polis asirans",
+          "CONTRACT": "Kontra",
+          "DOCUMENT": "Dokiman",
+          "PROFESSIONAL": "Pwofesyonèl",
+          "ASSET": "Byen",
+          "LIABILITY": "Dèt"
+        },
+        "entity": {
+          "relationships": "Relasyon",
+          "facts": "Fè anrejistre",
+          "updated": "Mete ajou {{date}}"
+        },
+        "relationshipsUnavailable": "Relasyon yo pa t ka chaje kounye a.",
+        "portfolio": {
+          "title": "Pòtfèy",
+          "subtitle": "Pòtfèy PulseSoc ou a, reflete nan graf ou. Modifye sa ou genyen yo nan Pòtfèy — chanjman yo rive isit la otomatikman.",
+          "totalValue": "Valè total",
+          "partial": "{{priced}} sou {{total}} pozisyon gen pri",
+          "lots_one": "{{count}} lo",
+          "lots_other": "{{count}} lo",
+          "priceUnavailable": "Pri a pa disponib",
+          "manualSource": "Manyèl · soti nan Pòtfèy ou",
+          "updatedSeconds": "Pri yo mete ajou sa gen {{count}} segonn",
+          "updatedMinutes": "Pri yo mete ajou sa gen {{count}} minit",
+          "updatedStale": "Pri yo ka pa ajou",
+          "sourceUnavailable": "Pri an dirèk yo pa konekte kounye a",
+          "syncPending_one": "{{count}} chanjman pòtfèy ap senkronize…",
+          "syncPending_other": "{{count}} chanjman pòtfèy ap senkronize…",
+          "syncFailed": "Yon senkronizasyon fèk echwe — nou montre dènye mizajou ki te reyisi a.",
+          "unpriced": "Pa gen pri an dirèk pou {{symbols}}. Total yo kouvri sèlman lòt pozisyon ou yo.",
+          "empty": "Poko gen anyen nan Pòtfèy ou.",
+          "unavailable": "Nou pa t ka chaje pòtfèy ou kounye a.",
+          "basisUnknown": "Pri acha a pa anrejistre",
+          "pricedValue": "Valè pòtfèy ki gen pri",
+          "valueUnavailable": "Poko gen avwa ki gen pri",
+          "excludesUnpriced": "Avwa san pri yo pa ladan: {{count}}",
+          "pnlLabel": "Pwofi ki poko reyalize",
+          "pnlUnavailable": "Pa disponib",
+          "basisLabel": "Pri acha",
+          "basisPartial": "Konnen pou {{known}} sou {{total}}",
+          "holdingsLabel": "Avwa",
+          "allocationTitle": "Repatisyon",
+          "allocationPricedOnly": "Sèlman avwa ki gen pri",
+          "excludedFromTotal": "Pa konte nan total pòtfèy la",
+          "qualityPriced": "Gen pri {{priced}}/{{total}}",
+          "qualityBasis": "Pri acha konnen {{known}}/{{total}}",
+          "unavailableTitle": "Pòtfèy pa disponib",
+          "fresh": {
+            "live": "An dirèk",
+            "fresh": "Fre",
+            "delayed": "An reta",
+            "stale": "Demode",
+            "unavailable": "Pa gen sous pri"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "Kouvèti pòtfèy",
+          "pricing": "{{priced}} sou {{total}} avwa gen pri",
+          "basis": "{{known}} sou {{total}} gen pri acha konnen",
+          "factsTitle": "Verifikasyon enfòmasyon",
+          "knownShare": "Enfòmasyon konfime: {{pct}}",
+          "documentBacked": "Enfòmasyon ki gen dokiman: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "Relasyon",
+          "noRelationships": "Poko gen relasyon ki anrejistre."
+        },
+        "relation": {
+          "OWNS": "Posede",
+          "ADVISED_BY": "Konseye pa",
+          "COVERED_BY": "Kouvri pa",
+          "SECURED_BY": "Garanti pa",
+          "GOVERNED_BY": "Dirije pa",
+          "DESCRIBES": "Dekri"
+        },
+        "documents": {
+          "evidenceTitle": "Prèv ki konekte"
+        },
+        "overview": {
+          "assets": "Byen ki gen pri",
+          "complete": "Konplè",
+          "concentrationTitle": "Pi gwo pozisyon yo",
+          "concentrationUnranked": "Pozisyon ki pi piti yo pa parèt isit la.",
+          "coverageTitle": "Kouvèti",
+          "dimension": {
+            "pricing": "Pri",
+            "cost_basis": "Pri acha",
+            "liability_amounts": "Montan dèt yo",
+            "evidence": "Prèv"
+          },
+          "dimensionCount": "{{known}} sou {{total}}",
+          "disclaimerBody": "Sa konpare byen ki gen pri ak dèt ki gen montan. Tou sa ki pa t kapab jwenn pri oswa montan rete deyò.",
+          "disclaimerTitle": "Se pa yon chif richès nèt",
+          "excludedForeignCurrency": "Dèt nan yon lòt lajan",
+          "excludedTitle": "Deyò nan chif sa a",
+          "excludedUnpricedAssets": "Byen san pri",
+          "excludedUnquantifiedLiabilities": "Dèt san montan",
+          "excludedUnspecifiedCurrency": "Dèt san lajan presize",
+          "liabilities": "Dèt ki gen montan",
+          "liabilityConcentrationTitle": "Pi gwo obligasyon yo",
+          "noLiabilities": "Pa gen dèt anrejistre. Sa pa vle di ou pa dwe anyen.",
+          "notSummable": "Pa gen yon sèl lajan, donk nou pa montre yon total.",
+          "otherCurrencies": "Lòt lajan",
+          "partial": "Pasyèl",
+          "quantifiedOf": "Chifre {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "Kèk byen pa t kapab jwenn yon pri.",
+            "incomplete_portfolio": "Total pòtfòy la li menm pa konplè.",
+            "unquantified_liabilities": "Kèk dèt pa gen montan anrejistre.",
+            "uncomparable_currency": "Kèk dèt nan yon lajan ou pa ka konpare.",
+            "liabilities_truncated": "Gen plis dèt pase sa yo li a.",
+            "no_liabilities_recorded": "Pa gen okenn dèt anrejistre."
+          },
+          "reviewMore": "Lòt atik pa parèt isit la.",
+          "reviewTitle": "Bezwen revizyon",
+          "shareUnknown": "Pòsyon an pa konnen",
+          "title": "Pozisyon nèt",
+          "unscoreable": "Anyen pou evalye",
+          "withheld": "Pa deklare"
+        },
+        "obligations": {
+          "amountMissing": "Pa gen montan anrejistre",
+          "complete": "Tout montan yo anrejistre",
+          "currenciesTitle": "Pa lajan",
+          "disclaimerBody": "Sa se sòm obligasyon ou anrejistre yo, se pa tout sa ou dwe.",
+          "disclaimerTitle": "Kisa total sa a ye",
+          "dueLabel": "Delè",
+          "dueMissing": "Pa gen dat echeyans anrejistre",
+          "evidenceLabel": "Reyalite ki sipòte",
+          "evidenceMissing": "Pa gen reyalite ki sipòte anrejistre",
+          "none": "Pa gen okenn obligasyon anrejistre. Sa pa vle di ou pa dwe anyen.",
+          "notProjected": "Lis sa a pa te rekonstwi soti nan achiv la.",
+          "notSummable": "Pa gen yon sèl lajan, donk nou pa montre okenn total.",
+          "partial": "Kèk montan manke",
+          "projectedLabel": "Rebati apati dosye yo",
+          "quantifiedLabel": "Ak yon montan anrejistre",
+          "recordedLabel": "Obligasyon anrejistre",
+          "retiredLabel": "Fèmen",
+          "skippedLabel": "Sote",
+          "staleTitle": "Pa aktyalize dènyèman",
+          "syncTitle": "Pwojeksyon",
+          "title": "Total ki chifre",
+          "truncated": "Gen plis obligasyon pase sa yo montre isit la.",
+          "unquantifiedLabel": "San montan anrejistre",
+          "unspecifiedCurrency": "Montan anrejistre san lajan",
+          "withheld": "Pa deklare"
+        },
+        "cashFlow": {
+          "title": "Depans ki pwograme",
+          "complete": "Tout sa ki anrejistre gen yon dat",
+          "partial": "Gen kèk obligasyon ki rete deyò",
+          "withheld": "Pa deklare",
+          "notSummable": "Pa gen yon sèl lajan, donk nou pa montre okenn total.",
+          "outflowsTitle": "Kisa orè sa a ye",
+          "notProjected": "Orè sa a pa te rekonstwi soti nan achiv la.",
+          "scheduledLabel": "Pwograme",
+          "seenLabel": "Obligasyon nou gade",
+          "excludedLabel": "Rete deyò",
+          "noneScheduled": "Anyen nan sa ou anrejistre pa gen yon dat echeyans nou konnen. Sa pa vle di ou pa dwe anyen.",
+          "truncated": "Gen plis obligasyon pase sa yo montre isit la.",
+          "mixedCurrency": "{{count}} nan yon lajan total sa a pa nonmen, donk yo rete deyò.",
+          "bucketsTitle": "Dapre lè li rive",
+          "bucketCountLabel": "Obligasyon",
+          "bucketMissing": "Pa rapòte",
+          "bucketUndeclared": "Peryòd la pa dekri",
+          "bucketBefore": "Jiska {{to}} jou",
+          "bucketDueNow": "Dwe kounye a oswa deja an reta",
+          "bucketAfter": "Plis pase {{from}} jou",
+          "bucketBetween": "{{from}}–{{to}} jou",
+          "excludedTitle": "Deyò tout peryòd",
+          "excludedBody": "Obligasyon sa yo reyèl. Yo pa nan okenn peryòd anwo a paske sa ki nesesè pou plase yo pa te anrejistre.",
+          "undated": "Pa gen dat echeyans anrejistre",
+          "unquantified": "Pa gen montan anrejistre",
+          "undatedAndUnquantified": "Ni dat ni montan pa anrejistre",
+          "amountMissing": "Pa gen montan anrejistre",
+          "unspecifiedCurrency": "Montan anrejistre san lajan",
+          "dueLabel": "Delè",
+          "dueMissing": "Pa gen dat echeyans anrejistre",
+          "overdue": "An reta",
+          "evidenceLabel": "Reyalite ki sipòte",
+          "evidenceMissing": "Pa gen reyalite ki sipòte anrejistre",
+          "syncTitle": "Pwojeksyon",
+          "projectedLabel": "Rebati apati dosye yo",
+          "skippedLabel": "Sote"
+        },
+        "exposure": {
+          "basisTitle": "Baz klasman an",
+          "complete": "Konplè",
+          "partial": "Pasyèl",
+          "withheld": "Pa endike",
+          "noBasis": "Pa gen total pou klase sou li",
+          "basis": {
+            "priced_asset_value": "Valè byen ki gen pri",
+            "quantified_liability_amount": "Montan dèt ki gen chif"
+          },
+          "pricedOf": "{{priced}} sou {{total}} plasman gen pri",
+          "pricingCoverage": "Kouvèti pri yo",
+          "dimensionCount": "{{known}} sou {{total}}",
+          "pricingUnknown": "Kouvèti pri yo pa ka kalkile",
+          "blindSpotTitle": "Pa nan klasman sa a",
+          "blindSpotBody": "Plasman sa yo pa gen pri, konsa yo absan nan klasman an olye pou yo dènye. Nenpòt nan yo ta ka pi gwo pase premye liy lan.",
+          "unpricedUnnamed": "San pri e san non",
+          "pricesUnavailable": "Nou pa t kapab li pri dirèk yo, konsa klasman sa a pa ajou.",
+          "readAt": "Li nan",
+          "assetsTitle": "Kote lajan ki gen pri a ye",
+          "shareUnknown": "Pòsyon pa endike",
+          "sharesOfPriced": "Pòsyon yo se sou total ki gen pri anwo a, pa sou tout sa ki anrejistre.",
+          "unrankedTail": "Gen pri men pa klase",
+          "basisMismatch": "Kantite ki klase ak sa ki pa klase pa bay kantite plasman ki gen pri a, konsa klasman sa a ka pa sou total ki montre anwo a.",
+          "rankedMismatch": "Kantite sèvè a di li klase pa matche ak liy li voye yo.",
+          "noHoldings": "Pa gen plasman anrejistre, konsa pa gen anyen pou klase. Sa pa menm bagay ak pa posede anyen.",
+          "nonePriced": "Gen plasman anrejistre men okenn pa gen pri, konsa pa gen klasman ki posib.",
+          "pricedButUnrankable": "Plasman ki gen pri yo pa fè yon total pou klase sou li.",
+          "liabilitiesTitle": "Kote dèt ki gen chif la ye",
+          "liabilitiesGrouped": "Gwoupe pa kalite obligasyon, pa pa kreyansye.",
+          "noLiabilities": "Pa gen obligasyon anrejistre. Sa pa menm bagay ak pa dwe anyen.",
+          "noneQuantified": "Okenn obligasyon pa gen yon montan anrejistre, konsa okenn pa ka klase.",
+          "quantifiedOf": "{{done}} sou {{total}} obligasyon gen chif",
+          "excludedTitle": "Kite deyò klasman sa a",
+          "excludedUnquantified": "Pa gen montan anrejistre",
+          "excludedForeignCurrency": "Yon lòt lajan",
+          "excludedUnspecifiedCurrency": "Pa gen lajan endike",
+          "otherCurrencies": "Mete sou kote, pa lajan",
+          "liabilitiesTruncated": "Lis obligasyon yo te koupe, konsa ka gen plis pase sa ki klase yo.",
+          "unmeasuredTitle": "Sa ong sa a pa mezire",
+          "unmeasuredBody": "Anyen nan dosye a pa anrejistre sa yo, konsa yo absan isit la, yo pa klè. Silans yo pa vle di tout bagay anfòm.",
+          "unmeasured": {
+            "counterparty": "Konsantrasyon pa kontrepati",
+            "custodian": "Konsantrasyon pa gadyen ak plas echanj",
+            "geography": "Konsantrasyon jeyografik",
+            "sector": "Konsantrasyon pa sektè",
+            "assetCurrency": "Lajan byen yo tèt yo"
+          }
+        }
+      },
+      "attention": {
+        "title": "Bezwen atansyon ou",
+        "none": "Anyen pa bezwen atansyon ou kounye a.",
+        "unavailable": "Nou pa t ka verifye sa ki bezwen atansyon kounye a."
+      },
+      "quick": {
+        "title": "Aksyon rapid",
+        "record": "Anrejistre yon bagay",
+        "addFact": "Ajoute yon enfòmasyon"
+      },
+      "valueTypes": {
+        "STRING": "Tèks",
+        "NUMBER": "Nimewo",
+        "MONEY": "Montan",
+        "PERCENT": "Pousantaj",
+        "DATE": "Dat",
+        "BOOLEAN": "Wi oswa non"
+      },
       "feature": {
         "loading": "N ap verifye fonksyon sa a…",
         "retry": "Eseye ankò",
@@ -4709,6 +4946,35 @@
           "body": "Sa pa t ka chaje."
         }
       },
+      "documents": {
+        "subtitle": "Li enfòmasyon nan dokiman ou bay yo. Anyen pa anrejistre san ou pa revize l.",
+        "upload": "Telechaje yon dokiman",
+        "uploading": "Y ap telechaje…",
+        "duplicate": {
+          "title": "Li deja nan dosye a",
+          "body": "Ou te deja telechaje menm fichye sa a. Kopi ki egziste a rete."
+        },
+        "uploadFailed": "Telechajman an echwe",
+        "reviewFailed": "Revizyon an echwe",
+        "empty": {
+          "title": "Poko gen dokiman",
+          "body": "Dokiman ou telechaje yo ap parèt isit la ak sa ki te li ladan yo."
+        },
+        "states": {
+          "EXTRACTED": "Li fin li",
+          "NO_CLAIMS": "Pa gen anyen pou retire",
+          "PROVIDER_REQUIRED": "N ap tann yon founisè",
+          "FAILED": "Li pa t ka li"
+        },
+        "claims": {
+          "title": "Enfòmasyon yo pwopoze",
+          "none": "Pa gen enfòmasyon ki te pwopoze nan dokiman sa a.",
+          "accept": "Aksepte",
+          "reject": "Refize",
+          "ACCEPTED": "Aksepte",
+          "REJECTED": "Refize"
+        }
+      },
       "people": {
         "subtitle": "Moun ki anrejistre nan pwòp biwo ou. Nou pa fè rechèch sou pèsonn.",
         "add": "Ajoute yon moun",
@@ -4732,6 +4998,115 @@
           "nothing": "Poko gen anyen ki anrejistre sou moun sa a."
         }
       },
+      "briefings": {
+        "subtitle": "Rapò ki fèt ak pwòp dosye ou yo. Anyen pa soti deyò.",
+        "generate": "Prepare yon rapò",
+        "generating": "Y ap prepare…",
+        "generateFailed": "Nou pa t ka prepare yon rapò",
+        "itemCount_one": "{{count}} eleman",
+        "itemCount_other": "{{count}} eleman",
+        "noItems": "Rapò sa a vid — pa t gen anyen nan dosye ou yo pou rapòte.",
+        "empty": {
+          "title": "Poko gen rapò",
+          "body": "Prepare youn epi l ap fèt ak dosye ou yo nan moman sa a."
+        },
+        "sections": {
+          "PEOPLE": "Moun",
+          "OBLIGATIONS": "Obligasyon",
+          "EVENTS": "Evènman",
+          "DECISIONS": "Desizyon",
+          "REQUESTS": "Demann",
+          "RISKS": "Risk",
+          "OPPORTUNITIES": "Opòtinite"
+        }
+      },
+      "shield": {
+        "subtitle": "Verifye pwòp dosye ou yo pou ekspozisyon. Li wè sèlman sa ki nonmen anba a.",
+        "openFindings_one": "{{count}} konsta ouvè",
+        "openFindings_other": "{{count}} konsta ouvè",
+        "severity": {
+          "HIGH": "Wo",
+          "MEDIUM": "Mwayen",
+          "LOW": "Ba"
+        },
+        "scan": "Fè yon verifikasyon",
+        "scanning": "Y ap verifye…",
+        "scanFailed": "Verifikasyon an pa t ka fèt",
+        "checksTitle": "Sa nou verifye",
+        "checksHint": "«Pa gen konsta» vle di pa gen youn nan verifikasyon ki nan lis la — anyen plis.",
+        "externalTitle": "Pa verifye deyò",
+        "externalMonitored": "Yon founisè deyò ap siveye",
+        "externalNotMonitored": "Pa gen okenn founisè deyò k ap siveye",
+        "empty": {
+          "title": "Pa gen konsta ouvè",
+          "body": "Nou pa t jwenn anyen nan verifikasyon ki nan lis anwo a. Se sa sèlman sa vle di."
+        },
+        "status": {
+          "OPEN": "Ouvè",
+          "ACKNOWLEDGED": "Rekonèt",
+          "RESOLVED": "Rezoud",
+          "DISMISSED": "Ekate"
+        },
+        "acknowledge": "Rekonèt",
+        "resolve": "Make kòm rezoud",
+        "dismiss": "Ekate",
+        "updateFailed": "Nou pa t ka mete l ajou"
+      },
+      "concierge": {
+        "subtitle": "Yon biwo pou demann yon moun ap trete. Chak repons isit la se yon moun ki te ekri l.",
+        "newRequest": "Nouvo demann",
+        "submitFailed": "Nou pa t ka soumèt li",
+        "sendFailed": "Mesaj la pa t ka voye",
+        "cancelFailed": "Nou pa t ka anile l",
+        "cancelRequest": "Anile demann sa a",
+        "empty": {
+          "title": "Poko gen demann",
+          "body": "Demann ou soumèt yo ap parèt isit la ak tout istwa yo."
+        },
+        "desk": {
+          "staffed_one": "{{count}} operatè an sèvis",
+          "staffed_other": "{{count}} operatè an sèvis",
+          "unstaffed": "Pa gen okenn operatè an sèvis"
+        },
+        "form": {
+          "title": "Kisa ou bezwen?",
+          "description": "Detay (si ou vle)",
+          "category": "Kategori",
+          "priority": "Priyorite",
+          "submit": "Soumèt",
+          "cancel": "Anile"
+        },
+        "categories": {
+          "GENERAL": "Jeneral",
+          "TRAVEL": "Vwayaj",
+          "LEGAL": "Legal",
+          "FINANCIAL": "Finans",
+          "PERSONAL": "Pèsonèl",
+          "RESEARCH": "Rechèch",
+          "ADMIN": "Demach"
+        },
+        "priorities": {
+          "LOW": "Ba",
+          "NORMAL": "Nòmal",
+          "HIGH": "Wo",
+          "URGENT": "Ijan"
+        },
+        "statusWords": {
+          "OPEN": "Ouvè",
+          "IN_PROGRESS": "An kou",
+          "WAITING_ON_USER": "N ap tann ou",
+          "WAITING_ON_PROVIDER": "N ap tann yon founisè",
+          "COMPLETED": "Fini",
+          "CANCELED": "Anile"
+        },
+        "thread": {
+          "none": "Poko gen mesaj.",
+          "operator": "Operatè",
+          "you": "Ou menm",
+          "placeholder": "Ekri yon mesaj…",
+          "send": "Voye"
+        }
+      },
       "meetings": {
         "subtitle": "Reyinyon an sekirite sou liy prive ou a. Se sèvè a ki fè respekte sal datant lan ak kontwòl animatè a, se pa ekran an.",
         "instant": "Kòmanse yon reyinyon touswit",
@@ -4747,38 +5122,17 @@
         "scheduleFailed": "Nou pa t ka pwograme",
         "startFailed": "Nou pa t ka kòmanse",
         "cancelFailed": "Nou pa t ka anile",
-        "rescheduleFailed": "Nou pa t ka chanje dat la",
         "start": "Kòmanse",
         "cancel": "Anile",
-        "reschedule": "Chanje dat",
-        "saveChanges": "Anrejistre chanjman yo",
         "untitled": "Reyinyon",
         "details": "Detay pou {{title}}",
         "liveNow": "An dirèk kounye a",
         "durationMinutes_one": "{{count}} minit",
         "durationMinutes_other": "{{count}} minit",
-        "confirmed": {
-          "title": "Reyinyon an pwograme",
-          "when": "Kilè",
-          "duration": "Konbyen tan",
-          "guests": "Moun ki envite",
-          "guestsNone": "Poko gen pèsonn ki envite. Ou ka envite moun depi nan reyinyon an menm.",
-          "memberFallback": "Manm {{id}}",
-          "someone": "Youn nan envite ou yo",
-          "reminders": "Rapèl",
-          "remindersNone": "Pa gen rapèl ki pwograme pou reyinyon sa a.",
-          "reminderSkipped": "twò ta pou voye l",
-          "meetingId": "ID reyinyon an",
-          "meetingCode": "Kòd envitasyon",
-          "done": "Fini",
-          "skipped": {
-            "emailRequired": "Pa envite — pa gen adrès imèl",
-            "emailInvalid": "Pa envite — adrès sa a pa itilizab",
-            "tooMany": "Pa envite — twòp envite pou yon sèl reyinyon",
-            "isHost": "Ou la deja — se ou menm ki òganizatè a",
-            "alreadyIn": "Li deja nan reyinyon sa a",
-            "unavailable": "Nou pa t ka envite l"
-          }
+        "presets": {
+          "in15m": "Nan {{minutes}} minit",
+          "in1h": "Nan {{hours}} èdtan",
+          "tomorrowMorning": "Demen {{time}}"
         },
         "buckets": {
           "live": "K ap fèt kounye a",
@@ -4887,52 +5241,82 @@
             "feature_disabled": "Reyinyon yo te fèmen pandan ou te konekte.",
             "generic": "Reyinyon an fini."
           }
+        }
+      },
+      "conversations": {
+        "title": "Konvèsasyon prive",
+        "subtitle": "Konvèsasyon biwo a, klase epi lye ak travay yo apatni an.",
+        "unread": "Poko li",
+        "archived": "Achive",
+        "filters": {
+          "all": "Tout"
         },
-        "calendar": {
-          "browse": "Gade kalandriye a",
-          "previousMonth": "Mwa anvan",
-          "nextMonth": "Mwa apre",
-          "pickMonth": "Chwazi yon mwa",
-          "pickYear": "Chwazi yon ane",
-          "jumpToYear": "Ale nan yon ane",
-          "today": "Jodi a",
-          "close": "Fèmen",
-          "loadFailed": "Nou pa t kapab chaje mwa sa a. Eseye ankò oswa ale nan yon lòt mwa.",
-          "noneOnDay": "Pa gen anyen pwograme jou sa a.",
-          "dayWithMeetings_other": "{{day}}, {{count}} reyinyon"
+        "scopes": {
+          "DIRECT": "Dirèk",
+          "GROUP": "Gwoup",
+          "ORGANIZATION_ROOM": "Sal òganizasyon",
+          "PROJECT_ROOM": "Sal pwojè"
         },
-        "wizard": {
-          "steps": {
-            "date": "Chwazi yon dat",
-            "time": "Chwazi yon lè",
-            "zone": "Konfime zòn lè a",
-            "duration": "Konbyen tan?",
-            "details": "Tit ak ajanda",
-            "guests": "Kiyès k ap vini?",
-            "review": "Tcheke"
-          },
-          "timeHint": "Lè a jan l ap li kote reyinyon an ap fèt la.",
-          "zoneHint": "Tout moun envite nan menm moman an. Zòn lè a deside ki moman sa ye.",
-          "zoneUnknown": "Aparèy sa a pa bay okenn zòn lè, donk reyinyon an ap li kòm UTC.",
-          "looksPast": "Dapre aparèy sa a, moman an gentan pase. Sèvè a gen dènye mo a.",
-          "customDuration": "Longè pa w an minit",
-          "durationRange": "Chwazi ant {{min}} ak {{max}} minit.",
-          "agendaField": "Ajanda (opsyonèl)",
-          "inviteLater": "Ou ka envite moun lè reyinyon an fin kreye.",
-          "guestsHint": "Tout moun isit la resevwa envitasyon an ak rapèl yo. Yo pa bezwen yon kont PulseSoc.",
-          "guestsNone": "Poko gen envite. Ou ka ajoute yo kounye a oswa envite moun pita.",
-          "guestsNoneShort": "Pèsonn poko",
-          "guestName": "Non konplè (opsyonèl)",
-          "guestEmail": "Adrès imèl",
-          "addGuest": "Ajoute yon envite",
-          "updateGuest": "Mete envite a ajou",
-          "editGuest": "Modifye {{name}}",
-          "removeGuest": "Retire {{name}}",
-          "remove": "Retire",
-          "guestEmailInvalid": "Mete yon adrès imèl pou nou ka voye envitasyon an.",
-          "guestDuplicate": "Adrès sa a deja nan lis la.",
-          "back": "Retounen",
-          "next": "Kontinye"
+        "empty": {
+          "title": "Poko gen konvèsasyon prive",
+          "body": "Konvèsasyon ki klase kòm konvèsasyon biwo parèt isit la ak nivo yo ak lyen yo."
+        },
+        "create": {
+          "open": "Nouvo konvèsasyon",
+          "failed": "Nou pa t kapab kreye konvèsasyon an",
+          "boundScopeNote": "Sal òganizasyon ak sal pwojè kreye depi nan nœud òganizasyon an oswa pwojè yo apatni an."
+        },
+        "sensitivity": {
+          "title": "Sansiblite",
+          "note": "Li defini kijan konvèsasyon sa a jere ak ak ki moun yo ka pataje l. Li pa chanje fason mesaj yo voye.",
+          "failed": "Nou pa t kapab chanje sansiblite a",
+          "unknownLabel": "Sansiblite ki anrejistre",
+          "PUBLIC": "Piblik",
+          "INTERNAL": "Entèn",
+          "CONFIDENTIAL": "Konfidansyèl",
+          "HIGHLY_SENSITIVE": "Trè sansib",
+          "RESTRICTED": "Restren"
+        },
+        "links": {
+          "title": "Lye",
+          "note": "Yon lyen se yon referans. Retire l pa efase dokiman an, dosye a, enfòmasyon an oswa reyinyon an.",
+          "empty": "Poko gen anyen ki lye ak konvèsasyon sa a.",
+          "remove": "Retire lyen an",
+          "failed": "Nou pa t kapab chanje lyen yo"
+        },
+        "linkTypes": {
+          "DOCUMENT": "Dokiman",
+          "RECORD": "Dosye",
+          "FACT": "Enfòmasyon",
+          "MEETING": "Reyinyon",
+          "ORGANIZATION_NODE": "Òganizasyon",
+          "PROJECT": "Pwojè"
+        },
+        "security": {
+          "title": "Sekirite",
+          "notEncrypted": "Mesaj yo pwoteje pandan transpò a ak pa kontwòl aksè sou sèvè a. Yo pa chifre bout an bout, kidonk sèvè a ka li yo.",
+          "encrypted": "Mesaj nan konvèsasyon sa a chifre bout an bout.",
+          "ledger": "Kote mesaj yo estoke",
+          "rtc": "Apèl"
+        },
+        "info": {
+          "title": "Detay konvèsasyon an",
+          "subtitle": "Klasifikasyon biwo a pou konvèsasyon sa a. Mesaj yo rete nan konvèsasyon nòmal la.",
+          "open": "Detay konvèsasyon an",
+          "openThread": "Louvri konvèsasyon an",
+          "classification": "Klasifikasyon",
+          "scope": "Nivo",
+          "archivedYes": "Wi",
+          "notFound": {
+            "title": "Se pa yon konvèsasyon biwo",
+            "body": "Konvèsasyon sa a pa gen klasifikasyon Biwo prive. Li toujou disponib nan Mesaj."
+          }
+        },
+        "untitled": "Konvèsasyon san tit",
+        "linked": {
+          "title": "PALE DE LI NAN",
+          "unavailable": "Nou pa t kapab tcheke konvèsasyon ki lye yo.",
+          "none": "Li pa mansyone nan okenn konvèsasyon ou ladan."
         }
       }
     },
@@ -5042,45 +5426,6 @@
       "dominance": "Dominans BTC",
       "gainers": "Pi gwo monte",
       "losers": "Pi gwo bès"
-    }
-  },
-  "translation": {
-    "eyebrow": "Tradiksyon",
-    "translate": "Tradui",
-    "translating": "N ap tradui…",
-    "translateNow": "Tradui kounye a",
-    "translateNowHint": "Tradui mesaj sa a an {{language}}.",
-    "viewOriginal": "Gade orijinal la",
-    "showOriginalHint": "Retounen nan mesaj orijinal la.",
-    "translatedFrom": "Tradui soti nan {{language}}",
-    "translatedLabel": "Tradui",
-    "always": "Toujou",
-    "never": "Jamè",
-    "alwaysTranslate": "Toujou tradui",
-    "alwaysTranslateHint": "Tradui lang sa a otomatikman lè PulseSoc detekte l.",
-    "neverTranslate": "Pa janm tradui",
-    "neverTranslateHint": "Kite lang sa a jan l ye a.",
-    "optionsTitle": "Opsyon lang pou mesaj la",
-    "downloadLanguage": "Telechaje lang lan",
-    "downloadExplainer": "PulseSoc sèvi ak tradiksyon prive Apple ki fèt sou aparèy la. Apple ka telechaje lang ki nesesè a sou iPhone sa a.",
-    "tryAgain": "Eseye ankò",
-    "failure": {
-      "unavailable": "Tradiksyon pa disponib",
-      "unsupportedLanguage": "Nou pa ka tradui lang sa a sou aparèy sa a.",
-      "downloadFailed": "Telechajman lang lan pa t fini.",
-      "offline": "Konekte sou entènèt la pou telechaje lang sa a.",
-      "preferenceNotSaved": "Nou pa t ka anrejistre preferans tradiksyon ou an."
-    },
-    "a11y": {
-      "controls": "Kontwòl tradiksyon. Lang sib: {{language}}.",
-      "translateTo": "Tradui an {{language}}",
-      "showOriginal": "Montre tèks orijinal la",
-      "options": "Opsyon tradiksyon. N ap montre tèks tradui a.",
-      "alwaysTo": "Toujou tradui an {{language}}",
-      "neverTo": "Pa janm tradui an {{language}}",
-      "closeOptions": "Fèmen opsyon tradiksyon yo",
-      "retry": "Eseye tradui ankò",
-      "download": "Telechaje lang {{language}} sou aparèy sa a"
     }
   }
 }

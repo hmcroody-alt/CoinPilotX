@@ -1,14 +1,9 @@
-import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { PulseComment } from "../api/feed";
 import { ContentTranslation } from "../components/ContentTranslation";
-import { PulseEntityLinkCard } from "../components/messages/PulseEntityLinkCard";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
-import { segmentRichBody } from "./richBody";
-import { detectLinks } from "../links/messageLinks";
-import { bodyEntity, bodyIsOnlyLinks } from "../links/pulseEntity";
-import { openContentLink } from "../links/openContentLink";
+import { segmentMentions } from "./mentions";
 import { createThemedStyles } from "../theme/themedStyles";
 
 // The recursive comment renderer, promoted out of ReelsScreen.tsx:736 so every
@@ -255,118 +250,43 @@ export function commentReactionTotal(comment: PulseComment): number {
 }
 
 /**
- * Comment body with @mentions and links rendered as distinct, tappable spans.
+ * Comment body with @mentions rendered as distinct, tappable spans.
  *
- * ## Decoration is now layered over translation rather than traded against it
- *
- * This used to choose: with a mention handler it segmented the body, and
- * without one it handed the body to `ContentTranslation` whole. The comment
- * defending that said splitting a translated string into spans would break
- * translation. It does not — `renderText` is given whichever string is
- * currently on screen, so the segmenter simply runs over the translated text
- * instead of the original. `ChatScreen` has rendered message bodies this way
- * since links were added there, and `PostCard` now renders post bodies the
- * same way.
- *
- * Trading them was also no longer affordable. Links have to be tappable in a
- * comment whether or not the screen wired a mention handler, so the old
- * either/or would have had to become a three-way choice between translation,
- * mentions, and links. Layering removes the choice instead of widening it: a
- * comment gets all three, always.
- *
- * What translation mangles degrades quietly. A URL that survives translation
- * stays tappable; one that does not renders as prose, which is what it looks
- * like today anyway.
- *
- * ## Mentions are still opt-in, links are not
- *
- * A mention span needs somewhere to send the tap, so without `onMentionPress`
- * a mention stays plain text. A link needs nothing from the screen —
- * `openContentLink` supplies its own navigation — so links are live in every
- * thread that renders, with no call site required to remember them.
- *
- * ## The card is a sibling of the text, not part of it
- *
- * A comment that links one PulseSoc object also gets that object's card, the
- * same card chat and post bodies draw. It renders *outside* the `<Text>` and not
- * as another span, because the card is a `Pressable` wrapping a `View` and a
- * `View` inside a `<Text>` is not a layout React Native has — the spans above are
- * spans precisely because they are text, and the card is not.
- *
- * `PostCard` skips a card that points at the post it is drawn inside. This cannot
- * do the equivalent for a comment that links the post it is a comment on,
- * because the component is presentational by design and is handed no post — see
- * the note at the top of the file. Left as it is rather than threading a post id
- * through every screen that renders a thread: the wasted card is a correct card
- * for a real destination, which is a much smaller fault than the plumbing.
+ * When no mention handler is supplied the body is passed to ContentTranslation
+ * whole, which keeps the existing translate-a-comment behavior intact. Splitting
+ * a translated string into spans would break translation, so mentions and
+ * translation are deliberately exclusive rather than layered.
  */
 function CommentBody({ comment, depth, onMentionPress }: { comment: PulseComment; depth: number; onMentionPress?: (username: string) => void }) {
   const contentType = depth > 0 || comment.parent_comment_id ? "reply" : "comment";
-  const body = comment.body || "";
-  const linkTexts = useMemo(() => (body ? detectLinks(body).map((token) => token.text) : []), [body]);
-  const entity = useMemo(() => bodyEntity(body, linkTexts), [body, linkTexts]);
-  /**
-   * A comment that is nothing but the link has no sentence to keep, so the card
-   * stands in for it entirely. A comment with words around the link keeps them.
-   */
-  const showBodyText = Boolean(body) && !(entity && bodyIsOnlyLinks(body, linkTexts));
+  if (!onMentionPress) {
+    return (
+      <ContentTranslation
+        contentType={contentType}
+        contentRef={comment.id || comment.comment_id}
+        text={comment.body}
+        textStyle={styles.body}
+      />
+    );
+  }
+  const segments = segmentMentions(comment.body);
   return (
-    <View>
-      {showBodyText ? (
-        <ContentTranslation
-          contentType={contentType}
-          contentRef={comment.id || comment.comment_id}
-          text={comment.body}
-          textStyle={styles.body}
-          renderText={(visible) => (
-            <Text style={styles.body}>
-              {segmentRichBody(visible).map((segment, index) => {
-                if (segment.url) {
-                  const url = segment.url;
-                  return (
-                    <Text
-                      key={`link-${index}`}
-                      accessibilityRole="link"
-                      testID={`comment-link-${comment.id}-${index}`}
-                      style={styles.link}
-                      onPress={(event) => {
-                        // Without this the row's own press handling runs too and a
-                        // tap on a link would also count as a tap on the comment.
-                        event?.stopPropagation?.();
-                        openContentLink(url);
-                      }}
-                    >
-                      {segment.text}
-                    </Text>
-                  );
-                }
-                if (segment.username && onMentionPress) {
-                  const username = segment.username;
-                  return (
-                    <Text
-                      key={`mention-${index}`}
-                      accessibilityRole="link"
-                      accessibilityLabel={`Open @${username} profile`}
-                      testID={`comment-mention-${comment.id}-${username}`}
-                      style={styles.mention}
-                      onPress={() => onMentionPress(username)}
-                    >
-                      {segment.text}
-                    </Text>
-                  );
-                }
-                return <Text key={`text-${index}`}>{segment.text}</Text>;
-              })}
-            </Text>
-          )}
-        />
-      ) : null}
-      {entity ? (
-        <View style={styles.linkCard}>
-          <PulseEntityLinkCard entity={entity} variant="content" onOpen={openContentLink} />
-        </View>
-      ) : null}
-    </View>
+    <Text style={styles.body}>
+      {segments.map((segment, index) => (segment.username ? (
+        <Text
+          key={`mention-${index}`}
+          accessibilityRole="link"
+          accessibilityLabel={`Open @${segment.username} profile`}
+          testID={`comment-mention-${comment.id}-${segment.username}`}
+          style={styles.mention}
+          onPress={() => onMentionPress(segment.username || "")}
+        >
+          {segment.text}
+        </Text>
+      ) : (
+        <Text key={`text-${index}`}>{segment.text}</Text>
+      )))}
+    </Text>
   );
 }
 
@@ -429,21 +349,6 @@ const styles = createThemedStyles(() => ({
     minHeight: 60,
     padding: 10,
     textAlignVertical: "top"
-  },
-  // Underlined rather than bolded, which is how a link tells itself apart from a
-  // mention in the same sentence: both are `colors.accent`, and a body may hold
-  // one of each. The underline is also the non-colour channel, so the two stay
-  // distinguishable in grayscale. `LinkedText`'s own `LINK_STYLE` is not reused
-  // here because it hardcodes `chatGraphite.senderAccent` for a chat bubble.
-  link: {
-    color: colors.accent,
-    textDecorationLine: "underline"
-  },
-  // Space above the card only. The card supplies its own `marginBottom`, and a
-  // deeply indented reply is already narrow, so the card takes the width it is
-  // given rather than asking for one.
-  linkCard: {
-    marginTop: 8
   },
   mention: {
     color: colors.accent,

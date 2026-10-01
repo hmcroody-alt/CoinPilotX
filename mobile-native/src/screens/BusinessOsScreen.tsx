@@ -312,23 +312,8 @@ export function BusinessOsScreen({ navigation, route }: Props) {
     });
   }
 
-  // The canonical numbers, or nothing.
-  //
-  // These two lines were `store?.listings?.length` and `store?.orders?.length`,
-  // rendered under the labels "Live listings" and "Orders". `.length` is a
-  // faithful count of the list it was handed — the lists were simply never the
-  // answer to the question the labels were asking. Seller 1 was told they had
-  // 43 live listings when 28 of those rows were drafts no buyer can see (the
-  // true figure was 13), and 32 orders when not one of those rows was a paid
-  // order (the true figure was 0: 13 checkouts opened, 9 expired, 7 failed, 2
-  // bare carts, 1 declined).
-  //
-  // Both now come from `GET /api/pulse/marketplace/seller/metrics`, the same
-  // payload the Store screen reads, so the two surfaces cannot disagree.
-  const metrics = store?.metrics ?? null;
-  const UNKNOWN = "—";
-  const liveListings = metrics == null ? UNKNOWN : String(metrics.live_listings);
-  const confirmedOrders = metrics == null ? UNKNOWN : String(metrics.confirmed_orders);
+  const listings = store?.listings?.length || 0;
+  const sellerOrders = store?.orders?.length || 0;
   const activeCampaigns = analytics?.campaigns.filter((row) => String(row.status) === "active").length || 0;
   const spendCents = analytics?.totals.spend_cents || 0;
   const verifiedAccount = accounts.some(adAccountCanTransact);
@@ -337,7 +322,7 @@ export function BusinessOsScreen({ navigation, route }: Props) {
   // viewer's business under another person's name. All hooks have already run.
   if (!routeContext.isOwnProfile) {
     return (
-      <Screen surface="business" title="Business OS">
+      <Screen title="Business OS">
         <Panel>
           <Text style={styles.muted}>{PRIVATE_CONTENT_MESSAGE}</Text>
         </Panel>
@@ -346,7 +331,7 @@ export function BusinessOsScreen({ navigation, route }: Props) {
   }
 
   return (
-    <Screen surface="business" title="Business OS" subtitle="Run your store, marketplace listings and advertising in one place.">
+    <Screen title="Business OS" subtitle="Run your store, marketplace listings and advertising in one place.">
       {offline ? (
         <Panel>
           <Text style={styles.panelTitle}>Showing saved data</Text>
@@ -383,8 +368,8 @@ export function BusinessOsScreen({ navigation, route }: Props) {
         {hydrated ? (
           <>
             <View style={styles.metrics}>
-              <Metric label="Live listings" value={liveListings} />
-              <Metric label="Orders" value={confirmedOrders} />
+              <Metric label="Live listings" value={String(listings)} />
+              <Metric label="Orders" value={String(sellerOrders)} />
               <Metric label="Active campaigns" value={String(activeCampaigns)} />
               <Metric label="Ad spend" value={formatCents(spendCents)} />
             </View>

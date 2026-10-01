@@ -112,8 +112,6 @@ import {
   SavedSearchAlert,
   type MarketplaceMode
 } from "../components/marketplace";
-import { SellerAccessGate, type SellerAccessAction } from "../components/store/SellerAccessGate";
-import { useSellerAccess } from "../marketplace/useSellerAccess";
 import {
   StoreHeader,
   StoreOfflineNote,
@@ -343,27 +341,6 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
     saveLastMarketplaceMode(next).catch(() => undefined);
   }, []);
 
-  // The same verdict the Store dashboard gates on, from the same endpoint.
-  const sellerAccess = useSellerAccess();
-  const handleSellerAccessAction = useCallback(
-    (action: SellerAccessAction) => {
-      switch (action) {
-        case "RETRY":
-          void sellerAccess.refresh();
-          return;
-        case "ORDERS":
-          navigation.navigate("SellerStore", { mode: "orders", title: "Orders" });
-          return;
-        case "SUPPORT":
-          navigation.navigate("TrustSafetySupport");
-          return;
-        default:
-          navigation.navigate("MerchantApply");
-      }
-    },
-    [navigation, sellerAccess]
-  );
-
   /**
    * Server cart and offers are the source of truth; local state is a mirror.
    *
@@ -520,7 +497,7 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
 
   const openItem = useCallback(
     (listingId: number, title: string) => {
-      navigation.navigate("MarketplaceProduct", { listingId, title });
+      navigation.navigate("MarketplaceDetail", { listingId, title });
     },
     [navigation]
   );
@@ -694,20 +671,6 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
 
       <Animated.View style={[styles.panes, { opacity: swap }]}>
         <View style={[styles.pane, mode !== "selling" && styles.paneHidden]}>
-          {/* Selling and the Store dashboard read the same verdict from the
-              same endpoint, so the two can no longer answer differently for
-              one account. Buying is untouched: not being an approved seller
-              has never had anything to do with being allowed to buy. */}
-          {!sellerAccess.unsupported &&
-          (sellerAccess.loading || !sellerAccess.state.marketplace_selling_access) ? (
-            <SellerAccessGate
-              state={sellerAccess.state}
-              loading={sellerAccess.loading}
-              failed={sellerAccess.failed}
-              onAction={handleSellerAccessAction}
-              testID="marketplace-selling-gate"
-            />
-          ) : (
           <SellingPane
             loading={loading}
             refreshing={refreshing}
@@ -744,7 +707,6 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
             navigation={navigation}
             bottomPad={bottomPad}
           />
-          )}
         </View>
 
         <View style={[styles.pane, mode !== "buying" && styles.paneHidden]}>

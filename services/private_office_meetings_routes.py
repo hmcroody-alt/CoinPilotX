@@ -28,35 +28,7 @@ from flask import Blueprint, request
 
 from services import private_office_routes as po_http
 from services import pulsesoc_communications_engine as call_engine
-from services.private_office import meeting_contacts as po_meeting_contacts
 from services.private_office import meetings as po_meetings
-# Imported for its import side effect, not for this module's use: importing it
-# runs its module-scope `install()`, which registers `validate_queued_reminder`
-# with `email_send_guard` for the `private_meeting_reminder` email type.
-#
-# It has to happen here, at module scope, because of *which process* asks. The
-# only caller of `email_send_guard.may_send` is the outbox processor in
-# `notification_service`, and the process that runs it is `email_worker`, whose
-# entire import surface is `import bot`. `meetings.py` does reach
-# `meeting_reminders`, but lazily — the import sits inside `_plan_reminders`'s
-# body — so it fires in the *web* process on the first booking and never in the
-# worker at all. Verified rather than reasoned: `import bot` in a fresh
-# interpreter left `email_send_guard.registered_types()` empty and
-# `services.private_office.meeting_reminders` absent from `sys.modules`.
-#
-# An unregistered email_type is allowed through: `may_send` returns
-# `(True, "")` when it finds no validator. So the veto did not fail loudly, it
-# simply never ran, and a reminder for a meeting that had since been cancelled
-# or moved would still be delivered — the reminder row is correctly marked
-# CANCELLED, and the queued email, already written with a future
-# `next_retry_at`, does not consult it. `install()` documents itself as safe to
-# call repeatedly, so importing here costs nothing where it already ran.
-from services.private_office import meeting_reminders as _po_meeting_reminders  # noqa: F401
-# Declarative only — it adds no check. `_entry()` below is what actually
-# refuses. The stamp exists so the route-auth gate can tell a route that
-# forgot its gate from one that never needed it; the older routes in this
-# file predate the gate's baseline and are grandfathered, new ones are not.
-from services.route_auth import auth_required
 
 MEETINGS_FEATURE_ID = "private_meetings"
 
@@ -103,39 +75,6 @@ def _body() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-#: A request naming more than this is not a meeting, and refusing it here keeps
-#: the model from having to defend itself against a list the size of a mailbox.
-MAX_BODY_INVITEES = 60
-
-
-def _user_ids(raw: object) -> list[int]:
-    if not isinstance(raw, list):
-        return []
-    return [int(v) for v in raw[:MAX_BODY_INVITEES] if str(v).strip().isdigit()]
-
-
-def _invitees(body: dict) -> list[dict]:
-    """The ``{name, email}`` guests from a request body.
-
-    Shape only: kept, trimmed, and handed on. Whether an address is usable,
-    whether it belongs to a member already, and whether it is a duplicate are
-    all decided by the model, which is the only place that can answer them
-    consistently for both this route and the invite route.
-    """
-    raw = body.get("invitees")
-    if not isinstance(raw, list):
-        return []
-    out: list[dict] = []
-    for item in raw[:MAX_BODY_INVITEES]:
-        if not isinstance(item, dict):
-            continue
-        out.append({
-            "name": str(item.get("name") or item.get("full_name") or "")[:200],
-            "email": str(item.get("email") or "")[:320],
-        })
-    return out
-
-
 def _run(work, *, log_tag: str, fail_message: str):
     """Execute ``work(cur)`` through the shared commit-on-success cursor and
     translate the two failure families:
@@ -165,55 +104,22 @@ def _run(work, *, log_tag: str, fail_message: str):
     "/api/private-office/meetings", methods=["POST"])
 def api_private_meetings_create():
     """``{"instant": true}`` starts a meeting now; otherwise
-    ``scheduled_start_at`` + ``duration_minutes`` schedules one.
-
-    ``scheduled_start_at`` is either an absolute instant (with an offset, e.g.
-    ``2032-03-14T09:00:00-04:00``) or a naive wall-clock time to be read in
-    ``timezone`` (an IANA name). The model resolves both to canonical UTC and
-    rejects what it cannot resolve — a time that does not exist on the chosen
-    date, a past instant, a duration of zero.
-
-    ``idempotency_key`` is optional and opaque: repeating a request with the
-    same key returns the meeting the first one created instead of a second
-    meeting, which is what a double-tapped Schedule button looks like.
-
-    Note that ``duration_minutes`` is forwarded raw rather than coerced here.
-    ``int("soon")`` would raise inside the route and surface as a 503
-    "unavailable" — an infrastructure answer to a malformed-input question.
-    The model's validator turns it into a 400 with a code.
-    """
+    ``scheduled_start_at`` (ISO) + optional ``duration_minutes`` schedules one."""
     user, refusal = _entry()
     if refusal:
         return refusal
     body = _body()
-    invitees = _invitees(body)
-    invite_user_ids = _user_ids(body.get("invite_user_ids"))
 
     def work(cur):
-        meeting = po_meetings.create_meeting(
+        return po_meetings.create_meeting(
             cur,
             owner_user_id=user["user_id"],
             title=str(body.get("title") or ""),
             scheduled_start_at=str(body.get("scheduled_start_at") or ""),
-            timezone_name=str(body.get("timezone") or ""),
-            agenda=str(body.get("agenda") or ""),
-            duration_minutes=body.get("duration_minutes"),
-            idempotency_key=str(body.get("idempotency_key") or ""),
+            duration_minutes=int(body.get("duration_minutes") or 0),
             waiting_room_enabled=bool(body.get("waiting_room_enabled", True)),
             instant=bool(body.get("instant")),
-            invitees=invitees,
-            invite_user_ids=invite_user_ids,
         )
-        # §19 again, for the other way in. A member invited while the meeting
-        # is being booked is as much a contact as one invited afterwards, and
-        # this is the only route that reaches them — the invite route below
-        # never sees them. Same call, same "it cannot fail an invite" rule.
-        invited = ((meeting or {}).get("invite_result") or {}).get("invited")
-        if invited:
-            po_meeting_contacts.record_invitees(
-                cur, owner_user_id=user["user_id"], user_ids=invited,
-                actor_user_id=user["user_id"])
-        return meeting
 
     meeting, err = _run(work, log_tag="PRIVATE_MEETINGS_CREATE_FAILED",
                         fail_message="We could not create the meeting just now.")
@@ -252,36 +158,6 @@ def api_private_meetings_list():
         "capabilities": po_meetings.capability_states(),
         "provider_status": PROVIDER_STATUS,
     })
-
-
-@private_office_meetings_blueprint.route(
-    "/api/private-office/meetings/calendar", methods=["GET"])
-@auth_required
-def api_private_meetings_calendar():
-    """One bounded window of the calendar. No sweep runs here.
-
-    The sweep exists to stop the home screen advertising a meeting nobody is
-    in; a calendar cell for next March advertises nothing, and running a
-    write-taking sweep every time a user flicks between months would make
-    scrolling a year cost twelve sweeps of the same rows.
-    """
-    user, refusal = _entry()
-    if refusal:
-        return refusal
-
-    def work(cur):
-        return po_meetings.calendar_range(
-            cur,
-            user_id=user["user_id"],
-            start=request.args.get("start") or "",
-            end=request.args.get("end") or "",
-            timezone_name=request.args.get("timezone") or "")
-
-    window, err = _run(work, log_tag="PRIVATE_MEETINGS_CALENDAR_FAILED",
-                       fail_message="We could not load your calendar just now.")
-    if err:
-        return err
-    return po_http._no_store({"ok": True, "calendar": window})
 
 
 @private_office_meetings_blueprint.route(
@@ -331,47 +207,6 @@ def api_private_meetings_start(meeting_ref: str):
             cur, actor_user_id=user["user_id"], meeting_ref=meeting_ref),
         log_tag="PRIVATE_MEETINGS_START_FAILED",
         fail_message="We could not start the meeting just now.")
-
-
-@private_office_meetings_blueprint.route(
-    "/api/private-office/meetings/<meeting_ref>/reschedule", methods=["POST"])
-@auth_required
-def api_private_meetings_reschedule(meeting_ref: str):
-    """Move or re-title a scheduled meeting. Host only.
-
-    Send only the fields that changed. An omitted field is left alone; a field
-    sent as ``""`` clears it. That distinction matters because the client edits
-    one thing at a time — treating "absent" as "blank" would erase the agenda
-    every time someone fixed a typo in the title — so the route reads
-    ``body.get(name)`` with a ``None`` default rather than coercing to a string
-    the way the create route can afford to.
-
-    Moving the meeting in time bumps ``schedule_version``, which invalidates
-    every reminder queued against the old one. Changing only the title does
-    not.
-    """
-    user, refusal = _entry()
-    if refusal:
-        return refusal
-    body = _body()
-
-    def work(cur):
-        return po_meetings.reschedule_meeting(
-            cur,
-            actor_user_id=user["user_id"],
-            meeting_ref=meeting_ref,
-            scheduled_start_at=body.get("scheduled_start_at"),
-            timezone_name=body.get("timezone"),
-            duration_minutes=body.get("duration_minutes"),
-            title=body.get("title"),
-            agenda=body.get("agenda"),
-        )
-
-    meeting, err = _run(work, log_tag="PRIVATE_MEETINGS_RESCHEDULE_FAILED",
-                        fail_message="We could not update the meeting just now.")
-    if err:
-        return err
-    return po_http._no_store({"ok": True, "meeting": meeting}, 200)
 
 
 @private_office_meetings_blueprint.route(
@@ -517,27 +352,14 @@ def api_private_meetings_invite(meeting_ref: str):
     if refusal:
         return refusal
     body = _body()
-    user_ids = _user_ids(body.get("user_ids"))
-    invitees = _invitees(body)
+    raw_ids = body.get("user_ids")
+    user_ids = [int(v) for v in raw_ids if str(v).strip().isdigit()] \
+        if isinstance(raw_ids, list) else []
 
     def work(cur):
-        result = po_meetings.invite_users(
+        return po_meetings.invite_users(
             cur, actor_user_id=user["user_id"], meeting_ref=meeting_ref,
-            user_ids=user_ids, invitees=invitees,
-            message=str(body.get("message") or ""))
-        # §19: whoever the member just invited is somebody they know, so they
-        # belong in the directory without being typed a second time. Strictly
-        # after the invite, and it cannot fail one — see meeting_contacts.
-        #
-        # Members only, deliberately. An outside guest reached by address is
-        # linked by the model, which records the provenance and the canonical
-        # identity; doing it twice from here would file the same person under
-        # two different keys.
-        result["directory"] = po_meeting_contacts.record_invitees(
-            cur, owner_user_id=user["user_id"],
-            user_ids=result.get("invited") or [],
-            actor_user_id=user["user_id"])
-        return result
+            user_ids=user_ids, message=str(body.get("message") or ""))
 
     result, err = _run(work, log_tag="PRIVATE_MEETINGS_INVITE_FAILED",
                        fail_message="We could not send those invites just now.")

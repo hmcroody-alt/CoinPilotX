@@ -1,16 +1,10 @@
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
-import * as SecureStore from "../native/secureStore";
+import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { EXPO_PROJECT_ID } from "./config";
-import { getPushInstallationId } from "./installationId";
 import { pulseApi } from "./pulseApi";
-
-// Re-exported so existing importers keep working. The definition moved to
-// `installationId.ts` so the VoIP path can reach it without importing this module's
-// module-scope `setNotificationHandler` side effect — see the docstring there.
-export { getPushInstallationId };
 
 export type PushRegistrationResult = {
   ok?: boolean;
@@ -38,35 +32,7 @@ type CachedPushRegistration = {
 };
 
 const PUSH_REGISTRATION_CACHE_KEY = "pulsesoc.native.push.registration";
-/**
- * The same locked-readable policy `installationId` uses, for the same reason.
- *
- * This item used to be written with no options at all, which meant it inherited
- * expo-secure-store's `kSecAttrAccessibleWhenUnlocked` default
- * (`SecureStoreOptions.swift`: `keychainAccessible: SecureStoreAccessible = .whenUnlocked`)
- * — unreadable while the screen is locked. Every caller today is a foreground,
- * user-initiated action (two settings screens and the two sign-out paths), so
- * that default was never actually wrong; it was a trap waiting for the first
- * background reader. `readCachedPushRegistration` returning null is silent: the
- * token-refresh branch in `registerPushDevice` simply skips revoking the stale
- * endpoint, leaving an orphan registered on the backend.
- *
- * `THIS_DEVICE_ONLY` because a push endpoint that synced through the iCloud
- * keychain would name a different device's token, which is the same confusion
- * the installation id avoids.
- *
- * No `keychainService` on purpose. Adding one now would move the item to a new
- * service and make every existing cached registration unreadable in one upgrade
- * — a silent cache wipe, and the orphan-endpoint outcome above for every install
- * at once. It shares the default service with the installation id, which is safe
- * because both are unauthenticated: expo-secure-store files items under
- * `<service>:auth` and `<service>:no-auth`, so the collision that the
- * separate-service rule exists to prevent needs the *same key* written both
- * ways, not merely the same service.
- */
-const KEYCHAIN_OPTIONS = {
-  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY
-} as const;
+const PUSH_INSTALLATION_ID_KEY = "pulsesoc.native.push.installation_id";
 let activePushRegistration: Promise<PushRegistrationResult> | null = null;
 
 // `handleNotification` runs only for notifications that arrive while the app is
@@ -240,7 +206,7 @@ async function getCurrentExpoPushToken() {
 }
 
 async function cachePushRegistration(registration: CachedPushRegistration) {
-  await SecureStore.setItemAsync(PUSH_REGISTRATION_CACHE_KEY, JSON.stringify(registration), KEYCHAIN_OPTIONS).catch(() => undefined);
+  await SecureStore.setItemAsync(PUSH_REGISTRATION_CACHE_KEY, JSON.stringify(registration)).catch(() => undefined);
 }
 
 async function readCachedPushRegistration() {
@@ -257,6 +223,14 @@ async function readCachedPushRegistration() {
 
 async function clearCachedPushRegistration() {
   await SecureStore.deleteItemAsync(PUSH_REGISTRATION_CACHE_KEY).catch(() => undefined);
+}
+
+async function getPushInstallationId() {
+  const existing = await SecureStore.getItemAsync(PUSH_INSTALLATION_ID_KEY).catch(() => "");
+  if (existing) return existing;
+  const generated = `native-${Platform.OS}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+  await SecureStore.setItemAsync(PUSH_INSTALLATION_ID_KEY, generated).catch(() => undefined);
+  return generated;
 }
 
 async function revokePushEndpoint(endpoint: string, options: {

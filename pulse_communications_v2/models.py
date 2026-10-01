@@ -136,7 +136,6 @@ COMM_V2_TABLES: tuple[TableSpec, ...] = (
             mux_asset_id TEXT,
             mux_playback_id TEXT,
             mux_status TEXT,
-            mux_playback_policy TEXT,
             scan_status TEXT DEFAULT 'approved',
             created_at TEXT
         )

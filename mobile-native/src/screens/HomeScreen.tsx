@@ -10,7 +10,7 @@ import {
   getPostDetail,
   hidePost,
   listFeed,
-  loadCachedFeedSnapshot,
+  loadCachedFeed,
   mutePostAuthor,
   PulsePost,
   pulsePostUrl,
@@ -23,7 +23,7 @@ import { isContentOwner } from "../api/contentOwnership";
 import { describeDeleteError } from "../api/deleteErrors";
 import { profileTargetFromPost } from "../api/profile";
 import { profileNavigationParams } from "../api/profileTarget";
-import { listStatuses, loadCachedStatusesSnapshot, PulseStatus, statusPosterUrl } from "../api/status";
+import { listStatuses, loadCachedStatuses, PulseStatus, statusPosterUrl } from "../api/status";
 import { HomePulseComposer } from "../components/HomePulseComposer";
 import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { LogiNexusBadge, LogiNexusEmptyState, LogiNexusPanel } from "../components/LogiNexus";
@@ -37,14 +37,7 @@ import { injectAds } from "../feed/injectAds";
 import { HomeRow, injectDiscoveryRows } from "../discovery/discoveryRows";
 import { DiscoveryRowView } from "../discovery/DiscoveryRowView";
 import { useHomeDiscovery } from "../discovery/useHomeDiscovery";
-import { HomeRowWithCommerce, injectCommerceRows } from "../commerce/commerceRows";
-import { CommerceFeedCard } from "../commerce/CommerceFeedCard";
-import { useFeedCommerce } from "../commerce/useFeedCommerce";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
-import { withCachedAge } from "../core/sync/ageLabel";
-import { primaryMediaOf } from "../core/media/mediaDescriptors";
-import type { MediaDescriptor } from "../core/media/mediaIdentity";
-import { useAppForegrounded, useMediaPrefetch } from "../core/media/useMediaPrefetch";
 import { getPulseRadioState, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
 import { useBottomNavContentPadding, useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusGlobalHeader } from "../navigation/GlobalNavigation";
@@ -53,12 +46,10 @@ import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
-import { useCommerceOverlayNavigation } from "../commerce/useCommerceOverlayNavigation";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { sharePulseObject } from "../sharing/nativeShare";
-import { buildPostShareMetadata } from "../sharing/postShare";
 import { createThemedStyles } from "../theme/themedStyles";
 import { spatialHomeFeedEnabled } from "../spatial/flags";
 import { SpatialPager } from "../spatial/SpatialPager";
@@ -66,18 +57,14 @@ import { SpatialPager } from "../spatial/SpatialPager";
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
 /**
- * Posts, ads, suggestion rows, and Marketplace recommendations.
+ * Posts, ads and — once the discovery flags are on — suggestion rows.
  *
- * Each widening is inert by default. `HomeRow` is `FeedRow` plus one
- * `discovery` member; `HomeRowWithCommerce` is that plus one `commerce` member.
- * With the discovery flags off `injectDiscoveryRows` returns its input
- * unchanged, and with the commerce engine off the serve endpoint answers with
- * an empty placement list, which makes `injectCommerceRows` return *its* input
- * unchanged. So the union describes more shapes than before while the list
- * still contains exactly the rows it contained before, and no value of either
- * new shape is ever constructed.
+ * `HomeRow` is `FeedRow` plus one `discovery` member, so with every flag off
+ * this alias describes exactly the same set of rows it described before: the
+ * union widens, but `injectDiscoveryRows` returns its input unchanged and no
+ * value of the new shape is ever constructed.
  */
-type HomeFeedRow = HomeRowWithCommerce<PulsePost>;
+type HomeFeedRow = HomeRow<PulsePost>;
 
 type HomeScreenProps = {
   badges?: GlobalNavigationBadges;
@@ -139,7 +126,6 @@ function useHomeAmbientMotionEnabled() {
 
 export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const navigation = useNavigation<HomeNavigation>();
-  const commerceNavigation = useCommerceOverlayNavigation(navigation);
   const route = useRoute<RouteProp<AppTabParamList, "Home">>();
   const { authState } = useAuth();
   const isFocused = useIsFocused();
@@ -150,13 +136,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const hasMoreRef = useRef(false);
   const loadingMoreRef = useRef(false);
   const refreshingRef = useRef(false);
-  /**
-   * Increments per load so a late result can tell whether it still owns the
-   * screen. Needed because the cache read introduced a second await before the
-   * network one, and a tab switch between them would otherwise paint the
-   * previous tab's cached posts over the new tab.
-   */
-  const loadGenerationRef = useRef(0);
   const [posts, setPosts] = useState<PulsePost[]>([]);
   const bottomNavScroll = useBottomNavScrollVisibility({ enabled: posts.length > 0 });
   const [selectedFeed, setSelectedFeed] = useState(FEED_TABS[0].key);
@@ -164,12 +143,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [offline, setOffline] = useState(false);
-  /**
-   * Age of what is on screen, or null when it came from the network just now.
-   * Null is also what an entry cached before the envelope existed reports, and
-   * that is correct: unknown age must render no age rather than "just now".
-   */
-  const [feedAgeMs, setFeedAgeMs] = useState<number | null>(null);
   const [error, setError] = useState("");
   // Replaces a `busyPostId` scalar. A scalar cannot represent two cards acting at
   // once, and every social handler here only ever *wrote* it — nothing read it —
@@ -186,7 +159,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [discoveryRefreshToken, setDiscoveryRefreshToken] = useState(0);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusOffline, setStatusOffline] = useState(false);
-  const [statusAgeMs, setStatusAgeMs] = useState<number | null>(null);
   const [statusError, setStatusError] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const ambientMotionEnabled = useHomeAmbientMotionEnabled();
@@ -207,13 +179,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       const row = token.item as HomeFeedRow | undefined;
       if (!row) continue;
       if (row.type === "post" && nextActivePostId == null) nextActivePostId = row.post.id;
-      // `commerce` joins this set for the same reason `ad` is in it: the row
-      // needs to know when it is actually on screen so it can report a visible
-      // impression. The list's 72% threshold is stricter than the server's 60%,
-      // which under-counts rather than over-counts — see `CommerceFeedCard`.
-      if (row.type === "ad" || row.type === "discovery" || row.type === "commerce") {
-        nextViewableRowKeys.add(row.key);
-      }
+      if (row.type === "ad" || row.type === "discovery") nextViewableRowKeys.add(row.key);
     }
     setActivePostId(nextActivePostId);
     setViewableRowKeys((current) => {
@@ -295,94 +261,24 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     refreshToken: discoveryRefreshToken
   });
 
-  const commerce = useFeedCommerce({
-    // Same rule as discovery: no recommendations for a signed-out viewer. The
-    // server would refuse anyway — every discovery route is `@auth_required` —
-    // so this is about not making the call, not about trusting the client.
-    enabled: isAuthenticated,
-    refreshToken: discoveryRefreshToken
-  });
-
   /**
-   * Ads first, then suggestions, then Marketplace recommendations.
+   * Ads first, then suggestions threaded through the result.
    *
    * The order matters and is not interchangeable. `injectAds` owns the sponsored
    * cadence Advertising specified; running it first and composing over its output
    * means discovery can see where the ads landed and keep each ad with the post
-   * that earned it, while an ad slot is never displaced by a carousel.
-   * `injectCommerceRows` runs last for the same reason one level up: it can see
-   * every non-post row the two before it placed, which is what lets it refuse a
-   * slot that would put a product card directly under an advert.
-   *
-   * Each stage is inert when its inputs are empty. With the discovery flags off
-   * `discovery.modules` is empty and `injectDiscoveryRows` returns the
-   * ad-injected array itself; with the commerce engine off `commerce.placements`
-   * is empty and `injectCommerceRows` returns *that* array. So this expression
-   * still produces byte-identical rows to the original `injectAds(...)` call,
-   * which is the §15 rollback path — now two features deep.
+   * that earned it, while an ad slot is never displaced by a carousel. With the
+   * discovery flags off, `discovery.modules` is empty and `injectDiscoveryRows`
+   * returns the ad-injected array itself — so this line produces byte-identical
+   * rows to the previous `injectAds(...)` call, which is the §15 rollback path.
    */
   const feedRows = useMemo<HomeFeedRow[]>(
     () =>
-      injectCommerceRows(
-        injectDiscoveryRows(injectAds(posts, availableAds, { interval: 5, leadIn: 3 }), discovery.modules, {
-          dismissed: discovery.dismissed,
-          rotationOffset: discovery.rotationOffset
-        }),
-        commerce.placements,
-        {
-          dismissedPlacementIds: commerce.dismissedPlacementIds,
-          dismissedSellerIds: commerce.dismissedSellerIds
-        }
-      ),
-    [
-      posts,
-      availableAds,
-      discovery.modules,
-      discovery.dismissed,
-      discovery.rotationOffset,
-      commerce.placements,
-      commerce.dismissedPlacementIds,
-      commerce.dismissedSellerIds
-    ]
-  );
-
-  /**
-   * Zero-wait media for the feed.
-   *
-   * The planner works in row indices, so the descriptor list has to be indexed
-   * the same way the FlatList is -- ad and discovery rows included, as nulls.
-   * Building it from `posts` instead would shift every index by the number of
-   * sponsored rows above it and warm the wrong cards, with symptoms that only
-   * show up once ads are actually being served.
-   */
-  const feedMedia = useMemo<(MediaDescriptor | null)[]>(
-    () => feedRows.map((row) => (row.type === "post" ? primaryMediaOf(row.post) : null)),
-    [feedRows]
-  );
-  const feedActiveIndex = useMemo(() => {
-    if (activePostId == null) return 0;
-    const index = feedRows.findIndex((row) => row.type === "post" && row.post.id === activePostId);
-    return index < 0 ? 0 : index;
-  }, [feedRows, activePostId]);
-  const appForegrounded = useAppForegrounded();
-  // `active` is focus plus foreground, deliberately not "is anything playing":
-  // §23 -- preloading is not playing, and a feed whose video is muted or paused
-  // still wants the next card's image already decoded.
-  const feedPrefetch = useMediaPrefetch({
-    surface: "feed",
-    items: feedMedia,
-    activeIndex: feedActiveIndex,
-    active: isFocused && appForegrounded
-  });
-  const feedFlinging = feedPrefetch.velocity === "fast";
-  // Composed, not replaced: the bottom nav hides and reveals itself from this
-  // same stream, and dropping its handler here would pin it open.
-  const onFeedScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      bottomNavScroll.onScroll(event);
-      feedPrefetch.onScroll(event);
-    },
-    [bottomNavScroll, feedPrefetch]
+      injectDiscoveryRows(injectAds(posts, availableAds, { interval: 5, leadIn: 3 }), discovery.modules, {
+        dismissed: discovery.dismissed,
+        rotationOffset: discovery.rotationOffset
+      }),
+    [posts, availableAds, discovery.modules, discovery.dismissed, discovery.rotationOffset]
   );
 
   const handleHideAd = useCallback((ad: SponsoredAd) => {
@@ -397,32 +293,15 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     setStatusLoading(true);
     setStatusOffline(false);
     setStatusError("");
-    // Cache-first. The rail used to consult the cache only from the catch
-    // block, which means the copy on disk was reachable exclusively by failing
-    // — so a slow network showed empty circles for as long as it took, and a
-    // fast one showed them for as long as the round trip. Painting first turns
-    // both into a rail that is populated immediately and corrected in place.
-    let painted = false;
-    try {
-      const cached = await loadCachedStatusesSnapshot("for_you");
-      const cachedRail = cached.rail_items?.length ? cached.rail_items : cached.items || [];
-      if (cachedRail.length) {
-        setStatusItems(cachedRail);
-        setStatusAgeMs(cached.ageMs);
-        setStatusLoading(false);
-        painted = true;
-      }
-    } catch {
-      // A cache read that fails is not news; the network attempt below is the
-      // one whose failure the reader needs to hear about.
-    }
     try {
       const data = await listStatuses({ lane: "for_you" });
       const rail = data.rail_items?.length ? data.rail_items : data.items || [];
       setStatusItems(rail);
-      setStatusAgeMs(null);
     } catch (statusLoadError) {
-      if (painted) {
+      const cached = await loadCachedStatuses("for_you");
+      const rail = cached.rail_items?.length ? cached.rail_items : cached.items || [];
+      if (rail.length) {
+        setStatusItems(rail);
         setStatusOffline(true);
       } else {
         setStatusError(statusLoadError instanceof Error ? statusLoadError.message : "Status rail unavailable.");
@@ -448,62 +327,18 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         loadingMoreRef.current = true;
         setLoadingMore(true);
       }
-
-      // Cache-first, for `initial` only. A refresh is by definition a request
-      // to replace what is on screen, and `more` appends to it; repainting the
-      // cache under either would undo the reader's own action. Only the first
-      // load has nothing to lose and everything to gain.
-      //
-      // The generation counter guards the one ordering that matters: a tab
-      // switch that fires a second load while this cache read is still on the
-      // bridge. Without it the stale read lands afterwards and paints the
-      // previous tab's posts into the new tab.
-      const generation = (loadGenerationRef.current += 1);
-      let paintedFromCache = false;
-      if (mode === "initial") {
-        try {
-          const cached = await loadCachedFeedSnapshot(feedKey);
-          if (cached.posts.length && generation === loadGenerationRef.current) {
-            setPosts(cached.posts);
-            setFeedAgeMs(cached.ageMs);
-            offsetRef.current = cached.posts.length;
-            setLoading(false);
-            paintedFromCache = true;
-          }
-        } catch {
-          // Nothing usable on disk. The network attempt below is the real one.
-        }
-      }
-
       try {
         const data = await listFeed({ feed: feedKey, tab: feedKey, offset: nextOffset, limit: 20 });
-        // Superseded: a newer load owns the screen now. Returning early here
-        // would skip the `finally`, so the outcome is discarded rather than the
-        // function abandoned.
-        if (generation === loadGenerationRef.current) {
-          setPosts((current) => (mode === "more" ? mergePosts(current, data.posts || []) : data.posts || []));
-          setFeedAgeMs(null);
-          offsetRef.current = Number(data.next_offset || nextOffset + (data.posts?.length || 0));
-          hasMoreRef.current = Boolean(data.has_more);
-        }
+        setPosts((current) => (mode === "more" ? mergePosts(current, data.posts || []) : data.posts || []));
+        offsetRef.current = Number(data.next_offset || nextOffset + (data.posts?.length || 0));
+        hasMoreRef.current = Boolean(data.has_more);
       } catch (feedError) {
-        if (generation === loadGenerationRef.current) {
-          // `refresh` did not paint from cache, so it still needs the fallback —
-          // a failed pull-to-refresh on a cold list should show what is on disk
-          // rather than an error over an empty screen.
-          const cached =
-            paintedFromCache || mode === "more"
-              ? { posts: [] as PulsePost[], ageMs: null }
-              : await loadCachedFeedSnapshot(feedKey);
-          if (paintedFromCache || cached.posts.length) {
-            if (cached.posts.length) {
-              setPosts(cached.posts);
-              setFeedAgeMs(cached.ageMs);
-            }
-            setOffline(true);
-          } else {
-            setError(feedError instanceof Error ? feedError.message : "PulseSoc feed is unavailable.");
-          }
+        const cached = await loadCachedFeed(feedKey);
+        if (cached.length && mode !== "more") {
+          setPosts(cached);
+          setOffline(true);
+        } else {
+          setError(feedError instanceof Error ? feedError.message : "PulseSoc feed is unavailable.");
         }
       } finally {
         setLoading(false);
@@ -578,15 +413,8 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     if (!spatialFeed) return;
     const row = feedRows[Math.min(spatialIndex, Math.max(0, feedRows.length - 1))];
     setActivePostId(row && row.type === "post" ? row.post.id : null);
-    // `commerce` belongs here for the same reason it belongs in the FlatList's
-    // viewability callback: this is the *other* writer of `viewableRowKeys`, and
-    // a row type missing from it is a row that can never report a visible
-    // impression on the spatial path. Home does not page spatially today, so
-    // omitting it was invisible rather than harmless.
     setViewableRowKeys(
-      row && (row.type === "ad" || row.type === "discovery" || row.type === "commerce")
-        ? new Set([row.key])
-        : new Set()
+      row && (row.type === "ad" || row.type === "discovery") ? new Set([row.key]) : new Set()
     );
   }, [spatialFeed, feedRows, spatialIndex]);
 
@@ -708,7 +536,15 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   }, [guard.run, updatePost]);
 
   const handleShare = useCallback(async (post: PulsePost) => {
-    await sharePulseObject(buildPostShareMetadata(post)).catch(() => undefined);
+    const author = post.author || post.user || {};
+    await sharePulseObject({
+      kind: "post",
+      url: pulsePostUrl(post.id),
+      title: post.title || "PulseSoc post",
+      description: post.body || post.text || post.content,
+      author: author.display_name || author.name || author.username || post.author_name,
+      previewImageUrl: post.thumbnail_url || post.image_url
+    }).catch(() => undefined);
   }, []);
 
   const handleInlineComment = useCallback(async (post: PulsePost, body: string) => {
@@ -909,13 +745,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
    * loaded a page or a badge poll landed. That only holds if the ~20 callbacks
    * below keep their identities across a parent render.
    */
-  /**
-   * The same destination Profile OS's Marketplace tile uses, deliberately. The
-   * header is the *discovery* entry and the tile is the *management* entry, but
-   * a second route object for one screen is how the two drift apart, so both
-   * name the registered tab.
-   */
-  const openMarketplaceTab = useCallback(() => navigation.navigate("Tabs", { screen: "Marketplace" }), [navigation]);
   const openSearchTab = useCallback(() => navigation.navigate("Tabs", { screen: "Search" }), [navigation]);
   const openActivityInbox = useCallback(() => navigation.navigate("ActivityInbox", { title: "Activity Inbox" }), [navigation]);
   const openProfileTab = useCallback(() => navigation.navigate("Tabs", { screen: "Profile" }), [navigation]);
@@ -1050,29 +879,12 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         />
       );
     }
-    if (row.type === "commerce") {
-      return (
-        <CommerceFeedCard
-          placements={row.placements}
-          isViewable={viewableRowKeys.has(row.key)}
-          visibleDwellMs={commerce.visibleDwellMs}
-          edgeInset={12}
-          navigation={navigation}
-          onFeedback={commerce.onFeedback}
-        />
-      );
-    }
     const item = row.post;
     return (
       <PostCard
         post={item}
-        onOpenCommerceProduct={commerceNavigation.onOpenCommerceProduct}
-        onOpenCommerceSeller={commerceNavigation.onOpenCommerceSeller}
         busy={guard.isItemBusy(item.id)}
-        // §24. Viewability fires all the way through a fling, so without this a
-        // hard flick would start and abandon a video per card it passed. No card
-        // is active mid-fling; the settle handler re-opens it.
-        active={activePostId === item.id && !feedFlinging}
+        active={activePostId === item.id}
         motionEnabled={ambientMotionEnabled}
         onOpen={handleOpenPost}
         onOpenLive={handleOpenPostLive}
@@ -1096,7 +908,6 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     activePostId,
     ambientMotionEnabled,
     currentUserId,
-    feedFlinging,
     discovery.actions,
     discovery.joinedGroupSlugs,
     discovery.pendingFriendKeys,
@@ -1121,9 +932,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     handleShare,
     isFocused,
     navigation,
-    viewableRowKeys,
-    commerce.visibleDwellMs,
-    commerce.onFeedback
+    viewableRowKeys
   ]);
 
   const renderFeedItem = useCallback(
@@ -1176,13 +985,10 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             statusItems={statusItems}
             statusLoading={statusLoading}
             statusOffline={statusOffline}
-            statusAgeMs={statusAgeMs}
             statusError={statusError}
             posts={posts}
             offline={offline}
-            ageMs={feedAgeMs}
             onOpenDrawer={openDrawer}
-            onOpenMarketplace={openMarketplaceTab}
             onOpenSearch={openSearchTab}
             onOpenActivity={openActivityInbox}
             onOpenProfile={openProfileTab}
@@ -1279,9 +1085,8 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         removeClippedSubviews
         onEndReached={loadMore}
         onEndReachedThreshold={0.35}
-        onScroll={onFeedScroll}
+        onScroll={bottomNavScroll.onScroll}
         onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
-        onMomentumScrollEnd={feedPrefetch.onScrollSettled}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
       />
       <MasterNavigationDrawer visible={drawerOpen} onClose={closeDrawer} onOpenRoute={openHomeRoute} />
@@ -1295,13 +1100,10 @@ const HomeHeader = memo(function HomeHeader({
   statusItems,
   statusLoading,
   statusOffline,
-  statusAgeMs,
   statusError,
   posts,
   offline,
-  ageMs,
   onOpenDrawer,
-  onOpenMarketplace,
   onOpenSearch,
   onOpenActivity,
   onOpenProfile,
@@ -1332,13 +1134,10 @@ const HomeHeader = memo(function HomeHeader({
   statusItems: PulseStatus[];
   statusLoading: boolean;
   statusOffline: boolean;
-  statusAgeMs: number | null;
   statusError: string;
   posts: PulsePost[];
   offline: boolean;
-  ageMs: number | null;
   onOpenDrawer: () => void;
-  onOpenMarketplace: () => void;
   onOpenSearch: () => void;
   onOpenActivity: () => void;
   onOpenProfile: () => void;
@@ -1369,7 +1168,7 @@ const HomeHeader = memo(function HomeHeader({
   const wideCanvas = width >= 900;
   return (
     <View style={styles.header}>
-      <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenMarketplace={onOpenMarketplace} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} badges={badges} identity={identity} />
+      <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} badges={badges} identity={identity} />
       <View style={[styles.homeCanvas, wideCanvas && styles.homeCanvasWide]}>
         {wideCanvas ? <HomeCommandRail onOpenRoute={onOpenRoute} onOpenPulseRadio={onOpenRadioLibrary} /> : null}
         <View style={styles.homePrimaryColumn}>
@@ -1378,7 +1177,6 @@ const HomeHeader = memo(function HomeHeader({
             items={statusItems}
             loading={statusLoading}
             offline={statusOffline}
-            ageMs={statusAgeMs}
             error={statusError}
             onAddStatus={onAddStatus}
             onOpenStatus={onOpenStatus}
@@ -1396,11 +1194,6 @@ const HomeHeader = memo(function HomeHeader({
             onOpenRoute={onOpenRoute}
             onOpenPreview={onOpenPreview}
           />
-          {offline ? (
-            <Text style={styles.offlinePill} testID="home-feed-offline-pill">
-              {withCachedAge("Offline — showing saved posts", ageMs)}
-            </Text>
-          ) : null}
           <View style={styles.feedTabsWrap}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.feedTabs}>
               {feedTabs.map((tab) => (
@@ -1498,7 +1291,6 @@ function HomeCommandRail({
 
 function HomeTopBar({
   onOpenDrawer,
-  onOpenMarketplace,
   onOpenSearch,
   onOpenActivity,
   onOpenProfile,
@@ -1506,7 +1298,6 @@ function HomeTopBar({
   identity
 }: {
   onOpenDrawer: () => void;
-  onOpenMarketplace: () => void;
   onOpenSearch: () => void;
   onOpenActivity: () => void;
   onOpenProfile: () => void;
@@ -1519,7 +1310,6 @@ function HomeTopBar({
       mode="home"
       showDrawer
       onOpenDrawer={onOpenDrawer}
-      onOpenMarketplace={onOpenMarketplace}
       onOpenSearch={onOpenSearch}
       onOpenActivity={onOpenActivity}
       onOpenProfile={onOpenProfile}
@@ -1570,19 +1360,8 @@ function PulseNetworkHero({
       : "Signals are loading quietly so the feed stays fast.";
   return (
     <LogiNexusPanel style={[styles.hero, compact && styles.heroCompact]} tone="default">
-      {/*
-        `surface="blueGraphite"` is what makes this card the approved material
-        rather than the near-black it used to be. The colour was never in
-        `styles.hero` — that is `rgba(5, 15, 29, 0.03)`, effectively clear — nor
-        in `LogiNexusPanel`'s `glassStrong`, which the `style` array above
-        overrides. It was this layer's own opaque base gradient, which is why
-        lightening the card by editing the panel would do nothing at all.
-
-        Deliberately a prop and not a component-wide change: `ReelsScreen`
-        renders the same component full-screen behind video and has to stay dark.
-      */}
       <View pointerEvents="none" style={styles.heroAtmosphere}>
-        <GalacticAtmosphere variant="feed" surface="blueGraphite" testID="pulse-network-galactic-atmosphere" />
+        <GalacticAtmosphere variant="feed" testID="pulse-network-galactic-atmosphere" />
       </View>
       <View style={styles.heroTopLine}>
         <LogiNexusBadge label="Pulse Network" />
@@ -1806,7 +1585,6 @@ function StatusRail({
   items,
   loading,
   offline,
-  ageMs,
   error,
   onAddStatus,
   onOpenStatus,
@@ -1815,7 +1593,6 @@ function StatusRail({
   items: PulseStatus[];
   loading: boolean;
   offline: boolean;
-  ageMs: number | null;
   error: string;
   onAddStatus: () => void;
   onOpenStatus: (status: PulseStatus) => void;
@@ -1856,9 +1633,7 @@ function StatusRail({
           </Pressable>
         ))}
       </ScrollView>
-      {offline ? (
-        <Text style={styles.statusOffline}>{withCachedAge("Status rail is using cached metadata", ageMs)}</Text>
-      ) : null}
+      {offline ? <Text style={styles.statusOffline}>Status rail is using cached metadata.</Text> : null}
     </View>
   );
 }

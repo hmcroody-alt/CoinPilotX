@@ -47,13 +47,7 @@ export type ProgressCenterSection =
 export type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
-  /**
-   * `email` prefills the field and `intent` picks which action leads. Login
-   * sends both when it is bounced for an unconfirmed account, so the user lands
-   * on Resend with their address already typed instead of re-deriving why they
-   * were refused.
-   */
-  AccountRecovery: { email?: string; intent?: "password" | "verification" } | undefined;
+  AccountRecovery: undefined;
 };
 
 export type AppTabParamList = {
@@ -370,26 +364,7 @@ export type RootStackParamList = {
    * unread total is the same number the header bells show.
    */
   BusinessOsActivity: { title?: string; filter?: "all" | "social" | "marketplace" | "orders" | "system" } | undefined;
-  /**
-   * `mode: "product"` is the single-product editor, and it is the only mode that
-   * *requires* `listingId`. Store's Edit used to send `mode: "create"` with a
-   * listing id: the id was honoured, but `create` renders the Listings hub above
-   * the panel holding the editor, so the merchant landed on a generic dashboard
-   * with their product three panels down. `product` renders that panel alone.
-   *
-   * `section` deep-links to a blocker's fix (see `storeFixTarget`), so "Finish
-   * listing" opens the editor already focused on the thing that is missing
-   * instead of at the top of the form.
-   */
-  SellerStore:
-    | {
-        title?: string;
-        mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders" | "product";
-        sellerId?: string;
-        listingId?: number;
-        section?: string;
-      }
-    | undefined;
+  SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders"; sellerId?: string; listingId?: number } | undefined;
   /**
    * Dropshipping. Nine routes rather than one because the merchant journey has
    * nine distinct decisions in it, and the layers they act on are genuinely
@@ -406,22 +381,10 @@ export type RootStackParamList = {
   DropshippingCatalog: { connectionId: string; title?: string };
   DropshippingProduct: { connectionId: string; externalProductId: string; title?: string };
   DropshippingCart: { connectionId: string; title?: string };
-  /**
-   * Import settings. No `connectionId`, and that is the design: the pricing rule,
-   * auto-publish and Marketplace distribution are properties of the *storefront*,
-   * so a merchant with two suppliers sets them once.
-   */
-  DropshippingImportPolicy: { title?: string } | undefined;
   DropshippingProducts: { connectionId: string; title?: string };
   /** `listingId` is a PulseSoc listing id — the draft, not the supplier product. */
   DropshippingDraft: { connectionId: string; listingId: number; title?: string };
-  // `connectionId` is optional rather than required because the supplier
-  // obligations list is per connection, but this screen is still reachable
-  // before a supplier is chosen — from a deep link, or from the hub with none
-  // connected. It renders EMPTY with its own copy in that case, which is the
-  // honest answer. Making the param required would turn the reachable state
-  // into a runtime surprise instead of a handled one.
-  DropshippingOrders: { connectionId?: string; title?: string } | undefined;
+  DropshippingOrders: { title?: string } | undefined;
   DropshippingSync: { connectionId: string; title?: string };
   BuyerOrders: { orderId?: number; source?: string; title?: string } | undefined;
   BuyerOrderDetail: { orderId: number; source?: string; title?: string };
@@ -556,25 +519,33 @@ export type RootStackParamList = {
     title?: string;
   } | undefined;
   AssetDetail: { symbol: string; name?: string; title?: string };
-  // Private Office and the three things it contains: Relationship Intelligence
-  // (`PrivatePeople`), Private Meetings, and Office Security. Nothing here
-  // takes an entitlement parameter: what the member may see is resolved
-  // server-side on entry, and a param could only ever disagree with that answer
-  // while looking authoritative. `title` is the same optional override every
-  // titled route has.
-  //
-  // Ten route names used to sit in this block — facts, operations, the capital
-  // graph and its entity view, documents, briefings, shield, the concierge desk
-  // and the two conversation routes. They are gone rather than kept as unused
-  // entries, because a name in this map is what makes `navigate("PrivateFacts")`
-  // typecheck: leaving them would keep every call site compiling against a
-  // screen that no longer exists, and the failure would arrive at runtime on a
-  // member's phone instead of in CI.
+  // Private Office and its first real capability. Neither route takes an
+  // entitlement parameter: what the member may see is resolved server-side on
+  // entry, and a param could only ever disagree with that answer while looking
+  // authoritative. `title` is the same optional override every titled route has.
   PrivateOffice: { title?: string } | undefined;
+  PrivateFacts: { title?: string; create?: boolean } | undefined;
+  PrivateOperations: { view?: string; title?: string } | undefined;
+  CapitalGraph: { view?: string; title?: string } | undefined;
+  CapitalEntity: { id: number; view?: string; title?: string };
   PrivateOfficeSecurity: { title?: string } | undefined;
+  PrivateDocuments: { title?: string } | undefined;
   PrivatePeople: { title?: string } | undefined;
+  PrivateBriefings: { title?: string } | undefined;
+  PrivateShield: { title?: string } | undefined;
+  PrivateConcierge: { title?: string } | undefined;
   PrivateMeetings: { title?: string } | undefined;
   PrivateMeetingRoom: { ref?: string; title?: string } | undefined;
+  // Private Conversations. `scope` is a *filter* the list may open pre-applied,
+  // not an authority: the server decides which threads exist for this member
+  // and an unrecognized value falls back to "all" rather than to an empty list.
+  //
+  // There is no thread route here on purpose. An Office conversation is a
+  // canonical conversation, so it opens in `Chat` — the one thread screen. Info
+  // is the only genuinely new surface, and takes the same conversation id the
+  // canonical ledger uses.
+  PrivateConversations: { scope?: string; title?: string } | undefined;
+  PrivateConversationInfo: { conversationId: number; title?: string };
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   AccountSettings: { title?: string } | undefined;
   AccountSecurity: { title?: string } | undefined;
@@ -637,7 +608,6 @@ export type RootStackParamList = {
   AppearanceSettings: { highlight?: string } | undefined;
   AccessibilitySettings: { highlight?: string } | undefined;
   LanguageSettings: { highlight?: string } | undefined;
-  CommerceSettings: { highlight?: string } | undefined;
   StorageSettings: { highlight?: string } | undefined;
   PermissionsSettings: { highlight?: string } | undefined;
   PrivacySettings: { highlight?: string } | undefined;

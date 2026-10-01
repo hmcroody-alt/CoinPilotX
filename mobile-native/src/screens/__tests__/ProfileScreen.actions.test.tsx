@@ -8,18 +8,13 @@ const mockListFeed = jest.fn();
 const mockAuthState = { user: { user_id: 7 } };
 const mockGetMyProfile = jest.fn(async () => ({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", public_player_id: "roodycherie", post_count: 4 }));
 const mockGetPublicProfile = jest.fn(async (..._args: unknown[]) => ({ user_id: 8, display_name: "Maria Cherie", username: "mariacherie", public_player_id: "Pilot-8008", post_count: 5 }));
-const mockLoadCachedProfileEntry = jest.fn();
-
-/** The `{ value, storedAt, ageMs }` envelope `loadCachedProfileEntry` resolves to. */
-function cachedEntry(value: Record<string, unknown>, ageMs = 60_000) {
-  return { value, storedAt: Date.now() - ageMs, ageMs };
-}
+const mockLoadCachedProfile = jest.fn();
 
 jest.mock("../../api/profile", () => ({
   getMyProfile: () => mockGetMyProfile(),
   getPublicProfile: (...args: unknown[]) => mockGetPublicProfile(...args),
   listPublicProfilePosts: (...args: unknown[]) => mockListFeed(...args),
-  loadCachedProfileEntry: (...args: unknown[]) => mockLoadCachedProfileEntry(...args),
+  loadCachedProfile: (...args: unknown[]) => mockLoadCachedProfile(...args),
   profileErrorState: jest.fn(() => ({ title: "Error", body: "Error", retryable: true, offline: false })),
   toggleProfileFollow: jest.fn()
 }));
@@ -28,12 +23,7 @@ jest.mock("../../api/feed", () => ({
   pulsePostUrl: jest.fn(), reactToPost: jest.fn(), repostPost: jest.fn(), deletePost: jest.fn(), savablePostId: (post: PulsePost) => post.id
 }));
 jest.mock("../../components/ProfileHeader", () => ({ ProfileHeader: () => null }));
-// Profile paints itself with `ProfileCanvas` now, not with the decorative
-// atmosphere. The mock this replaced named a component the screen no longer
-// renders, so it stubbed nothing and quietly implied the old layer was still
-// there. Stubbed for the original reason: these files assert behaviour, and the
-// canvas has its own assertions in `ProfileScreen.graphite.test.tsx`.
-jest.mock("../../components/ProfileCanvas", () => ({ ProfileCanvas: () => null }));
+jest.mock("../../components/GalacticAtmosphere", () => ({ GalacticAtmosphere: () => null }));
 jest.mock("../../components/Screen", () => ({
   LogiNexusScreenShell: ({ children }: { children: React.ReactNode }) => children,
   LogiNexusStatePanel: ({ title }: { title: string }) => title
@@ -69,7 +59,7 @@ describe("Profile posts grid", () => {
     jest.clearAllMocks();
     mockAuthState.user = { user_id: 7 };
     mockGetMyProfile.mockResolvedValue({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", public_player_id: "roodycherie", post_count: 4 });
-    mockLoadCachedProfileEntry.mockResolvedValue(null);
+    mockLoadCachedProfile.mockResolvedValue(null);
     mockListFeed.mockResolvedValue({ posts, next_offset: 4, has_more: false });
   });
 
@@ -120,16 +110,14 @@ describe("Profile posts grid", () => {
     const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
 
     await waitFor(() => expect(screen.getByText(/Profile content temporarily unavailable/)).toBeTruthy());
-    // Matched loosely: the banner now carries an age suffix, and an exact-string
-    // query would pass for the wrong reason if the banner came back.
-    expect(screen.queryByText(/Showing saved profile/)).toBeNull();
+    expect(screen.queryByText("Showing saved profile")).toBeNull();
     expect(screen.queryByText(/No posts yet/)).toBeNull();
     // The cache IS read now — once, concurrently, to shorten the blank-shell
     // window — but it must not win against a canonical profile that arrived.
     // "Showing saved profile" being absent above is what proves it did not win;
     // this pins the remaining half, that the read happens exactly once and the
     // error path does not go back to disk a second time.
-    expect(mockLoadCachedProfileEntry).toHaveBeenCalledTimes(1);
+    expect(mockLoadCachedProfile).toHaveBeenCalledTimes(1);
   });
 
   it("retries canonical profile content in place and replaces the unavailable state", async () => {
@@ -146,15 +134,11 @@ describe("Profile posts grid", () => {
 
   it("does not describe an incomplete saved-profile fallback as having no posts", async () => {
     mockGetMyProfile.mockRejectedValueOnce(new Error("network unavailable"));
-    mockLoadCachedProfileEntry.mockResolvedValueOnce(
-      cachedEntry({ user_id: 7, display_name: "Saved Roody", post_count: 4 }, 12 * 60_000)
-    );
+    mockLoadCachedProfile.mockResolvedValueOnce({ user_id: 7, display_name: "Saved Roody", post_count: 4 });
 
     const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
 
-    // The banner states WHEN, not just THAT. "Saved" without an age leaves the
-    // reader unable to tell an hour-old profile from a month-old one.
-    await waitFor(() => expect(screen.getByText("Showing saved profile · 12m ago")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Showing saved profile")).toBeTruthy());
     expect(screen.getByText(/Profile content temporarily unavailable/)).toBeTruthy();
     expect(screen.queryByText(/No posts yet/)).toBeNull();
   });

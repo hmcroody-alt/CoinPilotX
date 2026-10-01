@@ -1,16 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef } from "react";
+import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { PulseProfile, profileWebUrl } from "../api/profile";
 import { hasMembershipMark } from "../entitlements/membershipMark";
 import { colors } from "../theme/colors";
-import { profileSurface } from "../theme/profileGraphite";
-import { profileNeon, resolveProfileAccent, usesNeonRamp } from "../theme/profileNeon";
+import { profileNeon } from "../theme/profileNeon";
 import { premiumTheme } from "../theme/premiumTheme";
 import { presenceTheme } from "../theme/presenceTheme";
 import { progressTheme } from "../theme/progressTheme";
+import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { ContentTranslation } from "./ContentTranslation";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -53,6 +53,15 @@ type ModuleDef = {
    * distinguishable. See `theme/progressTheme.ts` and `theme/premiumTheme.ts`.
    */
   accent?: string;
+  /**
+   * Soft halo behind the icon. Premium only.
+   *
+   * A shadow rather than a brighter fill, and a static one rather than an
+   * animation: the tile has to read as the premium entry point without becoming
+   * the brightest thing on a dark profile, and a pulsing tile would be both
+   * cheap and a reduced-motion violation.
+   */
+  glow?: string;
 };
 
 /**
@@ -89,15 +98,15 @@ const MODULES: ModuleDef[] = [
   { key: "marketplace", label: "Marketplace", icon: "storefront-outline" },
   { key: "events", label: "Events", icon: "calendar-outline" },
   { key: "business", label: "Business", icon: "briefcase-outline" },
-  // Fixed brand teal, like Progress/Premium survive the accent override:
-  // Presence is the door to the member's professional identities and must stay
-  // legible on any profile theme. Id-card icon: identity, not rank.
-  { key: "presence", label: "Presence", icon: "id-card-outline", accent: presenceTheme.teal },
+  // Fixed brand teal + static glow, like Progress/Premium survive the accent
+  // override: Presence is the door to the member's professional identities and
+  // must stay legible on any profile theme. Id-card icon: identity, not rank.
+  { key: "presence", label: "Presence", icon: "id-card-outline", accent: presenceTheme.teal, glow: presenceTheme.glow },
   { key: "memories", label: "Memories", icon: "time-outline" },
   { key: "progress", label: "Progress", icon: "trending-up-outline", accent: progressTheme.violet },
   // Diamond, not a crown: a crown reads as rank over other members, which is
   // exactly what this tile must not imply. Premium is an account, not a status.
-  { key: "premium", label: "Premium", icon: "diamond-outline", accent: premiumTheme.gold }
+  { key: "premium", label: "Premium", icon: "diamond-outline", accent: premiumTheme.gold, glow: premiumTheme.glow }
 ];
 
 const MODULE_BY_KEY = MODULES.reduce<Record<ProfileModuleKey, ModuleDef>>((map, module) => {
@@ -146,26 +155,19 @@ type ProfileHeaderProps = {
    * the grid ("Maria's Profile OS"). Empty on your own profile.
    */
   moduleOwnerName?: string;
-  /**
-   * Whether this viewer may change the identity media on this profile.
-   *
-   * Separate from `owner` on purpose. `owner` is "the Profile tab opened with no
-   * route target", which is false when you reach your own profile by tapping
-   * your own name in the feed — and on that screen the edit controls still
-   * belong to you. The screen passes the server-settled answer instead. The
-   * backend re-checks ownership on every upload regardless; this only decides
-   * what is drawn.
-   */
-  canEditMedia?: boolean;
-  onEditCover?: () => void;
-  onEditAvatar?: () => void;
-  /** An upload is in flight. The control stays put and reports itself busy. */
-  avatarBusy?: boolean;
-  coverBusy?: boolean;
 };
 
 function haptic() {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
+}
+
+function createFloat(value: Animated.Value, duration: number) {
+  return Animated.loop(
+    Animated.sequence([
+      Animated.timing(value, { toValue: 1, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(value, { toValue: 0, duration, easing: Easing.inOut(Easing.sin), useNativeDriver: true })
+    ])
+  );
 }
 
 export function ProfileHeader({
@@ -187,21 +189,8 @@ export function ProfileHeader({
   onModulePress,
   moduleKeys,
   moduleState,
-  moduleOwnerName,
-  canEditMedia,
-  onEditCover,
-  onEditAvatar,
-  avatarBusy,
-  coverBusy
+  moduleOwnerName
 }: ProfileHeaderProps) {
-  // `profileSurface`, not `resolveProfileSurface` wrapped in a `useMemo`: the
-  // cache lives in the token module and is keyed on the palette values the
-  // resolver reads, so this component, its four sub-components and
-  // `ProfileCanvas` all share one object per theme. A `useMemo` here would have
-  // had to declare six palette fields as dependencies to be honest about what it
-  // reads, and would still have allocated a second object for each of the small
-  // components that cannot see this scope.
-  const surface = profileSurface(colors);
   const modules = moduleKeys ? moduleKeys.map((key) => MODULE_BY_KEY[key]).filter(Boolean) : MODULES;
   const modulesTitle = moduleOwnerName ? `${possessiveName(moduleOwnerName)} Profile OS` : "Profile OS";
   // Public identifiers only. `publicKey` is the route's lookup key, and
@@ -220,68 +209,47 @@ export function ProfileHeader({
   const verified = Boolean(profile.verified_badge || profile.verification_status === "verified");
   // Blue is the default identity colour of the profile surface; a profile
   // owner's chosen accent still overrides it, so customised profiles are
-  // untouched. See theme/profileNeon.ts for why this is not a global change,
-  // and why the server's default accent has to be resolved rather than trusted.
-  const accent = resolveProfileAccent(profile.theme?.accent_color);
-  const neonRamp = usesNeonRamp(accent);
+  // untouched. See theme/profileNeon.ts for why this is not a global change.
+  const accent = profile.theme?.accent_color || profileNeon.electric;
   const tierLabel = premium ? String(profile.premium_status || "premium").replace(/_/g, " ") : "";
   const online = String(profile.account_status || "active").toLowerCase() === "active";
   const automated = profile.automated === true || profile.account_type === "PULSESOC_AUTOMATED";
-  // A first-party *designed banner* rather than a photograph: shown whole, at
-  // its own shape, instead of cropped to fill the hero. Both facts come from the
-  // server (`brand_cover_fit`, `brand_cover_aspect_ratio`).
-  //
-  // This was a filename match — `public_player_id === "pulsesoc_insight"` and
-  // `cover_url.includes("pulsesoc-insight-cover-20260825.png")` — with the shape
-  // hard-coded as `aspectRatio: 1600 / 640` in the stylesheet below. Two things
-  // were wrong with that. The dated filename *is* the cache-busting mechanism
-  // for brand assets, so shipping new artwork for that account would have
-  // silently reverted its cover to a crop, with nothing failing to say so. And a
-  // second official account could not be given the treatment at all without an
-  // app release, which is precisely what @pulsedrop needed.
-  //
-  // The ratio is required, not defaulted: a fitted box has to know its height,
-  // and inventing one would letterbox or clip the banner by a guess. A server
-  // that asks for `contain` without a usable ratio gets the ordinary fill, which
-  // is a worse crop but never a wrong one.
-  const brandCoverRatio = profile.brand_cover_aspect_ratio;
-  const brandCover = profile.brand_cover_fit === "contain"
-    && Boolean(profile.cover_url)
-    && typeof brandCoverRatio === "number"
-    && Number.isFinite(brandCoverRatio)
-    && brandCoverRatio > 0;
-  // The energy field below is a *generated cover* for accounts that never set
-  // one, so its normal strength is calibrated to be the image rather than to
-  // sit over one. When the user has supplied a photo the same geometry drops to
-  // framing intensity: the cover is the user's content and has to win.
-  //
-  // Stepping down on `cover_url` alone dims the field over a photo that never
-  // arrives, which is strictly worse than before — the decoration is the only
-  // thing lighting the hero in that case. Keying on "has not errored" is not
-  // enough either: a cover request that is cancelled rather than failed (a
-  // remount mid-flight reports NSURLError -999) never reaches `onError`, so the
-  // field stays dim forever behind nothing. The step-down therefore waits for
-  // the picture to actually arrive, and the field is the placeholder until it
-  // does.
-  const coverUrl = brandCover ? "" : profile.cover_url || "";
-  const [coverLoaded, setCoverLoaded] = useState(false);
-  useEffect(() => { setCoverLoaded(false); }, [coverUrl]);
-  const hasCover = Boolean(coverUrl) && coverLoaded;
+  const galacticAccountCover = profile.public_player_id === "pulsesoc_insight"
+    && Boolean(profile.cover_url?.includes("pulsesoc-insight-cover-20260825.png"));
 
-  // Four ambient loops used to run here for the life of the screen: a breathing
-  // avatar aura, two drifting nebulae and an expanding wave. All four are gone.
-  //
-  // They were the performance cost of this surface and they were also the reason
-  // reduced motion needed a branch at all — a permanently animating decoration
-  // has to be special-cased forever, and the only users who ever saw the
-  // "correct" static version were the ones who had asked for less motion. With
-  // the loops removed the hero is static for everyone, so the reduced-motion
-  // behaviour is now the *only* behaviour rather than an exception path, and
-  // there is no per-frame work on the profile at rest.
-  //
-  // What remains animated is scroll-driven only: the parallax and compression
-  // below are gestures the user is performing, they run on the native driver,
-  // and they stop when the finger does.
+  const pulse = useRef(new Animated.Value(0)).current;
+  const float1 = useRef(new Animated.Value(0)).current;
+  const float2 = useRef(new Animated.Value(0)).current;
+  const wave = useRef(new Animated.Value(0)).current;
+  const reducedMotion = useLogiNexusReducedMotion() || profile.theme?.motion_level === "reduced";
+
+  useEffect(() => {
+    if (reducedMotion) {
+      [pulse, float1, float2, wave].forEach((value) => {
+        value.stopAnimation();
+        value.setValue(0);
+      });
+      return;
+    }
+    const breathing = profile.theme?.motion_level === "subtle" ? 4200 : 3000;
+    const animations = [
+      createLogiNexusAmbientPulse(pulse, { duration: breathing }),
+      createFloat(float1, 7200),
+      createFloat(float2, 9400),
+      createFloat(wave, 5200)
+    ];
+    animations.forEach((animation) => animation.start());
+    return () => animations.forEach((animation) => animation.stop());
+  }, [profile.theme?.motion_level, pulse, float1, float2, wave, reducedMotion]);
+
+  const auraOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.18, 0.5] });
+  const auraScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
+  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] });
+  const float1Y = float1.interpolate({ inputRange: [0, 1], outputRange: [0, -26] });
+  const float1X = float1.interpolate({ inputRange: [0, 1], outputRange: [0, 18] });
+  const float2Y = float2.interpolate({ inputRange: [0, 1], outputRange: [0, 22] });
+  const waveScale = wave.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.35] });
+  const waveOpacity = wave.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.35, 0.12, 0] });
 
   // Scroll-driven compression (native driver friendly: transform + opacity only).
   const scroll = scrollY ?? new Animated.Value(0);
@@ -294,21 +262,11 @@ export function ProfileHeader({
 
   const shareTarget = owner ? profile.public_player_id || profile.username : publicKey;
 
-  // Built here rather than inline so the omissions stay a single decision, and
-  // so the divider logic can key off real position.
-  //
-  // The follow counts drop out when the account has no social graph — not when
-  // it is automated. Those looked like the same condition while PulseSoc Insight
-  // was the only automated account: it lives at `user_id=0`, no follow row can
-  // point at it, and its follower count is undefined rather than zero, so
-  // printing "0 Followers" would have been a made-up fact. @pulsedrop is equally
-  // automated and genuinely followable, and keying on `automated` would have
-  // hidden its real, non-zero counts. The server answers the narrower question
-  // directly; `normalizeProfile` defaults it to true, so ordinary profiles and
-  // older servers are unaffected.
+  // Built here rather than inline so the automated-account omissions stay a
+  // single decision, and so the divider logic can key off real position.
   const statEntries: { key: ProfileStatKey; label: string; icon: keyof typeof Ionicons.glyphMap; value: number }[] = [
     { key: "posts", label: "Posts", icon: "grid-outline", value: profile.post_count || 0 },
-    ...(profile.has_social_graph !== false
+    ...(!automated
       ? ([
           { key: "followers", label: "Followers", icon: "people-outline", value: profile.follower_count || 0 },
           { key: "following", label: "Following", icon: "person-add-outline", value: profile.following_count || 0 }
@@ -320,41 +278,19 @@ export function ProfileHeader({
   return (
     <View style={styles.root} testID="profile-v6-header">
       {/* Immersive energy field */}
-      <View testID="profile-hero" style={[styles.hero, { height: PROFILE_HERO_HEIGHT }]} pointerEvents="none">
+      <View style={[styles.hero, { height: PROFILE_HERO_HEIGHT }]} pointerEvents="none">
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: fieldOpacity, transform: [{ translateY: bgTranslateY }, { scale: bgScale }] }]}>
-          {coverUrl ? (
-            <Image
-              testID="profile-cover-image"
-              source={{ uri: coverUrl }}
-              style={styles.coverImage}
-              resizeMode="cover"
-              onLoad={() => setCoverLoaded(true)}
-            />
-          ) : null}
-          {/* Over a real cover this ramp becomes a vignette, not a tint: the
-              centre — where a face sits — is left clear, and only the bottom
-              darkens, because the avatar and the page blend need that contrast.
-              The diagonal is kept for the generated field, where the gradient
-              IS the artwork. */}
-          <LinearGradient
-            colors={hasCover
-              ? [`${accent}1a`, "transparent", surface.coverScrim]
-              : [`${accent}33`, surface.coverFieldMid, surface.canvasTop]}
-            start={hasCover ? { x: 0.5, y: 0 } : { x: 0.1, y: 0 }}
-            end={hasCover ? { x: 0.5, y: 1 } : { x: 0.9, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={[styles.nebula, { backgroundColor: `${accent}${hasCover ? "14" : "2e"}` }]} />
-          <View style={[styles.nebulaTwo, { backgroundColor: `${profileNeon.violet}${hasCover ? "0f" : "22"}` }]} />
+          {profile.cover_url && !galacticAccountCover ? <Image source={{ uri: profile.cover_url }} style={styles.coverImage} resizeMode="cover" /> : null}
+          <LinearGradient colors={[`${accent}33`, "#050910f2", colors.background]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={StyleSheet.absoluteFill} />
+          <Animated.View style={[styles.nebula, { backgroundColor: `${accent}2e`, transform: [{ translateX: float1X }, { translateY: float1Y }] }]} />
+          <Animated.View style={[styles.nebulaTwo, { backgroundColor: `${profileNeon.violet}22`, transform: [{ translateY: float2Y }] }]} />
           {/* Planetary curve. A single oversized circle clipped by the hero's
               own overflow:hidden — no SVG, no image payload, one static view.
               The border is the lit limb; the fill is barely there so the name
-              above it never loses contrast. Over a cover the limb also drops
-              lower, so the brightest geometry on the screen stops crossing the
-              middle of the photo where the subject usually is. */}
-          <View testID="profile-generated-cover" style={[styles.horizon, hasCover && styles.horizonFramed, { borderColor: hasCover ? profileNeon.borderFramed : profileNeon.borderStrong, backgroundColor: hasCover ? profileNeon.fillFramed : profileNeon.fillSoft }]} pointerEvents="none" />
+              above it never loses contrast. */}
+          <View style={[styles.horizon, { borderColor: profileNeon.borderStrong, backgroundColor: profileNeon.fillSoft }]} pointerEvents="none" />
           <LinearGradient
-            colors={hasCover ? profileNeon.horizonFramed : profileNeon.horizon}
+            colors={profileNeon.horizon}
             start={{ x: 0.5, y: 1 }}
             end={{ x: 0.5, y: 0 }}
             style={styles.horizonGlow}
@@ -362,95 +298,34 @@ export function ProfileHeader({
           />
           {/* Light trails: two hairlines converging on the horizon. Static, so
               they cost one layout each and nothing per frame. */}
-          <View style={[styles.trail, styles.trailLeft, { backgroundColor: surface.divider }]} pointerEvents="none" />
-          <View style={[styles.trail, styles.trailRight, { backgroundColor: surface.divider }]} pointerEvents="none" />
-          {/* The expanding wave that used to sit here has been removed, not
-              dimmed. It ran continuously from the dead centre of the hero —
-              exactly where a face lands — and a permanently animating ring is
-              both the "no continuous animation" rule and a reduced-motion
-              exclusion that has to be special-cased forever. The field reads as
-              engineered without it; the horizon limb already does that job.
-
-              The full-bleed "grain" tint is gone for the same reason: over an
-              uploaded cover it was a translucent layer across the whole
-              photograph, which is the definition of the fog this surface is not
-              allowed to have, and 0.04 alpha is still fog. Under the generated
-              field it was doing nothing the gradient's own last stop does not
-              already do. */}
+          <View style={[styles.trail, styles.trailLeft, { backgroundColor: profileNeon.hairline }]} pointerEvents="none" />
+          <View style={[styles.trail, styles.trailRight, { backgroundColor: profileNeon.hairline }]} pointerEvents="none" />
+          <Animated.View style={[styles.pulseWave, { borderColor: `${accent}55`, opacity: waveOpacity, transform: [{ scale: waveScale }] }]} />
+          <View style={styles.grain} />
         </Animated.View>
-        {/* Blend into the page body. Evenly spaced stops put the ramp's start at
-            half the hero's height, which over a photo crushes everything below
-            the subject. Over a cover the same blend is confined to the bottom
-            quarter, where the avatar needs it and the picture is already gone. */}
-        <LinearGradient
-          colors={["transparent", "transparent", surface.canvasTop]}
-          locations={hasCover ? [0, 0.74, 1] : undefined}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-        {brandCover ? (
+        <LinearGradient colors={["transparent", "transparent", colors.background]} style={StyleSheet.absoluteFill} pointerEvents="none" />
+        {galacticAccountCover ? (
           <Image testID="automated-account-brand-cover" source={{ uri: profile.cover_url }}
-            style={[styles.automatedBrandCover, { aspectRatio: brandCoverRatio }]} resizeMode="contain" />
+            style={styles.automatedBrandCover} resizeMode="contain" />
         ) : null}
       </View>
 
       {/* Identity */}
       <View style={styles.body}>
         <View style={styles.avatarWrap}>
-          {/* Three concentric decorative rings became one.
-              The breathing outer aura and the static "orbit" ring were pure
-              decoration: they carried no state, and read as three haloes around
-              a photograph. What is kept is the ring that identifies — the
-              gradient identity ring — and every functional indicator around it
-              (verification seal, presence dot, camera control) is untouched.
-              Removing the aura also removes a permanent opacity+scale loop.
-
-              A gradient cannot be a `borderColor`, so on the neon ramp the ramp
-              fills a circle and a core the colour of the canvas is laid back over
-              the middle. The core is opaque canvas rather than transparent
-              because at this height the hero's blend is only ~62% of the way to
-              the page, so a transparent hole would show the cover through it. A
-              themed profile keeps the plain 2pt border, since one arbitrary
-              accent gives nothing to interpolate towards. */}
-          <View
-            style={[
-              styles.ringGlow,
-              neonRamp ? styles.ringGlowRamp : { borderColor: accent, borderWidth: 2 }
-            ]}
-            pointerEvents="none"
-          >
-            {neonRamp ? (
-              <>
-                <LinearGradient testID="profile-identity-ring" colors={profileNeon.identityRing} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={styles.ringRamp} />
-                <View style={[styles.ringCore, { backgroundColor: surface.canvasTop }]} />
-              </>
-            ) : null}
-          </View>
+          <Animated.View style={[styles.ringOuter, { borderColor: `${accent}55`, opacity: auraOpacity, transform: [{ scale: ringScale }] }]} />
+          {/* Static orbit ring between the breathing aura and the lit ring. It
+              is what makes the avatar read as engineered rather than merely
+              glowing, and being static it survives reduced motion unchanged. */}
+          <View style={[styles.ringOrbit, { borderColor: profileNeon.border, borderTopColor: profileNeon.cyan }]} pointerEvents="none" />
+          <Animated.View style={[styles.ringGlow, { shadowColor: accent, borderColor: accent, opacity: reducedMotion ? 0.9 : auraOpacity, transform: [{ scale: auraScale }] }]} />
           <Animated.View style={{ transform: [{ scale: avatarScale }, { translateY: avatarLift }] }}>
-            {canEditMedia ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Change profile photo"
-                accessibilityState={{ busy: Boolean(avatarBusy), disabled: Boolean(avatarBusy) }}
-                testID="profile-edit-avatar"
-                disabled={Boolean(avatarBusy)}
-                style={({ pressed }) => [pressed && styles.pressed]}
-                onPress={onEditAvatar}
-              >
-                <AvatarFace profile={profile} accent={accent} />
-                {/* Top-right: the two lower corners are already spoken for by the
-                    verification seal and the presence dot, and neither may move
-                    to make room for a control only the owner ever sees. */}
-                <View style={[styles.avatarCamera, { backgroundColor: accent, borderColor: colors.background }]}>
-                  {avatarBusy ? (
-                    <ActivityIndicator size="small" color={colors.background} />
-                  ) : (
-                    <Ionicons name="camera" size={15} color={colors.background} />
-                  )}
-                </View>
-              </Pressable>
+            {profile.avatar_url ? (
+              <Image source={{ uri: profile.avatar_url }} style={[styles.avatar, { borderColor: accent }]} />
             ) : (
-              <AvatarFace profile={profile} accent={accent} />
+              <View style={[styles.avatarFallback, { borderColor: accent }]}>
+                <Text style={styles.avatarText}>{(profile.display_name || "?").slice(0, 1).toUpperCase()}</Text>
+              </View>
             )}
             {verified ? (
               <View style={[styles.verifiedSeal, { backgroundColor: accent, borderColor: colors.background }]}>
@@ -500,16 +375,18 @@ export function ProfileHeader({
         {/* Stats. Same four counts from the same canonical fields — the panel
             around them is what changed, not the numbers. An automated account
             still hides follower/following, exactly as before. */}
-        <View style={[styles.stats, { backgroundColor: surface.raised, borderColor: surface.border }]} accessibilityLabel="Profile statistics">
-          {/* Lit top edge. A solid 1pt rule, not the left-to-right gradient that
-              was here: the requirement is a subtle *solid* highlight, and a
-              gradient rail on an elevated card is a second light source. One
-              fewer LinearGradient on the screen, too. */}
-          <View style={[styles.statsRail, { backgroundColor: surface.divider }]} pointerEvents="none" />
+        <View style={styles.stats} accessibilityLabel="Profile statistics">
+          <LinearGradient
+            colors={[profileNeon.borderStrong, "transparent"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.statsRail}
+            pointerEvents="none"
+          />
           <View style={styles.statsRow}>
             {statEntries.map((entry, index) => (
               <View key={entry.key} style={styles.statCell}>
-                {index > 0 ? <View style={[styles.statDivider, { backgroundColor: surface.divider }]} /> : null}
+                {index > 0 ? <View style={[styles.statDivider, { backgroundColor: profileNeon.hairline }]} /> : null}
                 <Stat
                   label={entry.label}
                   icon={entry.icon}
@@ -538,40 +415,14 @@ export function ProfileHeader({
               }).catch(() => undefined); }} />
             </>
           ) : automated ? (
-            // Message, Call and Video are withheld because there is nobody on
-            // the other end — that is true of any automated account and stays
-            // keyed on `automated`.
-            //
-            // Follow is not in that category. It was dropped here along with
-            // them, which was invisible while the only automated account lived
-            // at `user_id=0` and could not be followed by anyone. @pulsedrop
-            // exists as an ordinary `users` row for the sole purpose of being
-            // followable, so an automated profile with a social graph keeps the
-            // control; the server says which is which. Without this the account
-            // is a wall: the app would render a Followers count next to no way
-            // to become one.
-            <>
-              {profile.has_social_graph !== false ? (
-                <Action
-                  label={profile.viewer_follows ? "Following" : "Follow"}
-                  icon={profile.viewer_follows ? "checkmark-done-outline" : "person-add-outline"}
-                  primary={!profile.viewer_follows}
-                  accent={accent}
-                  selected={profile.viewer_follows}
-                  disabled={followBusy}
-                  onPress={() => { haptic(); onFollow?.(); }}
-                />
-              ) : null}
-              <Action label="Share" icon="share-outline" primary={profile.has_social_graph === false} accent={accent} onPress={() => { haptic(); sharePulseObject({
-                kind: "profile",
-                url: profileWebUrl(shareTarget),
-                // Was hard-coded to the one automated account that existed.
-                title: profile.display_name || profile.username || "PulseSoc profile",
-                description: profile.automation_disclosure || profile.bio,
-                author: profile.display_name,
-                previewImageUrl: profile.avatar_url
-              }).catch(() => undefined); }} />
-            </>
+            <Action label="Share" icon="share-outline" primary accent={accent} onPress={() => { haptic(); sharePulseObject({
+              kind: "profile",
+              url: profileWebUrl(shareTarget),
+              title: profile.display_name || "PulseSoc Insight",
+              description: profile.automation_disclosure || profile.bio,
+              author: profile.display_name,
+              previewImageUrl: profile.avatar_url
+            }).catch(() => undefined); }} />
           ) : (
             <>
               <Action label="Message" icon="chatbubble-ellipses-outline" primary accent={accent} onPress={() => { haptic(); onMessage?.(); }} />
@@ -600,64 +451,17 @@ export function ProfileHeader({
           </View>
         </View>
         <View style={styles.moduleGrid} accessibilityLabel="Profile modules">
-          {modules.map((module, index) => (
+          {modules.map((module) => (
             <Module
               key={module.key}
               def={module}
-              // Precedence, highest first: a live state tint (a billing problem
-              // turns Business amber and must win), the tile's own brand colour,
-              // then the palette. On the neon ramp the palette is a rotation by
-              // grid position rather than one accent twelve times; a themed
-              // profile still gets its single chosen colour throughout.
-              accent={moduleState?.[module.key]?.tint || module.accent
-                || (neonRamp ? profileNeon.tileCycle[index % profileNeon.tileCycle.length] : accent)}
+              accent={moduleState?.[module.key]?.tint || module.accent || accent}
               state={moduleState?.[module.key]}
               onPress={() => { haptic(); onModulePress?.(module.key); }}
             />
           ))}
         </View>
       </View>
-
-      {/* Last child of the header on purpose. The hero above is
-          `pointerEvents="none"` so nothing inside it can be tapped, and `body`
-          is a full-width transparent view that would otherwise swallow a touch
-          landing in the hero's lower-right corner. Rendering the control here
-          puts it above both for hit-testing without moving it visually. */}
-      {canEditMedia ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Edit cover photo"
-          accessibilityState={{ busy: Boolean(coverBusy), disabled: Boolean(coverBusy) }}
-          testID="profile-edit-cover"
-          disabled={Boolean(coverBusy)}
-          style={({ pressed }) => [styles.coverEdit, pressed && styles.pressed]}
-          onPress={onEditCover}
-        >
-          {coverBusy ? (
-            <ActivityIndicator size="small" color={colors.text} />
-          ) : (
-            <Ionicons name="camera-outline" size={15} color={colors.text} />
-          )}
-          <Text style={styles.coverEditText}>{coverBusy ? "Uploading…" : "Edit cover"}</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
-
-/**
- * The avatar itself — image, or the member's initial when there is none.
- *
- * Extracted so the owner's tappable version and a visitor's static version are
- * literally the same face, rather than two copies that can drift apart.
- */
-function AvatarFace({ profile, accent }: { profile: PulseProfile; accent: string }) {
-  if (profile.avatar_url) {
-    return <Image source={{ uri: profile.avatar_url }} style={[styles.avatar, { borderColor: accent }]} />;
-  }
-  return (
-    <View style={[styles.avatarFallback, { borderColor: accent }]}>
-      <Text style={styles.avatarText}>{(profile.display_name || "?").slice(0, 1).toUpperCase()}</Text>
     </View>
   );
 }
@@ -682,21 +486,17 @@ function Stat({ label, value, icon, accent, onPress }: { label: string; value: n
       onPress={onPress}
     >
       <Ionicons name={icon} size={13} color={profileNeon.cyan} style={styles.statIcon} />
-      {/* Colour comes from the stylesheet now rather than an inline
-          `colors.text`: the count is the loudest thing in the panel and has to
-          be the graphite ramp's primary weight (8.16:1 on `raised`), which is
-          not the same value as the global palette's text role. */}
-      <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{formatCount(value)}</Text>
+      <Text style={[styles.statValue, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>{formatCount(value)}</Text>
       <Text style={[styles.statLabel, { color: accent }]} numberOfLines={1}>{label}</Text>
     </Pressable>
   );
 }
 
 function Action({ label, icon, primary, selected, disabled, accent, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; primary?: boolean; selected?: boolean; disabled?: boolean; accent?: string; onPress?: () => void }) {
-  // Primary keeps dark-on-blue; secondary is text on an opaque elevated step
-  // with a steel edge. Selected ("Following") stays cyan so the follow state is
-  // legible without relying on the fill alone.
-  const tint = primary ? colors.background : selected ? profileNeon.cyan : profileSurface(colors).primaryText;
+  // Primary keeps dark-on-blue; secondary is text-on-glass with a neon edge.
+  // Selected ("Following") stays cyan so the follow state is legible without
+  // relying on the fill alone.
+  const tint = primary ? colors.background : selected ? profileNeon.cyan : colors.text;
   return (
     <Pressable
       accessibilityRole="button"
@@ -746,15 +546,13 @@ function Module({ def, accent, state, onPress }: { def: ModuleDef; accent: strin
       style={({ pressed }) => [styles.module, pressed && styles.pressed]}
       onPress={onPress}
     >
-      {/* Opaque graphite fill from the stylesheet; the accent is carried by the
-          border and the glyph only. The fill used to be `${accent}12` — a 7%
-          accent wash over the canvas — which is both a translucent layer over
-          the page and, at that alpha, indistinguishable from the page. An
-          elevated step plus an accent edge keeps the tile's identity (teal,
-          violet, gold, and the four-hue cycle) while making it read as a tile.
-          No `shadowColor`/`shadowRadius`: the two halo tiles are now identified
-          by their fixed accent, not by a permanent glow. */}
-      <View style={[styles.moduleIcon, { borderColor: `${accent}55` }]}>
+      <View
+        style={[
+          styles.moduleIcon,
+          { borderColor: `${accent}55`, backgroundColor: `${accent}12` },
+          def.glow ? [styles.moduleGlow, { shadowColor: def.glow }] : null
+        ]}
+      >
         <Ionicons name={def.icon} size={22} color={accent} />
       </View>
       <Text style={styles.moduleLabel} numberOfLines={1}>{def.label}</Text>
@@ -769,7 +567,7 @@ function Module({ def, accent, state, onPress }: { def: ModuleDef; accent: strin
 function Utility({ label, icon, onPress }: { label: string; icon: keyof typeof Ionicons.glyphMap; onPress?: () => void }) {
   return (
     <Pressable accessibilityRole="button" style={({ pressed }) => [styles.utility, pressed && styles.pressed]} onPress={onPress}>
-      <Ionicons name={icon} size={13} color={profileSurface(colors).secondaryText} />
+      <Ionicons name={icon} size={13} color={colors.muted} />
       <Text style={styles.utilityText}>{label}</Text>
     </Pressable>
   );
@@ -781,34 +579,19 @@ function formatCount(value: number) {
   return String(value);
 }
 
-const styles = createThemedStyles(() => {
-  // Resolved inside the factory, which is the memoised path: `createThemedStyles`
-  // rebuilds only when `applyPaletteToLegacyColors` bumps the palette epoch, so
-  // this runs once per theme change rather than once per render — and the small
-  // sub-components below (Stat, Action, Module, Utility) get the resolved surface
-  // through the stylesheet without each needing to resolve it themselves.
-  const surface = profileSurface(colors);
-  return {
-  // Transparent, not the canvas colour. `ProfileCanvas` draws one gradient behind
-  // the whole scroll view, and painting an opaque `canvasTop` here would end it
-  // at the bottom of the header — a visible seam against a gradient that is by
-  // then already partway to `canvasBottom`. One canvas, one run, no joins.
-  root: { backgroundColor: "transparent" },
+const styles = createThemedStyles(() => ({
+  root: { backgroundColor: colors.background },
   hero: { overflow: "hidden", width: "100%" },
   coverImage: { ...StyleSheet.absoluteFillObject, height: undefined, width: undefined },
-  // `aspectRatio` is supplied per profile from `brand_cover_aspect_ratio`; it is
-  // the one thing here that differs between covers, so it cannot live in a
-  // shared stylesheet.
-  automatedBrandCover: { position: "absolute", top: 0, width: "100%" },
+  automatedBrandCover: { position: "absolute", top: 0, width: "100%", aspectRatio: 1600 / 640 },
   nebula: { borderRadius: 220, height: 300, position: "absolute", right: -90, top: -70, width: 300 },
   nebulaTwo: { borderRadius: 160, height: 220, left: -70, position: "absolute", top: 40, width: 220 },
+  pulseWave: { borderRadius: 200, borderWidth: 1.5, height: 320, left: "50%", marginLeft: -160, marginTop: -160, position: "absolute", top: "50%", width: 320 },
+  grain: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(5,9,16,0.12)" },
   // Oversized circle: only the top arc falls inside the hero, so it reads as a
   // planet limb. Width is fixed rather than a percentage because a percentage
   // border-radius is not reliable across RN platforms.
   horizon: { borderRadius: 480, borderWidth: 1, height: 960, left: "50%", marginLeft: -480, position: "absolute", top: 196, width: 960 },
-  // 56px lower, which puts the lit limb in the bottom quarter of the hero
-  // instead of across its middle. Subject safety, not decoration.
-  horizonFramed: { top: 252 },
   horizonGlow: { bottom: 0, height: 132, left: 0, position: "absolute", right: 0 },
   trail: { position: "absolute", width: 1 },
   trailLeft: { height: 150, left: "22%", top: 40, transform: [{ rotate: "14deg" }] },
@@ -816,67 +599,34 @@ const styles = createThemedStyles(() => {
 
   body: { marginTop: -96, paddingHorizontal: 18 },
   avatarWrap: { alignItems: "center", justifyContent: "center", height: 128, width: 128 },
-  // No `shadowOpacity`/`shadowRadius` any more: a 22pt halo around the avatar was
-  // a large soft shadow on the brightest element of the screen, which the brief
-  // rules out, and the gradient ring already identifies the profile.
-  ringGlow: { borderRadius: 66, height: 132, position: "absolute", width: 132 },
-  ringGlowRamp: { overflow: "hidden" },
-  ringRamp: { ...StyleSheet.absoluteFillObject, borderRadius: 66 },
-  ringCore: { ...StyleSheet.absoluteFillObject, borderRadius: 64, bottom: 2, left: 2, right: 2, top: 2 },
-  avatar: { backgroundColor: surface.raised, borderRadius: 56, borderWidth: 3, height: 112, width: 112 },
-  avatarFallback: { alignItems: "center", backgroundColor: surface.raised, borderRadius: 56, borderWidth: 3, height: 112, justifyContent: "center", width: 112 },
-  avatarText: { color: surface.primaryText, fontSize: 40, fontWeight: "900" },
+  ringOuter: { borderRadius: 72, borderWidth: 1, height: 144, position: "absolute", width: 144 },
+  // One lit segment (borderTopColor) on an otherwise dim ring — the cheapest
+  // way to imply rotation without animating anything.
+  ringOrbit: { borderRadius: 69, borderWidth: 1, height: 138, position: "absolute", transform: [{ rotate: "-38deg" }], width: 138 },
+  ringGlow: { borderRadius: 66, borderWidth: 2, height: 132, position: "absolute", shadowOpacity: 0.9, shadowRadius: 22, width: 132 },
+  avatar: { backgroundColor: colors.surfaceRaised, borderRadius: 56, borderWidth: 3, height: 112, width: 112 },
+  avatarFallback: { alignItems: "center", backgroundColor: colors.surfaceRaised, borderRadius: 56, borderWidth: 3, height: 112, justifyContent: "center", width: 112 },
+  avatarText: { color: colors.text, fontSize: 40, fontWeight: "900" },
   verifiedSeal: { alignItems: "center", borderRadius: 14, borderWidth: 2, bottom: 6, height: 28, justifyContent: "center", position: "absolute", right: 2, width: 28 },
   presenceDot: { borderRadius: 9, borderWidth: 3, bottom: 8, height: 18, left: 6, position: "absolute", width: 18 },
-  avatarCamera: { alignItems: "center", borderRadius: 16, borderWidth: 2, height: 32, justifyContent: "center", position: "absolute", right: 0, top: 0, width: 32 },
-  // Sits in the hero's lower-right, clear of the avatar on the left.
-  //
-  // `chrome`, the darkest step, not `raised`: this is the one Profile control that
-  // sits on top of the member's own photograph rather than on the page, and chrome
-  // is the role for a surface that frames content. It was translucent navy glass
-  // before, which over an arbitrary photo is a different colour on every profile —
-  // an opaque step is the only version whose contrast is knowable.
-  coverEdit: {
-    alignItems: "center",
-    backgroundColor: surface.chrome,
-    borderColor: surface.border,
-    borderRadius: 999,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 6,
-    justifyContent: "center",
-    minHeight: profileNeon.tapTarget,
-    paddingHorizontal: 14,
-    position: "absolute",
-    right: 18,
-    top: PROFILE_HERO_HEIGHT - 84
-  },
-  coverEditText: { color: surface.primaryText, fontSize: 12, fontWeight: "900" },
 
   nameRow: { alignItems: "center", flexDirection: "row", gap: 6, marginTop: 14 },
-  name: { color: surface.primaryText, flexShrink: 1, fontSize: 28, fontWeight: "900", letterSpacing: 0.2 },
+  name: { color: colors.text, flexShrink: 1, fontSize: 28, fontWeight: "900", letterSpacing: 0.2 },
   nameVerified: { marginTop: 2 },
-  handle: { color: surface.secondaryText, fontSize: 14, marginTop: 3 },
+  handle: { color: colors.muted, fontSize: 14, marginTop: 3 },
   badges: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
   badge: { alignItems: "center", borderRadius: 999, borderWidth: 1, flexDirection: "row", gap: 4, paddingHorizontal: 9, paddingVertical: 5 },
   badgeText: { fontSize: 11, fontWeight: "900", textTransform: "capitalize" },
   automationDisclosure: { backgroundColor: "rgba(244, 183, 64, 0.08)", borderColor: "rgba(244, 183, 64, 0.45)", borderRadius: 14, borderWidth: 1, gap: 5, marginTop: 14, padding: 14 },
   automationLabel: { color: "#f4c96b", fontSize: 13, fontWeight: "900" },
-  automationTitle: { color: surface.primaryText, fontSize: 11, fontWeight: "900", letterSpacing: 0.6 },
-  automationTrustTitle: { color: surface.primaryText, fontSize: 12, fontWeight: "900", marginTop: 6 },
-  automationBody: { color: surface.secondaryText, fontSize: 13, lineHeight: 19 },
-  bio: { color: surface.primaryText, fontSize: 15, lineHeight: 22, marginTop: 12 },
-  bioMuted: { color: surface.secondaryText, fontSize: 15, lineHeight: 22, marginTop: 12 },
+  automationTitle: { color: colors.text, fontSize: 11, fontWeight: "900", letterSpacing: 0.6 },
+  automationTrustTitle: { color: colors.text, fontSize: 12, fontWeight: "900", marginTop: 6 },
+  automationBody: { color: colors.muted, fontSize: 13, lineHeight: 19 },
+  bio: { color: colors.text, fontSize: 15, lineHeight: 22, marginTop: 12 },
+  bioMuted: { color: colors.muted, fontSize: 15, lineHeight: 22, marginTop: 12 },
 
-  // The elevated step, opaque, with the steel edge and no shadow at all. The
-  // fill is +4.71pp HSL lightness over the canvas — the middle of the brief's
-  // 4–6% band — which is what separates the panel; the border finishes it, and
-  // is the only thing carrying the edge on the light themes where the page and
-  // the panel are the same colour.
-  stats: { backgroundColor: surface.raised, borderColor: surface.border, borderRadius: profileNeon.radius.panel, borderWidth: 1, marginTop: 18, overflow: "hidden" },
-  // Lit top edge of the panel. Solid, per the brief: it was a three-stop
-  // `LinearGradient`, which is a composited layer and a second gradient on the
-  // screen to buy a 2pt line.
+  stats: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border, borderRadius: profileNeon.radius.panel, borderWidth: 1, marginTop: 18, overflow: "hidden" },
+  // Lit top edge of the panel, fading left to right.
   statsRail: { height: 2, left: 0, position: "absolute", right: 0, top: 0 },
   statsRow: { flexDirection: "row" },
   statCell: { flex: 1, flexDirection: "row" },
@@ -884,39 +634,34 @@ const styles = createThemedStyles(() => {
   // not top/bottom: the divider is a relative-positioned flex child, so Yoga
   // reads those as offsets, applies only `top`, and pushes a full-height line
   // past the bottom edge.
-  //
-  // 1pt, not `StyleSheet.hairlineWidth`. On a 3x device hairline is 0.33pt, and
-  // the brief asks for *clear* column separation: a third of a point of a 16%
-  // divider over a mid graphite is not a line anyone can see.
-  statDivider: { marginVertical: 14, width: 1 },
+  statDivider: { marginVertical: 14, width: StyleSheet.hairlineWidth },
   stat: { alignItems: "center", flex: 1, justifyContent: "center", minHeight: 74, paddingHorizontal: 4, paddingVertical: 12 },
   statIcon: { marginBottom: 3, opacity: 0.85 },
-  statValue: { color: surface.primaryText, fontSize: 21, fontWeight: "900", letterSpacing: 0.2 },
+  statValue: { fontSize: 21, fontWeight: "900", letterSpacing: 0.2 },
   statLabel: { fontSize: 10, fontWeight: "800", letterSpacing: 0.7, marginTop: 3, textTransform: "uppercase" },
 
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 16 },
   action: { alignItems: "center", borderRadius: profileNeon.radius.action, borderWidth: 1, flexDirection: "row", flexGrow: 1, gap: 6, justifyContent: "center", minHeight: 48, minWidth: 92, overflow: "hidden", paddingHorizontal: 12 },
   actionPrimary: { borderColor: profileNeon.borderStrong },
   actionFill: { borderRadius: profileNeon.radius.action },
-  actionSecondary: { backgroundColor: surface.raised, borderColor: surface.border },
+  actionSecondary: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border },
   actionSelected: { backgroundColor: profileNeon.fillMedium, borderColor: profileNeon.cyan },
   actionText: { fontSize: 13, fontWeight: "900" },
 
   modulesHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", marginTop: 26 },
-  modulesTitle: { color: surface.primaryText, fontSize: 16, fontWeight: "900", letterSpacing: 0.3 },
+  modulesTitle: { color: colors.text, fontSize: 16, fontWeight: "900", letterSpacing: 0.3 },
   utilityRow: { flexDirection: "row", gap: 4 },
   utility: { alignItems: "center", flexDirection: "row", gap: 4, paddingHorizontal: 8, paddingVertical: 6 },
-  utilityText: { color: surface.secondaryText, fontSize: 11, fontWeight: "800" },
+  utilityText: { color: colors.muted, fontSize: 11, fontWeight: "800" },
   moduleGrid: { flexDirection: "row", flexWrap: "wrap", marginTop: 14 },
   module: { alignItems: "center", gap: 7, marginBottom: 18, width: "25%" },
-  // `raisedStrong`, the tile step, and it is why tiles sit on the canvas and
-  // never inside a card: it is 1.243:1 against the canvas but only 1.032:1
-  // against `raised`, so a tile drawn on the statistics panel would be invisible.
-  moduleIcon: { alignItems: "center", backgroundColor: surface.raisedStrong, borderRadius: 20, borderWidth: 1, height: 58, justifyContent: "center", width: 58 },
-  moduleLabel: { color: surface.secondaryText, fontSize: 11, fontWeight: "800" },
+  moduleIcon: { alignItems: "center", borderRadius: 20, borderWidth: 1, height: 58, justifyContent: "center", width: 58 },
+  moduleLabel: { color: colors.muted, fontSize: 11, fontWeight: "800" },
   moduleStatus: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5, marginTop: -3 },
+  // Elevation 0 on Android on purpose: the Material shadow is a drop shadow, so
+  // it would render as a grey smear under the tile rather than a gold halo.
+  moduleGlow: { elevation: 0, shadowOffset: { height: 0, width: 0 }, shadowOpacity: 0.55, shadowRadius: 10 },
 
   disabled: { opacity: 0.55 },
   pressed: { opacity: 0.7 }
-  };
-});
+}));

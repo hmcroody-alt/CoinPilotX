@@ -13,12 +13,8 @@ import {
   pauseMarketplaceSellerListing,
   resumeMarketplaceSellerListing,
   sellerStoreWebUrl,
-  submitMarketplaceSellerListing,
   updateMarketplaceSellerListing
 } from "../api/marketplace";
-import type { ListingFix } from "../api/marketplace";
-import { StoreReadinessPanel } from "../components/store";
-import { storeFixTarget } from "../marketplace/storeFixTarget";
 import { DIGITAL_COMMERCE_ENABLED } from "../api/config";
 import { mediaDisplayUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
@@ -46,17 +42,10 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const [orders, setOrders] = useState<MarketplaceSellerOrder[]>([]);
   const [liability, setLiability] = useState<Record<string, number>>({});
   const [termsAccepted, setTermsAccepted] = useState(false);
-  // The commission rate as the server discloses it, or null when no live answer
-  // has arrived. Null, not 0: a seller who is told "0%" because a request failed
-  // has been told a rate, and a wrong rate is worse than no rate. Only the
-  // server may name this number -- this screen used to state a flat 10%, which
-  // no seller has ever been charged and which the fee authority does not even
-  // offer as a value.
-  const [disclosedFeeBps, setDisclosedFeeBps] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState("");
-  const [notice, setNotice] = useState<{ text: string; tone: "error" | "info" } | null>(null);
+  const [message, setMessage] = useState("");
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [editingListingId, setEditingListingId] = useState(0);
@@ -66,31 +55,6 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const [editCategory, setEditCategory] = useState("");
   const [editPriceLabel, setEditPriceLabel] = useState("");
   const [editQuantity, setEditQuantity] = useState("");
-
-  /**
-   * The fields a tapped blocker jumps to, keyed by the server's `section`.
-   *
-   * `fixes[].section` is a small fixed vocabulary the readiness engine owns, and
-   * routing on it is the whole reason it is sent — a blocker that only *names*
-   * the problem leaves the seller scrolling a form looking for the box. This is
-   * a routing table, not a translation one: no string on the row is written
-   * here, only where the tap lands.
-   */
-  const titleInput = useRef<TextInput | null>(null);
-  const descriptionInput = useRef<TextInput | null>(null);
-  const priceInput = useRef<TextInput | null>(null);
-  const quantityInput = useRef<TextInput | null>(null);
-
-  /**
-   * The listing a publish is already in flight for.
-   *
-   * A ref rather than reading `busy`, for the reason the bulk path learned the
-   * hard way: `busy` is state, written by `setBusy` and read on the next render,
-   * so two taps inside one frame — before the disabled prop has flushed — both
-   * see an idle screen and both POST. Two submits is §23's duplicate. A ref is
-   * written and read in the same tick, so the second tap sees the first.
-   */
-  const publishInFlight = useRef(0);
 
   // True once a canonical store response has landed. Guards the cache read
   // below so a slow AsyncStorage hop can never repaint over fresher data.
@@ -117,7 +81,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     // One marketplace write invalidates all three channels registered below in
     // the same tick. Ungated, that is three concurrent copies of this load.
     if (loadInFlight.current) return loadInFlight.current;
-    setNotice(null);
+    setMessage("");
     const run = (async () => {
       // The cache read runs alongside the network, not in front of it: awaiting
       // it first would put a bridge hop between the tap and every request.
@@ -146,24 +110,13 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         setOffline(true);
         if (!painted) {
           const error = snapshot.status === "rejected" ? snapshot.reason : null;
-          setNotice({
-            text: error instanceof Error ? error.message : t("commerce:marketplace.sellerToolsLoadFailed"),
-            tone: "error"
-          });
+          setMessage(error instanceof Error ? error.message : "Seller tools could not load.");
         }
       }
 
       // Only a live answer moves an entitlement. A failed terms read leaves the
       // previous value alone; it never grants acceptance the server did not.
-      if (terms.status === "fulfilled") {
-        setTermsAccepted(Boolean(terms.value?.terms?.acceptance));
-        // Same response, same authority that prices checkout. Tested for
-        // `number` rather than coerced: `Number(null)` is 0, so a response
-        // carrying an explicit null rate would otherwise quote the seller a 0%
-        // commission the platform never offered.
-        const bps = terms.value?.terms?.current?.platform_fee_bps;
-        setDisclosedFeeBps(typeof bps === "number" && Number.isFinite(bps) ? bps : null);
-      }
+      if (terms.status === "fulfilled") setTermsAccepted(Boolean(terms.value?.terms?.acceptance));
 
       await hydration;
     })().finally(() => {
@@ -182,15 +135,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   // that listing's editor with its current values, rather than on an empty panel
   // the seller has to hunt through. Runs once per requested id, so a later
   // refresh cannot yank the seller back out of a listing they navigated away to.
-  // Coerced rather than read straight, because the id is matched with `===`
-  // against a numeric `listing.id`. In-app callers pass the row's number and are
-  // fine; anything that reaches params as text — a query string, a notification
-  // payload — would be `"21" === 21`, false for every listing the merchant owns,
-  // and the seller would be told their own product isn't in their store. That is
-  // the one failure mode of resolving by exact id, so it is closed here rather
-  // than trusted to every future caller. Non-numeric collapses to 0, which reads
-  // as "no listing requested" and never matches a listing.
-  const requestedListingId = Number(route?.params?.listingId) || 0;
+  const requestedListingId = route?.params?.listingId || 0;
   const openedListingId = useRef(0);
   useEffect(() => {
     if (!requestedListingId || openedListingId.current === requestedListingId) return;
@@ -216,15 +161,12 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
   async function startPayoutConnect() {
     setBusy("payout");
-    setNotice(null);
+    setMessage("");
     try {
       const result = await connectMarketplacePayout();
-      setNotice({ text: result.message || t("commerce:marketplace.payoutChecked"), tone: "info" });
+      setMessage(result.message || t("commerce:marketplace.payoutChecked"));
     } catch (error) {
-      setNotice({
-        text: error instanceof Error ? error.message : t("commerce:marketplace.payoutUnavailable"),
-        tone: "error"
-      });
+      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.payoutUnavailable"));
     } finally {
       setBusy("");
     }
@@ -232,18 +174,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
   async function acceptTerms() {
     setBusy("terms");
-    try {
-      await acceptMarketplaceCommercialTerms();
-      setTermsAccepted(true);
-      setNotice({ text: t("commerce:marketplace.termsAcceptedNotice"), tone: "info" });
-    } catch (error) {
-      setNotice({
-        text: error instanceof Error ? error.message : t("commerce:marketplace.termsAcceptFailed"),
-        tone: "error"
-      });
-    } finally {
-      setBusy("");
-    }
+    try { await acceptMarketplaceCommercialTerms(); setTermsAccepted(true); setMessage("Marketplace Fees & Terms accepted."); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Terms acceptance could not be saved."); }
+    finally { setBusy(""); }
   }
 
   function startListingEdit(listing: MarketplaceListing) {
@@ -256,13 +189,8 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     // it has. Pre-filling prose here put words in the seller's mouth that the
     // save below then committed as their price.
     setEditPriceLabel(listing.price_label || "");
-    // And an uncounted listing opens with an empty stock field, for the same
-    // reason. `String(listing.quantity || 0)` put "0" in the box for a listing
-    // nobody had counted, and `saveListingEdit` below then sent that 0 as the
-    // seller's own answer -- so opening the editor and saving anything at all
-    // marked the listing sold out. A null quantity is a question, not a zero.
-    setEditQuantity(listing.quantity == null ? "" : String(listing.quantity));
-    setNotice(null);
+    setEditQuantity(String(listing.quantity || 0));
+    setMessage("");
   }
 
   function applyListingResponse(listing?: MarketplaceListing) {
@@ -285,7 +213,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   async function saveListingEdit() {
     if (!editingListingId) return;
     setBusy(`edit:${editingListingId}`);
-    setNotice(null);
+    setMessage("");
     try {
       const result = await updateMarketplaceSellerListing(editingListingId, {
         title: editTitle.trim(),
@@ -299,101 +227,24 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         // design, the first edit of any kind published "Request access" as the
         // price. Blank is a state the backend accepts and the UI can render.
         price_label: editPriceLabel.trim(),
-        // Omitted, not zeroed, when the seller left the box empty. The PATCH
-        // route keys off key *presence* (`if "quantity" in payload`), so leaving
-        // it out is how the client says "I am not changing this" -- whereas
-        // `Number("" || 0)` said "set it to zero", which is a stock count the
-        // seller never typed. Spread conditionally so the key is genuinely
-        // absent rather than present-and-undefined.
-        ...(editQuantity.trim() === "" ? {} : { quantity: Number(editQuantity) })
+        quantity: Number(editQuantity || 0)
       });
       applyListingResponse(result.listing);
-      setNotice({ text: result.message || t("commerce:marketplace.listingUpdatedReview"), tone: "info" });
+      setMessage(result.message || "Listing updated and sent through review.");
       // The edited price/inventory is authoritative for every other surface
       // holding this listing — the Store dashboard and the buyer-facing
       // Marketplace tab both refetch off these channels.
       await invalidateNativeSync(["seller_inventory", "marketplace"], "listing_edit_saved");
     } catch (error) {
-      setNotice({
-        text: error instanceof Error ? error.message : t("commerce:marketplace.listingUpdateFailed"),
-        tone: "error"
-      });
+      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.listingUpdateFailed"));
     } finally {
-      setBusy("");
-    }
-  }
-
-  /**
-   * §32's "tap the blocker, land on the fix".
-   *
-   * Media has no field on this screen — the fix is a capture, so the tap opens
-   * the camera. Policies has no field anywhere: the seller cannot clear a
-   * restricted-goods review from the app, and saying so is the honest response
-   * to a tap. Pretending otherwise by focusing an unrelated box would be the
-   * dead button §31 is about.
-   */
-  function focusFix(fix: ListingFix) {
-    setNotice(null);
-    switch (storeFixTarget(fix.section)) {
-      case "camera":
-        navigation.navigate("CameraStudio", {
-          target: "marketplace",
-          title: t("commerce:marketplace.mediaScreenTitle")
-        });
-        return;
-      case "price":
-        priceInput.current?.focus();
-        return;
-      case "quantity":
-        quantityInput.current?.focus();
-        return;
-      case "policy":
-        setNotice({ text: t("commerce:marketplace.policyFixNeedsReview"), tone: "info" });
-        return;
-      default:
-        titleInput.current?.focus();
-    }
-  }
-
-  function previewAsBuyer(listing: MarketplaceListing) {
-    // The buyer screen renders the listing it is handed rather than refetching,
-    // which is what makes this work on an unpublished draft: the buyer endpoint
-    // would not return one. Nothing seller-only is rendered there, and this is
-    // the seller's own device, so §27 is untouched.
-    navigation.navigate("MarketplaceProduct", {
-      listingId: listing.id,
-      listing,
-      title: listing.title || t("commerce:marketplace.listingTitleFallback")
-    });
-  }
-
-  async function publishListing(listing: MarketplaceListing) {
-    if (publishInFlight.current === listing.id) return;
-    publishInFlight.current = listing.id;
-    setBusy(`publish:${listing.id}`);
-    setNotice(null);
-    try {
-      const result = await submitMarketplaceSellerListing(listing.id);
-      // The read-back §31 asks for. The submit route re-evaluates readiness and
-      // sends the row back, so the panel above redraws from the server's answer
-      // rather than from an optimistic guess about what publishing did.
-      applyListingResponse(result.listing);
-      setNotice({ text: result.message || t("commerce:marketplace.listingUpdated"), tone: "info" });
-      await invalidateNativeSync(["seller_inventory", "marketplace"], "listing_published");
-    } catch (error) {
-      setNotice({
-        text: error instanceof Error ? error.message : t("commerce:marketplace.listingUpdateFailed"),
-        tone: "error"
-      });
-    } finally {
-      publishInFlight.current = 0;
       setBusy("");
     }
   }
 
   async function mutateListingStatus(listing: MarketplaceListing, action: "pause" | "resume" | "delete") {
     setBusy(`${action}:${listing.id}`);
-    setNotice(null);
+    setMessage("");
     try {
       const result =
         action === "pause"
@@ -402,22 +253,13 @@ export function SellerStoreScreen({ route, navigation }: Props) {
             ? await resumeMarketplaceSellerListing(listing.id)
             : await deleteMarketplaceSellerListing(listing.id);
       applyListingResponse(result.listing);
-      setNotice({ text: result.message || t("commerce:marketplace.listingUpdated"), tone: "info" });
+      setMessage(result.message || t("commerce:marketplace.listingUpdated"));
     } catch (error) {
-      setNotice({
-        text: error instanceof Error ? error.message : t("commerce:marketplace.listingStatusUpdateFailed"),
-        tone: "error"
-      });
+      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.listingStatusUpdateFailed"));
     } finally {
       setBusy("");
     }
   }
-
-  // "0.00%" rather than "0%": the same formatting the per-order fee line below
-  // uses, so a seller comparing the headline rate against an order is comparing
-  // two identically shaped numbers instead of wondering whether they differ.
-  const disclosedFeeLabel =
-    disclosedFeeBps === null ? "" : `${(disclosedFeeBps / 100).toFixed(2)}%`;
 
   const mediaItems = useMemo(
     () =>
@@ -439,65 +281,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
   const activeListings = listings.filter((listing) => listing.buyer_visible === true);
   const pendingListings = listings.filter((listing) => statusKey(listing) === "pending");
-  /**
-   * The single-product editor resolves by id and nothing else.
-   *
-   * The shared expression below ends `|| listings[0]`, which is a sane default
-   * for a browsing panel where the editor is one of several things on screen and
-   * the seller has not picked yet. It is dangerous here. `mode: "product"` means
-   * the merchant tapped Edit on one specific row, so a miss must not silently
-   * hand them a *different* product's form — pre-filled with its title, price and
-   * quantity, and wired to a Save that writes to its id. Wrong-product edits are
-   * indistinguishable from correct ones after the fact.
-   *
-   * So a miss resolves to null and the panel says so. The cases that reach it are
-   * a listing removed between the list loading and the tap, and an id belonging
-   * to another merchant's store — the second being the §27 check, enforced here
-   * by the fact that `listings` only ever holds this merchant's own listings.
-   */
-  const productListing = requestedListingId
-    ? listings.find((listing) => listing.id === requestedListingId) || null
-    : null;
-  const productMode = mode === "product";
-  const editingListing = productMode
-    ? productListing
-    : listings.find((listing) => listing.id === editingListingId) || listings[0] || null;
-  /**
-   * Told apart from "still loading" deliberately: before the fetch resolves the
-   * honest answer is a spinner, not "we couldn't find it". Only once a load has
-   * completed and the id is still absent is it genuinely missing or not theirs.
-   */
-  const productUnavailable = productMode && !loading && !productListing;
-
-  /**
-   * "Finish listing" opens the editor already on the blocking field — §32's
-   * "tap it and go fix it", applied to the entry point rather than to the
-   * blocker row.
-   *
-   * Waits for `editingListingId` to match: `startListingEdit` sets the state
-   * that mounts the inputs, so the refs are still null on the tick the listing
-   * resolves and focusing there is a no-op. Runs once per listing, so the
-   * keyboard cannot reappear under a seller who dismissed it and scrolled away.
-   *
-   * Only the three in-form targets are honoured. `camera` and `policy` are
-   * deliberately excluded: `focusFix` answers those with a navigation to
-   * CameraStudio and with a message, and doing either unprompted on open would
-   * throw the merchant into a different screen, or explain a rule they had not
-   * asked about, before they had seen their own product. Tapping the blocker
-   * still does both — the difference is that a tap is a request.
-   */
-  const requestedSection = route?.params?.section || "";
-  const deepLinkedListingId = useRef(0);
-  useEffect(() => {
-    if (!productMode || !requestedSection || !productListing) return;
-    if (editingListingId !== productListing.id) return;
-    if (deepLinkedListingId.current === productListing.id) return;
-    deepLinkedListingId.current = productListing.id;
-    const target = storeFixTarget(requestedSection);
-    if (target === "price") priceInput.current?.focus();
-    else if (target === "quantity") quantityInput.current?.focus();
-    else if (target === "details") titleInput.current?.focus();
-  }, [productMode, requestedSection, productListing, editingListingId]);
+  const editingListing = listings.find((listing) => listing.id === editingListingId) || listings[0] || null;
 
   if (loading && !listings.length && !orders.length) {
     return (
@@ -508,26 +292,26 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     );
   }
 
-  const heading = sellerStoreHeading(mode, route?.params?.title);
+  const heading = sellerStoreHeading(mode);
   const shows = (panel: SellerStorePanel) => sellerStoreShowsPanel(mode, panel);
 
   return (
-    <Screen surface="business" title={heading.title} subtitle={heading.subtitle}>
-      {offline ? <Text style={styles.warning}>{t("commerce:marketplace.storeOfflineNotice")}</Text> : null}
-      {notice ? <Text style={notice.tone === "error" ? styles.error : styles.notice}>{notice.text}</Text> : null}
+    <Screen title={heading.title} subtitle={heading.subtitle}>
+      {offline ? <Text style={styles.warning}>Showing saved seller/store metadata.</Text> : null}
+      {message ? <Text style={message.toLowerCase().includes("required") || message.toLowerCase().includes("failed") ? styles.error : styles.notice}>{message}</Text> : null}
 
       {shows("hero") ? (
       <Panel>
         <View style={styles.hero}>
-          <Text style={styles.kicker}>{t("commerce:marketplace.storeKicker")}</Text>
-          <Text style={styles.heroTitle}>{t("commerce:marketplace.storefrontReadiness")}</Text>
-          <Text style={styles.heroCopy}>{t("commerce:marketplace.storeHeroCopy")}</Text>
+          <Text style={styles.kicker}>Marketplace Command</Text>
+          <Text style={styles.heroTitle}>Storefront readiness</Text>
+          <Text style={styles.heroCopy}>Seller approval, product review, payments, payouts, and fulfillment are all decided by PulseSoc.</Text>
         </View>
         <View style={styles.metricGrid}>
-          <Metric label={t("commerce:marketplace.metricListingsLoaded")} value={String(listings.length)} />
-          <Metric label={t("commerce:marketplace.metricPublished")} value={String(activeListings.length)} />
-          <Metric label={t("commerce:marketplace.metricPendingReview")} value={String(pendingListings.length)} />
-          <Metric label={t("commerce:marketplace.metricOrdersLoaded")} value={String(orders.length)} />
+          <Metric label="Listings loaded" value={String(listings.length)} />
+          <Metric label="Published" value={String(activeListings.length)} />
+          <Metric label="Pending review" value={String(pendingListings.length)} />
+          <Metric label="Orders loaded" value={String(orders.length)} />
         </View>
         <View style={styles.actionRow}>
           <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
@@ -539,7 +323,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
       {shows("application") ? (
       <Panel>
-        <Text style={styles.sectionTitle}>{t("commerce:marketplace.merchantApplication")}</Text>
+        <Text style={styles.sectionTitle}>Merchant application</Text>
         {/*
           This panel used to be the application: two free-text boxes posted
           straight at the seller endpoint. It now points at the real one. Two
@@ -547,15 +331,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           and a reviewer with no way to tell which is current, so this is a door
           rather than a second form.
         */}
-        <Text style={styles.copy}>{t("commerce:marketplace.merchantApplicationCopy")}</Text>
+        <Text style={styles.copy}>Apply to sell on PulseSoc. The application walks you through who you are, what you sell, and the documents we verify. Your answers save as you go, and every decision is made by a person on our review team.</Text>
         <View style={styles.actionRow}>
           <Pressable
             accessibilityRole="button"
-            accessibilityHint={t("commerce:marketplace.openSellerApplicationHint")}
+            accessibilityHint="Opens the seller application, where you can start or continue your answers"
             style={styles.primaryButton}
             onPress={() => navigation.navigate("MerchantApply")}
           >
-            <Text style={styles.primaryText}>{t("commerce:marketplace.openSellerApplication")}</Text>
+            <Text style={styles.primaryText}>Open Seller Application</Text>
           </Pressable>
         </View>
       </Panel>
@@ -572,29 +356,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           <Pressable accessibilityRole="button" style={styles.secondaryButton} onPress={() => navigation.navigate("MarketplaceCreateGateway", { title: t("common:screens.createListing") })}>
             <Text style={styles.secondaryText}>{t("common:screens.createListing")}</Text>
           </Pressable>
-          {/* The only way into the dropshipping hub from a screen a merchant can
-              actually reach. The hub's other entry point is a tile on
-              `StoreDashboardScreen`, which is registered in no navigator, so
-              until this button existed an imported product could be created but
-              never opened — the products screen was reachable only by a route
-              name nothing called.
-
-              It belongs in this panel rather than beside the application or the
-              payout rows because importing is listing management: these products
-              become marketplace listings, and the rows below are where the
-              merchant already looks for them. */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityHint="Opens the dropshipping hub, where you can import products from a supplier and open the ones waiting on review"
-            style={styles.secondaryButton}
-            onPress={() => navigation.navigate("Dropshipping", { title: t("commerce:marketplace.dropshipping") })}
-          >
-            <Text style={styles.secondaryText}>{t("commerce:marketplace.dropshipping")}</Text>
-          </Pressable>
         </View>
-        <Text style={styles.copy}>{t("commerce:marketplace.dropshippingCopy")}</Text>
         {listings.slice(0, 5).map((listing) => (
-          <ListingRow key={listing.id} listing={listing} onOpen={() => navigation.navigate("MarketplaceProduct", { listingId: listing.id, listing, title: listing.title || t("commerce:marketplace.title") })} />
+          <ListingRow key={listing.id} listing={listing} onOpen={() => navigation.navigate("MarketplaceDetail", { listingId: listing.id, title: listing.title || t("commerce:marketplace.title") })} />
         ))}
         {!listings.length ? <Text style={styles.emptyText}>{t("commerce:marketplace.noListingsLoaded")}</Text> : null}
       </Panel>
@@ -602,22 +366,10 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
       {shows("inventory") ? (
       <Panel>
-        {/* The picker, the heading and the "pick one" copy are all about
-            choosing a product. In the single-product editor the choice has
-            already been made by the row that was tapped, and re-rendering the
-            list here is the "make the merchant select the product again" the
-            correction is about. */}
-        {productMode ? null : (
-          <>
-            <Text style={styles.sectionTitle}>{t("commerce:marketplace.sellerInventory")}</Text>
-            <Text style={styles.copy}>{t("commerce:marketplace.sellerInventoryCopy")}</Text>
-          </>
-        )}
-        {productUnavailable ? (
-          <Text style={styles.error}>{t("commerce:marketplace.productNotYours")}</Text>
-        ) : null}
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.sellerInventory")}</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.sellerInventoryCopy")}</Text>
         <View style={styles.inventoryList}>
-          {(productMode ? [] : listings.slice(0, 8)).map((listing) => (
+          {listings.slice(0, 8).map((listing) => (
             <Pressable accessibilityRole="button"
               key={`inventory-${listing.id}`}
               style={[styles.inventoryRow, editingListing?.id === listing.id && styles.inventoryRowActive]}
@@ -634,11 +386,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
             </Pressable>
           ))}
         </View>
-        {/* Not in product mode: "your shelf is empty" is a claim about the whole
-            store, and here the merchant arrived from a row that exists. When the
-            id cannot be resolved the message above is the accurate one, and
-            rendering both would state two different reasons for one blank panel. */}
-        {!productMode && !listings.length ? <Text style={styles.emptyText}>{t("commerce:marketplace.emptyInventory")}</Text> : null}
+        {!listings.length ? <Text style={styles.emptyText}>{t("commerce:marketplace.emptyInventory")}</Text> : null}
 
         {editingListing ? (
           <View style={styles.editorBox}>
@@ -646,24 +394,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
               <Text style={styles.editorTitle}>{t("commerce:marketplace.editListingTitle", { id: String(editingListing.id) })}</Text>
               <StatusPill listing={editingListing} />
             </View>
-            <StoreReadinessPanel
-              readiness={editingListing.readiness}
-              publishBlock={editingListing.bulk_eligibility?.publish ?? null}
-              onFix={focusFix}
-              onPreview={() => previewAsBuyer(editingListing)}
-              onPublish={() => publishListing(editingListing)}
-              publishing={busy === `publish:${editingListing.id}`}
-            />
-            <TextInput ref={titleInput} style={styles.input} value={editTitle} onChangeText={setEditTitle} placeholder={t("commerce:marketplace.titlePlaceholder")} placeholderTextColor={colors.muted} />
+            <TextInput style={styles.input} value={editTitle} onChangeText={setEditTitle} placeholder={t("commerce:marketplace.titlePlaceholder")} placeholderTextColor={colors.muted} />
             <TextInput
               style={styles.input}
               value={editShortDescription}
               onChangeText={setEditShortDescription}
-              placeholder={t("commerce:marketplace.shortDescriptionPlaceholder")}
+              placeholder="Short description"
               placeholderTextColor={colors.muted}
             />
             <TextInput
-              ref={descriptionInput}
               style={[styles.input, styles.textArea]}
               value={editDescription}
               onChangeText={setEditDescription}
@@ -673,10 +412,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
             />
             <View style={styles.twoCol}>
               <TextInput style={[styles.input, styles.flex]} value={editCategory} onChangeText={setEditCategory} placeholder={t("commerce:marketplace.categoryPlaceholder")} placeholderTextColor={colors.muted} />
-              <TextInput ref={priceInput} style={[styles.input, styles.flex]} value={editPriceLabel} onChangeText={setEditPriceLabel} placeholder={t("commerce:marketplace.priceLabelPlaceholder")} placeholderTextColor={colors.muted} />
+              <TextInput style={[styles.input, styles.flex]} value={editPriceLabel} onChangeText={setEditPriceLabel} placeholder={t("commerce:marketplace.priceLabelPlaceholder")} placeholderTextColor={colors.muted} />
             </View>
             <TextInput
-              ref={quantityInput}
               style={styles.input}
               value={editQuantity}
               onChangeText={setEditQuantity}
@@ -715,7 +453,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
                 <Text style={styles.dangerText}>{busy === `delete:${editingListing.id}` ? t("commerce:marketplace.removing") : t("common:actions.remove")}</Text>
               </Pressable>
             </View>
-            <Text style={styles.meta}>{t("commerce:marketplace.editorFooterNote")}</Text>
+            <Text style={styles.meta}>Your edits are saved to your PulseSoc store, and the listing goes back through marketplace review whenever its content changes. Checkout, payouts, fulfillment, and disputes are handled on pulsesoc.com.</Text>
           </View>
         ) : null}
       </Panel>
@@ -723,8 +461,8 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
       {shows("media") ? (
       <Panel>
-        <Text style={styles.sectionTitle}>{t("commerce:marketplace.productMediaGallery")}</Text>
-        <Text style={styles.copy}>{t("commerce:marketplace.productMediaGalleryCopy")}</Text>
+        <Text style={styles.sectionTitle}>Product media gallery</Text>
+        <Text style={styles.copy}>Tap any item to open it full screen. Anything the viewer cannot play falls back to a still preview.</Text>
         <View style={styles.mediaGrid}>
           {mediaItems.slice(0, 8).map((item, index) => (
             <Pressable
@@ -749,30 +487,19 @@ export function SellerStoreScreen({ route, navigation }: Props) {
       {shows("orders") ? (
       <Panel>
         <Text style={styles.sectionTitle}>Orders and payouts</Text>
-        <Text style={styles.copy}>{disclosedFeeLabel
-          ? `PulseSoc's commission is ${disclosedFeeLabel} of merchandise, and each order below shows the fee it was actually charged.`
-          : "PulseSoc's commission could not be loaded. Each order below shows the fee it was actually charged."}</Text>
+        <Text style={styles.copy}>Your applied fee is shown per order. Current Marketplace terms remain 10%; the proposed 5% policy is not active.</Text>
         <View style={styles.actionRow}>
-          {Object.entries(liability).map(([state, amount]) => <View key={state} style={styles.orderRow}><Text style={styles.orderTitle}>{state.replace(/_/g, " ")}</Text><Text style={styles.orderMeta}>{formatMoney(amount, "USD", fmt)}</Text></View>)}
+          {Object.entries(liability).map(([state, amount]) => <View key={state} style={styles.orderRow}><Text style={styles.orderTitle}>{state.replace(/_/g, " ")}</Text><Text style={styles.orderMeta}>{formatMoney(amount, "USD")}</Text></View>)}
         </View>
         {orders.slice(0, 4).map((order) => (
           <View key={`${order.id}-${order.created_at}`} style={styles.orderRow}>
-            <Text style={styles.orderTitle}>{order.item_type || t("commerce:orders.orderFallbackTitle")} #{order.item_id || order.id || "pending"}</Text>
-            <Text style={styles.orderMeta}>{formatMoney(order.amount_cents || order.gross_amount_cents || 0, order.currency || "USD", fmt)} · {order.status || "pending"}</Text>
+            <Text style={styles.orderTitle}>{order.item_type || "Order"} #{order.item_id || order.id || "pending"}</Text>
+            <Text style={styles.orderMeta}>{formatMoney(order.amount_cents || order.gross_amount_cents || 0, order.currency || "USD")} · {order.status || "pending"}</Text>
             {order.commercial_economics ? <>
-              <Text style={styles.orderMeta}>{t("commerce:marketplace.orderMerchandiseLine", {
-                merchandise: formatMoney(order.commercial_economics.merchandise_net_minor || 0, order.currency || "USD", fmt),
-                shipping: formatMoney(order.commercial_economics.seller_shipping_credit_minor || 0, order.currency || "USD", fmt)
-              })}</Text>
-              <Text style={styles.orderMeta}>{t("commerce:marketplace.orderFeeLine", {
-                rate: fmt.percent(Number(order.commercial_economics.fee_rate_bps || 0) / 100, { alreadyScaled: true, maximumFractionDigits: 2 }),
-                refunds: formatMoney(order.commercial_economics.seller_reversed_minor || 0, order.currency || "USD", fmt)
-              })}</Text>
-              <Text style={styles.orderMeta}>{t("commerce:marketplace.orderNetEarningsLine", {
-                net: formatMoney(order.commercial_economics.net_seller_earnings_minor || 0, order.currency || "USD", fmt),
-                state: (order.commercial_economics.payout_state || "pending").replace(/_/g, " ")
-              })}</Text>
-              {order.commercial_economics.blocker_code ? <Text style={styles.meta}>{t("commerce:marketplace.orderBlockedLine", { reason: order.commercial_economics.blocker_code.replace(/_/g, " ") })}</Text> : null}
+              <Text style={styles.orderMeta}>Merchandise {formatMoney(order.commercial_economics.merchandise_net_minor || 0, order.currency || "USD")} · Shipping credit {formatMoney(order.commercial_economics.seller_shipping_credit_minor || 0, order.currency || "USD")}</Text>
+              <Text style={styles.orderMeta}>PulseSoc fee {(Number(order.commercial_economics.fee_rate_bps || 0) / 100).toFixed(2)}% · Refund adjustments {formatMoney(order.commercial_economics.seller_reversed_minor || 0, order.currency || "USD")}</Text>
+              <Text style={styles.orderMeta}>Net earnings {formatMoney(order.commercial_economics.net_seller_earnings_minor || 0, order.currency || "USD")} · {(order.commercial_economics.payout_state || "pending").replace(/_/g, " ")}</Text>
+              {order.commercial_economics.blocker_code ? <Text style={styles.meta}>Blocked: {order.commercial_economics.blocker_code.replace(/_/g, " ")}. Resolve this issue before payout.</Text> : null}
             </> : null}
           </View>
         ))}
@@ -788,13 +515,9 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         )}
         <View style={styles.orderRow}>
           <Text style={styles.orderTitle}>Marketplace Fees &amp; Terms</Text>
-          {/* The fee segment drops out entirely when no rate arrived, rather
-              than degrading to a placeholder. A seller is being asked to accept
-              these terms here, so the one number in the list has to be the one
-              the server will settle against or not appear at all. */}
-          <Text style={styles.orderMeta}>Seller Terms{disclosedFeeLabel ? ` · ${disclosedFeeLabel} platform fee` : ""} · Returns · Payouts · Prohibited Goods · Appeals</Text>
+          <Text style={styles.orderMeta}>Seller Terms · 10% current platform fee · Returns · Payouts · Prohibited Goods · Appeals</Text>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: termsAccepted || busy === "terms" }} style={styles.secondaryButton} disabled={termsAccepted || busy === "terms"} onPress={acceptTerms}>
-            <Text style={styles.secondaryText}>{termsAccepted ? t("commerce:marketplace.termsAcceptedLabel") : busy === "terms" ? t("commerce:marketplace.saving") : t("commerce:marketplace.reviewAndAccept")}</Text>
+            <Text style={styles.secondaryText}>{termsAccepted ? "Accepted" : busy === "terms" ? "Saving..." : "Review and Accept"}</Text>
           </Pressable>
         </View>
       </Panel>
@@ -814,7 +537,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
             <Text style={styles.secondaryText}>{t("common:screens.premium")}</Text>
           </Pressable>
         </View>
-        <Text style={styles.copy}>{t("commerce:marketplace.trustCopy")}</Text>
+        <Text style={styles.copy}>Tax forms, bank setup, disputes, refunds, fulfillment, and PulseSoc review are handled on the PulseSoc website for now, not in the app.</Text>
       </Panel>
       ) : null}
 
@@ -823,29 +546,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   );
 }
 
-/**
- * Server blocker key -> the pill this screen shows for it.
- *
- * The server answers "why can nobody buy this" once, from the same rule table
- * that filters buyer discovery. Mapping it here rather than re-deriving is the
- * point: three of publication's five conditions live on the seller record and
- * on stock, none of which this screen has.
- */
-const BLOCKER_STATUS_KEYS: Record<string, string> = {
-  seller_approved: "store_offline",
-  seller_named: "store_name_needed",
-  in_stock: "out_of_stock",
-};
-
 function statusKey(listing: MarketplaceListing) {
-  // Asked first, and only ever non-empty for a listing whose own status and
-  // approval say it should be live. Without it this function read `published`
-  // off one column and returned it unchanged — falling past every branch below,
-  // including `live` — so a suspended seller, an unnamed store, an empty shelf
-  // and a healthy listing all drew the same neutral "published" chip, and
-  // nothing in the app told a merchant which of their listings were selling.
-  const blocker = String(listing.publication_blocker || "");
-  if (blocker) return BLOCKER_STATUS_KEYS[blocker] ?? "pending";
   const raw = String(listing.publication_state || listing.status || listing.approval_status || "draft").toLowerCase();
   if (raw.includes("delete") || raw.includes("removed")) return "removed";
   if (raw.includes("reject") || raw.includes("blocked")) return "rejected";
@@ -853,46 +554,24 @@ function statusKey(listing: MarketplaceListing) {
   if (raw.includes("sold")) return "sold";
   if (raw.includes("stock")) return "out_of_stock";
   if (raw.includes("pending") || raw.includes("review")) return "pending";
-  // `published` belongs here: it is the value `drafts.publish` writes and the
-  // one `PUBLIC_STATUSES` is built around. Leaving it out is why a live listing
-  // never once drew the live pill.
-  if (["active", "approved", "live", "published"].includes(raw)) return "live";
+  if (["active", "approved", "live"].includes(raw)) return "live";
   if (raw.includes("draft")) return "draft";
   return raw || "draft";
 }
 
-/**
- * One literal key per pill, rather than `commerce:marketplace.status.${key}`.
- *
- * The interpolated form is what let all ten of these ship with no catalog copy
- * at all: a template is invisible to every i18n gate, so the prefix resolved,
- * the path missed, and `humanizeKey()` drew "Out Of Stock" in all eleven
- * languages while `i18n:validate` reported 100%.
- *
- * Four point outside the `status` block on purpose. `outOfStock` and
- * `statusRemoved` are a live contract with `services/pulsedrop/hydration.py`,
- * which builds its availability chip from those same two keys — one listing
- * state must not read two ways in one session — and `sold` /
- * `statusPendingReview` are the marketplace's own existing words for exactly
- * these states.
- */
-const STATUS_LABEL_KEYS: Record<string, string> = {
-  live: "commerce:marketplace.status.live",
-  pending: "commerce:marketplace.statusPendingReview",
-  out_of_stock: "commerce:marketplace.outOfStock",
-  store_offline: "commerce:marketplace.status.store_offline",
-  store_name_needed: "commerce:marketplace.status.store_name_needed",
-  paused: "commerce:marketplace.status.paused",
-  sold: "commerce:marketplace.sold",
-  draft: "commerce:marketplace.status.draft",
-  rejected: "commerce:marketplace.status.rejected",
-  removed: "commerce:marketplace.statusRemoved",
-};
+function statusLabel(listing: MarketplaceListing) {
+  if (listing.publication_label) return listing.publication_label;
+  const key = statusKey(listing);
+  if (key === "live") return "Published";
+  if (key === "pending") return "Pending review";
+  if (key === "out_of_stock") return "Out of stock";
+  if (key === "removed") return "Removed";
+  return key.replace(/_/g, " ");
+}
 
 function statusLabelKey(key: string): string | null {
-  // `statusKey` can still return a server value nobody has named, which keeps
-  // its own `key.replace(/_/g, " ")` rendering rather than getting a pill.
-  return STATUS_LABEL_KEYS[key] ?? null;
+  const supported = ["live", "pending", "out_of_stock", "removed", "rejected", "paused", "sold", "draft"];
+  return supported.includes(key) ? `commerce:marketplace.status.${key}` : null;
 }
 
 function StatusPill({ listing }: { listing: MarketplaceListing }) {
@@ -902,11 +581,7 @@ function StatusPill({ listing }: { listing: MarketplaceListing }) {
   const style =
     key === "live"
       ? styles.statusLive
-      : // A listing the merchant published and a moderator approved, held back
-        // by something the merchant can fix, is work waiting on them — not a
-        // neutral state of affairs. Same tone as "pending" so it reads as an
-        // open item rather than as a rejection they cannot appeal.
-        key === "pending" || Object.values(BLOCKER_STATUS_KEYS).includes(key)
+      : key === "pending"
         ? styles.statusPending
         : key === "rejected" || key === "removed"
           ? styles.statusDanger
@@ -969,8 +644,7 @@ const styles = createThemedStyles(() => ({
     marginTop: 10
   },
   chevron: {
-    // Green, not `accentStrong` (a cyan). Business surfaces carry one accent.
-    color: colors.accent,
+    color: colors.accentStrong,
     fontSize: 12,
     fontWeight: "900"
   },
@@ -1029,9 +703,8 @@ const styles = createThemedStyles(() => ({
     padding: 12
   },
   hero: {
-    // Was a blue wash. Green, matching `editorBox`, so the screen has one accent.
-    backgroundColor: "rgba(37, 208, 167, 0.08)",
-    borderColor: "rgba(37, 208, 167, 0.28)",
+    backgroundColor: "rgba(79, 140, 255, 0.08)",
+    borderColor: "rgba(79, 140, 255, 0.28)",
     borderRadius: 8,
     borderWidth: 1,
     gap: 8,

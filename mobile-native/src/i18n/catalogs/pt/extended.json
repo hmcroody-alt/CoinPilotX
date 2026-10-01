@@ -361,31 +361,44 @@
       "requests_other": "{{count}} solicitações de mensagem"
     },
     "chat": {
+      "placeholder": "Mensagem…",
+      "typing": "{{name}} está digitando…",
+      "typingMultiple": "Várias pessoas estão digitando…",
+      "delivered": "Entregue",
+      "read": "Lida",
+      "sent": "Enviada",
+      "failed": "Não entregue",
+      "tapToRetry": "Toque para tentar de novo",
+      "editedLabel": "Editada",
+      "deletedMessage": "Esta mensagem foi apagada",
+      "replyingTo": "Respondendo a {{name}}",
+      "forwarded": "Encaminhada",
+      "attachPhoto": "Foto",
+      "attachFile": "Arquivo",
+      "attachVoice": "Mensagem de voz",
+      "recordingVoice": "Gravando…",
+      "slideToCancel": "Arraste para cancelar",
+      "newMessagesDivider": "Mensagens novas",
+      "encryptedNotice": "As mensagens são criptografadas em trânsito.",
+      "emptyTitle": "Manda um oi",
+      "emptyBody": "Este é o começo da sua conversa.",
       "a11yAddAttachment": "Adicionar anexo",
       "a11yAddEmoji": "Adicionar emoji sorridente",
       "a11yBack": "Voltar para as conversas",
       "a11yBackFive": "Voltar 5 segundos",
-      "a11yCancelEdit": "Cancelar edição",
       "a11yCancelReply": "Cancelar resposta",
       "a11yCancelUndxAction": "Cancelar ação do UNDX",
       "a11yCloseAttachmentSheet": "Fechar o painel de anexos",
-      "a11yCloseForward": "Fechar encaminhamento",
-      "a11yCloseInfo": "Fechar informações da mensagem",
       "a11yComposer": "Campo de mensagem",
       "a11yComposerUndx": "Campo de mensagem do UNDX",
       "a11yConfirmUndxAction": "Confirmar ação do UNDX",
       "a11yDiscardRecording": "Descartar gravação de voz",
       "a11yDismissStatus": "Dispensar o status da mensagem",
       "a11yForwardFive": "Avançar 5 segundos",
-      "a11yGalleryPhotoPosition": "Foto de {{sender}}, {{position}} de {{total}}",
-      "a11yGalleryVideoPosition": "Vídeo de {{sender}}, {{position}} de {{total}}",
       "a11yGifAttachment": "{{label}}. Anexo GIF.",
-      "a11yGridPhotoTile": "{{label}}. Foto {{position}} de {{total}}.",
-      "a11yGridVideoTile": "{{label}}. Vídeo {{position}} de {{total}}.",
       "a11yImageAttachment": "{{label}}. Anexo de imagem.",
       "a11yOpenControls": "Abrir os controles da conversa",
       "a11yOpenUndxResult": "Abrir resultado de {{type}}",
-      "a11yOpensDocument": "Abre no seu visualizador de documentos",
       "a11yOpensViewer": "Abre o visualizador em tela cheia",
       "a11yPauseVoice": "Pausar a mensagem de voz",
       "a11yPlayVoice": "Reproduzir a mensagem de voz",
@@ -395,7 +408,6 @@
       "a11yRecordingVoice": "Gravando mensagem de voz. {{duration}}",
       "a11yRetryLoad": "Tentar carregar as mensagens de novo",
       "a11yRetryVoice": "Tentar a mensagem de voz de novo",
-      "a11ySaveEdit": "Salvar edição",
       "a11ySend": "Enviar mensagem",
       "a11yStartAudioCall": "Iniciar chamada de voz",
       "a11yStartVideoCall": "Iniciar chamada de vídeo",
@@ -404,26 +416,20 @@
       "a11yUndxAttachmentsOff": "Anexos indisponíveis no UNDX",
       "a11yUndxVoiceOff": "Mensagens de voz indisponíveis no UNDX",
       "a11yUploadingAttachment": "Enviando anexo",
-      "a11yVideoAttachment": "Vídeo, toque para reproduzir",
-      "a11yVideoAttachmentDuration": "Vídeo, {{duration}}, toque para reproduzir",
       "a11yVoiceDuration": "Duração {{duration}}",
       "a11yVoiceProgress": "Progresso da mensagem de voz",
       "a11yVoiceUnavailable": "{{label}}. Mensagem de voz indisponível.",
       "assistantAlwaysAvailable": "Sempre disponível · Inteligência PulseSoc",
-      "assistantConnecting": "Conectando · Inteligência PulseSoc",
       "assistantReconnecting": "Reconectando o serviço",
       "attachCamera": "Câmera",
       "attachCameraDetail": "Capturar agora",
       "attachDocument": "Documento",
       "attachDocumentDetail": "Arquivo seguro",
-      "attachFile": "Arquivo",
-      "attachPhoto": "Foto",
       "attachPhotoDetail": "Imagem otimizada",
       "attachRecordingNow": "Gravando agora",
       "attachStopSend": "Parar e enviar",
       "attachVideo": "Vídeo",
       "attachVideoDetail": "Até 2 minutos",
-      "attachVoice": "Mensagem de voz",
       "attachVoiceNote": "Áudio",
       "attachVoiceNoteDetail": "Mensagem de áudio rápida",
       "attachmentFailedTitle": "Falha no anexo",
@@ -445,33 +451,12 @@
       "deleteForMe": "Apagar para mim",
       "deleteHidden": "Mensagem ocultada neste dispositivo.",
       "deleteRequested": "Exclusão da mensagem solicitada.",
-      "deletedMessage": "Esta mensagem foi apagada",
       "deletedMessageBody": "Esta mensagem foi apagada.",
-      "delivered": "Entregue",
-      "durationMinutes": "{{minutes}} minutos",
-      "durationMinutesSeconds": "{{minutes}} minutos {{seconds}} segundos",
-      "durationSeconds": "{{seconds}} segundos",
-      "editEmpty": "Uma mensagem editada não pode ficar vazia.",
-      "editFailed": "Não foi possível editar essa mensagem.",
-      "editSaved": "Mensagem editada.",
-      "editedLabel": "Editada",
-      "editingMessage": "Editando mensagem",
-      "emptyBody": "Este é o começo da sua conversa.",
       "emptyThreadBody": "As mensagens desta conversa aparecem aqui.",
-      "emptyTitle": "Manda um oi",
-      "encryptedNotice": "As mensagens são criptografadas em trânsito.",
-      "failed": "Não entregue",
       "fileAttachment": "Anexo de arquivo",
       "filePickerFailed": "Não foi possível abrir o seletor de arquivos.",
       "fileSharingUnavailableTitle": "Compartilhamento de arquivos indisponível",
-      "forwardFailed": "Não foi possível encaminhar essa mensagem.",
-      "forwardNoConversations": "Nenhuma outra conversa para encaminhar.",
-      "forwardSend": "Encaminhar para {{total}}",
-      "forwardSent": "Encaminhada para {{total}}.",
-      "forwarded": "Encaminhada",
       "forwardedSignal": "Sinal encaminhado",
-      "galleryUnavailable": "Não disponível",
-      "galleryUnavailableOffline": "Não disponível offline",
       "headerCachedHistory": "Histórico salvo",
       "headerLiveChannel": "Canal ao vivo",
       "headerReconnecting": "Reconectando",
@@ -479,26 +464,6 @@
       "imageAttachment": "Anexo de imagem",
       "imagePickerFailed": "Não foi possível abrir o seletor de imagens.",
       "imageSharingUnavailableTitle": "Compartilhamento de imagens indisponível",
-      "infoDelivered": "Entregue",
-      "infoDeliveredAt": "Entregue",
-      "infoDuration": "Duração",
-      "infoEditedAt": "Editada",
-      "infoForwarded": "Encaminhada",
-      "infoForwardedYes": "Sim",
-      "infoFrom": "De",
-      "infoId": "ID da mensagem",
-      "infoRead": "Lida",
-      "infoReadAt": "Lida",
-      "infoReadGroup": "Lida por pelo menos uma pessoa",
-      "infoSent": "Enviada",
-      "infoSentAt": "Enviada",
-      "infoSize": "Tamanho",
-      "infoStatus": "Status",
-      "infoType": "Tipo",
-      "infoTypeMedia": "Mídia",
-      "infoTypeText": "Texto",
-      "infoTypeUnavailable": "Indisponível",
-      "infoTypeVoice": "Mensagem de voz",
       "liveVoiceKicker": "PULSO DE VOZ AO VIVO",
       "loadFailed": "Não foi possível carregar as mensagens.",
       "loadFailedBody": "O PulseSoc não conseguiu carregar esta conversa. Toque em tentar de novo para reconectar ao histórico oficial de mensagens.",
@@ -513,16 +478,12 @@
       "microphoneUnavailableTitle": "Microfone indisponível",
       "moderatedMessageBody": "Esta mensagem ficou indisponível após a revisão de segurança.",
       "muteBlock": "Silenciar / Bloquear",
-      "newMessagesDivider": "Mensagens novas",
-      "openDocument": "Toque para abrir",
       "openViewer": "Abrir visualizador",
       "openingBody": "Carregando o histórico da conversa no servidor.",
-      "openingDocument": "Abrindo…",
       "openingTitle": "Abrindo a conversa",
       "pendingRemoved": "Mensagem pendente local removida.",
       "photosUnavailableBody": "Permita o acesso às fotos nas Configurações para compartilhar uma imagem.",
       "photosUnavailableTitle": "Fotos indisponíveis",
-      "placeholder": "Mensagem…",
       "presenceActivityDirect": "{{activity}} · Direto",
       "presenceOffline": "Offline",
       "presenceOnline": "Online",
@@ -532,14 +493,11 @@
       "reactPending": "Dá para reagir a mensagens pendentes depois que o servidor aceitar.",
       "reactionFailed": "A reação falhou.",
       "reactionSent": "Reação enviada.",
-      "read": "Lida",
       "realtimeReconnecting": "Reconectando em tempo real. O histórico de mensagens continua visível.",
       "recordingDiscarded": "Gravação de voz descartada.",
       "recordingFailed": "Não foi possível iniciar a gravação de voz.",
       "recordingNoFile": "A gravação não gerou um arquivo de áudio.",
       "recordingStarted": "Gravando mensagem de voz… toque no microfone de novo para enviar.",
-      "recordingVoice": "Gravando…",
-      "replyingTo": "Respondendo a {{name}}",
       "reportConversationTitle": "Denunciar conversa",
       "reportFailed": "A denúncia falhou.",
       "reportPending": "Não dá para denunciar mensagens pendentes até o servidor aceitá-las.",
@@ -548,17 +506,12 @@
       "retryFailedSend": "Reenviar mensagem que falhou",
       "sendFailed": "Não foi possível enviar a mensagem.",
       "sendingVoice": "Enviando mensagem de voz…",
-      "sent": "Enviada",
       "showingCached": "Mostrando mensagens salvas enquanto o PulseSoc reconecta.",
-      "slideToCancel": "Arraste para cancelar",
       "stateReconnecting": "RECONECTANDO",
       "stateRecording": "GRAVANDO",
       "stateSecureReady": "SEGURO · PRONTO",
       "stateSendingMedia": "ENVIANDO MÍDIA",
       "stateUndxReady": "UNDX · PRONTO",
-      "tapToRetry": "Toque para tentar de novo",
-      "typing": "{{name}} está digitando…",
-      "typingMultiple": "Várias pessoas estão digitando…",
       "undxActionFailed": "A ação do UNDX falhou.",
       "undxActionFinished": "Ação do UNDX concluída.",
       "undxAttachmentsUnsupported": "Por enquanto, o UNDX só conversa por texto no chat nativo. Os anexos continuam nas conversas com pessoas até o backend liberar mídia para o assistente.",
@@ -584,8 +537,6 @@
       "uploadingAttachment": "Enviando anexo…",
       "videoAttachment": "Anexo de vídeo",
       "videoPickerFailed": "Não foi possível abrir o seletor de vídeos.",
-      "videoPosterFailed": "Pré-visualização indisponível",
-      "videoProcessing": "Processando vídeo…",
       "videoSharingUnavailableTitle": "Compartilhamento de vídeos indisponível",
       "videosUnavailableBody": "Permita o acesso às fotos nas Configurações para compartilhar um vídeo.",
       "videosUnavailableTitle": "Vídeos indisponíveis",
@@ -596,8 +547,7 @@
       "voiceSent": "Mensagem de voz enviada.",
       "voiceUnavailable": "Mensagem de voz indisponível",
       "voiceUnavailableTitle": "Mensagem de voz indisponível",
-      "yourMessage": "sua mensagem",
-      "moreReactions": "Mais reações"
+      "yourMessage": "sua mensagem"
     },
     "group": {
       "createGroup": "Criar grupo",
@@ -819,7 +769,6 @@
           "minimalBlack": "Preto Minimalista",
           "neonPlanet": "Planeta Neon",
           "pulseHorizon": "Horizonte Pulse",
-          "pulsesocCosmic": "PulseSoc Grafite",
           "starTunnel": "Túnel de Estrelas"
         }
       },
@@ -1105,140 +1054,9 @@
       "signInTitle": "Entre para começar uma conversa",
       "subtitle": "Busque na rede real do PulseSoc. As conversas diretas já existentes reabrem automaticamente.",
       "title": "Comece uma conversa"
-    },
-    "postCard": {
-      "a11yOpen": "Abrir a publicação do PulseSoc de {{author}}",
-      "a11yOpenGeneric": "Abrir esta publicação do PulseSoc",
-      "cta": "Ver publicação →",
-      "eyebrow": "PUBLICAÇÃO DO PULSESOC",
-      "forbidden": "Este conteúdo não está disponível para você.",
-      "loading": "Carregando publicação…",
-      "missing": "Esta publicação não está mais disponível.",
-      "unavailable": "Conteúdo indisponível",
-      "video": "Vídeo"
-    },
-    "profileCard": {
-      "eyebrow": "PERFIL DO PULSESOC",
-      "cta": "Ver perfil →",
-      "loading": "Carregando perfil…",
-      "forbidden": "Este perfil não está disponível para você.",
-      "missing": "Este perfil não está mais disponível.",
-      "unavailable": "Perfil indisponível",
-      "a11yOpen": "Abrir o perfil do PulseSoc de {{author}}",
-      "a11yOpenGeneric": "Abrir este perfil do PulseSoc"
-    },
-    "reelCard": {
-      "eyebrow": "REEL DO PULSESOC",
-      "cta": "Ver Reel →",
-      "loading": "Carregando Reel…",
-      "forbidden": "Este conteúdo não está disponível para você.",
-      "missing": "Este Reel não está mais disponível.",
-      "unavailable": "Reel indisponível",
-      "play": "Reproduzir",
-      "a11yOpen": "Abrir o Reel do PulseSoc de {{author}}",
-      "a11yOpenGeneric": "Abrir este Reel do PulseSoc"
-    },
-    "messageActions": {
-      "openLink": "Abrir link",
-      "copyLink": "Copiar link",
-      "shareLink": "Compartilhar link",
-      "saveToPhotos": "Salvar em Fotos",
-      "translate": "Traduzir",
-      "forward": "Encaminhar",
-      "info": "Informações da mensagem",
-      "chooseLink": "Qual link?",
-      "closeMenu": "Fechar o menu da mensagem",
-      "reactWith": "Reagir com {{emoji}}"
     }
   },
   "commerce": {
-    "discovery": {
-      "label": {
-        "recommended": "Recomendado do Marketplace",
-        "trending": "Em alta no PulseSoc",
-        "sponsored": "Patrocinado"
-      },
-      "subtitle": {
-        "matches_your_interests": "Com base no que você curte",
-        "because_you_viewed": "Porque você viu itens semelhantes",
-        "related_to_this_post": "Relacionado ao que você está vendo",
-        "similar_to_this_product": "Semelhante a este produto",
-        "from_sellers_you_follow": "De vendedores que você segue",
-        "trending": "Em alta no PulseSoc agora",
-        "new_arrival": "Acabou de chegar ao Marketplace",
-        "popular": "Popular entre os compradores",
-        "new_to_marketplace": "Novo no Marketplace"
-      },
-      "action": {
-        "viewProduct": "Ver produto",
-        "save": "Salvar",
-        "saved": "Salvo",
-        "seeAll": "Ver tudo"
-      },
-      "menu": {
-        "title": "Opções de recomendação",
-        "hide": "Ocultar isto",
-        "notInterested": "Não tenho interesse",
-        "seeFewer": "Ver menos como isto",
-        "hideSeller": "Não recomendar este vendedor",
-        "why": "Por que estou vendo isto?",
-        "snooze": "Ocultar sugestões do Marketplace por 30 dias"
-      },
-      "why": {
-        "title": "Por que estou vendo isto?",
-        "loading": "Verificando…",
-        "unavailable": "Não conseguimos explicar esta recomendação agora.",
-        "factorsTitle": "No que se baseou",
-        "close": "Fechar"
-      },
-      "factor": {
-        "relevance": "O quanto combina com o que você estava vendo",
-        "quality": "A qualidade do anúncio",
-        "predicted_interest": "Coisas que já despertaram seu interesse",
-        "conversion_probability": "Com que frequência compradores levam itens assim",
-        "seller_reliability": "O histórico do vendedor",
-        "freshness": "Há quanto tempo foi anunciado",
-        "exploration_bonus": "Dar uma chance a anúncios novos",
-        "diversity_bonus": "Mostrar uma variedade de vendedores"
-      },
-      "module": {
-        "recommended_for_you": "Recomendado para você",
-        "because_you_viewed": "Porque você viu",
-        "similar_to_this_product": "Produtos semelhantes",
-        "you_might_also_like": "Você também pode gostar",
-        "trending": "Em alta",
-        "new_arrivals": "Novidades",
-        "from_sellers_you_follow": "De vendedores que você segue",
-        "new_to_marketplace": "Novo no Marketplace",
-        "popular": "Popular"
-      },
-      "tagging": {
-        "open": "Marcar produtos",
-        "title": "Seus produtos",
-        "subtitle": "Escolha o assunto desta publicação",
-        "cap": "Até {{max}} por publicação",
-        "selected": "{{selected}} de {{max}} selecionados",
-        "loading": "Carregando seus produtos…",
-        "empty": "Você ainda não tem produtos",
-        "emptyHint": "Os produtos que você anuncia no Marketplace aparecem aqui.",
-        "error": "Não conseguimos carregar seus produtos",
-        "errorHint": "Isso não significa que você não tenha nenhum. Tente novamente.",
-        "retry": "Tentar novamente",
-        "wontShow": "Não será exibido",
-        "wontShowHint": "Você pode marcá-lo, mas os compradores não o verão até que isso seja corrigido.",
-        "done": "Concluído",
-        "blocked": {
-          "not_purchasable": "Não disponível para compra",
-          "no_cover_image": "Precisa de uma foto de capa",
-          "no_resolvable_price": "Precisa de um preço",
-          "moderation_flagged": "Em análise",
-          "listing_risk": "Não elegível para exibição",
-          "seller_risk": "Sua loja não está elegível para exibição",
-          "unknown_reason": "Não pode ser exibido agora"
-        },
-        "cleared": "Marcações de produtos removidas: apenas as publicações do feed as incluem."
-      }
-    },
     "marketplace": {
       "title": "Marketplace",
       "browse": "Explorar",
@@ -1332,18 +1150,15 @@
       "storeOfflineNotice": "Mostrando os dados salvos de vendedor/loja.",
       "storeKicker": "Central do Marketplace",
       "storefrontReadiness": "Preparo da loja",
-      "storeHeroCopy": "A aprovação de vendedor, a revisão de produto, os pagamentos, os repasses e a entrega são todos decididos pelo PulseSoc.",
+      "storeHeroCopy": "Decisões de aprovação de vendedor, revisão de produto, pagamento, repasse, confiança e entrega continuam sob controle do servidor.",
       "loadingSellerControls": "Carregando os controles de vendedor",
       "sellerToolsLoadFailed": "Não foi possível carregar as ferramentas de vendedor.",
       "metricListingsLoaded": "Anúncios carregados",
-      "metricPublished": "Publicados",
       "metricActiveReviewReady": "Ativos/prontos para revisão",
       "metricPendingReview": "Aguardando revisão",
       "metricOrdersLoaded": "Pedidos carregados",
       "merchantApplication": "Cadastro de vendedor",
-      "merchantApplicationCopy": "Peça para vender no PulseSoc. O cadastro guia você por quem você é, o que vende e os documentos que verificamos. Suas respostas são salvas conforme você avança, e cada decisão é tomada por uma pessoa da nossa equipe de análise.",
-      "openSellerApplication": "Abrir cadastro de vendedor",
-      "openSellerApplicationHint": "Abre o cadastro de vendedor, onde você pode começar ou continuar suas respostas",
+      "merchantApplicationCopy": "Envie o cadastro nativo de vendedor para o endpoint atual. A verificação de documentos e a análise da equipe são feitas pelo PulseSoc depois que recebemos seu cadastro.",
       "sellerDisplayNamePlaceholder": "Nome de exibição do vendedor",
       "sellerBioPlaceholder": "Conte o que você vende e como isso ajuda quem compra",
       "saving": "Salvando...",
@@ -1357,7 +1172,6 @@
       "sellerInventory": "Estoque do vendedor",
       "sellerInventoryCopy": "Edite os campos do anúncio que são seus e controle a visibilidade pela revisão do Marketplace do PulseSoc. A visibilidade pública no Marketplace continua dependendo de aprovação.",
       "emptyInventory": "O estoque do vendedor aparece depois que os produtos são criados ou carregados.",
-      "productNotYours": "Esse produto não está na sua loja. Pode ter sido removido, ou o link pode apontar para o anúncio de outro vendedor.",
       "editListingTitle": "Editar anúncio #{{id}}",
       "saveAndReview": "Salvar e revisar",
       "addMedia": "Adicionar mídia",
@@ -1365,13 +1179,13 @@
       "resuming": "Retomando...",
       "resumeReview": "Retomar revisão",
       "removing": "Removendo...",
-      "editorFooterNote": "Suas edições são salvas na sua loja do PulseSoc, e o anúncio volta para a revisão do Marketplace sempre que o conteúdo muda. Checkout, repasses, entrega e disputas são tratados no pulsesoc.com.",
+      "editorFooterNote": "As alterações são salvas no servidor e voltam para a revisão do Marketplace quando o conteúdo muda. Checkout, repasses, entrega, disputas e ações do provedor continuam dentro dos limites do provedor nativo.",
       "listingUpdatedReview": "Anúncio atualizado e enviado para revisão.",
       "listingUpdateFailed": "Não foi possível atualizar o anúncio.",
       "listingUpdated": "Anúncio atualizado.",
       "listingStatusUpdateFailed": "Não foi possível atualizar o status do anúncio.",
       "productMediaGallery": "Galeria de mídia do produto",
-      "productMediaGalleryCopy": "Toque em qualquer item para abrir em tela cheia. O que o visualizador não conseguir reproduzir aparece como prévia estática.",
+      "productMediaGalleryCopy": "A galeria reaproveita os payloads de mídia do Marketplace e o visualizador de mídia nativo compartilhado. Mídias não compatíveis têm uma alternativa segura dentro do visualizador.",
       "openStoreMediaA11y": "Abrir mídia da loja {{index}}",
       "mediaFallback": "Mídia",
       "openMedia": "Abrir mídia",
@@ -1379,37 +1193,18 @@
       "ordersAndPayouts": "Pedidos e repasses",
       "ordersAndPayoutsCopy": "Pedidos, taxas de vendedor, cadastro no Stripe Connect, checkout e liberação de repasses continuam sob controle do provedor e do backend.",
       "noSellerOrders": "Nenhum pedido de vendedor carregado.",
-      "orderMerchandiseLine": "Mercadoria {{merchandise}} · Crédito de frete {{shipping}}",
-      "orderFeeLine": "Taxa do PulseSoc {{rate}} · Ajustes de reembolso {{refunds}}",
-      "orderNetEarningsLine": "Ganhos líquidos {{net}} · {{state}}",
-      "orderBlockedLine": "Bloqueado: {{reason}}. Resolva esse problema antes do repasse.",
       "checking": "Verificando...",
       "connectPayouts": "Conectar repasses",
       "payoutChecked": "Cadastro de repasse verificado.",
       "payoutUnavailable": "O cadastro de repasse ainda não está disponível.",
-      "policyFixNeedsReview": "Isto precisa de uma análise de políticas que não dá para resolver pelo app. Altere os dados do produto ou fale com o suporte em pulsesoc.com.",
       "payoutManagedNote": "O cadastro e a liberação de repasses são gerenciados pelo PulseSoc e pelo provedor de pagamento. Você será avisado quando seus repasses estiverem prontos.",
-      "termsAcceptedLabel": "Aceitas",
-      "reviewAndAccept": "Revisar e aceitar",
-      "termsAcceptedNotice": "Taxas e condições do Marketplace aceitas.",
-      "termsAcceptFailed": "Não foi possível salvar a aceitação das condições.",
       "trustAndEligibility": "Confiança e elegibilidade",
       "verification": "Verificação",
-      "trustCopy": "Formulários fiscais, cadastro bancário, disputas, reembolsos, entrega e análise do PulseSoc são tratados por enquanto no site do PulseSoc, não no app.",
+      "trustCopy": "Formulários fiscais avançados, cadastro bancário, disputas, reembolsos, entrega e análise da equipe continuam em fluxos seguros da web/provedor até as validações nativas de QA ficarem prontas.",
       "storeMediaViewerTitle": "Mídia da loja",
       "statusApprovedLive": "Aprovado/no ar",
       "statusPendingReview": "Aguardando revisão",
-      "statusRemoved": "Removido",
-      "status": {
-        "live": "Ativo",
-        "store_offline": "Loja inativa",
-        "store_name_needed": "Falta o nome da loja",
-        "paused": "Pausada",
-        "draft": "Rascunho",
-        "rejected": "Rejeitado"
-      },
-      "dropshipping": "Produtos importados",
-      "dropshippingCopy": "Produtos que você importou de um fornecedor, incluindo os que ainda aguardam revisão."
+      "statusRemoved": "Removido"
     },
     "orders": {
       "title": "Pedidos",
@@ -1529,52 +1324,6 @@
       "statusInReview": "Em análise",
       "pauseCampaign": "Pausar campanha",
       "resumeCampaign": "Retomar campanha"
-    },
-    "sellerAccess": {
-      "checking": "A verificar o seu estado de vendedor…",
-      "retry": "Tentar novamente",
-      "unreadableTitle": "Não foi possível verificar o seu estado de vendedor",
-      "unreadableBody": "A sua loja está bem — apenas não conseguimos fazer a verificação. Tente novamente daqui a pouco.",
-      "noApplicationTitle": "Comece a vender na PulseSoc",
-      "noApplicationBody": "Peça uma conta de vendedor para abrir a sua loja, publicar produtos e receber encomendas.",
-      "noApplicationCta": "Pedir para vender",
-      "draftTitle": "Termine a sua candidatura de vendedor",
-      "draftBody": "A sua candidatura está guardada como rascunho. Continue de onde parou — a sua loja abre assim que for aprovada.",
-      "draftCta": "Retomar candidatura",
-      "reviewTitle": "A sua candidatura está em análise",
-      "reviewBody": "Estamos a verificar os seus dados. Receberá uma notificação assim que houver uma decisão — de momento não é preciso mais nada da sua parte.",
-      "reviewCta": "Ver estado da candidatura",
-      "moreInfoTitle": "Precisamos de mais alguma informação",
-      "moreInfoBody": "A sua candidatura está em pausa até enviar o que os nossos revisores pediram.",
-      "moreInfoCta": "Concluir as alterações pedidas",
-      "declinedTitle": "A sua candidatura de vendedor não foi aprovada",
-      "declinedBody": "Abra a sua candidatura para ver o motivo e saber se pode candidatar-se de novo.",
-      "declinedCta": "Ver estado da candidatura",
-      "suspendedTitle": "A sua loja está suspensa",
-      "suspendedBody": "Não pode publicar nem vender enquanto a sua loja estiver suspensa. Continua a ver as encomendas existentes e a tratar de reembolsos e disputas.",
-      "suspendedCta": "Ver encomendas existentes",
-      "suspendedSupportCta": "Contactar o apoio"
-    },
-    "sellerPayments": {
-      "sectionTitle": "Pagamentos com cartão",
-      "setupRequiredLabel": "Configuração necessária",
-      "setupRequiredBody": "Os compradores ainda não lhe podem pagar com cartão. Ligue os seus dados de pagamento ao Stripe para começar a aceitar cartões.",
-      "setupRequiredCta": "Configurar pagamentos",
-      "setupInProgressLabel": "Configuração em curso",
-      "setupInProgressBody": "Começou a configurar os pagamentos com cartão, mas o Stripe ainda precisa de alguns dados seus.",
-      "setupInProgressCta": "Continuar configuração",
-      "actionRequiredLabel": "Ação necessária",
-      "actionRequiredBody": "O Stripe precisa de algo da sua parte antes de poder aceitar pagamentos com cartão.",
-      "actionRequiredCta": "Concluir configuração",
-      "underReviewLabel": "Em análise",
-      "underReviewBody": "O Stripe está a analisar os seus dados. Normalmente demora pouco e não exige nada da sua parte.",
-      "readyLabel": "Pronto",
-      "readyBody": "Os pagamentos com cartão estão ativos. Os compradores podem pagar-lhe com cartão na finalização da compra.",
-      "restrictedLabel": "Restrito",
-      "restrictedBody": "O Stripe restringiu os pagamentos com cartão na sua conta. Abra o Stripe para ver o que é preciso.",
-      "restrictedCta": "Abrir Stripe",
-      "unavailableLabel": "Indisponível",
-      "unavailableBody": "Os pagamentos com cartão não estão disponíveis na PulseSoc de momento. Os seus outros métodos de pagamento não são afetados."
     },
     "business": {
       "title": "Empresa",
@@ -2634,26 +2383,6 @@
       "upcomingBody": "Em construção. Eles aparecerão aqui quando forem liberados.",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "Esta parte do Business OS ainda não tem página. Volte ao Business OS para escolher outra seção."
-    },
-    "pulsedrop": {
-      "label": {
-        "trending": "Em alta",
-        "newDrop": "Novidade",
-        "popular": "Popular",
-        "topPick": "Nossa escolha",
-        "discovery": "Descobrir"
-      },
-      "availability": {
-        "unavailable": "Não está mais disponível",
-        "notPriced": "Sem preço ainda"
-      },
-      "cta": {
-        "viewProduct": "Ver produto"
-      },
-      "seller": {
-        "openSeller": "Abrir a loja de {{name}}",
-        "visitStore": "Ver loja"
-      }
     }
   },
   "discovery": {
@@ -3119,39 +2848,7 @@
       "reportFailed": "Não foi possível enviar a denúncia.",
       "selectedForFeedComposer": "{{title}} selecionada para o editor do feed.",
       "selectedForReel": "{{title}} selecionada para o reel.",
-      "selectedForStatus": "{{title}} selecionada para o status.",
-      "ownerSectionTitle": "Controles do proprietário",
-      "ownerManage": "Gerir",
-      "ownerClose": "Fechar",
-      "ownerLoading": "A verificar esta faixa…",
-      "ownerRetry": "Tentar novamente",
-      "ownerImpactTitle": "Antes de decidir",
-      "ownerImpactUses": "Anexada a {{count}} Reels, publicações e estados.",
-      "ownerImpactReports": "{{count}} denúncias abertas.",
-      "ownerCdnCaveat": "Remover impede o PulseSoc de servir o ficheiro, mas as cópias já em cache nos dispositivos continuam a tocar até a faixa ser purgada. A quarentena apaga o próprio ficheiro.",
-      "ownerLegalHold": "Esta faixa está sob retenção legal. Não pode ser purgada.",
-      "ownerReason": "Motivo",
-      "ownerNote": "Nota",
-      "ownerNotePlaceholder": "Adicione uma nota (obrigatória para OTHER e para qualquer purga)",
-      "ownerActionsTitle": "Ações",
-      "ownerTakedown": "Remover",
-      "ownerQuarantine": "Colocar em quarentena",
-      "ownerQuarantineHint": "Para a reprodução e apaga o ficheiro guardado. O registo da faixa e o seu histórico são mantidos.",
-      "ownerRestore": "Restaurar",
-      "ownerSchedulePurge": "Agendar purga",
-      "ownerCancelPurge": "Cancelar purga",
-      "ownerPurge": "Eliminação permanente",
-      "ownerPurgeExplainer": "A purga apaga o áudio permanentemente. As publicações, Reels e estados que o usavam são mantidos — o áudio deles fica em silêncio.",
-      "ownerStepUpTitle": "Palavra-passe",
-      "ownerStepUpPlaceholder": "Introduza novamente a sua palavra-passe",
-      "ownerStepUpAction": "Confirmar que é você",
-      "ownerStepUpGranted": "Confirmado. A purga fica desbloqueada durante {{seconds}} segundos.",
-      "ownerPurgeConfirm": "Escreva {{id}} para confirmar",
-      "ownerPurgeAction": "Purgar permanentemente",
-      "ownerAuditTitle": "Histórico",
-      "ownerAuditEmpty": "Nenhuma ação registada para esta faixa.",
-      "ownerApplied": "{{action}} aplicado.",
-      "ownerNoChange": "Já estava nesse estado — nada mudou."
+      "selectedForStatus": "{{title}} selecionada para o status."
     }
   },
   "settings": {
@@ -3189,7 +2886,7 @@
       "signOut": "Sair",
       "signOutSubtitle": "Sair apenas neste dispositivo.",
       "signOutConfirmTitle": "Sair do PulseSoc?",
-      "signOutConfirmBody": "Você continua conectado nos seus outros dispositivos. Os rascunhos não publicados e as mídias baixadas neste aparelho são excluídos.",
+      "signOutConfirmBody": "Você continua conectado nos seus outros dispositivos. Seus rascunhos e downloads neste aparelho são mantidos.",
       "signOutEverywhere": "Sair de todos os dispositivos",
       "signOutEverywhereSubtitle": "Encerra todas as sessões do PulseSoc, inclusive esta.",
       "signOutEverywhereConfirmTitle": "Sair de todos os dispositivos?",
@@ -3249,11 +2946,6 @@
           "title": "Idioma e região",
           "subtitle": "Idioma do app, tradução, formato de hora",
           "keywords": "traduzir idioma local região fuso horário formato de hora 24 horas"
-        },
-        "commerce": {
-          "title": "Sugestões do Marketplace",
-          "subtitle": "Sugestões de produtos, frequência, pausa",
-          "keywords": "marketplace sugestoes recomendacoes produtos compras feed reels frequencia pausa personalizado comercio loja"
         },
         "storage": {
           "title": "Armazenamento e dados",
@@ -3806,16 +3498,7 @@
       "copied": "Copiado",
       "share": "Compartilhar",
       "unavailable": "Seu link de convite ainda não está pronto.",
-      "fairness": "Convide pessoas que você conhece de verdade. Qualidade importa mais que quantidade.",
-      "message": {
-        "default": "Olá! Estou usando o PulseSoc. Vamos nos conectar lá e manter contato.\n\nJunte-se a mim no PulseSoc:",
-        "casual": "Oi — já estou no PulseSoc. Aparece lá.\n\nEntra por aqui:",
-        "network": "Estou construindo minha rede no PulseSoc e gostaria de me conectar com você lá.\n\nJunte-se a mim no PulseSoc:",
-        "discovery": "No PulseSoc tenho encontrado pessoas e publicações que valem a pena seguir. Acho que você ia gostar.\n\nDá uma olhada:",
-        "short": "Junte-se a mim no PulseSoc:",
-        "handle": "Sou @{{username}} por lá.",
-        "subject": "Junte-se a mim no PulseSoc"
-      }
+      "fairness": "Convide pessoas que você conhece de verdade. Qualidade importa mais que quantidade."
     },
     "missions": {
       "heading": "Missões",
@@ -4610,19 +4293,122 @@
         "UNKNOWN": "Indisponível"
       },
       "features": {
+        "privateFacts": {
+          "label": "Dados privados",
+          "hint": "Informação verificada registada sobre os seus assuntos."
+        },
+        "capitalGraph": {
+          "label": "Grafo de capital",
+          "hint": "Como os seus ativos, entidades e obrigações se ligam."
+        },
+        "privateBriefings": {
+          "label": "Relatórios privados",
+          "hint": "Relatórios elaborados a partir dos seus próprios registos."
+        },
         "relationshipIntelligence": {
           "label": "Inteligência de relações",
           "hint": "As pessoas e organizações em torno dos seus assuntos."
         },
+        "privateShield": {
+          "label": "Escudo privado",
+          "hint": "Vigia a exposição da sua informação privada."
+        },
+        "breachMonitoring": {
+          "label": "Monitorização de fugas",
+          "hint": "Avisos quando os seus dados surgem numa fuga conhecida."
+        },
+        "documentIntelligence": {
+          "label": "Inteligência documental",
+          "hint": "Extrai dados dos documentos que fornece."
+        },
+        "humanConcierge": {
+          "label": "Concierge humano",
+          "hint": "Uma pessoa que trata de pedidos em seu nome."
+        },
+        "operations": {
+          "label": "Operações",
+          "hint": "Obrigações, decisões, solicitações, riscos e oportunidades que você acompanha."
+        },
         "privateMeetings": {
           "label": "Reuniões Privadas",
           "hint": "Reuniões seguras com sala de espera e controles do anfitrião."
+        },
+        "privateConversations": {
+          "label": "Conversas privadas",
+          "hint": "Tópicos do escritório, classificados e ligados ao seu trabalho."
         }
       },
       "entry": {
         "heading": "Escritório privado",
         "hint": "O seu centro privado de inteligência e operações pessoais.",
         "lockedHint": "Incluído no {{tier}}."
+      },
+      "facts": {
+        "subtitle": "Apenas o que foi registado para si. Nada é deduzido da sua atividade pública.",
+        "loading": "A carregar os seus registos…",
+        "why": "Como sabe isto?",
+        "source": "Fonte",
+        "sourceUnknown": "Não registada",
+        "verified": "Verificação",
+        "observedLabel": "Observado",
+        "observed": "Observado a {{date}}",
+        "confidence": "Confiança",
+        "hasDocument": "Existe um documento de origem em arquivo.",
+        "close": "Fechar",
+        "stale": "Desatualizado",
+        "empty": {
+          "title": "Ainda não há nada aqui",
+          "body": "Ainda não foi adicionada informação verificada."
+        },
+        "notEntitled": {
+          "title": "Requer atualização de plano",
+          "body": "Os Dados privados estão incluídos no {{tier}}.",
+          "bodyGeneric": "Os Dados privados não estão incluídos no seu plano atual."
+        },
+        "disabled": {
+          "title": "Desativado temporariamente",
+          "body": "Os Dados privados estão desligados por agora. Os seus registos não foram tocados."
+        },
+        "notImplemented": {
+          "title": "Ainda não disponível",
+          "body": "Isto ainda não foi desenvolvido."
+        },
+        "unavailable": {
+          "title": "Indisponível",
+          "body": "Não conseguimos ler os seus registos agora. Tente de novo daqui a pouco."
+        },
+        "error": {
+          "title": "Algo correu mal",
+          "body": "Não foi possível carregar os seus registos."
+        },
+        "add": {
+          "open": "Adicionar um fato",
+          "title": "Registrar um fato",
+          "domain": "Domínio",
+          "factType": "Tipo de fato",
+          "factTypeHint": "ex.: número do passaporte",
+          "valueType": "Tipo de valor",
+          "value": "Valor",
+          "save": "Salvar",
+          "cancel": "Cancelar",
+          "failed": "Não conseguimos salvar isso agora."
+        }
+      },
+      "domains": {
+        "GENERAL": "Geral",
+        "FINANCIAL": "Financeiro",
+        "LEGAL": "Jurídico",
+        "HEALTH": "Saúde",
+        "FAMILY": "Família",
+        "IDENTITY": "Identidade",
+        "SECURITY": "Segurança"
+      },
+      "verification": {
+        "VERIFIED": "Verificado",
+        "SOURCED": "Com fonte",
+        "SELF_REPORTED": "Declarado por si",
+        "ESTIMATED": "Estimado",
+        "NEEDS_REVIEW": "Requer revisão"
       },
       "security": {
         "title": "Segurança do escritório",
@@ -4715,6 +4501,457 @@
           "failed": "Falha ao redefinir. Verifique sua senha e tente novamente."
         }
       },
+      "operations": {
+        "title": "Operações",
+        "subtitle": "Obrigações, eventos, decisões, solicitações, riscos e oportunidades — registrados e acompanhados em um só lugar.",
+        "loading": "Carregando seus registros…",
+        "cancel": "Cancelar",
+        "save": "Salvar",
+        "move": "Mover",
+        "writeFailed": "Essa alteração não foi salva.",
+        "empty": {
+          "title": "Nada registrado"
+        },
+        "views": {
+          "obligations": "Obrigações",
+          "events": "Eventos",
+          "decisions": "Decisões",
+          "requests": "Solicitações",
+          "risks": "Riscos",
+          "opportunities": "Oportunidades"
+        },
+        "add": {
+          "obligations": "Registrar uma obrigação",
+          "events": "Registrar um evento",
+          "decisions": "Registrar uma decisão",
+          "requests": "Registrar uma solicitação",
+          "risks": "Registrar um risco",
+          "opportunities": "Registrar uma oportunidade"
+        },
+        "emptyBody": {
+          "obligations": "Nenhuma obrigação registrada ainda.",
+          "events": "Nenhum evento registrado ainda.",
+          "decisions": "Nenhuma decisão registrada ainda.",
+          "requests": "Nenhuma solicitação registrada ainda.",
+          "risks": "Nenhum risco registrado ainda.",
+          "opportunities": "Nenhuma oportunidade registrada ainda."
+        },
+        "notEntitled": {
+          "title": "Upgrade necessário",
+          "body": "Operações está incluído em {{tier}}.",
+          "bodyGeneric": "Operações não está incluído no seu plano atual."
+        },
+        "disabled": {
+          "title": "Indisponível",
+          "body": "Operações está desligado no momento."
+        },
+        "notImplemented": {
+          "title": "Em preparação",
+          "body": "Esta parte do seu escritório ainda está sendo preparada."
+        },
+        "unavailable": {
+          "title": "Indisponível",
+          "body": "Não foi possível contatar Operações. Seus registros permanecem inalterados."
+        },
+        "error": {
+          "title": "Algo deu errado",
+          "body": "Não foi possível carregar seus registros."
+        },
+        "due": "Vence em {{date}}",
+        "occurred": "Ocorreu em {{date}}",
+        "outcome": "Resultado: {{outcome}}",
+        "form": {
+          "title": "Título",
+          "question": "Pergunta",
+          "kind": "Tipo",
+          "details": "Detalhes",
+          "due": "Data de vencimento (AAAA-MM-DD)"
+        },
+        "status": {
+          "OPEN": "Aberto",
+          "RESOLVED": "Resolvido",
+          "DISMISSED": "Descartado",
+          "RECORDED": "Registrado",
+          "UNDER_REVIEW": "Em análise",
+          "DECIDED": "Decidido",
+          "ABANDONED": "Abandonado",
+          "IN_PROGRESS": "Em andamento",
+          "WAITING_ON_USER": "Aguardando você",
+          "WAITING_ON_PROVIDER": "Aguardando o fornecedor",
+          "COMPLETED": "Concluído",
+          "CANCELED": "Cancelado",
+          "MONITORING": "Em monitoramento",
+          "MITIGATED": "Mitigado",
+          "ACCEPTED": "Aceito",
+          "NEW": "Novo",
+          "REVIEWING": "Em avaliação",
+          "INTERESTED": "Interessado",
+          "PASSED": "Descartada",
+          "CLOSED": "Encerrada",
+          "OVERDUE": "Vencido",
+          "DUE_SOON": "Vence em breve"
+        },
+        "overview": {
+          "heading": "Visão geral",
+          "loading": "Carregando sua visão geral…",
+          "unavailable": "Não foi possível carregar sua visão geral. Isto não são zeros.",
+          "needsAttention": "Requer atenção",
+          "dueToday": "Vence hoje",
+          "overdue": "Atrasado",
+          "pendingDecisions": "Decisões pendentes",
+          "dueThisWeek": "Vence esta semana",
+          "highRisks": "Riscos altos",
+          "openRequests": "Solicitações abertas",
+          "awaitingResponse": "Aguardando sua resposta",
+          "opportunities": "Oportunidades",
+          "recentlyCompleted": "Concluído recentemente",
+          "recentWindow": "Últimos {{days}} dias",
+          "queue": "Fila de atenção",
+          "queueEmpty": "Nada requer sua atenção.",
+          "truncated": "Mostrando {{shown}} de {{total}}.",
+          "notTracked": "Não registrado",
+          "reason": {
+            "OVERDUE": "Atrasado",
+            "HIGH_RISK": "Risco alto",
+            "DUE_SOON": "Vence em breve",
+            "RESPONSE_REQUIRED": "Precisa da sua resposta",
+            "MISSING_REQUIRED_CONTEXT": "Precisa de revisão",
+            "DECISION_REQUIRED": "Decisão em aberto",
+            "BLOCKED": "Aguardando o prestador"
+          },
+          "expiringOpportunities": "Oportunidades a expirar"
+        }
+      },
+      "capital": {
+        "title": "Grafo de capital",
+        "subtitle": "O que você possui, o que o cobre e como tudo se conecta — com o grau de certeza de cada parte.",
+        "loading": "Carregando seu grafo…",
+        "views": {
+          "coverage": "Cobertura",
+          "documents": "Documentos",
+          "holdings": "Patrimônio",
+          "obligations": "Obrigações",
+          "overview": "Resumo",
+          "structure": "Estrutura",
+          "cash_flow": "Saídas",
+          "exposure": "Concentração"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "{{count}} até agora",
+        "factCount": "{{count}} fatos registrados",
+        "empty": {
+          "title": "Nada registrado",
+          "openPortfolio": "Abrir carteira"
+        },
+        "emptyBody": {
+          "holdings": "Ainda não há posições registradas. Os ativos adicionados à sua Carteira aparecerão aqui e serão conectados automaticamente ao seu Grafo de Capital.",
+          "coverage": "Nenhuma cobertura registrada ainda.",
+          "structure": "Nenhuma estrutura registrada ainda.",
+          "documents": "Ainda não há documentos de capital conectados."
+        },
+        "denied": {
+          "title": "Não exibido",
+          "body": "Esta pergunta não foi respondida."
+        },
+        "notFound": {
+          "title": "Não encontrado",
+          "body": "Não existe tal entidade no seu escritório."
+        },
+        "notEntitled": {
+          "title": "Upgrade necessário",
+          "body": "O Grafo de capital está incluído em {{tier}}.",
+          "bodyGeneric": "O Grafo de capital não está incluído no seu plano atual."
+        },
+        "disabled": {
+          "title": "Indisponível",
+          "body": "O Grafo de capital está desligado no momento."
+        },
+        "notImplemented": {
+          "title": "Em preparação",
+          "body": "Esta parte do seu escritório ainda está sendo preparada."
+        },
+        "unavailable": {
+          "title": "Indisponível",
+          "body": "Não foi possível contatar seu grafo. Seus registros permanecem inalterados."
+        },
+        "error": {
+          "title": "Algo deu errado",
+          "body": "Não foi possível carregar seu grafo."
+        },
+        "conflicts": {
+          "title": "Informações conflitantes",
+          "disagree": "Duas fontes divergem"
+        },
+        "stale": {
+          "title": "Além do horizonte de atualidade",
+          "age": "{{days}} dias"
+        },
+        "truth": {
+          "KNOWN": "Conhecido",
+          "INFERRED": "Inferido",
+          "ESTIMATED": "Estimado",
+          "STALE": "Desatualizado",
+          "MISSING": "Ausente",
+          "CONFLICTING": "Conflitante",
+          "PRO_REVIEW": "Requer revisão"
+        },
+        "nodeType": {
+          "PERSON": "Pessoa",
+          "BUSINESS": "Empresa",
+          "PROPERTY": "Imóvel",
+          "INSURANCE_POLICY": "Apólice de seguro",
+          "CONTRACT": "Contrato",
+          "DOCUMENT": "Documento",
+          "PROFESSIONAL": "Profissional",
+          "ASSET": "Ativo",
+          "LIABILITY": "Passivo"
+        },
+        "entity": {
+          "relationships": "Relações",
+          "facts": "Fatos registrados",
+          "updated": "Atualizado em {{date}}"
+        },
+        "relationshipsUnavailable": "As relações não puderam ser carregadas agora.",
+        "portfolio": {
+          "title": "Portfólio",
+          "subtitle": "Seu portfólio do PulseSoc, espelhado no seu grafo. Edite as posições no Portfólio — as mudanças chegam aqui automaticamente.",
+          "totalValue": "Valor total",
+          "partial": "{{priced}} de {{total}} posições com preço",
+          "lots_one": "{{count}} lote",
+          "lots_other": "{{count}} lotes",
+          "priceUnavailable": "Preço indisponível",
+          "manualSource": "Manual · do seu Portfólio",
+          "updatedSeconds": "Preços atualizados há {{count}} s",
+          "updatedMinutes": "Preços atualizados há {{count}} min",
+          "updatedStale": "Os preços podem estar desatualizados",
+          "sourceUnavailable": "Os preços ao vivo não estão conectados no momento",
+          "syncPending_one": "{{count}} alteração do portfólio sincronizando…",
+          "syncPending_other": "{{count}} alterações do portfólio sincronizando…",
+          "syncFailed": "Uma sincronização recente falhou — exibindo a última atualização bem-sucedida.",
+          "unpriced": "Sem preço ao vivo para {{symbols}}. Os totais cobrem apenas suas outras posições.",
+          "empty": "Ainda não há posições no seu Portfólio.",
+          "unavailable": "Não foi possível carregar seu portfólio agora.",
+          "basisUnknown": "Custo de aquisição não registrado",
+          "pricedValue": "Valor da carteira precificada",
+          "valueUnavailable": "Ainda não há posições precificadas",
+          "excludesUnpriced": "Posições sem preço excluídas: {{count}}",
+          "pnlLabel": "Lucro não realizado",
+          "pnlUnavailable": "Não disponível",
+          "basisLabel": "Custo de aquisição",
+          "basisPartial": "Conhecido para {{known}} de {{total}}",
+          "holdingsLabel": "Posições",
+          "allocationTitle": "Alocação",
+          "allocationPricedOnly": "Somente posições precificadas",
+          "excludedFromTotal": "Excluída do total da carteira",
+          "qualityPriced": "Precificadas {{priced}}/{{total}}",
+          "qualityBasis": "Custo conhecido {{known}}/{{total}}",
+          "unavailableTitle": "Carteira indisponível",
+          "fresh": {
+            "live": "Ao vivo",
+            "fresh": "Recente",
+            "delayed": "Atrasado",
+            "stale": "Desatualizado",
+            "unavailable": "Sem fonte de preços"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "Cobertura da carteira",
+          "pricing": "{{priced}} de {{total}} posições precificadas",
+          "basis": "{{known}} de {{total}} com custo de aquisição conhecido",
+          "factsTitle": "Verificação de fatos",
+          "knownShare": "Fatos confirmados: {{pct}}",
+          "documentBacked": "Fatos com respaldo documental: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "Relações",
+          "noRelationships": "Ainda não há relações registradas."
+        },
+        "relation": {
+          "OWNS": "Possui",
+          "ADVISED_BY": "Assessorado por",
+          "COVERED_BY": "Coberto por",
+          "SECURED_BY": "Garantido por",
+          "GOVERNED_BY": "Regido por",
+          "DESCRIBES": "Descreve"
+        },
+        "documents": {
+          "evidenceTitle": "Evidências conectadas"
+        },
+        "overview": {
+          "assets": "Ativos com preço",
+          "complete": "Completo",
+          "concentrationTitle": "Maiores posições",
+          "concentrationUnranked": "As posições menores não são listadas.",
+          "coverageTitle": "Cobertura",
+          "dimension": {
+            "pricing": "Precificação",
+            "cost_basis": "Custo de aquisição",
+            "liability_amounts": "Valores dos passivos",
+            "evidence": "Comprovativos"
+          },
+          "dimensionCount": "{{known}} de {{total}}",
+          "disclaimerBody": "Compara ativos com preço e passivos quantificados. Tudo o que não pôde ser avaliado ou quantificado fica de fora.",
+          "disclaimerTitle": "Não é um valor de património líquido",
+          "excludedForeignCurrency": "Passivos noutra moeda",
+          "excludedTitle": "Fora deste valor",
+          "excludedUnpricedAssets": "Ativos sem preço",
+          "excludedUnquantifiedLiabilities": "Passivos sem montante",
+          "excludedUnspecifiedCurrency": "Passivos sem moeda",
+          "liabilities": "Passivos quantificados",
+          "liabilityConcentrationTitle": "Maiores obrigações",
+          "noLiabilities": "Não há passivos registados. Isso não é o mesmo que não dever nada.",
+          "notSummable": "Não há uma moeda única, por isso não se mostra um total.",
+          "otherCurrencies": "Outras moedas",
+          "partial": "Parcial",
+          "quantifiedOf": "Quantificados {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "Alguns ativos não puderam ser precificados.",
+            "incomplete_portfolio": "O total da carteira está incompleto.",
+            "unquantified_liabilities": "Alguns passivos não têm valor registado.",
+            "uncomparable_currency": "Alguns passivos estão numa moeda não comparável.",
+            "liabilities_truncated": "Existem mais passivos do que os lidos.",
+            "no_liabilities_recorded": "Nenhum passivo está registado."
+          },
+          "reviewMore": "Outros itens não são mostrados aqui.",
+          "reviewTitle": "Precisa de revisão",
+          "shareUnknown": "Proporção desconhecida",
+          "title": "Posição líquida",
+          "unscoreable": "Nada a pontuar",
+          "withheld": "Não indicado"
+        },
+        "obligations": {
+          "amountMissing": "Sem valor registado",
+          "complete": "Todos os valores registados",
+          "currenciesTitle": "Por moeda",
+          "disclaimerBody": "É a soma das obrigações que registou, não tudo o que deve.",
+          "disclaimerTitle": "O que é este total",
+          "dueLabel": "Vencimento",
+          "dueMissing": "Sem data de vencimento registada",
+          "evidenceLabel": "Factos comprovativos",
+          "evidenceMissing": "Sem factos comprovativos registados",
+          "none": "Não há obrigações registadas. Não é o mesmo que não dever nada.",
+          "notProjected": "Esta lista não foi reconstruída a partir do registo.",
+          "notSummable": "Não há uma moeda única, por isso não é mostrado nenhum total.",
+          "partial": "Faltam alguns valores",
+          "projectedLabel": "Reconstruído a partir dos registos",
+          "quantifiedLabel": "Com valor registado",
+          "recordedLabel": "Obrigações registadas",
+          "retiredLabel": "Encerradas",
+          "skippedLabel": "Ignoradas",
+          "staleTitle": "Não atualizado recentemente",
+          "syncTitle": "Projeção",
+          "title": "Total quantificado",
+          "truncated": "Existem mais obrigações do que as mostradas aqui.",
+          "unquantifiedLabel": "Sem valor registado",
+          "unspecifiedCurrency": "Valor registado sem moeda",
+          "withheld": "Não indicado"
+        },
+        "cashFlow": {
+          "title": "Saídas programadas",
+          "complete": "Tudo o que está registado está programado",
+          "partial": "Algumas obrigações ficaram de fora",
+          "withheld": "Não indicado",
+          "notSummable": "Não há uma moeda única, por isso não se mostra qualquer total.",
+          "outflowsTitle": "O que é este calendário",
+          "notProjected": "Este calendário não foi reconstruído a partir do registo.",
+          "scheduledLabel": "Programadas",
+          "seenLabel": "Obrigações analisadas",
+          "excludedLabel": "Fora do cálculo",
+          "noneScheduled": "Nada do que registou vence numa data que conheçamos. Isso não é o mesmo que nada ser devido.",
+          "truncated": "Existem mais obrigações do que as mostradas aqui.",
+          "mixedCurrency": "{{count}} numa moeda que este total não nomeia, ficando de fora.",
+          "bucketsTitle": "Por data de vencimento",
+          "bucketCountLabel": "Obrigações",
+          "bucketMissing": "Sem dados",
+          "bucketUndeclared": "Período não descrito",
+          "bucketBefore": "Até {{to}} dias",
+          "bucketDueNow": "Vence agora ou já está vencido",
+          "bucketAfter": "Mais de {{from}} dias",
+          "bucketBetween": "{{from}}–{{to}} dias",
+          "excludedTitle": "Fora de todos os períodos",
+          "excludedBody": "Estas obrigações são reais. Não aparecem em nenhum período porque falta algo necessário para as situar.",
+          "undated": "Sem data de vencimento registada",
+          "unquantified": "Sem valor registado",
+          "undatedAndUnquantified": "Sem data nem valor registados",
+          "amountMissing": "Sem valor registado",
+          "unspecifiedCurrency": "Valor registado sem moeda",
+          "dueLabel": "Vence",
+          "dueMissing": "Sem data de vencimento registada",
+          "overdue": "Vencida",
+          "evidenceLabel": "Factos de suporte",
+          "evidenceMissing": "Sem factos de suporte registados",
+          "syncTitle": "Projeção",
+          "projectedLabel": "Reconstruído a partir dos registos",
+          "skippedLabel": "Ignoradas"
+        },
+        "exposure": {
+          "basisTitle": "Base da classificação",
+          "complete": "Completo",
+          "partial": "Parcial",
+          "withheld": "Não informado",
+          "noBasis": "Sem total para classificar",
+          "basis": {
+            "priced_asset_value": "Valor dos ativos precificados",
+            "quantified_liability_amount": "Montante dos passivos quantificados"
+          },
+          "pricedOf": "{{priced}} de {{total}} posições precificadas",
+          "pricingCoverage": "Cobertura de preços",
+          "dimensionCount": "{{known}} de {{total}}",
+          "pricingUnknown": "A cobertura de preços não pode ser pontuada",
+          "blindSpotTitle": "Fora desta classificação",
+          "blindSpotBody": "Estas posições não têm preço, portanto estão ausentes da classificação, não em último lugar. Qualquer uma delas pode ser maior que a primeira linha.",
+          "unpricedUnnamed": "Sem preço e sem nome",
+          "pricesUnavailable": "Não foi possível ler os preços ao vivo, então esta classificação não está atualizada.",
+          "readAt": "Lido em",
+          "assetsTitle": "Onde está o dinheiro precificado",
+          "shareUnknown": "Percentual não informado",
+          "sharesOfPriced": "Os percentuais são do total precificado acima, não de tudo o que está registrado.",
+          "unrankedTail": "Precificado, mas não classificado",
+          "basisMismatch": "As contagens classificadas e não classificadas não somam o número de posições precificadas, então esta classificação pode não corresponder ao total mostrado acima.",
+          "rankedMismatch": "A contagem de classificados do servidor não corresponde às linhas enviadas.",
+          "noHoldings": "Nenhuma posição está registrada, então não há o que classificar. Isso não é o mesmo que não possuir nada.",
+          "nonePriced": "Há posições registradas, mas nenhuma tem preço, então nenhuma classificação é possível.",
+          "pricedButUnrankable": "As posições precificadas não somam um total contra o qual classificar.",
+          "liabilitiesTitle": "Onde está a dívida quantificada",
+          "liabilitiesGrouped": "Agrupado por tipo de obrigação, não por credor.",
+          "noLiabilities": "Nenhuma obrigação está registrada. Isso não é o mesmo que não dever nada.",
+          "noneQuantified": "Nenhuma obrigação tem valor registrado, então nenhuma pode ser classificada.",
+          "quantifiedOf": "{{done}} de {{total}} obrigações quantificadas",
+          "excludedTitle": "Fora desta classificação",
+          "excludedUnquantified": "Sem valor registrado",
+          "excludedForeignCurrency": "Outra moeda",
+          "excludedUnspecifiedCurrency": "Sem moeda informada",
+          "otherCurrencies": "Reservado, por moeda",
+          "liabilitiesTruncated": "A lista de obrigações foi limitada, então podem existir mais do que as classificadas.",
+          "unmeasuredTitle": "O que esta aba não mede",
+          "unmeasuredBody": "Nada no arquivo registra isso, então está ausente aqui, não liberado. Este silêncio não é um sinal de tudo certo.",
+          "unmeasured": {
+            "counterparty": "Concentração por contraparte",
+            "custodian": "Concentração por custodiante e plataforma",
+            "geography": "Concentração geográfica",
+            "sector": "Concentração setorial",
+            "assetCurrency": "Moeda dos próprios ativos"
+          }
+        }
+      },
+      "attention": {
+        "title": "Precisa da sua atenção",
+        "none": "Nada precisa da sua atenção neste momento.",
+        "unavailable": "Não conseguimos verificar o que precisa de atenção neste momento."
+      },
+      "quick": {
+        "title": "Ações rápidas",
+        "record": "Registrar algo",
+        "addFact": "Adicionar um fato"
+      },
+      "valueTypes": {
+        "STRING": "Texto",
+        "NUMBER": "Número",
+        "MONEY": "Valor monetário",
+        "PERCENT": "Percentual",
+        "DATE": "Data",
+        "BOOLEAN": "Sim ou não"
+      },
       "feature": {
         "loading": "Verificando este recurso…",
         "retry": "Tentar novamente",
@@ -4740,6 +4977,35 @@
           "body": "Não foi possível carregar."
         }
       },
+      "documents": {
+        "subtitle": "Lê informações dos documentos que você fornece. Nada é registrado sem a sua revisão.",
+        "upload": "Enviar um documento",
+        "uploading": "Enviando…",
+        "duplicate": {
+          "title": "Já está arquivado",
+          "body": "Você já enviou este mesmo arquivo antes. A cópia existente foi mantida."
+        },
+        "uploadFailed": "Falha no envio",
+        "reviewFailed": "Falha na revisão",
+        "empty": {
+          "title": "Nenhum documento ainda",
+          "body": "Os documentos que você enviar aparecem aqui com o que foi lido deles."
+        },
+        "states": {
+          "EXTRACTED": "Lido",
+          "NO_CLAIMS": "Nada a extrair",
+          "PROVIDER_REQUIRED": "Aguardando um provedor",
+          "FAILED": "Não foi possível ler"
+        },
+        "claims": {
+          "title": "Informações propostas",
+          "none": "Nenhuma informação foi proposta a partir deste documento.",
+          "accept": "Aceitar",
+          "reject": "Rejeitar",
+          "ACCEPTED": "Aceita",
+          "REJECTED": "Rejeitada"
+        }
+      },
       "people": {
         "subtitle": "As pessoas registradas no seu próprio escritório. Nada é pesquisado sobre ninguém.",
         "add": "Adicionar uma pessoa",
@@ -4763,6 +5029,115 @@
           "nothing": "Nada registrado sobre esta pessoa ainda."
         }
       },
+      "briefings": {
+        "subtitle": "Briefings montados a partir dos seus próprios registros. Nada é adicionado de fora.",
+        "generate": "Preparar um briefing",
+        "generating": "Preparando…",
+        "generateFailed": "Não foi possível preparar um briefing",
+        "itemCount_one": "{{count}} item",
+        "itemCount_other": "{{count}} itens",
+        "noItems": "Este briefing está vazio — não havia nada nos seus registros para relatar.",
+        "empty": {
+          "title": "Nenhum briefing ainda",
+          "body": "Prepare um e ele será montado com seus registros daquele momento."
+        },
+        "sections": {
+          "PEOPLE": "Pessoas",
+          "OBLIGATIONS": "Obrigações",
+          "EVENTS": "Eventos",
+          "DECISIONS": "Decisões",
+          "REQUESTS": "Solicitações",
+          "RISKS": "Riscos",
+          "OPPORTUNITIES": "Oportunidades"
+        }
+      },
+      "shield": {
+        "subtitle": "Verifica exposição nos seus próprios registros. Ele vê apenas o que está nomeado abaixo.",
+        "openFindings_one": "{{count}} constatação em aberto",
+        "openFindings_other": "{{count}} constatações em aberto",
+        "severity": {
+          "HIGH": "Alta",
+          "MEDIUM": "Média",
+          "LOW": "Baixa"
+        },
+        "scan": "Executar uma verificação",
+        "scanning": "Verificando…",
+        "scanFailed": "A verificação não pôde ser executada",
+        "checksTitle": "O que é verificado",
+        "checksHint": "«Nenhuma constatação» significa nenhuma nas verificações listadas aqui — nada mais.",
+        "externalTitle": "Sem verificação externa",
+        "externalMonitored": "Monitorado por um provedor externo",
+        "externalNotMonitored": "Nenhum provedor externo está monitorando",
+        "empty": {
+          "title": "Nenhuma constatação em aberto",
+          "body": "Nada foi encontrado nas verificações listadas acima. Isso é tudo o que significa."
+        },
+        "status": {
+          "OPEN": "Aberta",
+          "ACKNOWLEDGED": "Reconhecida",
+          "RESOLVED": "Resolvida",
+          "DISMISSED": "Descartada"
+        },
+        "acknowledge": "Reconhecer",
+        "resolve": "Marcar como resolvida",
+        "dismiss": "Descartar",
+        "updateFailed": "Não foi possível atualizar"
+      },
+      "concierge": {
+        "subtitle": "Um balcão de solicitações atendidas por uma pessoa. Cada resposta aqui foi escrita por alguém.",
+        "newRequest": "Nova solicitação",
+        "submitFailed": "Não foi possível enviar",
+        "sendFailed": "Não foi possível enviar a mensagem",
+        "cancelFailed": "Não foi possível cancelar",
+        "cancelRequest": "Cancelar esta solicitação",
+        "empty": {
+          "title": "Nenhuma solicitação ainda",
+          "body": "As solicitações que você enviar aparecem aqui com todo o histórico."
+        },
+        "desk": {
+          "staffed_one": "{{count}} operador de plantão",
+          "staffed_other": "{{count}} operadores de plantão",
+          "unstaffed": "Nenhum operador de plantão"
+        },
+        "form": {
+          "title": "Do que você precisa?",
+          "description": "Detalhes (opcional)",
+          "category": "Categoria",
+          "priority": "Prioridade",
+          "submit": "Enviar",
+          "cancel": "Cancelar"
+        },
+        "categories": {
+          "GENERAL": "Geral",
+          "TRAVEL": "Viagens",
+          "LEGAL": "Jurídico",
+          "FINANCIAL": "Financeiro",
+          "PERSONAL": "Pessoal",
+          "RESEARCH": "Pesquisa",
+          "ADMIN": "Administrativo"
+        },
+        "priorities": {
+          "LOW": "Baixa",
+          "NORMAL": "Normal",
+          "HIGH": "Alta",
+          "URGENT": "Urgente"
+        },
+        "statusWords": {
+          "OPEN": "Aberta",
+          "IN_PROGRESS": "Em andamento",
+          "WAITING_ON_USER": "Aguardando você",
+          "WAITING_ON_PROVIDER": "Aguardando um provedor",
+          "COMPLETED": "Concluída",
+          "CANCELED": "Cancelada"
+        },
+        "thread": {
+          "none": "Nenhuma mensagem ainda.",
+          "operator": "Operador",
+          "you": "Você",
+          "placeholder": "Escreva uma mensagem…",
+          "send": "Enviar"
+        }
+      },
       "meetings": {
         "subtitle": "Reuniões seguras na sua linha privada. A sala de espera e os controles do anfitrião são aplicados pelo servidor, não pela tela.",
         "instant": "Iniciar uma reunião instantânea",
@@ -4778,38 +5153,17 @@
         "scheduleFailed": "Não foi possível agendar",
         "startFailed": "Não foi possível iniciar",
         "cancelFailed": "Não foi possível cancelar",
-        "rescheduleFailed": "Não foi possível reagendar",
         "start": "Iniciar",
         "cancel": "Cancelar",
-        "reschedule": "Reagendar",
-        "saveChanges": "Salvar alterações",
         "untitled": "Reunião",
         "details": "Detalhes de {{title}}",
         "liveNow": "Ao vivo agora",
         "durationMinutes_one": "{{count}} minuto",
         "durationMinutes_other": "{{count}} minutos",
-        "confirmed": {
-          "title": "Reunião agendada",
-          "when": "Quando",
-          "duration": "Duração",
-          "guests": "Convidados",
-          "guestsNone": "Ninguém foi convidado ainda. Você pode convidar pessoas a partir da própria reunião.",
-          "memberFallback": "Membro {{id}}",
-          "someone": "Uma das pessoas convidadas",
-          "reminders": "Lembretes",
-          "remindersNone": "Nenhum lembrete está agendado para esta reunião.",
-          "reminderSkipped": "cedo demais para enviar",
-          "meetingId": "ID da reunião",
-          "meetingCode": "Código de convite",
-          "done": "Concluído",
-          "skipped": {
-            "emailRequired": "Não convidado — sem endereço de e-mail",
-            "emailInvalid": "Não convidado — esse endereço não pode ser usado",
-            "tooMany": "Não convidado — convidados demais para uma reunião",
-            "isHost": "Já está aqui — você é o anfitrião",
-            "alreadyIn": "Já está nesta reunião",
-            "unavailable": "Não foi possível convidar"
-          }
+        "presets": {
+          "in15m": "Em {{minutes}} minutos",
+          "in1h": "Em {{hours}} hora",
+          "tomorrowMorning": "Amanhã às {{time}}"
         },
         "buckets": {
           "live": "Acontecendo agora",
@@ -4918,53 +5272,82 @@
             "feature_disabled": "As reuniões foram desativadas enquanto você estava conectado.",
             "generic": "A reunião acabou."
           }
+        }
+      },
+      "conversations": {
+        "title": "Conversas privadas",
+        "subtitle": "Tópicos do escritório, classificados e ligados ao trabalho a que pertencem.",
+        "unread": "Não lida",
+        "archived": "Arquivada",
+        "filters": {
+          "all": "Todas"
         },
-        "calendar": {
-          "browse": "Navegar pelo calendário",
-          "previousMonth": "Mês anterior",
-          "nextMonth": "Próximo mês",
-          "pickMonth": "Escolher um mês",
-          "pickYear": "Escolher um ano",
-          "jumpToYear": "Ir para um ano",
-          "today": "Hoje",
-          "close": "Fechar",
-          "loadFailed": "Não foi possível carregar este mês. Tente novamente ou vá para outro mês.",
-          "noneOnDay": "Nada agendado neste dia.",
-          "dayWithMeetings_one": "{{day}}, {{count}} reunião",
-          "dayWithMeetings_other": "{{day}}, {{count}} reuniões"
+        "scopes": {
+          "DIRECT": "Direta",
+          "GROUP": "Grupo",
+          "ORGANIZATION_ROOM": "Sala da organização",
+          "PROJECT_ROOM": "Sala do projeto"
         },
-        "wizard": {
-          "steps": {
-            "date": "Escolha uma data",
-            "time": "Escolha um horário",
-            "zone": "Confirme o fuso horário",
-            "duration": "Quanto tempo?",
-            "details": "Título e pauta",
-            "guests": "Quem vai participar?",
-            "review": "Revisar"
-          },
-          "timeHint": "O horário como será lido onde a reunião acontece.",
-          "zoneHint": "Todos são convidados para um mesmo instante. O fuso horário decide qual é esse instante.",
-          "zoneUnknown": "Este dispositivo não informou um fuso horário, então a reunião será lida como UTC.",
-          "looksPast": "Pelo relógio deste aparelho isso já passou. O servidor dá a palavra final.",
-          "customDuration": "Duração personalizada em minutos",
-          "durationRange": "Escolha entre {{min}} e {{max}} minutos.",
-          "agendaField": "Pauta (opcional)",
-          "inviteLater": "Você poderá convidar pessoas assim que a reunião existir.",
-          "guestsHint": "Todos aqui recebem o convite e os lembretes. Não precisam de uma conta PulseSoc.",
-          "guestsNone": "Ainda sem convidados. Você pode adicioná-los agora ou convidar depois.",
-          "guestsNoneShort": "Ninguém ainda",
-          "guestName": "Nome completo (opcional)",
-          "guestEmail": "Endereço de e-mail",
-          "addGuest": "Adicionar convidado",
-          "updateGuest": "Atualizar convidado",
-          "editGuest": "Editar {{name}}",
-          "removeGuest": "Remover {{name}}",
-          "remove": "Remover",
-          "guestEmailInvalid": "Adicione um endereço de e-mail para podermos enviar o convite.",
-          "guestDuplicate": "Esse endereço já está na lista.",
-          "back": "Voltar",
-          "next": "Avançar"
+        "empty": {
+          "title": "Ainda não há conversas privadas",
+          "body": "Tópicos classificados como conversas do escritório aparecem aqui com o seu âmbito e as suas ligações."
+        },
+        "create": {
+          "open": "Nova conversa",
+          "failed": "Não foi possível criar a conversa",
+          "boundScopeNote": "As salas de organização e de projeto são criadas a partir do nó de organização ou do projeto a que pertencem."
+        },
+        "sensitivity": {
+          "title": "Sensibilidade",
+          "note": "Define como este tópico é tratado e com quem pode ser partilhado. Não altera a forma como as mensagens são transmitidas.",
+          "failed": "Não foi possível alterar a sensibilidade",
+          "unknownLabel": "Sensibilidade guardada",
+          "PUBLIC": "Pública",
+          "INTERNAL": "Interna",
+          "CONFIDENTIAL": "Confidencial",
+          "HIGHLY_SENSITIVE": "Muito sensível",
+          "RESTRICTED": "Restrita"
+        },
+        "links": {
+          "title": "Ligações",
+          "note": "Uma ligação é uma referência. Removê-la não elimina o documento, o registo, o facto nem a reunião a que aponta.",
+          "empty": "Ainda não há nada ligado a esta conversa.",
+          "remove": "Remover ligação",
+          "failed": "Não foi possível alterar as ligações"
+        },
+        "linkTypes": {
+          "DOCUMENT": "Documento",
+          "RECORD": "Registo",
+          "FACT": "Facto",
+          "MEETING": "Reunião",
+          "ORGANIZATION_NODE": "Organização",
+          "PROJECT": "Projeto"
+        },
+        "security": {
+          "title": "Segurança",
+          "notEncrypted": "As mensagens estão protegidas em trânsito e pelo controlo de acesso no servidor. Não têm encriptação ponta a ponta, por isso o servidor pode lê-las.",
+          "encrypted": "As mensagens desta conversa têm encriptação ponta a ponta.",
+          "ledger": "Armazenamento de mensagens",
+          "rtc": "Chamadas"
+        },
+        "info": {
+          "title": "Detalhes da conversa",
+          "subtitle": "A classificação de escritório deste tópico. As mensagens vivem na conversa normal.",
+          "open": "Detalhes da conversa",
+          "openThread": "Abrir conversa",
+          "classification": "Classificação",
+          "scope": "Âmbito",
+          "archivedYes": "Sim",
+          "notFound": {
+            "title": "Não é uma conversa do escritório",
+            "body": "Este tópico não tem classificação de Escritório privado. Continua disponível nas Mensagens."
+          }
+        },
+        "untitled": "Conversa sem título",
+        "linked": {
+          "title": "DISCUTIDO EM",
+          "unavailable": "Não foi possível verificar se há conversas vinculadas.",
+          "none": "Não é mencionado em nenhuma conversa da qual você participa."
         }
       }
     },
@@ -5075,45 +5458,6 @@
       "dominance": "Dominância do BTC",
       "gainers": "Maiores altas",
       "losers": "Maiores quedas"
-    }
-  },
-  "translation": {
-    "eyebrow": "Tradução",
-    "translate": "Traduzir",
-    "translating": "Traduzindo…",
-    "translateNow": "Traduzir agora",
-    "translateNowHint": "Traduzir esta mensagem para {{language}}.",
-    "viewOriginal": "Ver original",
-    "showOriginalHint": "Volta para a mensagem original.",
-    "translatedFrom": "Traduzido de {{language}}",
-    "translatedLabel": "Traduzido",
-    "always": "Sempre",
-    "never": "Nunca",
-    "alwaysTranslate": "Traduzir sempre",
-    "alwaysTranslateHint": "Traduz automaticamente este idioma quando o PulseSoc o detecta.",
-    "neverTranslate": "Nunca traduzir",
-    "neverTranslateHint": "Mantém este idioma na forma original.",
-    "optionsTitle": "Opções de idioma da mensagem",
-    "downloadLanguage": "Baixar idioma",
-    "downloadExplainer": "O PulseSoc usa a tradução privada no dispositivo da Apple. A Apple pode baixar o idioma necessário neste iPhone.",
-    "tryAgain": "Tentar novamente",
-    "failure": {
-      "unavailable": "Tradução indisponível",
-      "unsupportedLanguage": "Este idioma não pode ser traduzido neste dispositivo.",
-      "downloadFailed": "O download do idioma não foi concluído.",
-      "offline": "Conecte-se à internet para baixar este idioma.",
-      "preferenceNotSaved": "Não foi possível salvar sua preferência de tradução."
-    },
-    "a11y": {
-      "controls": "Controles de tradução. Idioma de destino: {{language}}.",
-      "translateTo": "Traduzir para {{language}}",
-      "showOriginal": "Mostrar o texto original",
-      "options": "Opções de tradução. Mostrando o texto traduzido.",
-      "alwaysTo": "Sempre traduzir para {{language}}",
-      "neverTo": "Nunca traduzir para {{language}}",
-      "closeOptions": "Fechar as opções de tradução",
-      "retry": "Tentar traduzir novamente",
-      "download": "Baixar o idioma {{language}} neste dispositivo"
     }
   }
 }

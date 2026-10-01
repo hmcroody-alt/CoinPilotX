@@ -33,10 +33,8 @@ from services import db
 from services.business_os_commerce_routes import _bot, _csrf_ok, _json
 from services.business_os.commerce_gateway import context_from_user
 from services.business_os.suppliers import (discovery, drafts, import_cart, importer,
-                                            merchant_scope, policy, pricing, resync,
-                                            status, store_policy)
+                                            merchant_scope, policy, pricing)
 from services.business_os.suppliers.errors import SupplierError
-from services.route_auth import auth_required
 
 
 dropshipping_blueprint = Blueprint("business_os_dropshipping", __name__)
@@ -163,143 +161,6 @@ def merchant_scope_route():
         return _error(exc)
 
 
-@dropshipping_blueprint.route(PREFIX + "/supplier-status", methods=["GET"])
-@auth_required
-def supplier_status_route():
-    """The canonical state of every supplier connection for this store.
-
-    One call, one answer, for every screen that shows supplier health. Before
-    this, each screen assembled its own: the hub inferred health from the
-    connections list crossed with the imported-products list, the suppliers
-    screen rendered a status string, and the sync screen read ``sync_state``
-    alone. Three rules for one question, which is three chances to show a green
-    badge over a connection that cannot fulfil an order -- and no way to make
-    them agree, because the fact being displayed existed in none of them.
-
-    Everything here is observed or delegated. ``environment`` and
-    ``real_order_submission_enabled`` come from ``policy``, which probes the
-    real gate; the counts come from the merchant's own rows. Nothing is
-    defaulted to a cheerful value when a lookup fails -- an error is an error,
-    and a client that receives one must not draw a healthy supplier.
-
-    Provider-neutral like the rest of this pack: ``provider`` is a value in the
-    response, never a segment in the path, so a second supplier is a row here
-    rather than a second endpoint and a second screen.
-    """
-    try:
-        actor, context = _request_context()
-        business_id, store_id = _scope(request.args)
-        result = status.supplier_status(business_id, store_id, actor, context=context)
-        return _respond({"ok": True, **result})
-    except Exception as exc:
-        return _error(exc)
-
-
-@dropshipping_blueprint.route(PREFIX + "/connections/<connection_id>/sync", methods=["POST"])
-@auth_required
-def supplier_resync_route(connection_id):
-    """Ask for this supplier's data to be re-read now.
-
-    The button beside "Last sync failed". Without it that screen reports a
-    problem and offers nothing, so the merchant's only move is to wait out a
-    cadence the UI never shows them -- and a control that merely *looks* like a
-    retry would be worse, because they would stop watching a sync that never
-    restarted.
-
-    A POST because it changes when work happens, and behind ``write=True`` so it
-    carries CSRF like every other state change here. It reads nothing from the
-    provider itself: it moves the merchant's own queued jobs to the front, and
-    every quota, lease and network gate the worker enforces is still between
-    this request and the supplier.
-
-    The response says how much was queued, including when the catalogue was
-    larger than one request may enqueue. A merchant told "syncing" about half
-    their products would go looking for a failure that is really a cap.
-    """
-    try:
-        actor, context = _request_context(write=True)
-        business_id, store_id = _scope(_body())
-        result = resync.request_resync(business_id, store_id, actor, connection_id,
-                                       context=context)
-        return _respond({"ok": True, **result})
-    except Exception as exc:
-        return _error(exc)
-
-
-# ---------------------------------------------------------------------------
-# Layer 1 — how this store imports
-# ---------------------------------------------------------------------------
-
-@dropshipping_blueprint.route(PREFIX + "/store-policy", methods=["GET"])
-@auth_required
-def get_store_policy():
-    """How this store prices imports, whether they publish, whether they distribute.
-
-    Scoped to the store rather than the connection: the policy is a property of
-    the storefront, and a merchant with two supplier connections prices both the
-    same way unless they say otherwise. It therefore lives outside
-    ``/connections/<id>/`` and needs no connection to read.
-    """
-    try:
-        actor, context = _request_context()
-        business_id, store_id = _scope(request.args)
-        result = store_policy.read(business_id, store_id, actor, context=context)
-        return _respond({"ok": True, "policy": result})
-    except Exception as exc:
-        return _error(exc)
-
-
-@dropshipping_blueprint.route(PREFIX + "/store-policy", methods=["PATCH"])
-@auth_required
-def set_store_policy():
-    """Change one or more policy fields. Omitted fields are untouched.
-
-    PATCH, not PUT, and the distinction is load-bearing: the settings screen has
-    three independent controls, and a PUT would make the Marketplace toggle send
-    a whole policy object it may have read minutes earlier — overwriting a margin
-    the merchant changed in between with a stale copy of itself.
-
-    The booleans are checked for being booleans. JSON ``"false"`` and ``0`` are
-    both truthy or falsy in ways that do not survive a round trip through a
-    client, and ``marketplace_autolist`` is the one field where guessing wrong
-    broadcasts a merchant's whole catalogue network-wide.
-    """
-    try:
-        actor, context = _request_context(write=True)
-        body = _body()
-        business_id, store_id = _scope(body)
-        fields = {}
-        for name in ("auto_publish", "marketplace_autolist"):
-            if name in body and body[name] is not None:
-                if body[name] is not True and body[name] is not False:
-                    raise SupplierError("invalid_input", http_status=400)
-                fields[name] = body[name]
-        rule = body.get("pricing_rule")
-        if rule is not None and not isinstance(rule, dict):
-            raise SupplierError("invalid_input", http_status=400)
-        # Three accepted shapes, and the third is why this is more than a type
-        # check. Absent/null means "leave it alone", like every other field on
-        # this PATCH; a non-negative integer declares it; and the string
-        # `CLEAR_ALLOWANCE` erases it, because a merchant who declared their
-        # freight and then realised they could not stand behind the number needs
-        # a way back to "unknown" that is not zero. Zero is a claim that shipping
-        # is free, and it will be priced as one.
-        allowance = body.get("shipping_allowance_cents")
-        if allowance is not None and allowance != store_policy.CLEAR_ALLOWANCE:
-            # `type(...) is not int`, not `isinstance`: True is an int to
-            # isinstance and would be saved as a one-cent freight charge.
-            if type(allowance) is not int:
-                raise SupplierError("invalid_shipping_allowance", http_status=400)
-        if rule is None and allowance is None and not fields:
-            raise SupplierError("invalid_input", http_status=400)
-        result = store_policy.write(business_id, store_id, actor, pricing_rule=rule,
-                                    shipping_allowance_cents=allowance,
-                                    context=context, **fields)
-        return _respond({"ok": True, "policy": result})
-    except Exception as exc:
-        return _error(exc)
-
-
 # ---------------------------------------------------------------------------
 # Layer 2 — find products
 # ---------------------------------------------------------------------------
@@ -343,14 +204,8 @@ def get_cart(connection_id):
     try:
         actor, context = _request_context()
         business_id, store_id = _scope(request.args)
-        cart = import_cart.get_cart(business_id, store_id, actor, connection_id,
-                                    context=context)
-        # The cart holds more rows than one import can consume, so the screen
-        # that draws the Import button has to know both numbers or it will offer
-        # something the server will only half-serve. Composed here rather than in
-        # `import_cart` because the limit belongs to the importer, and having the
-        # cart module import it back would close a cycle.
-        return _respond({"ok": True, "max_per_import": importer.MAX_BATCH, **cart})
+        return _respond({"ok": True, **import_cart.get_cart(business_id, store_id, actor,
+                                                            connection_id, context=context)})
     except Exception as exc:
         return _error(exc)
 
@@ -407,10 +262,6 @@ def import_selected(connection_id):
         actor, context = _request_context(write=True)
         body = _body()
         business_id, store_id = _scope(body)
-        # No `shipping_allowance_cents` here, deliberately. The store's freight
-        # allowance is a cost, and this route accepts no costs -- it is set on
-        # the store-policy PATCH above and read from there. See
-        # `importer.import_selected`.
         result = importer.import_selected(business_id, store_id, actor, connection_id,
                                           item_ids=body.get("item_ids"),
                                           pricing_rule=body.get("pricing_rule"),

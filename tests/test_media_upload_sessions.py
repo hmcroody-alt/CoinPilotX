@@ -3,7 +3,6 @@ from io import BytesIO
 
 import pytest
 
-from services import media_service
 from services import media_upload_sessions as uploads
 
 
@@ -70,27 +69,8 @@ def upload_env(tmp_path, monkeypatch):
 def test_rejects_mime_mismatch_and_oversize(upload_env):
     result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "image/jpeg", "file_size_bytes": 100, "context_type": "pulse_post"})
     assert status == 400 and result["error"] == "mime_mismatch"
-    # Derived from the surface's duration ceiling rather than pinned to a literal:
-    # a 90-minute post needs roughly 2 GB at a watchable bitrate, so hard-coding
-    # the old 700 MB here would re-pin the limit that made 90 minutes impossible.
-    over = media_service.direct_video_limit_bytes("pulse_post") + 1
-    result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": over, "context_type": "pulse_post"})
+    result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": 701 * 1024 * 1024, "context_type": "pulse_post"})
     assert status == 413 and result["error"] == "file_too_large"
-
-
-def test_rejects_a_video_longer_than_the_surface_allows(upload_env):
-    result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": 50 * 1024 * 1024, "context_type": "pulse_post", "duration_ms": 5_401_000})
-    assert status == 413 and result["error"] == "video_too_long"
-    # Refused before the session row exists: no object key burned, nothing to resume.
-    assert "upload_id" not in result
-
-
-def test_accepts_a_ninety_minute_post_at_a_realistic_size(upload_env):
-    result, status = uploads.create_session(7, {"filename": "feature.mp4", "mime_type": "video/mp4", "file_size_bytes": 1500 * 1024 * 1024, "context_type": "pulse_post", "duration_ms": 5_400_000})
-    assert status == 201, result
-    # Multipart is what makes this survivable on a phone: a dropped connection
-    # resumes from the last completed part instead of restarting 1.5 GB.
-    assert result["strategy"] == "multipart"
 
 
 @pytest.mark.parametrize("size_mb", [10, 50, 100, 250, 500])
@@ -128,37 +108,6 @@ def test_multipart_owner_complete_and_finalize_are_idempotent(upload_env):
     assert finalized_status == 200 and finalized["media_id"] > 0
     duplicate, duplicate_status = uploads.finalize_upload(7, upload_id)
     assert duplicate_status == 200 and duplicate["media_id"] == finalized["media_id"] and duplicate["idempotent"] is True
-
-
-def test_the_session_advertises_the_batch_cap_it_actually_enforces(upload_env):
-    # The client batches part signatures using this number. `sign_parts` truncates an
-    # oversized request *silently*, so advertising a cap larger than the enforced one
-    # would make the client upload a subset of its parts and then fail much later at
-    # `complete_upload` with an unexplained gap in the part list. Asserting the two
-    # numbers against each other is the point -- asserting either one against a literal
-    # would let them drift apart.
-    result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": 200 * 1024 * 1024, "context_type": "pulse_post"})
-    assert status == 201 and result["strategy"] == "multipart"
-    advertised = result["max_parts_per_request"]
-    assert advertised >= 1
-
-    signed, signed_status = uploads.sign_parts(7, result["upload_id"], list(range(1, advertised + 1)))
-    assert signed_status == 200
-    assert len(signed["parts"]) == advertised, "the server signed fewer parts than it advertised"
-
-    over, over_status = uploads.sign_parts(7, result["upload_id"], list(range(1, advertised + 5)))
-    assert over_status == 200
-    assert len(over["parts"]) == advertised, "the enforced cap is lower than the advertised one"
-
-
-def test_a_resumed_session_still_learns_the_batch_cap(upload_env):
-    # The client re-reads the session on resume and merges it over what it persisted.
-    # If only the create response carried the cap, every resumed upload would silently
-    # fall back to one signature per part -- the slow path this replaced.
-    result, _ = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": 200 * 1024 * 1024, "context_type": "pulse_post"})
-    # This is exactly what GET /api/pulse/media/uploads/<id> returns.
-    fetched = uploads._public(uploads._row(result["upload_id"], 7))
-    assert fetched["max_parts_per_request"] == result["max_parts_per_request"]
 
 
 def test_abort_is_owner_scoped(upload_env):

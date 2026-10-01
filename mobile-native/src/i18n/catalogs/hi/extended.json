@@ -361,31 +361,44 @@
       "requests_other": "{{count}} मैसेज रिक्वेस्ट"
     },
     "chat": {
+      "placeholder": "मैसेज…",
+      "typing": "{{name}} टाइप कर रहे हैं…",
+      "typingMultiple": "कई लोग टाइप कर रहे हैं…",
+      "delivered": "डिलीवर हुआ",
+      "read": "पढ़ लिया",
+      "sent": "भेजा गया",
+      "failed": "डिलीवर नहीं हुआ",
+      "tapToRetry": "फिर कोशिश करने के लिए टैप करें",
+      "editedLabel": "एडिट किया गया",
+      "deletedMessage": "यह मैसेज डिलीट कर दिया गया",
+      "replyingTo": "{{name}} को जवाब दे रहे हैं",
+      "forwarded": "फ़ॉरवर्ड किया गया",
+      "attachPhoto": "फ़ोटो",
+      "attachFile": "फ़ाइल",
+      "attachVoice": "वॉइस मैसेज",
+      "recordingVoice": "रिकॉर्ड हो रहा है…",
+      "slideToCancel": "रद्द करने के लिए स्लाइड करें",
+      "newMessagesDivider": "नए मैसेज",
+      "encryptedNotice": "मैसेज भेजते समय एन्क्रिप्टेड रहते हैं।",
+      "emptyTitle": "हाय कहें",
+      "emptyBody": "यहीं से आपकी बातचीत शुरू होती है।",
       "a11yAddAttachment": "अटैचमेंट जोड़ें",
       "a11yAddEmoji": "मुस्कुराता इमोजी जोड़ें",
       "a11yBack": "बातचीत पर वापस",
       "a11yBackFive": "5 सेकंड पीछे",
-      "a11yCancelEdit": "संपादन रद्द करें",
       "a11yCancelReply": "जवाब रद्द करें",
       "a11yCancelUndxAction": "UNDX एक्शन रद्द करें",
       "a11yCloseAttachmentSheet": "अटैचमेंट शीट बंद करें",
-      "a11yCloseForward": "अग्रेषण बंद करें",
-      "a11yCloseInfo": "संदेश जानकारी बंद करें",
       "a11yComposer": "मैसेज कंपोज़र",
       "a11yComposerUndx": "UNDX मैसेज कंपोज़र",
       "a11yConfirmUndxAction": "UNDX एक्शन की पुष्टि करें",
       "a11yDiscardRecording": "वॉइस रिकॉर्डिंग छोड़ दें",
       "a11yDismissStatus": "मैसेज स्टेटस हटाएँ",
       "a11yForwardFive": "5 सेकंड आगे",
-      "a11yGalleryPhotoPosition": "{{sender}} की फ़ोटो, {{total}} में से {{position}}",
-      "a11yGalleryVideoPosition": "{{sender}} का वीडियो, {{total}} में से {{position}}",
       "a11yGifAttachment": "{{label}}. GIF अटैचमेंट।",
-      "a11yGridPhotoTile": "{{label}}. फ़ोटो {{total}} में से {{position}}.",
-      "a11yGridVideoTile": "{{label}}. वीडियो {{total}} में से {{position}}.",
       "a11yImageAttachment": "{{label}}. इमेज अटैचमेंट।",
       "a11yOpenControls": "बातचीत के कंट्रोल खोलें",
       "a11yOpenUndxResult": "{{type}} नतीजा खोलें",
-      "a11yOpensDocument": "आपके दस्तावेज़ व्यूअर में खुलता है",
       "a11yOpensViewer": "फ़ुल-स्क्रीन व्यूअर खोलता है",
       "a11yPauseVoice": "वॉइस मैसेज रोकें",
       "a11yPlayVoice": "वॉइस मैसेज चलाएँ",
@@ -395,7 +408,6 @@
       "a11yRecordingVoice": "वॉइस मैसेज रिकॉर्ड हो रहा है। {{duration}}",
       "a11yRetryLoad": "मैसेज दोबारा लोड करें",
       "a11yRetryVoice": "वॉइस मैसेज फिर भेजें",
-      "a11ySaveEdit": "संपादन सहेजें",
       "a11ySend": "मैसेज भेजें",
       "a11yStartAudioCall": "ऑडियो कॉल शुरू करें",
       "a11yStartVideoCall": "वीडियो कॉल शुरू करें",
@@ -404,26 +416,20 @@
       "a11yUndxAttachmentsOff": "UNDX पर अटैचमेंट सपोर्ट उपलब्ध नहीं",
       "a11yUndxVoiceOff": "UNDX पर वॉइस मैसेज उपलब्ध नहीं",
       "a11yUploadingAttachment": "अटैचमेंट अपलोड हो रहा है",
-      "a11yVideoAttachment": "वीडियो, चलाने के लिए टैप करें",
-      "a11yVideoAttachmentDuration": "वीडियो, {{duration}}, चलाने के लिए टैप करें",
       "a11yVoiceDuration": "अवधि {{duration}}",
       "a11yVoiceProgress": "वॉइस मैसेज की प्रोग्रेस",
       "a11yVoiceUnavailable": "{{label}}. वॉइस मैसेज उपलब्ध नहीं।",
       "assistantAlwaysAvailable": "हमेशा उपलब्ध · PulseSoc इंटेलिजेंस",
-      "assistantConnecting": "कनेक्ट हो रहा है · PulseSoc इंटेलिजेंस",
       "assistantReconnecting": "सर्विस फिर से कनेक्ट हो रही है",
       "attachCamera": "कैमरा",
       "attachCameraDetail": "अभी कैप्चर करें",
       "attachDocument": "डॉक्यूमेंट",
       "attachDocumentDetail": "सुरक्षित फ़ाइल",
-      "attachFile": "फ़ाइल",
-      "attachPhoto": "फ़ोटो",
       "attachPhotoDetail": "ऑप्टिमाइज़ की गई इमेज",
       "attachRecordingNow": "अभी रिकॉर्ड हो रहा है",
       "attachStopSend": "रोकें और भेजें",
       "attachVideo": "वीडियो",
       "attachVideoDetail": "2 मिनट तक",
-      "attachVoice": "वॉइस मैसेज",
       "attachVoiceNote": "वॉइस नोट",
       "attachVoiceNoteDetail": "झटपट ऑडियो मैसेज",
       "attachmentFailedTitle": "अटैचमेंट नहीं भेजा जा सका",
@@ -445,33 +451,12 @@
       "deleteForMe": "मेरे लिए डिलीट करें",
       "deleteHidden": "मैसेज इस डिवाइस से छिपा दिया गया।",
       "deleteRequested": "मैसेज डिलीट करने का अनुरोध भेज दिया गया।",
-      "deletedMessage": "यह मैसेज डिलीट कर दिया गया",
       "deletedMessageBody": "यह मैसेज डिलीट कर दिया गया।",
-      "delivered": "डिलीवर हुआ",
-      "durationMinutes": "{{minutes}} मिनट",
-      "durationMinutesSeconds": "{{minutes}} मिनट {{seconds}} सेकंड",
-      "durationSeconds": "{{seconds}} सेकंड",
-      "editEmpty": "संपादित संदेश खाली नहीं हो सकता।",
-      "editFailed": "यह संदेश संपादित नहीं हो सका।",
-      "editSaved": "संदेश संपादित हुआ।",
-      "editedLabel": "एडिट किया गया",
-      "editingMessage": "संदेश संपादित कर रहे हैं",
-      "emptyBody": "यहीं से आपकी बातचीत शुरू होती है।",
       "emptyThreadBody": "इस चैट के मैसेज यहाँ दिखेंगे।",
-      "emptyTitle": "हाय कहें",
-      "encryptedNotice": "मैसेज भेजते समय एन्क्रिप्टेड रहते हैं।",
-      "failed": "डिलीवर नहीं हुआ",
       "fileAttachment": "फ़ाइल अटैचमेंट",
       "filePickerFailed": "फ़ाइल पिकर नहीं खुल सका।",
       "fileSharingUnavailableTitle": "फ़ाइल शेयर करना उपलब्ध नहीं",
-      "forwardFailed": "यह संदेश अग्रेषित नहीं हो सका।",
-      "forwardNoConversations": "अग्रेषित करने के लिए कोई अन्य बातचीत नहीं है।",
-      "forwardSend": "{{total}} को अग्रेषित करें",
-      "forwardSent": "{{total}} को अग्रेषित किया गया।",
-      "forwarded": "फ़ॉरवर्ड किया गया",
       "forwardedSignal": "फ़ॉरवर्ड किया सिग्नल",
-      "galleryUnavailable": "उपलब्ध नहीं",
-      "galleryUnavailableOffline": "ऑफ़लाइन उपलब्ध नहीं",
       "headerCachedHistory": "कैश की गई हिस्ट्री",
       "headerLiveChannel": "लाइव चैनल",
       "headerReconnecting": "फिर से कनेक्ट हो रहा है",
@@ -479,26 +464,6 @@
       "imageAttachment": "इमेज अटैचमेंट",
       "imagePickerFailed": "इमेज पिकर नहीं खुल सका।",
       "imageSharingUnavailableTitle": "इमेज शेयर करना उपलब्ध नहीं",
-      "infoDelivered": "पहुँचा",
-      "infoDeliveredAt": "पहुँचा",
-      "infoDuration": "अवधि",
-      "infoEditedAt": "संपादित",
-      "infoForwarded": "अग्रेषित",
-      "infoForwardedYes": "हाँ",
-      "infoFrom": "प्रेषक",
-      "infoId": "संदेश आईडी",
-      "infoRead": "पढ़ा गया",
-      "infoReadAt": "पढ़ा गया",
-      "infoReadGroup": "कम से कम एक व्यक्ति ने पढ़ा",
-      "infoSent": "भेजा गया",
-      "infoSentAt": "भेजा गया",
-      "infoSize": "आकार",
-      "infoStatus": "स्थिति",
-      "infoType": "प्रकार",
-      "infoTypeMedia": "मीडिया",
-      "infoTypeText": "टेक्स्ट",
-      "infoTypeUnavailable": "अनुपलब्ध",
-      "infoTypeVoice": "वॉइस संदेश",
       "liveVoiceKicker": "लाइव वॉइस पल्स",
       "loadFailed": "मैसेज लोड नहीं हो सके।",
       "loadFailedBody": "PulseSoc यह बातचीत लोड नहीं कर सका। असली मैसेज हिस्ट्री से दोबारा जुड़ने के लिए फिर कोशिश करें पर टैप करें।",
@@ -513,16 +478,12 @@
       "microphoneUnavailableTitle": "माइक्रोफ़ोन उपलब्ध नहीं",
       "moderatedMessageBody": "सेफ़्टी रिव्यू के बाद यह मैसेज उपलब्ध नहीं है।",
       "muteBlock": "म्यूट / ब्लॉक",
-      "newMessagesDivider": "नए मैसेज",
-      "openDocument": "खोलने के लिए टैप करें",
       "openViewer": "व्यूअर खोलें",
       "openingBody": "सर्वर से बातचीत की हिस्ट्री लोड हो रही है।",
-      "openingDocument": "खोल रहे हैं…",
       "openingTitle": "चैट खुल रही है",
       "pendingRemoved": "लोकल पेंडिंग मैसेज हटा दिया गया।",
       "photosUnavailableBody": "इमेज शेयर करने के लिए सेटिंग्स में फ़ोटो की अनुमति दें।",
       "photosUnavailableTitle": "फ़ोटो उपलब्ध नहीं",
-      "placeholder": "मैसेज…",
       "presenceActivityDirect": "{{activity}} · डायरेक्ट",
       "presenceOffline": "ऑफ़लाइन",
       "presenceOnline": "ऑनलाइन",
@@ -532,14 +493,11 @@
       "reactPending": "सर्वर से मंज़ूरी मिलने के बाद पेंडिंग मैसेज पर रिऐक्शन दे सकते हैं।",
       "reactionFailed": "रिऐक्शन नहीं भेजा जा सका।",
       "reactionSent": "रिऐक्शन भेज दिया।",
-      "read": "पढ़ लिया",
       "realtimeReconnecting": "रीयलटाइम फिर से कनेक्ट हो रहा है। मैसेज हिस्ट्री दिखती रहेगी।",
       "recordingDiscarded": "वॉइस रिकॉर्डिंग छोड़ दी गई।",
       "recordingFailed": "वॉइस रिकॉर्डिंग शुरू नहीं हो सकी।",
       "recordingNoFile": "रिकॉर्डिंग से कोई ऑडियो फ़ाइल नहीं बनी।",
       "recordingStarted": "वॉइस मैसेज रिकॉर्ड हो रहा है… भेजने के लिए माइक्रोफ़ोन दोबारा टैप करें।",
-      "recordingVoice": "रिकॉर्ड हो रहा है…",
-      "replyingTo": "{{name}} को जवाब दे रहे हैं",
       "reportConversationTitle": "बातचीत की रिपोर्ट करें",
       "reportFailed": "रिपोर्ट नहीं भेजी जा सकी।",
       "reportPending": "सर्वर से मंज़ूरी मिलने तक पेंडिंग मैसेज की रिपोर्ट नहीं की जा सकती।",
@@ -548,17 +506,12 @@
       "retryFailedSend": "न भेजा गया मैसेज फिर भेजें",
       "sendFailed": "मैसेज भेजा नहीं जा सका।",
       "sendingVoice": "वॉइस मैसेज भेजा जा रहा है…",
-      "sent": "भेजा गया",
       "showingCached": "PulseSoc फिर कनेक्ट होने तक कैश किए मैसेज दिखाए जा रहे हैं।",
-      "slideToCancel": "रद्द करने के लिए स्लाइड करें",
       "stateReconnecting": "फिर से कनेक्ट हो रहा है",
       "stateRecording": "रिकॉर्ड हो रहा है",
       "stateSecureReady": "सुरक्षित · तैयार",
       "stateSendingMedia": "मीडिया भेजा जा रहा है",
       "stateUndxReady": "UNDX · तैयार",
-      "tapToRetry": "फिर कोशिश करने के लिए टैप करें",
-      "typing": "{{name}} टाइप कर रहे हैं…",
-      "typingMultiple": "कई लोग टाइप कर रहे हैं…",
       "undxActionFailed": "UNDX एक्शन पूरा नहीं हुआ।",
       "undxActionFinished": "UNDX एक्शन पूरा हो गया।",
       "undxAttachmentsUnsupported": "नेटिव चैट में UNDX अभी सिर्फ़ टेक्स्ट बातचीत सपोर्ट करता है। बैकएंड असिस्टेंट मीडिया चालू करने तक अटैचमेंट सिर्फ़ लोगों वाली चैट में रहते हैं।",
@@ -584,8 +537,6 @@
       "uploadingAttachment": "अटैचमेंट अपलोड हो रहा है…",
       "videoAttachment": "वीडियो अटैचमेंट",
       "videoPickerFailed": "वीडियो पिकर नहीं खुल सका।",
-      "videoPosterFailed": "प्रीव्यू उपलब्ध नहीं है",
-      "videoProcessing": "वीडियो प्रोसेस हो रहा है…",
       "videoSharingUnavailableTitle": "वीडियो शेयर करना उपलब्ध नहीं",
       "videosUnavailableBody": "वीडियो शेयर करने के लिए सेटिंग्स में फ़ोटो की अनुमति दें।",
       "videosUnavailableTitle": "वीडियो उपलब्ध नहीं",
@@ -596,8 +547,7 @@
       "voiceSent": "वॉइस मैसेज भेज दिया।",
       "voiceUnavailable": "वॉइस मैसेज उपलब्ध नहीं",
       "voiceUnavailableTitle": "वॉइस मैसेज उपलब्ध नहीं",
-      "yourMessage": "आपका मैसेज",
-      "moreReactions": "और प्रतिक्रियाएँ"
+      "yourMessage": "आपका मैसेज"
     },
     "group": {
       "createGroup": "ग्रुप बनाएँ",
@@ -846,7 +796,6 @@
           "minimalBlack": "मिनिमल ब्लैक",
           "neonPlanet": "नियॉन प्लैनेट",
           "pulseHorizon": "पल्स होराइज़न",
-          "pulsesocCosmic": "पल्ससोक ग्रेफ़ाइट",
           "starTunnel": "स्टार टनल"
         }
       },
@@ -1105,140 +1054,9 @@
       "signInTitle": "चैट शुरू करने के लिए साइन इन करें",
       "subtitle": "असली PulseSoc नेटवर्क खोजें। पहले से मौजूद डायरेक्ट चैट अपने आप फिर खुल जाती हैं।",
       "title": "बातचीत शुरू करें"
-    },
-    "postCard": {
-      "a11yOpen": "{{author}} की पल्ससोक पोस्ट खोलें",
-      "a11yOpenGeneric": "यह पल्ससोक पोस्ट खोलें",
-      "cta": "पोस्ट देखें →",
-      "eyebrow": "पल्ससोक पोस्ट",
-      "forbidden": "यह सामग्री आपके लिए उपलब्ध नहीं है।",
-      "loading": "पोस्ट लोड हो रही है…",
-      "missing": "यह पोस्ट अब उपलब्ध नहीं है।",
-      "unavailable": "सामग्री उपलब्ध नहीं",
-      "video": "वीडियो"
-    },
-    "profileCard": {
-      "eyebrow": "पल्ससोक प्रोफ़ाइल",
-      "cta": "प्रोफ़ाइल देखें →",
-      "loading": "प्रोफ़ाइल लोड हो रही है…",
-      "forbidden": "यह प्रोफ़ाइल आपके लिए उपलब्ध नहीं है।",
-      "missing": "यह प्रोफ़ाइल अब उपलब्ध नहीं है।",
-      "unavailable": "प्रोफ़ाइल उपलब्ध नहीं",
-      "a11yOpen": "{{author}} की पल्ससोक प्रोफ़ाइल खोलें",
-      "a11yOpenGeneric": "यह पल्ससोक प्रोफ़ाइल खोलें"
-    },
-    "reelCard": {
-      "eyebrow": "पल्ससोक रील",
-      "cta": "रील देखें →",
-      "loading": "रील लोड हो रही है…",
-      "forbidden": "यह सामग्री आपके लिए उपलब्ध नहीं है।",
-      "missing": "यह रील अब उपलब्ध नहीं है।",
-      "unavailable": "रील उपलब्ध नहीं",
-      "play": "चलाएँ",
-      "a11yOpen": "{{author}} की पल्ससोक रील खोलें",
-      "a11yOpenGeneric": "यह पल्ससोक रील खोलें"
-    },
-    "messageActions": {
-      "openLink": "लिंक खोलें",
-      "copyLink": "लिंक कॉपी करें",
-      "shareLink": "लिंक शेयर करें",
-      "saveToPhotos": "फ़ोटो में सहेजें",
-      "translate": "अनुवाद करें",
-      "forward": "आगे भेजें",
-      "info": "संदेश जानकारी",
-      "chooseLink": "कौन सा लिंक?",
-      "closeMenu": "संदेश मेनू बंद करें",
-      "reactWith": "{{emoji}} से प्रतिक्रिया दें"
     }
   },
   "commerce": {
-    "discovery": {
-      "label": {
-        "recommended": "मार्केटप्लेस से अनुशंसित",
-        "trending": "PulseSoc पर ट्रेंडिंग",
-        "sponsored": "प्रायोजित"
-      },
-      "subtitle": {
-        "matches_your_interests": "आपकी पसंद के आधार पर",
-        "because_you_viewed": "क्योंकि आपने मिलते-जुलते आइटम देखे",
-        "related_to_this_post": "आप जो देख रहे हैं उससे संबंधित",
-        "similar_to_this_product": "इस उत्पाद के जैसा",
-        "from_sellers_you_follow": "उन विक्रेताओं से जिन्हें आप फ़ॉलो करते हैं",
-        "trending": "अभी PulseSoc पर ट्रेंडिंग",
-        "new_arrival": "मार्केटप्लेस में अभी जोड़ा गया",
-        "popular": "खरीदारों के बीच लोकप्रिय",
-        "new_to_marketplace": "मार्केटप्लेस पर नया"
-      },
-      "action": {
-        "viewProduct": "उत्पाद देखें",
-        "save": "सहेजें",
-        "saved": "सहेजा गया",
-        "seeAll": "सभी देखें"
-      },
-      "menu": {
-        "title": "अनुशंसा विकल्प",
-        "hide": "इसे छिपाएँ",
-        "notInterested": "रुचि नहीं है",
-        "seeFewer": "इस तरह के कम दिखाएँ",
-        "hideSeller": "इस विक्रेता की अनुशंसा न करें",
-        "why": "मुझे यह क्यों दिख रहा है?",
-        "snooze": "मार्केटप्लेस सुझाव 30 दिनों के लिए छिपाएँ"
-      },
-      "why": {
-        "title": "मुझे यह क्यों दिख रहा है?",
-        "loading": "जाँच की जा रही है…",
-        "unavailable": "हम अभी इस अनुशंसा की व्याख्या नहीं कर सकते।",
-        "factorsTitle": "यह किस पर आधारित थी",
-        "close": "बंद करें"
-      },
-      "factor": {
-        "relevance": "यह उससे कितना मेल खाता है जो आप देख रहे थे",
-        "quality": "लिस्टिंग की गुणवत्ता",
-        "predicted_interest": "वे चीज़ें जिनमें आपने पहले रुचि दिखाई",
-        "conversion_probability": "खरीदार ऐसे आइटम कितनी बार खरीदते हैं",
-        "seller_reliability": "विक्रेता का रिकॉर्ड",
-        "freshness": "लिस्टिंग कितनी नई है",
-        "exploration_bonus": "नई लिस्टिंग को मौका देना",
-        "diversity_bonus": "आपको विभिन्न विक्रेता दिखाना"
-      },
-      "module": {
-        "recommended_for_you": "आपके लिए अनुशंसित",
-        "because_you_viewed": "क्योंकि आपने देखा",
-        "similar_to_this_product": "मिलते-जुलते उत्पाद",
-        "you_might_also_like": "आपको ये भी पसंद आ सकते हैं",
-        "trending": "ट्रेंडिंग",
-        "new_arrivals": "नए आगमन",
-        "from_sellers_you_follow": "उन विक्रेताओं से जिन्हें आप फ़ॉलो करते हैं",
-        "new_to_marketplace": "मार्केटप्लेस पर नया",
-        "popular": "लोकप्रिय"
-      },
-      "tagging": {
-        "open": "उत्पाद टैग करें",
-        "title": "आपके उत्पाद",
-        "subtitle": "चुनें कि यह पोस्ट किस बारे में है",
-        "cap": "हर पोस्ट में {{max}} तक",
-        "selected": "{{max}} में से {{selected}} चुने गए",
-        "loading": "आपके उत्पाद लोड हो रहे हैं…",
-        "empty": "आपके पास अभी कोई उत्पाद नहीं है",
-        "emptyHint": "Marketplace पर सूचीबद्ध आपके उत्पाद यहाँ दिखेंगे।",
-        "error": "हम आपके उत्पाद लोड नहीं कर सके",
-        "errorHint": "इसका मतलब यह नहीं है कि आपके पास कोई नहीं है। कृपया फिर कोशिश करें।",
-        "retry": "फिर कोशिश करें",
-        "wontShow": "दिखाया नहीं जाएगा",
-        "wontShowHint": "आप इसे टैग कर सकते हैं, लेकिन ठीक होने तक खरीदार इसे नहीं देखेंगे।",
-        "done": "पूर्ण",
-        "blocked": {
-          "not_purchasable": "खरीदने के लिए उपलब्ध नहीं",
-          "no_cover_image": "कवर फ़ोटो चाहिए",
-          "no_resolvable_price": "कीमत चाहिए",
-          "moderation_flagged": "समीक्षा में",
-          "listing_risk": "दिखाए जाने के योग्य नहीं",
-          "seller_risk": "आपका स्टोर दिखाए जाने के योग्य नहीं है",
-          "unknown_reason": "अभी दिखाया नहीं जा सकता"
-        },
-        "cleared": "उत्पाद टैग हटा दिए गए: केवल फ़ीड पोस्ट में ये शामिल होते हैं।"
-      }
-    },
     "marketplace": {
       "title": "मार्केटप्लेस",
       "browse": "ब्राउज़ करें",
@@ -1332,18 +1150,15 @@
       "storeOfflineNotice": "सेव किया सेलर/स्टोर मेटाडेटा दिखाया जा रहा है।",
       "storeKicker": "मार्केटप्लेस कमांड",
       "storefrontReadiness": "स्टोरफ़्रंट की तैयारी",
-      "storeHeroCopy": "सेलर की मंज़ूरी, प्रोडक्ट रिव्यू, पेमेंट, पेआउट और फ़ुलफ़िलमेंट — ये सारे फ़ैसले PulseSoc लेता है।",
+      "storeHeroCopy": "सेलर की मंज़ूरी, प्रोडक्ट रिव्यू, पेमेंट, पेआउट, भरोसा और फ़ुलफ़िलमेंट के फ़ैसले सर्वर के अधिकार में ही रहते हैं।",
       "loadingSellerControls": "सेलर कंट्रोल लोड हो रहे हैं",
       "sellerToolsLoadFailed": "सेलर टूल लोड नहीं हो सके।",
       "metricListingsLoaded": "लोड हुई लिस्टिंग",
-      "metricPublished": "पब्लिश",
       "metricActiveReviewReady": "चालू/रिव्यू के लिए तैयार",
       "metricPendingReview": "रिव्यू बाकी",
       "metricOrdersLoaded": "लोड हुए ऑर्डर",
       "merchantApplication": "मर्चेंट आवेदन",
-      "merchantApplicationCopy": "PulseSoc पर बेचने के लिए आवेदन करें। आवेदन में आपसे सिलसिलेवार पूछा जाता है कि आप कौन हैं, क्या बेचते हैं और हम कौन-से दस्तावेज़ जाँचते हैं। आपके जवाब साथ-साथ सेव होते रहते हैं, और हर फ़ैसला हमारी रिव्यू टीम का कोई व्यक्ति लेता है।",
-      "openSellerApplication": "सेलर आवेदन खोलें",
-      "openSellerApplicationHint": "सेलर आवेदन खोलता है, जहाँ आप अपने जवाब शुरू या जारी रख सकते हैं",
+      "merchantApplicationCopy": "नेटिव सेलर आवेदन मौजूदा सेलर एंडपॉइंट पर भेजें। आवेदन मिलने के बाद दस्तावेज़ों की जाँच और एडमिन रिव्यू PulseSoc पूरा करता है।",
       "sellerDisplayNamePlaceholder": "सेलर का दिखने वाला नाम",
       "sellerBioPlaceholder": "बताएँ आप क्या बेचते हैं और खरीदारों को उससे क्या फ़ायदा है",
       "saving": "सेव हो रहा है…",
@@ -1357,7 +1172,6 @@
       "sellerInventory": "सेलर इन्वेंटरी",
       "sellerInventoryCopy": "सेलर के अपने लिस्टिंग फ़ील्ड एडिट करें और PulseSoc मार्केटप्लेस रिव्यू से विज़िबिलिटी कंट्रोल करें। पब्लिक मार्केटप्लेस पर दिखना मंज़ूरी के बाद ही होता है।",
       "emptyInventory": "प्रोडक्ट बनने या लोड होने के बाद सेलर इन्वेंटरी दिखती है।",
-      "productNotYours": "वह उत्पाद आपके स्टोर में नहीं है। हो सकता है उसे हटा दिया गया हो, या लिंक किसी दूसरे विक्रेता की लिस्टिंग की ओर इशारा कर रहा हो।",
       "editListingTitle": "लिस्टिंग #{{id}} एडिट करें",
       "saveAndReview": "सेव करें और रिव्यू भेजें",
       "addMedia": "मीडिया जोड़ें",
@@ -1365,13 +1179,13 @@
       "resuming": "फिर शुरू हो रहा है…",
       "resumeReview": "रिव्यू फिर शुरू करें",
       "removing": "हटाया जा रहा है…",
-      "editorFooterNote": "आपके बदलाव आपके PulseSoc स्टोर में सेव होते हैं, और कॉन्टेंट बदलने पर लिस्टिंग दोबारा मार्केटप्लेस रिव्यू में जाती है। चेकआउट, पेआउट, फ़ुलफ़िलमेंट और विवाद pulsesoc.com पर संभाले जाते हैं।",
+      "editorFooterNote": "अपडेट सर्वर पर सेव होते हैं और कॉन्टेंट बदलने पर दोबारा मार्केटप्लेस रिव्यू में जाते हैं। चेकआउट, पेआउट, फ़ुलफ़िलमेंट, विवाद और प्रोवाइडर के काम नेटिव प्रोवाइडर बाउंड्री के अंदर ही रहते हैं।",
       "listingUpdatedReview": "लिस्टिंग अपडेट होकर रिव्यू में भेज दी गई।",
       "listingUpdateFailed": "लिस्टिंग अपडेट नहीं हो सकी।",
       "listingUpdated": "लिस्टिंग अपडेट हो गई।",
       "listingStatusUpdateFailed": "लिस्टिंग का स्टेटस अपडेट नहीं हो सका।",
       "productMediaGallery": "प्रोडक्ट मीडिया गैलरी",
-      "productMediaGalleryCopy": "किसी भी आइटम पर टैप करके उसे फ़ुल स्क्रीन खोलें। जो मीडिया व्यूअर चला नहीं पाता, वह स्थिर प्रीव्यू के रूप में दिखता है।",
+      "productMediaGalleryCopy": "गैलरी मार्केटप्लेस मीडिया पेलोड और शेयर किया नेटिव मीडिया व्यूअर दोबारा इस्तेमाल करती है। सपोर्ट न होने वाला मीडिया व्यूअर के अंदर सुरक्षित तरीके से फ़ॉलबैक हो जाता है।",
       "openStoreMediaA11y": "स्टोर मीडिया {{index}} खोलें",
       "mediaFallback": "मीडिया",
       "openMedia": "मीडिया खोलें",
@@ -1379,37 +1193,18 @@
       "ordersAndPayouts": "ऑर्डर और पेआउट",
       "ordersAndPayoutsCopy": "ऑर्डर, सेलर फ़ीस, Stripe Connect ऑनबोर्डिंग, चेकआउट और पेआउट जारी करना प्रोवाइडर और बैकएंड के कंट्रोल में रहता है।",
       "noSellerOrders": "कोई सेलर ऑर्डर लोड नहीं हुआ।",
-      "orderMerchandiseLine": "सामान {{merchandise}} · शिपिंग क्रेडिट {{shipping}}",
-      "orderFeeLine": "PulseSoc फ़ीस {{rate}} · रिफ़ंड समायोजन {{refunds}}",
-      "orderNetEarningsLine": "नेट कमाई {{net}} · {{state}}",
-      "orderBlockedLine": "रुका हुआ: {{reason}}। पेआउट से पहले इसे हल करें।",
       "checking": "चेक हो रहा है…",
       "connectPayouts": "पेआउट कनेक्ट करें",
       "payoutChecked": "पेआउट ऑनबोर्डिंग चेक हो गई।",
       "payoutUnavailable": "पेआउट ऑनबोर्डिंग अभी उपलब्ध नहीं है।",
-      "policyFixNeedsReview": "इसके लिए पॉलिसी रिव्यू चाहिए, जो ऐप से पूरा नहीं हो सकता। प्रोडक्ट की जानकारी बदलें, या pulsesoc.com पर सपोर्ट से संपर्क करें।",
       "payoutManagedNote": "पेआउट ऑनबोर्डिंग और पेआउट जारी करना PulseSoc और उसका पेमेंट प्रोवाइडर संभालते हैं। आपके पेआउट तैयार होने पर हम आपको बता देंगे।",
-      "termsAcceptedLabel": "स्वीकृत",
-      "reviewAndAccept": "पढ़ें और स्वीकार करें",
-      "termsAcceptedNotice": "मार्केटप्लेस फ़ीस और शर्तें स्वीकार कर ली गईं।",
-      "termsAcceptFailed": "शर्तों की स्वीकृति सेव नहीं हो सकी।",
       "trustAndEligibility": "भरोसा और योग्यता",
       "verification": "वेरिफ़िकेशन",
-      "trustCopy": "टैक्स फ़ॉर्म, बैंक सेटअप, विवाद, रिफ़ंड, फ़ुलफ़िलमेंट और PulseSoc रिव्यू फ़िलहाल PulseSoc की वेबसाइट पर होते हैं, ऐप में नहीं।",
+      "trustCopy": "एडवांस्ड टैक्स फ़ॉर्म, बैंक ऑनबोर्डिंग, विवाद, रिफ़ंड, फ़ुलफ़िलमेंट और एडमिन रिव्यू नेटिव QA गेट तैयार होने तक सुरक्षित वेब/प्रोवाइडर फ़्लो पर ही रहते हैं।",
       "storeMediaViewerTitle": "स्टोर मीडिया",
       "statusApprovedLive": "मंज़ूर/लाइव",
       "statusPendingReview": "रिव्यू बाकी",
-      "statusRemoved": "हटा दिया गया",
-      "status": {
-        "live": "सक्रिय",
-        "store_offline": "स्टोर निष्क्रिय",
-        "store_name_needed": "स्टोर का नाम जरूरी",
-        "paused": "रोका गया",
-        "draft": "ड्राफ़्ट",
-        "rejected": "अस्वीकृत"
-      },
-      "dropshipping": "आयातित उत्पाद",
-      "dropshippingCopy": "आपने किसी आपूर्तिकर्ता से जो उत्पाद आयात किए हैं, उनमें वे भी शामिल हैं जो अभी समीक्षा की प्रतीक्षा में हैं।"
+      "statusRemoved": "हटा दिया गया"
     },
     "orders": {
       "title": "ऑर्डर",
@@ -1529,52 +1324,6 @@
       "statusInReview": "रिव्यू में",
       "pauseCampaign": "कैंपेन रोकें",
       "resumeCampaign": "कैंपेन फिर शुरू करें"
-    },
-    "sellerAccess": {
-      "checking": "आपकी विक्रेता स्थिति जाँची जा रही है…",
-      "retry": "फिर कोशिश करें",
-      "unreadableTitle": "हम आपकी विक्रेता स्थिति जाँच नहीं सके",
-      "unreadableBody": "आपकी दुकान ठीक है — बस हम जाँच नहीं कर पाए। थोड़ी देर में फिर कोशिश करें।",
-      "noApplicationTitle": "PulseSoc पर बेचना शुरू करें",
-      "noApplicationBody": "अपनी दुकान खोलने, उत्पाद सूचीबद्ध करने और ऑर्डर लेने के लिए विक्रेता खाते हेतु आवेदन करें।",
-      "noApplicationCta": "बेचने के लिए आवेदन करें",
-      "draftTitle": "अपना विक्रेता आवेदन पूरा करें",
-      "draftBody": "आपका आवेदन ड्राफ़्ट के रूप में सहेजा गया है। जहाँ छोड़ा था वहीं से जारी रखें — मंज़ूरी मिलते ही आपकी दुकान खुल जाएगी।",
-      "draftCta": "आवेदन जारी रखें",
-      "reviewTitle": "आपका आवेदन समीक्षाधीन है",
-      "reviewBody": "हम आपके विवरण जाँच रहे हैं। निर्णय होते ही आपको सूचना मिलेगी — अभी आपसे और कुछ नहीं चाहिए।",
-      "reviewCta": "आवेदन की स्थिति देखें",
-      "moreInfoTitle": "हमें थोड़ी और जानकारी चाहिए",
-      "moreInfoBody": "जब तक आप समीक्षकों की माँगी गई जानकारी नहीं भेजते, आपका आवेदन रुका रहेगा।",
-      "moreInfoCta": "माँगे गए बदलाव पूरे करें",
-      "declinedTitle": "आपका विक्रेता आवेदन स्वीकृत नहीं हुआ",
-      "declinedBody": "कारण देखने और यह जानने के लिए कि आप दोबारा आवेदन कर सकते हैं या नहीं, अपना आवेदन खोलें।",
-      "declinedCta": "आवेदन की स्थिति देखें",
-      "suspendedTitle": "आपकी दुकान निलंबित है",
-      "suspendedBody": "दुकान निलंबित रहने तक आप न तो सूचीबद्ध कर सकते हैं और न ही बेच सकते हैं। आप अपने मौजूदा ऑर्डर देख सकते हैं और रिफ़ंड व विवाद संभाल सकते हैं।",
-      "suspendedCta": "मौजूदा ऑर्डर देखें",
-      "suspendedSupportCta": "सहायता से संपर्क करें"
-    },
-    "sellerPayments": {
-      "sectionTitle": "कार्ड भुगतान",
-      "setupRequiredLabel": "सेटअप आवश्यक",
-      "setupRequiredBody": "खरीदार अभी आपको कार्ड से भुगतान नहीं कर सकते। कार्ड भुगतान लेना शुरू करने के लिए अपने भुगतान विवरण Stripe से जोड़ें।",
-      "setupRequiredCta": "भुगतान सेट अप करें",
-      "setupInProgressLabel": "सेटअप चल रहा है",
-      "setupInProgressBody": "आपने कार्ड भुगतान सेट अप करना शुरू कर दिया है, लेकिन Stripe को अब भी आपसे कुछ विवरण चाहिए।",
-      "setupInProgressCta": "सेटअप जारी रखें",
-      "actionRequiredLabel": "कार्रवाई आवश्यक",
-      "actionRequiredBody": "कार्ड भुगतान लेने से पहले Stripe को आपसे कुछ चाहिए।",
-      "actionRequiredCta": "सेटअप पूरा करें",
-      "underReviewLabel": "समीक्षाधीन",
-      "underReviewBody": "Stripe आपके विवरण की समीक्षा कर रहा है। इसमें आमतौर पर थोड़ा समय लगता है और आपसे कुछ नहीं चाहिए।",
-      "readyLabel": "तैयार",
-      "readyBody": "कार्ड भुगतान चालू हैं। खरीदार चेकआउट पर आपको कार्ड से भुगतान कर सकते हैं।",
-      "restrictedLabel": "प्रतिबंधित",
-      "restrictedBody": "Stripe ने आपके खाते पर कार्ड भुगतान प्रतिबंधित कर दिए हैं। क्या चाहिए यह देखने के लिए Stripe खोलें।",
-      "restrictedCta": "Stripe खोलें",
-      "unavailableLabel": "अनुपलब्ध",
-      "unavailableBody": "PulseSoc पर अभी कार्ड भुगतान उपलब्ध नहीं हैं। आपके अन्य भुगतान तरीके अप्रभावित हैं।"
     },
     "business": {
       "title": "बिज़नेस",
@@ -2634,26 +2383,6 @@
       "upcomingBody": "बनाया जा रहा है। तैयार होते ही ये यहाँ दिखेंगी।",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "Business OS के इस हिस्से का पेज अभी नहीं है। दूसरा सेक्शन चुनने के लिए Business OS पर लौटें।"
-    },
-    "pulsedrop": {
-      "label": {
-        "trending": "ट्रेंडिंग",
-        "newDrop": "नई पेशकश",
-        "popular": "लोकप्रिय",
-        "topPick": "टॉप पिक",
-        "discovery": "खोजें"
-      },
-      "availability": {
-        "unavailable": "अब उपलब्ध नहीं",
-        "notPriced": "कीमत तय नहीं"
-      },
-      "cta": {
-        "viewProduct": "प्रोडक्ट देखें"
-      },
-      "seller": {
-        "openSeller": "{{name}} का स्टोर खोलें",
-        "visitStore": "स्टोर देखें"
-      }
     }
   },
   "discovery": {
@@ -3119,39 +2848,7 @@
       "reportFailed": "रिपोर्ट नहीं भेजी जा सकी।",
       "selectedForFeedComposer": "फ़ीड कंपोज़र के लिए {{title}} चुना गया।",
       "selectedForReel": "रील के लिए {{title}} चुना गया।",
-      "selectedForStatus": "स्टेटस के लिए {{title}} चुना गया।",
-      "ownerSectionTitle": "स्वामी नियंत्रण",
-      "ownerManage": "प्रबंधित करें",
-      "ownerClose": "बंद करें",
-      "ownerLoading": "यह ट्रैक जाँचा जा रहा है…",
-      "ownerRetry": "फिर कोशिश करें",
-      "ownerImpactTitle": "निर्णय लेने से पहले",
-      "ownerImpactUses": "{{count}} Reels, पोस्ट और स्टेटस में जुड़ा है।",
-      "ownerImpactReports": "{{count}} खुली रिपोर्टें।",
-      "ownerCdnCaveat": "हटाने पर PulseSoc फ़ाइल देना बंद कर देता है, लेकिन डिवाइस पर पहले से कैश की गई प्रतियाँ ट्रैक के स्थायी विलोपन तक बजती रहती हैं। क्वारंटीन फ़ाइल को ही मिटा देता है।",
-      "ownerLegalHold": "यह ट्रैक कानूनी रोक के अधीन है। इसे स्थायी रूप से नहीं मिटाया जा सकता।",
-      "ownerReason": "कारण",
-      "ownerNote": "टिप्पणी",
-      "ownerNotePlaceholder": "टिप्पणी जोड़ें (OTHER और किसी भी स्थायी विलोपन के लिए आवश्यक)",
-      "ownerActionsTitle": "कार्रवाइयाँ",
-      "ownerTakedown": "हटाएँ",
-      "ownerQuarantine": "क्वारंटीन करें",
-      "ownerQuarantineHint": "प्लेबैक रोकता है और संग्रहीत फ़ाइल मिटाता है। ट्रैक का रिकॉर्ड और इतिहास बना रहता है।",
-      "ownerRestore": "बहाल करें",
-      "ownerSchedulePurge": "स्थायी विलोपन निर्धारित करें",
-      "ownerCancelPurge": "स्थायी विलोपन रद्द करें",
-      "ownerPurge": "स्थायी विलोपन",
-      "ownerPurgeExplainer": "स्थायी विलोपन ऑडियो को हमेशा के लिए मिटा देता है। जिन पोस्ट, Reels और स्टेटस में इसका उपयोग हुआ वे बने रहते हैं — उनका ऑडियो चुप हो जाता है।",
-      "ownerStepUpTitle": "पासवर्ड",
-      "ownerStepUpPlaceholder": "अपना पासवर्ड दोबारा डालें",
-      "ownerStepUpAction": "पुष्टि करें कि यह आप हैं",
-      "ownerStepUpGranted": "पुष्टि हो गई। स्थायी विलोपन {{seconds}} सेकंड के लिए खुला है।",
-      "ownerPurgeConfirm": "पुष्टि के लिए {{id}} लिखें",
-      "ownerPurgeAction": "स्थायी रूप से मिटाएँ",
-      "ownerAuditTitle": "इतिहास",
-      "ownerAuditEmpty": "इस ट्रैक के लिए कोई कार्रवाई दर्ज नहीं है।",
-      "ownerApplied": "{{action}} लागू किया गया।",
-      "ownerNoChange": "पहले से ही उसी स्थिति में — कुछ नहीं बदला।"
+      "selectedForStatus": "स्टेटस के लिए {{title}} चुना गया।"
     }
   },
   "settings": {
@@ -3189,7 +2886,7 @@
       "signOut": "साइन आउट करें",
       "signOutSubtitle": "सिर्फ़ इसी डिवाइस से साइन आउट करें।",
       "signOutConfirmTitle": "PulseSoc से साइन आउट करें?",
-      "signOutConfirmBody": "आपके दूसरे डिवाइस पर आप साइन इन रहेंगे। इस डिवाइस पर सहेजे गए ड्राफ़्ट और डाउनलोड किया गया मीडिया मिटा दिया जाएगा।",
+      "signOutConfirmBody": "आपके दूसरे डिवाइस पर आप साइन इन रहेंगे। इस डिवाइस पर आपके ड्राफ़्ट और डाउनलोड बने रहेंगे।",
       "signOutEverywhere": "सभी डिवाइस से साइन आउट करें",
       "signOutEverywhereSubtitle": "हर PulseSoc सेशन खत्म कर देता है, यह वाला भी।",
       "signOutEverywhereConfirmTitle": "सभी डिवाइस से साइन आउट करें?",
@@ -3249,11 +2946,6 @@
           "title": "भाषा और क्षेत्र",
           "subtitle": "ऐप की भाषा, अनुवाद, समय का फ़ॉर्मैट",
           "keywords": "भाषा language हिंदी hindi अनुवाद translate क्षेत्र region टाइम ज़ोन timezone समय time format 24 hour"
-        },
-        "commerce": {
-          "title": "मार्केटप्लेस सुझाव",
-          "subtitle": "उत्पाद सुझाव, कितनी बार, रोकें",
-          "keywords": "मार्केटप्लेस सुझाव अनुशंसा उत्पाद खरीदारी फ़ीड रील्स आवृत्ति रोकें विराम वैयक्तिकृत वाणिज्य दुकान"
         },
         "storage": {
           "title": "स्टोरेज और डेटा",
@@ -3806,16 +3498,7 @@
       "copied": "कॉपी हो गया",
       "share": "शेयर करें",
       "unavailable": "आपका निमंत्रण लिंक अभी तैयार नहीं है।",
-      "fairness": "उन्हीं लोगों को बुलाएँ जिन्हें आप सच में जानते हैं। संख्या से ज़्यादा गुणवत्ता मायने रखती है।",
-      "message": {
-        "default": "नमस्ते! मैं PulseSoc इस्तेमाल कर रहा/रही हूँ। चलिए वहाँ जुड़ते हैं और संपर्क में रहते हैं।\n\nPulseSoc पर मुझसे जुड़ें:",
-        "casual": "नमस्ते — मैं अब PulseSoc पर हूँ। आप भी आइए।\n\nयहाँ से जुड़ें:",
-        "network": "मैं PulseSoc पर अपना नेटवर्क बना रहा/रही हूँ और वहाँ आपसे जुड़ना चाहूँगा/चाहूँगी।\n\nPulseSoc पर मुझसे जुड़ें:",
-        "discovery": "PulseSoc पर मुझे ऐसे लोग और पोस्ट मिलते हैं जिन्हें फ़ॉलो करना सार्थक है। मुझे लगता है आपको पसंद आएगा।\n\nएक नज़र डालिए:",
-        "short": "PulseSoc पर मुझसे जुड़ें:",
-        "handle": "वहाँ मैं @{{username}} हूँ।",
-        "subject": "PulseSoc पर मुझसे जुड़ें"
-      }
+      "fairness": "उन्हीं लोगों को बुलाएँ जिन्हें आप सच में जानते हैं। संख्या से ज़्यादा गुणवत्ता मायने रखती है।"
     },
     "missions": {
       "heading": "मिशन",
@@ -4610,19 +4293,122 @@
         "UNKNOWN": "अनुपलब्ध"
       },
       "features": {
+        "privateFacts": {
+          "label": "निजी जानकारी",
+          "hint": "आपके मामलों से जुड़ी सत्यापित जानकारी।"
+        },
+        "capitalGraph": {
+          "label": "पूँजी मानचित्र",
+          "hint": "आपकी संपत्तियाँ, संस्थाएँ और देनदारियाँ कैसे जुड़ी हैं।"
+        },
+        "privateBriefings": {
+          "label": "निजी ब्रीफिंग",
+          "hint": "आपके अपने रिकॉर्ड से बनी ब्रीफिंग।"
+        },
         "relationshipIntelligence": {
           "label": "संबंध विश्लेषण",
           "hint": "आपके मामलों से जुड़े लोग और संस्थाएँ।"
         },
+        "privateShield": {
+          "label": "निजी कवच",
+          "hint": "आपकी निजी जानकारी के उजागर होने पर नज़र रखता है।"
+        },
+        "breachMonitoring": {
+          "label": "डेटा लीक निगरानी",
+          "hint": "आपका विवरण किसी ज्ञात लीक में दिखे तो सूचना।"
+        },
+        "documentIntelligence": {
+          "label": "दस्तावेज़ विश्लेषण",
+          "hint": "आपके दिए दस्तावेज़ों से जानकारी निकालता है।"
+        },
+        "humanConcierge": {
+          "label": "मानव सहायक",
+          "hint": "एक व्यक्ति जो आपकी ओर से अनुरोध संभालता है।"
+        },
+        "operations": {
+          "label": "परिचालन",
+          "hint": "दायित्व, निर्णय, अनुरोध, जोखिम और अवसर जिन्हें आप ट्रैक करते हैं।"
+        },
         "privateMeetings": {
           "label": "निजी मीटिंग",
           "hint": "वेटिंग रूम और होस्ट नियंत्रण के साथ सुरक्षित मीटिंग।"
+        },
+        "privateConversations": {
+          "label": "निजी बातचीत",
+          "hint": "ऑफ़िस की बातचीत, वर्गीकृत और आपके काम से जुड़ी हुई।"
         }
       },
       "entry": {
         "heading": "निजी कार्यालय",
         "hint": "आपकी निजी जानकारी और जीवन-प्रबंधन का केंद्र।",
         "lockedHint": "{{tier}} में शामिल।"
+      },
+      "facts": {
+        "subtitle": "केवल वही जो आपके लिए दर्ज किया गया है। आपकी सार्वजनिक गतिविधि से कुछ अनुमान नहीं लगाया जाता।",
+        "loading": "आपके रिकॉर्ड लोड हो रहे हैं…",
+        "why": "आपको यह कैसे पता है?",
+        "source": "स्रोत",
+        "sourceUnknown": "दर्ज नहीं",
+        "verified": "सत्यापन",
+        "observedLabel": "दर्ज तिथि",
+        "observed": "{{date}} को दर्ज",
+        "confidence": "विश्वास स्तर",
+        "hasDocument": "स्रोत दस्तावेज़ फ़ाइल में मौजूद है।",
+        "close": "बंद करें",
+        "stale": "पुराना",
+        "empty": {
+          "title": "यहाँ अभी कुछ नहीं है",
+          "body": "अभी तक कोई सत्यापित जानकारी नहीं जोड़ी गई है।"
+        },
+        "notEntitled": {
+          "title": "अपग्रेड आवश्यक",
+          "body": "निजी जानकारी {{tier}} में शामिल है।",
+          "bodyGeneric": "निजी जानकारी आपकी मौजूदा योजना में शामिल नहीं है।"
+        },
+        "disabled": {
+          "title": "अस्थायी रूप से बंद",
+          "body": "निजी जानकारी फ़िलहाल बंद है। आपके रिकॉर्ड जस के तस हैं।"
+        },
+        "notImplemented": {
+          "title": "अभी उपलब्ध नहीं",
+          "body": "यह अभी बनाया नहीं गया है।"
+        },
+        "unavailable": {
+          "title": "अनुपलब्ध",
+          "body": "अभी आपके रिकॉर्ड पढ़े नहीं जा सके। थोड़ी देर में फिर कोशिश करें।"
+        },
+        "error": {
+          "title": "कुछ गड़बड़ हो गई",
+          "body": "आपके रिकॉर्ड लोड नहीं हो सके।"
+        },
+        "add": {
+          "open": "तथ्य जोड़ें",
+          "title": "एक तथ्य दर्ज करें",
+          "domain": "क्षेत्र",
+          "factType": "तथ्य का प्रकार",
+          "factTypeHint": "जैसे: पासपोर्ट नंबर",
+          "valueType": "मान का प्रकार",
+          "value": "मान",
+          "save": "सहेजें",
+          "cancel": "रद्द करें",
+          "failed": "हम इसे अभी सहेज नहीं सके।"
+        }
+      },
+      "domains": {
+        "GENERAL": "सामान्य",
+        "FINANCIAL": "वित्तीय",
+        "LEGAL": "कानूनी",
+        "HEALTH": "स्वास्थ्य",
+        "FAMILY": "परिवार",
+        "IDENTITY": "पहचान",
+        "SECURITY": "सुरक्षा"
+      },
+      "verification": {
+        "VERIFIED": "सत्यापित",
+        "SOURCED": "स्रोत सहित",
+        "SELF_REPORTED": "आपका बताया",
+        "ESTIMATED": "अनुमानित",
+        "NEEDS_REVIEW": "समीक्षा आवश्यक"
       },
       "security": {
         "title": "कार्यालय सुरक्षा",
@@ -4715,6 +4501,457 @@
           "failed": "रीसेट विफल रहा। अपना पासवर्ड जाँचें और फिर से कोशिश करें।"
         }
       },
+      "operations": {
+        "title": "परिचालन",
+        "subtitle": "दायित्व, घटनाएँ, निर्णय, अनुरोध, जोखिम और अवसर — एक ही जगह दर्ज और ट्रैक किए गए।",
+        "loading": "आपके रिकॉर्ड लोड हो रहे हैं…",
+        "cancel": "रद्द करें",
+        "save": "सहेजें",
+        "move": "स्थिति बदलें",
+        "writeFailed": "यह बदलाव सहेजा नहीं गया।",
+        "empty": {
+          "title": "कुछ दर्ज नहीं"
+        },
+        "views": {
+          "obligations": "दायित्व",
+          "events": "घटनाएँ",
+          "decisions": "निर्णय",
+          "requests": "अनुरोध",
+          "risks": "जोखिम",
+          "opportunities": "अवसर"
+        },
+        "add": {
+          "obligations": "दायित्व दर्ज करें",
+          "events": "घटना दर्ज करें",
+          "decisions": "निर्णय दर्ज करें",
+          "requests": "अनुरोध दर्ज करें",
+          "risks": "जोखिम दर्ज करें",
+          "opportunities": "अवसर दर्ज करें"
+        },
+        "emptyBody": {
+          "obligations": "अभी तक कोई दायित्व दर्ज नहीं है।",
+          "events": "अभी तक कोई घटना दर्ज नहीं है।",
+          "decisions": "अभी तक कोई निर्णय दर्ज नहीं है।",
+          "requests": "अभी तक कोई अनुरोध दर्ज नहीं है।",
+          "risks": "अभी तक कोई जोखिम दर्ज नहीं है।",
+          "opportunities": "अभी तक कोई अवसर दर्ज नहीं है।"
+        },
+        "notEntitled": {
+          "title": "अपग्रेड आवश्यक",
+          "body": "परिचालन {{tier}} के साथ शामिल है।",
+          "bodyGeneric": "परिचालन आपकी वर्तमान योजना में शामिल नहीं है।"
+        },
+        "disabled": {
+          "title": "उपलब्ध नहीं",
+          "body": "परिचालन अभी बंद है।"
+        },
+        "notImplemented": {
+          "title": "तैयारी में",
+          "body": "आपके कार्यालय का यह हिस्सा अभी तैयार किया जा रहा है।"
+        },
+        "unavailable": {
+          "title": "अनुपलब्ध",
+          "body": "परिचालन से संपर्क नहीं हो सका। आपके रिकॉर्ड अपरिवर्तित हैं।"
+        },
+        "error": {
+          "title": "कुछ गलत हो गया",
+          "body": "आपके रिकॉर्ड लोड नहीं हो सके।"
+        },
+        "due": "देय {{date}}",
+        "occurred": "घटित {{date}}",
+        "outcome": "परिणाम: {{outcome}}",
+        "form": {
+          "title": "शीर्षक",
+          "question": "प्रश्न",
+          "kind": "प्रकार",
+          "details": "विवरण",
+          "due": "देय तिथि (YYYY-MM-DD)"
+        },
+        "status": {
+          "OPEN": "खुला",
+          "RESOLVED": "निपटाया गया",
+          "DISMISSED": "खारिज",
+          "RECORDED": "दर्ज",
+          "UNDER_REVIEW": "समीक्षा में",
+          "DECIDED": "निर्णीत",
+          "ABANDONED": "छोड़ा गया",
+          "IN_PROGRESS": "प्रगति पर",
+          "WAITING_ON_USER": "आपकी प्रतीक्षा में",
+          "WAITING_ON_PROVIDER": "प्रदाता की प्रतीक्षा में",
+          "COMPLETED": "पूर्ण",
+          "CANCELED": "रद्द",
+          "MONITORING": "निगरानी में",
+          "MITIGATED": "कम किया गया",
+          "ACCEPTED": "स्वीकृत",
+          "NEW": "नया",
+          "REVIEWING": "मूल्यांकन में",
+          "INTERESTED": "रुचि है",
+          "PASSED": "छोड़ा गया",
+          "CLOSED": "बंद",
+          "OVERDUE": "अतिदेय",
+          "DUE_SOON": "जल्द देय"
+        },
+        "overview": {
+          "heading": "अवलोकन",
+          "loading": "आपका अवलोकन लोड हो रहा है…",
+          "unavailable": "आपका अवलोकन लोड नहीं हो सका। ये शून्य नहीं हैं।",
+          "needsAttention": "ध्यान चाहिए",
+          "dueToday": "आज देय",
+          "overdue": "अतिदेय",
+          "pendingDecisions": "लंबित निर्णय",
+          "dueThisWeek": "इस सप्ताह देय",
+          "highRisks": "उच्च जोखिम",
+          "openRequests": "खुले अनुरोध",
+          "awaitingResponse": "आपके उत्तर की प्रतीक्षा",
+          "opportunities": "अवसर",
+          "recentlyCompleted": "हाल ही में पूर्ण",
+          "recentWindow": "पिछले {{days}} दिन",
+          "queue": "ध्यान सूची",
+          "queueEmpty": "कुछ भी आपके ध्यान की प्रतीक्षा में नहीं है।",
+          "truncated": "{{total}} में से {{shown}} दिखाए जा रहे हैं।",
+          "notTracked": "ट्रैक नहीं किया गया",
+          "reason": {
+            "OVERDUE": "अतिदेय",
+            "HIGH_RISK": "उच्च जोखिम",
+            "DUE_SOON": "जल्द देय",
+            "RESPONSE_REQUIRED": "आपके उत्तर की आवश्यकता",
+            "MISSING_REQUIRED_CONTEXT": "समीक्षा आवश्यक",
+            "DECISION_REQUIRED": "निर्णय शेष",
+            "BLOCKED": "प्रदाता की प्रतीक्षा"
+          },
+          "expiringOpportunities": "समाप्त होते अवसर"
+        }
+      },
+      "capital": {
+        "title": "पूंजी ग्राफ़",
+        "subtitle": "आपके पास क्या है, उसे क्या कवर करता है और सब कैसे जुड़ा है — हर हिस्से की विश्वसनीयता के साथ।",
+        "loading": "आपका ग्राफ़ लोड हो रहा है…",
+        "views": {
+          "coverage": "कवरेज",
+          "documents": "दस्तावेज़",
+          "holdings": "संपत्तियाँ",
+          "obligations": "देनदारियाँ",
+          "overview": "अवलोकन",
+          "structure": "संरचना",
+          "cash_flow": "व्यय",
+          "exposure": "संकेंद्रण"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "अब तक {{count}}",
+        "factCount": "{{count}} दर्ज तथ्य",
+        "empty": {
+          "title": "कुछ दर्ज नहीं",
+          "openPortfolio": "पोर्टफोलियो खोलें"
+        },
+        "emptyBody": {
+          "holdings": "अभी तक कोई होल्डिंग दर्ज नहीं है। आपके पोर्टफोलियो में जोड़ी गई संपत्तियाँ यहाँ दिखाई देंगी और अपने आप आपके कैपिटल ग्राफ़ से जुड़ जाएँगी।",
+          "coverage": "अभी तक कोई कवरेज दर्ज नहीं है।",
+          "structure": "अभी तक कोई संरचना दर्ज नहीं है।",
+          "documents": "अभी तक कोई कैपिटल दस्तावेज़ जुड़ा नहीं है।"
+        },
+        "denied": {
+          "title": "नहीं दिखाया गया",
+          "body": "इस प्रश्न का उत्तर नहीं दिया गया।"
+        },
+        "notFound": {
+          "title": "नहीं मिला",
+          "body": "आपके कार्यालय में ऐसी कोई इकाई नहीं है।"
+        },
+        "notEntitled": {
+          "title": "अपग्रेड आवश्यक",
+          "body": "पूंजी ग्राफ़ {{tier}} के साथ शामिल है।",
+          "bodyGeneric": "पूंजी ग्राफ़ आपकी वर्तमान योजना में शामिल नहीं है।"
+        },
+        "disabled": {
+          "title": "उपलब्ध नहीं",
+          "body": "पूंजी ग्राफ़ अभी बंद है।"
+        },
+        "notImplemented": {
+          "title": "तैयारी में",
+          "body": "आपके कार्यालय का यह हिस्सा अभी तैयार किया जा रहा है।"
+        },
+        "unavailable": {
+          "title": "अनुपलब्ध",
+          "body": "आपके ग्राफ़ से संपर्क नहीं हो सका। आपके रिकॉर्ड अपरिवर्तित हैं।"
+        },
+        "error": {
+          "title": "कुछ गलत हो गया",
+          "body": "आपका ग्राफ़ लोड नहीं हो सका।"
+        },
+        "conflicts": {
+          "title": "परस्पर विरोधी जानकारी",
+          "disagree": "दो स्रोत असहमत हैं"
+        },
+        "stale": {
+          "title": "ताज़गी सीमा के पार",
+          "age": "{{days}} दिन पुराना"
+        },
+        "truth": {
+          "KNOWN": "ज्ञात",
+          "INFERRED": "अनुमानित (निष्कर्ष)",
+          "ESTIMATED": "अनुमानित",
+          "STALE": "पुराना",
+          "MISSING": "अनुपस्थित",
+          "CONFLICTING": "विरोधाभासी",
+          "PRO_REVIEW": "समीक्षा आवश्यक"
+        },
+        "nodeType": {
+          "PERSON": "व्यक्ति",
+          "BUSINESS": "व्यवसाय",
+          "PROPERTY": "संपत्ति",
+          "INSURANCE_POLICY": "बीमा पॉलिसी",
+          "CONTRACT": "अनुबंध",
+          "DOCUMENT": "दस्तावेज़",
+          "PROFESSIONAL": "विशेषज्ञ",
+          "ASSET": "परिसंपत्ति",
+          "LIABILITY": "देयता"
+        },
+        "entity": {
+          "relationships": "संबंध",
+          "facts": "दर्ज तथ्य",
+          "updated": "अद्यतन {{date}}"
+        },
+        "relationshipsUnavailable": "संबंध अभी लोड नहीं हो सके।",
+        "portfolio": {
+          "title": "पोर्टफोलियो",
+          "subtitle": "आपका PulseSoc पोर्टफोलियो, आपके ग्राफ़ में प्रतिबिंबित। होल्डिंग्स पोर्टफोलियो में संपादित करें — बदलाव अपने आप यहाँ पहुँच जाते हैं।",
+          "totalValue": "कुल मूल्य",
+          "partial": "{{total}} में से {{priced}} होल्डिंग्स की कीमत उपलब्ध",
+          "lots_one": "{{count}} लॉट",
+          "lots_other": "{{count}} लॉट",
+          "priceUnavailable": "कीमत उपलब्ध नहीं",
+          "manualSource": "मैनुअल · आपके पोर्टफोलियो से",
+          "updatedSeconds": "कीमतें {{count}} सेकंड पहले अपडेट हुईं",
+          "updatedMinutes": "कीमतें {{count}} मिनट पहले अपडेट हुईं",
+          "updatedStale": "कीमतें पुरानी हो सकती हैं",
+          "sourceUnavailable": "लाइव कीमतें अभी कनेक्ट नहीं हैं",
+          "syncPending_one": "पोर्टफोलियो का {{count}} बदलाव सिंक हो रहा है…",
+          "syncPending_other": "पोर्टफोलियो के {{count}} बदलाव सिंक हो रहे हैं…",
+          "syncFailed": "हाल की एक सिंक विफल रही — अंतिम सफल अपडेट के अनुसार दिखाया गया है।",
+          "unpriced": "{{symbols}} के लिए लाइव कीमत नहीं है। कुल में केवल आपकी बाकी होल्डिंग्स शामिल हैं।",
+          "empty": "आपके पोर्टफोलियो में अभी कोई होल्डिंग नहीं है।",
+          "unavailable": "आपका पोर्टफोलियो अभी लोड नहीं हो सका।",
+          "basisUnknown": "लागत मूल्य दर्ज नहीं है",
+          "pricedValue": "मूल्यांकित पोर्टफोलियो मूल्य",
+          "valueUnavailable": "अभी तक कोई मूल्यांकित होल्डिंग नहीं",
+          "excludesUnpriced": "बिना मूल्य वाली होल्डिंग शामिल नहीं: {{count}}",
+          "pnlLabel": "अवास्तविक लाभ",
+          "pnlUnavailable": "उपलब्ध नहीं",
+          "basisLabel": "लागत आधार",
+          "basisPartial": "{{total}} में से {{known}} के लिए ज्ञात",
+          "holdingsLabel": "होल्डिंग्स",
+          "allocationTitle": "आवंटन",
+          "allocationPricedOnly": "केवल मूल्यांकित होल्डिंग्स",
+          "excludedFromTotal": "पोर्टफोलियो कुल से बाहर",
+          "qualityPriced": "मूल्यांकित {{priced}}/{{total}}",
+          "qualityBasis": "लागत ज्ञात {{known}}/{{total}}",
+          "unavailableTitle": "पोर्टफोलियो अनुपलब्ध",
+          "fresh": {
+            "live": "लाइव",
+            "fresh": "ताज़ा",
+            "delayed": "विलंबित",
+            "stale": "पुराना",
+            "unavailable": "कोई मूल्य स्रोत नहीं"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "पोर्टफोलियो कवरेज",
+          "pricing": "{{total}} में से {{priced}} होल्डिंग्स मूल्यांकित",
+          "basis": "{{total}} में से {{known}} की लागत ज्ञात",
+          "factsTitle": "तथ्य सत्यापन",
+          "knownShare": "पुष्ट तथ्य: {{pct}}",
+          "documentBacked": "दस्तावेज़-समर्थित तथ्य: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "संबंध",
+          "noRelationships": "अभी तक कोई संबंध दर्ज नहीं है।"
+        },
+        "relation": {
+          "OWNS": "स्वामी है",
+          "ADVISED_BY": "सलाहकार",
+          "COVERED_BY": "कवर किया गया",
+          "SECURED_BY": "सुरक्षित किया गया",
+          "GOVERNED_BY": "शासित",
+          "DESCRIBES": "वर्णन करता है"
+        },
+        "documents": {
+          "evidenceTitle": "जुड़े हुए प्रमाण"
+        },
+        "overview": {
+          "assets": "मूल्यांकित संपत्तियाँ",
+          "complete": "पूर्ण",
+          "concentrationTitle": "सबसे बड़ी होल्डिंग्स",
+          "concentrationUnranked": "छोटी होल्डिंग्स यहाँ सूचीबद्ध नहीं हैं।",
+          "coverageTitle": "कवरेज",
+          "dimension": {
+            "pricing": "मूल्य निर्धारण",
+            "cost_basis": "लागत आधार",
+            "liability_amounts": "देनदारी की राशियाँ",
+            "evidence": "प्रमाण"
+          },
+          "dimensionCount": "{{total}} में से {{known}}",
+          "disclaimerBody": "यह मूल्यांकित संपत्तियों की तुलना निर्धारित देनदारियों से करता है। जिसका मूल्य या राशि तय नहीं हो सकी, वह इसमें शामिल नहीं है।",
+          "disclaimerTitle": "यह निवल संपत्ति का आंकड़ा नहीं है",
+          "excludedForeignCurrency": "दूसरी मुद्रा में देनदारियाँ",
+          "excludedTitle": "इस आंकड़े से बाहर",
+          "excludedUnpricedAssets": "बिना मूल्य वाली संपत्तियाँ",
+          "excludedUnquantifiedLiabilities": "बिना राशि वाली देनदारियाँ",
+          "excludedUnspecifiedCurrency": "बिना मुद्रा वाली देनदारियाँ",
+          "liabilities": "निर्धारित देनदारियाँ",
+          "liabilityConcentrationTitle": "सबसे बड़ी देनदारियाँ",
+          "noLiabilities": "कोई देनदारी दर्ज नहीं है। इसका अर्थ यह नहीं कि कुछ बकाया नहीं है।",
+          "notSummable": "कोई एक मुद्रा नहीं है, इसलिए कुल नहीं दिखाया गया।",
+          "otherCurrencies": "अन्य मुद्राएँ",
+          "partial": "आंशिक",
+          "quantifiedOf": "राशि ज्ञात {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "कुछ संपत्तियों का मूल्य नहीं मिल सका।",
+            "incomplete_portfolio": "पोर्टफोलियो का कुल योग स्वयं अधूरा है।",
+            "unquantified_liabilities": "कुछ देनदारियों की राशि दर्ज नहीं है।",
+            "uncomparable_currency": "कुछ देनदारियाँ ऐसी मुद्रा में हैं जिसकी तुलना नहीं हो सकती।",
+            "liabilities_truncated": "पढ़ी गई देनदारियों से अधिक देनदारियाँ मौजूद हैं।",
+            "no_liabilities_recorded": "कोई भी देनदारी दर्ज नहीं है।"
+          },
+          "reviewMore": "अन्य मदें यहाँ नहीं दिखाई गई हैं।",
+          "reviewTitle": "समीक्षा आवश्यक",
+          "shareUnknown": "हिस्सा अज्ञात",
+          "title": "शुद्ध स्थिति",
+          "unscoreable": "आँकने के लिए कुछ नहीं",
+          "withheld": "नहीं बताया गया"
+        },
+        "obligations": {
+          "amountMissing": "कोई राशि दर्ज नहीं",
+          "complete": "सभी राशियाँ दर्ज हैं",
+          "currenciesTitle": "मुद्रा के अनुसार",
+          "disclaimerBody": "यह आपकी दर्ज की गई देनदारियों का योग है, वह सब नहीं जो आप पर बकाया है।",
+          "disclaimerTitle": "यह कुल क्या है",
+          "dueLabel": "देय",
+          "dueMissing": "कोई देय तिथि दर्ज नहीं",
+          "evidenceLabel": "सहायक तथ्य",
+          "evidenceMissing": "कोई सहायक तथ्य दर्ज नहीं",
+          "none": "कोई देनदारी दर्ज नहीं है। इसका अर्थ यह नहीं कि कुछ भी बकाया नहीं है।",
+          "notProjected": "यह सूची रिकॉर्ड भंडार से पुनः नहीं बनाई गई है।",
+          "notSummable": "कोई एक मुद्रा नहीं है, इसलिए कोई योग नहीं दिखाया गया।",
+          "partial": "कुछ राशियाँ दर्ज नहीं हैं",
+          "projectedLabel": "रिकॉर्ड से दोबारा बनाया गया",
+          "quantifiedLabel": "दर्ज राशि के साथ",
+          "recordedLabel": "दर्ज देनदारियाँ",
+          "retiredLabel": "समाप्त",
+          "skippedLabel": "छोड़ी गईं",
+          "staleTitle": "हाल में अपडेट नहीं हुआ",
+          "syncTitle": "प्रक्षेपण",
+          "title": "ज्ञात राशि का योग",
+          "truncated": "यहाँ दिखाई गई देनदारियों से अधिक मौजूद हैं।",
+          "unquantifiedLabel": "बिना दर्ज राशि के",
+          "unspecifiedCurrency": "राशि दर्ज है, मुद्रा नहीं",
+          "withheld": "नहीं बताया गया"
+        },
+        "cashFlow": {
+          "title": "निर्धारित व्यय",
+          "complete": "जो कुछ दर्ज है, सब निर्धारित है",
+          "partial": "कुछ देनदारियाँ छूट गई हैं",
+          "withheld": "नहीं बताया गया",
+          "notSummable": "कोई एक मुद्रा नहीं है, इसलिए कोई योग नहीं दिखाया गया।",
+          "outflowsTitle": "यह सूची क्या है",
+          "notProjected": "यह सूची रिकॉर्ड भंडार से पुनः नहीं बनाई गई है।",
+          "scheduledLabel": "निर्धारित",
+          "seenLabel": "देखी गई देनदारियाँ",
+          "excludedLabel": "बाहर रखी गईं",
+          "noneScheduled": "आपने जो दर्ज किया है, उनमें से किसी की देय तिथि हमें ज्ञात नहीं है। इसका अर्थ यह नहीं कि कुछ भी देय नहीं है।",
+          "truncated": "यहाँ दिखाई गई देनदारियों से अधिक मौजूद हैं।",
+          "mixedCurrency": "{{count}} ऐसी मुद्रा में हैं जिसका नाम यह योग नहीं बताता, इसलिए उन्हें बाहर रखा गया।",
+          "bucketsTitle": "देय तिथि के अनुसार",
+          "bucketCountLabel": "देनदारियाँ",
+          "bucketMissing": "सूचित नहीं",
+          "bucketUndeclared": "अवधि का विवरण नहीं",
+          "bucketBefore": "{{to}} दिनों तक",
+          "bucketDueNow": "अभी देय या पहले से अतिदेय",
+          "bucketAfter": "{{from}} दिनों से अधिक",
+          "bucketBetween": "{{from}}–{{to}} दिन",
+          "excludedTitle": "किसी भी अवधि में नहीं",
+          "excludedBody": "ये देनदारियाँ वास्तविक हैं। इन्हें रखने के लिए आवश्यक जानकारी दर्ज न होने के कारण ये ऊपर की किसी अवधि में नहीं हैं।",
+          "undated": "कोई देय तिथि दर्ज नहीं",
+          "unquantified": "कोई राशि दर्ज नहीं",
+          "undatedAndUnquantified": "न तिथि दर्ज है, न राशि",
+          "amountMissing": "कोई राशि दर्ज नहीं",
+          "unspecifiedCurrency": "राशि दर्ज है, मुद्रा नहीं",
+          "dueLabel": "देय",
+          "dueMissing": "कोई देय तिथि दर्ज नहीं",
+          "overdue": "अतिदेय",
+          "evidenceLabel": "सहायक तथ्य",
+          "evidenceMissing": "कोई सहायक तथ्य दर्ज नहीं",
+          "syncTitle": "प्रक्षेपण",
+          "projectedLabel": "रिकॉर्ड से दोबारा बनाया गया",
+          "skippedLabel": "छोड़ी गईं"
+        },
+        "exposure": {
+          "basisTitle": "क्रम का आधार",
+          "complete": "पूर्ण",
+          "partial": "आंशिक",
+          "withheld": "नहीं बताया गया",
+          "noBasis": "क्रम लगाने के लिए कोई कुल राशि नहीं",
+          "basis": {
+            "priced_asset_value": "मूल्यांकित संपत्तियों का मूल्य",
+            "quantified_liability_amount": "निर्धारित देनदारियों की राशि"
+          },
+          "pricedOf": "{{total}} में से {{priced}} होल्डिंग्स का मूल्य उपलब्ध",
+          "pricingCoverage": "मूल्य की उपलब्धता",
+          "dimensionCount": "{{total}} में से {{known}}",
+          "pricingUnknown": "मूल्य की उपलब्धता का आकलन नहीं हो सकता",
+          "blindSpotTitle": "इस क्रम से बाहर",
+          "blindSpotBody": "इन होल्डिंग्स का कोई मूल्य नहीं है, इसलिए ये क्रम में सबसे नीचे नहीं, बल्कि क्रम से ही अनुपस्थित हैं। इनमें से कोई भी सबसे ऊपर वाली पंक्ति से बड़ी हो सकती है।",
+          "unpricedUnnamed": "बिना मूल्य और बिना नाम",
+          "pricesUnavailable": "लाइव मूल्य नहीं पढ़े जा सके, इसलिए यह क्रम अद्यतन नहीं है।",
+          "readAt": "पढ़ा गया",
+          "assetsTitle": "मूल्यांकित धन कहाँ है",
+          "shareUnknown": "हिस्सा नहीं बताया गया",
+          "sharesOfPriced": "हिस्से ऊपर दिए मूल्यांकित कुल के हैं, दर्ज की गई हर चीज़ के नहीं।",
+          "unrankedTail": "मूल्यांकित, पर क्रम में नहीं",
+          "basisMismatch": "क्रम में शामिल और बाहर रही संख्याओं का योग मूल्यांकित होल्डिंग्स की संख्या से मेल नहीं खाता, इसलिए यह क्रम ऊपर दिखाए गए कुल पर आधारित नहीं हो सकता।",
+          "rankedMismatch": "सर्वर की बताई गई संख्या भेजी गई पंक्तियों से मेल नहीं खाती।",
+          "noHoldings": "कोई होल्डिंग दर्ज नहीं है, इसलिए क्रम लगाने को कुछ नहीं। यह कुछ भी न रखने के समान नहीं है।",
+          "nonePriced": "होल्डिंग्स दर्ज हैं पर किसी का मूल्य नहीं है, इसलिए क्रम संभव नहीं।",
+          "pricedButUnrankable": "मूल्यांकित होल्डिंग्स मिलकर ऐसा कुल नहीं बनातीं जिस पर क्रम लगाया जा सके।",
+          "liabilitiesTitle": "निर्धारित कर्ज़ कहाँ है",
+          "liabilitiesGrouped": "लेनदार के अनुसार नहीं, दायित्व के प्रकार के अनुसार समूहित।",
+          "noLiabilities": "कोई दायित्व दर्ज नहीं है। यह कुछ भी बकाया न होने के समान नहीं है।",
+          "noneQuantified": "किसी दायित्व की राशि दर्ज नहीं है, इसलिए किसी का क्रम नहीं लग सकता।",
+          "quantifiedOf": "{{total}} में से {{done}} दायित्वों की राशि दर्ज",
+          "excludedTitle": "इस क्रम से बाहर रखा गया",
+          "excludedUnquantified": "राशि दर्ज नहीं",
+          "excludedForeignCurrency": "दूसरी मुद्रा",
+          "excludedUnspecifiedCurrency": "मुद्रा नहीं बताई गई",
+          "otherCurrencies": "मुद्रा के अनुसार अलग रखा गया",
+          "liabilitiesTruncated": "दायित्वों की सूची सीमित कर दी गई थी, इसलिए क्रम में शामिल से अधिक हो सकते हैं।",
+          "unmeasuredTitle": "यह टैब क्या नहीं मापता",
+          "unmeasuredBody": "रिकॉर्ड में इनका कोई उल्लेख नहीं है, इसलिए ये यहाँ अनुपस्थित हैं, सुरक्षित नहीं। इनकी चुप्पी हरी झंडी नहीं है।",
+          "unmeasured": {
+            "counterparty": "प्रतिपक्ष के अनुसार संकेंद्रण",
+            "custodian": "अभिरक्षक और मंच के अनुसार संकेंद्रण",
+            "geography": "भौगोलिक संकेंद्रण",
+            "sector": "क्षेत्रवार संकेंद्रण",
+            "assetCurrency": "स्वयं संपत्तियों की मुद्रा"
+          }
+        }
+      },
+      "attention": {
+        "title": "आपके ध्यान की ज़रूरत",
+        "none": "अभी किसी चीज़ को आपके ध्यान की ज़रूरत नहीं है।",
+        "unavailable": "हम अभी जाँच नहीं सके कि किस चीज़ को ध्यान चाहिए।"
+      },
+      "quick": {
+        "title": "त्वरित कार्रवाइयाँ",
+        "record": "कुछ दर्ज करें",
+        "addFact": "तथ्य जोड़ें"
+      },
+      "valueTypes": {
+        "STRING": "पाठ",
+        "NUMBER": "संख्या",
+        "MONEY": "राशि",
+        "PERCENT": "प्रतिशत",
+        "DATE": "तारीख़",
+        "BOOLEAN": "हाँ या नहीं"
+      },
       "feature": {
         "loading": "इस सुविधा की जाँच हो रही है…",
         "retry": "फिर से कोशिश करें",
@@ -4740,6 +4977,35 @@
           "body": "इसे लोड नहीं किया जा सका।"
         }
       },
+      "documents": {
+        "subtitle": "आपके दिए दस्तावेज़ों से जानकारी पढ़ता है। आपकी समीक्षा के बिना कुछ दर्ज नहीं होता।",
+        "upload": "दस्तावेज़ अपलोड करें",
+        "uploading": "अपलोड हो रहा है…",
+        "duplicate": {
+          "title": "पहले से मौजूद",
+          "body": "आपने यही फ़ाइल पहले अपलोड की थी। मौजूदा प्रति रखी गई है।"
+        },
+        "uploadFailed": "अपलोड विफल",
+        "reviewFailed": "समीक्षा विफल",
+        "empty": {
+          "title": "अभी कोई दस्तावेज़ नहीं",
+          "body": "आपके अपलोड किए दस्तावेज़ यहाँ दिखेंगे, साथ में जो उनसे पढ़ा गया।"
+        },
+        "states": {
+          "EXTRACTED": "पढ़ा गया",
+          "NO_CLAIMS": "निकालने को कुछ नहीं",
+          "PROVIDER_REQUIRED": "प्रदाता की प्रतीक्षा",
+          "FAILED": "पढ़ा नहीं जा सका"
+        },
+        "claims": {
+          "title": "प्रस्तावित जानकारी",
+          "none": "इस दस्तावेज़ से कोई जानकारी प्रस्तावित नहीं हुई।",
+          "accept": "स्वीकारें",
+          "reject": "अस्वीकारें",
+          "ACCEPTED": "स्वीकृत",
+          "REJECTED": "अस्वीकृत"
+        }
+      },
       "people": {
         "subtitle": "आपके अपने कार्यालय में दर्ज लोग। किसी के बारे में कुछ खोजा नहीं जाता।",
         "add": "व्यक्ति जोड़ें",
@@ -4763,6 +5029,115 @@
           "nothing": "इस व्यक्ति के बारे में अभी कुछ दर्ज नहीं है।"
         }
       },
+      "briefings": {
+        "subtitle": "आपके अपने रिकॉर्ड से तैयार ब्रीफ़िंग। बाहर से कुछ नहीं जोड़ा जाता।",
+        "generate": "ब्रीफ़िंग तैयार करें",
+        "generating": "तैयार हो रही है…",
+        "generateFailed": "ब्रीफ़िंग तैयार नहीं हो सकी",
+        "itemCount_one": "{{count}} मद",
+        "itemCount_other": "{{count}} मदें",
+        "noItems": "यह ब्रीफ़िंग खाली है — आपके रिकॉर्ड में बताने लायक कुछ नहीं था।",
+        "empty": {
+          "title": "अभी कोई ब्रीफ़िंग नहीं",
+          "body": "एक तैयार करें — वह उसी क्षण के आपके रिकॉर्ड से बनेगी।"
+        },
+        "sections": {
+          "PEOPLE": "लोग",
+          "OBLIGATIONS": "दायित्व",
+          "EVENTS": "घटनाएँ",
+          "DECISIONS": "निर्णय",
+          "REQUESTS": "अनुरोध",
+          "RISKS": "जोखिम",
+          "OPPORTUNITIES": "अवसर"
+        }
+      },
+      "shield": {
+        "subtitle": "आपके अपने रिकॉर्ड में जोखिम की जाँच करता है। यह केवल नीचे बताई चीज़ें देखता है।",
+        "openFindings_one": "{{count}} खुला निष्कर्ष",
+        "openFindings_other": "{{count}} खुले निष्कर्ष",
+        "severity": {
+          "HIGH": "उच्च",
+          "MEDIUM": "मध्यम",
+          "LOW": "निम्न"
+        },
+        "scan": "जाँच चलाएँ",
+        "scanning": "जाँच हो रही है…",
+        "scanFailed": "जाँच नहीं चल सकी",
+        "checksTitle": "क्या जाँचा जाता है",
+        "checksHint": "\"कोई निष्कर्ष नहीं\" का अर्थ है — यहाँ सूचीबद्ध जाँचों में कुछ नहीं मिला, इससे अधिक कुछ नहीं।",
+        "externalTitle": "बाहरी जाँच नहीं हुई",
+        "externalMonitored": "एक बाहरी प्रदाता निगरानी कर रहा है",
+        "externalNotMonitored": "कोई बाहरी प्रदाता निगरानी नहीं कर रहा",
+        "empty": {
+          "title": "कोई खुला निष्कर्ष नहीं",
+          "body": "ऊपर सूचीबद्ध जाँचों में कुछ नहीं मिला। इसका अर्थ बस इतना ही है।"
+        },
+        "status": {
+          "OPEN": "खुला",
+          "ACKNOWLEDGED": "देख लिया",
+          "RESOLVED": "सुलझाया",
+          "DISMISSED": "हटाया"
+        },
+        "acknowledge": "देख लिया",
+        "resolve": "सुलझा हुआ चिह्नित करें",
+        "dismiss": "हटाएँ",
+        "updateFailed": "अपडेट नहीं हो सका"
+      },
+      "concierge": {
+        "subtitle": "अनुरोधों के लिए एक डेस्क जिसे एक व्यक्ति संभालता है। यहाँ हर जवाब किसी ने लिखा है।",
+        "newRequest": "नया अनुरोध",
+        "submitFailed": "भेजा नहीं जा सका",
+        "sendFailed": "संदेश नहीं भेजा जा सका",
+        "cancelFailed": "रद्द नहीं हो सका",
+        "cancelRequest": "यह अनुरोध रद्द करें",
+        "empty": {
+          "title": "अभी कोई अनुरोध नहीं",
+          "body": "आपके भेजे अनुरोध यहाँ पूरे इतिहास के साथ दिखेंगे।"
+        },
+        "desk": {
+          "staffed_one": "{{count}} ऑपरेटर ड्यूटी पर",
+          "staffed_other": "{{count}} ऑपरेटर ड्यूटी पर",
+          "unstaffed": "कोई ऑपरेटर ड्यूटी पर नहीं है"
+        },
+        "form": {
+          "title": "आपको क्या चाहिए?",
+          "description": "विवरण (वैकल्पिक)",
+          "category": "श्रेणी",
+          "priority": "प्राथमिकता",
+          "submit": "भेजें",
+          "cancel": "रद्द करें"
+        },
+        "categories": {
+          "GENERAL": "सामान्य",
+          "TRAVEL": "यात्रा",
+          "LEGAL": "कानूनी",
+          "FINANCIAL": "वित्तीय",
+          "PERSONAL": "व्यक्तिगत",
+          "RESEARCH": "शोध",
+          "ADMIN": "प्रशासनिक"
+        },
+        "priorities": {
+          "LOW": "निम्न",
+          "NORMAL": "सामान्य",
+          "HIGH": "उच्च",
+          "URGENT": "अत्यावश्यक"
+        },
+        "statusWords": {
+          "OPEN": "खुला",
+          "IN_PROGRESS": "प्रगति में",
+          "WAITING_ON_USER": "आपकी प्रतीक्षा में",
+          "WAITING_ON_PROVIDER": "प्रदाता की प्रतीक्षा में",
+          "COMPLETED": "पूर्ण",
+          "CANCELED": "रद्द"
+        },
+        "thread": {
+          "none": "अभी कोई संदेश नहीं।",
+          "operator": "ऑपरेटर",
+          "you": "आप",
+          "placeholder": "संदेश लिखें…",
+          "send": "भेजें"
+        }
+      },
       "meetings": {
         "subtitle": "आपकी निजी लाइन पर सुरक्षित मीटिंग। वेटिंग रूम और होस्ट नियंत्रण सर्वर द्वारा लागू होते हैं, स्क्रीन द्वारा नहीं।",
         "instant": "तुरंत मीटिंग शुरू करें",
@@ -4778,38 +5153,17 @@
         "scheduleFailed": "शेड्यूल नहीं हो सकी",
         "startFailed": "शुरू नहीं हो सकी",
         "cancelFailed": "रद्द नहीं हो सकी",
-        "rescheduleFailed": "पुनर्निर्धारित नहीं किया जा सका",
         "start": "शुरू करें",
         "cancel": "रद्द करें",
-        "reschedule": "पुनर्निर्धारित करें",
-        "saveChanges": "परिवर्तन सहेजें",
         "untitled": "मीटिंग",
         "details": "{{title}} का विवरण",
         "liveNow": "अभी लाइव",
         "durationMinutes_one": "{{count}} मिनट",
         "durationMinutes_other": "{{count}} मिनट",
-        "confirmed": {
-          "title": "मीटिंग शेड्यूल हो गई",
-          "when": "कब",
-          "duration": "अवधि",
-          "guests": "आमंत्रित",
-          "guestsNone": "अभी किसी को आमंत्रित नहीं किया गया है। आप मीटिंग के भीतर से लोगों को आमंत्रित कर सकते हैं।",
-          "memberFallback": "सदस्य {{id}}",
-          "someone": "आपके अतिथियों में से एक",
-          "reminders": "अनुस्मारक",
-          "remindersNone": "इस मीटिंग के लिए कोई अनुस्मारक निर्धारित नहीं है।",
-          "reminderSkipped": "भेजने के लिए बहुत कम समय",
-          "meetingId": "मीटिंग आईडी",
-          "meetingCode": "आमंत्रण कोड",
-          "done": "हो गया",
-          "skipped": {
-            "emailRequired": "आमंत्रित नहीं — कोई ईमेल पता नहीं",
-            "emailInvalid": "आमंत्रित नहीं — यह पता उपयोग योग्य नहीं है",
-            "tooMany": "आमंत्रित नहीं — एक मीटिंग के लिए बहुत अधिक अतिथि",
-            "isHost": "पहले से मौजूद — आप मेज़बान हैं",
-            "alreadyIn": "पहले से इस मीटिंग में",
-            "unavailable": "आमंत्रित नहीं किया जा सका"
-          }
+        "presets": {
+          "in15m": "{{minutes}} मिनट में",
+          "in1h": "{{hours}} घंटे में",
+          "tomorrowMorning": "कल सुबह {{time}} बजे"
         },
         "buckets": {
           "live": "अभी चल रही",
@@ -4918,53 +5272,82 @@
             "feature_disabled": "जब आप जुड़े हुए थे तब मीटिंग बंद कर दी गईं।",
             "generic": "मीटिंग समाप्त हो गई है।"
           }
+        }
+      },
+      "conversations": {
+        "title": "निजी बातचीत",
+        "subtitle": "ऑफ़िस की बातचीत, वर्गीकृत और उस काम से जुड़ी हुई जिससे वे संबंधित हैं।",
+        "unread": "अपठित",
+        "archived": "संग्रहित",
+        "filters": {
+          "all": "सभी"
         },
-        "calendar": {
-          "browse": "कैलेंडर देखें",
-          "previousMonth": "पिछला महीना",
-          "nextMonth": "अगला महीना",
-          "pickMonth": "महीना चुनें",
-          "pickYear": "वर्ष चुनें",
-          "jumpToYear": "किसी वर्ष पर जाएँ",
-          "today": "आज",
-          "close": "बंद करें",
-          "loadFailed": "यह महीना लोड नहीं हो सका। फिर से कोशिश करें या दूसरा महीना देखें।",
-          "noneOnDay": "इस दिन कुछ भी निर्धारित नहीं है।",
-          "dayWithMeetings_one": "{{day}}, {{count}} मीटिंग",
-          "dayWithMeetings_other": "{{day}}, {{count}} मीटिंग"
+        "scopes": {
+          "DIRECT": "सीधी",
+          "GROUP": "समूह",
+          "ORGANIZATION_ROOM": "संगठन कक्ष",
+          "PROJECT_ROOM": "प्रोजेक्ट कक्ष"
         },
-        "wizard": {
-          "steps": {
-            "date": "तारीख़ चुनें",
-            "time": "समय चुनें",
-            "zone": "समय क्षेत्र की पुष्टि करें",
-            "duration": "कितनी देर?",
-            "details": "शीर्षक और एजेंडा",
-            "guests": "कौन आ रहा है?",
-            "review": "समीक्षा करें"
-          },
-          "timeHint": "वह समय जैसा वहाँ पढ़ा जाएगा जहाँ मीटिंग होगी।",
-          "zoneHint": "सभी को एक ही क्षण के लिए बुलाया जाता है। समय क्षेत्र तय करता है कि वह क्षण कौन-सा है।",
-          "zoneUnknown": "इस डिवाइस ने कोई समय क्षेत्र नहीं बताया, इसलिए मीटिंग UTC में पढ़ी जाएगी।",
-          "looksPast": "इस डिवाइस के हिसाब से यह समय बीत चुका है। अंतिम निर्णय सर्वर का है।",
-          "customDuration": "मिनटों में अपनी अवधि",
-          "durationRange": "{{min}} से {{max}} मिनट के बीच चुनें।",
-          "agendaField": "एजेंडा (वैकल्पिक)",
-          "inviteLater": "मीटिंग बन जाने के बाद आप लोगों को बुला सकते हैं।",
-          "guestsHint": "यहाँ मौजूद सभी लोगों को निमंत्रण और अनुस्मारक मिलेंगे। उन्हें PulseSoc खाते की ज़रूरत नहीं है।",
-          "guestsNone": "अभी कोई अतिथि नहीं। आप उन्हें अभी जोड़ सकते हैं या बाद में आमंत्रित कर सकते हैं।",
-          "guestsNoneShort": "अभी कोई नहीं",
-          "guestName": "पूरा नाम (वैकल्पिक)",
-          "guestEmail": "ईमेल पता",
-          "addGuest": "अतिथि जोड़ें",
-          "updateGuest": "अतिथि अपडेट करें",
-          "editGuest": "{{name}} संपादित करें",
-          "removeGuest": "{{name}} को हटाएँ",
-          "remove": "हटाएँ",
-          "guestEmailInvalid": "निमंत्रण भेजने के लिए एक ईमेल पता जोड़ें।",
-          "guestDuplicate": "यह पता पहले से सूची में है।",
-          "back": "पीछे",
-          "next": "आगे"
+        "empty": {
+          "title": "अभी कोई निजी बातचीत नहीं",
+          "body": "ऑफ़िस बातचीत के रूप में वर्गीकृत थ्रेड यहाँ अपने दायरे और लिंक के साथ दिखते हैं।"
+        },
+        "create": {
+          "open": "नई बातचीत",
+          "failed": "बातचीत नहीं बनाई जा सकी",
+          "boundScopeNote": "संगठन और प्रोजेक्ट कक्ष उसी संगठन नोड या प्रोजेक्ट से बनाए जाते हैं जिससे वे जुड़े हैं।"
+        },
+        "sensitivity": {
+          "title": "संवेदनशीलता",
+          "note": "यह तय करता है कि इस थ्रेड को कैसे संभाला जाए और किसके साथ साझा किया जा सकता है। इससे संदेश भेजे जाने का तरीका नहीं बदलता।",
+          "failed": "संवेदनशीलता नहीं बदली जा सकी",
+          "unknownLabel": "सहेजी गई संवेदनशीलता",
+          "PUBLIC": "सार्वजनिक",
+          "INTERNAL": "आंतरिक",
+          "CONFIDENTIAL": "गोपनीय",
+          "HIGHLY_SENSITIVE": "अत्यंत संवेदनशील",
+          "RESTRICTED": "प्रतिबंधित"
+        },
+        "links": {
+          "title": "लिंक",
+          "note": "लिंक एक संदर्भ है। इसे हटाने से वह दस्तावेज़, रिकॉर्ड, तथ्य या मीटिंग नहीं मिटती जिसकी ओर यह इशारा करता है।",
+          "empty": "इस बातचीत से अभी कुछ भी लिंक नहीं है।",
+          "remove": "लिंक हटाएँ",
+          "failed": "लिंक नहीं बदले जा सके"
+        },
+        "linkTypes": {
+          "DOCUMENT": "दस्तावेज़",
+          "RECORD": "रिकॉर्ड",
+          "FACT": "तथ्य",
+          "MEETING": "मीटिंग",
+          "ORGANIZATION_NODE": "संगठन",
+          "PROJECT": "प्रोजेक्ट"
+        },
+        "security": {
+          "title": "सुरक्षा",
+          "notEncrypted": "संदेश ट्रांज़िट में और सर्वर पर एक्सेस नियंत्रण से सुरक्षित हैं। वे एंड-टू-एंड एन्क्रिप्टेड नहीं हैं, इसलिए सर्वर उन्हें पढ़ सकता है।",
+          "encrypted": "इस बातचीत के संदेश एंड-टू-एंड एन्क्रिप्टेड हैं।",
+          "ledger": "संदेश भंडार",
+          "rtc": "कॉल"
+        },
+        "info": {
+          "title": "बातचीत का विवरण",
+          "subtitle": "इस थ्रेड का ऑफ़िस वर्गीकरण। संदेश सामान्य बातचीत में ही रहते हैं।",
+          "open": "बातचीत का विवरण",
+          "openThread": "बातचीत खोलें",
+          "classification": "वर्गीकरण",
+          "scope": "दायरा",
+          "archivedYes": "हाँ",
+          "notFound": {
+            "title": "यह ऑफ़िस बातचीत नहीं है",
+            "body": "इस थ्रेड का कोई निजी ऑफ़िस वर्गीकरण नहीं है। यह मैसेंजर में अब भी उपलब्ध है।"
+          }
+        },
+        "untitled": "बिना शीर्षक की बातचीत",
+        "linked": {
+          "title": "इन बातचीत में चर्चा हुई",
+          "unavailable": "हम जुड़ी हुई बातचीत की जाँच नहीं कर सके।",
+          "none": "आप जिन बातचीत में शामिल हैं, उनमें इसका ज़िक्र नहीं है।"
         }
       }
     },
@@ -5075,45 +5458,6 @@
       "dominance": "BTC प्रभुत्व",
       "gainers": "सबसे बड़ी बढ़त",
       "losers": "सबसे बड़ी गिरावट"
-    }
-  },
-  "translation": {
-    "eyebrow": "अनुवाद",
-    "translate": "अनुवाद करें",
-    "translating": "अनुवाद हो रहा है…",
-    "translateNow": "अभी अनुवाद करें",
-    "translateNowHint": "इस संदेश का {{language}} में अनुवाद करें।",
-    "viewOriginal": "मूल देखें",
-    "showOriginalHint": "मूल संदेश पर वापस जाएँ।",
-    "translatedFrom": "{{language}} से अनूदित",
-    "translatedLabel": "अनूदित",
-    "always": "हमेशा",
-    "never": "कभी नहीं",
-    "alwaysTranslate": "हमेशा अनुवाद करें",
-    "alwaysTranslateHint": "जब PulseSoc इस भाषा को पहचान ले, तो उसका अपने आप अनुवाद करता है।",
-    "neverTranslate": "कभी अनुवाद न करें",
-    "neverTranslateHint": "इस भाषा को उसके मूल रूप में रखता है।",
-    "optionsTitle": "संदेश की भाषा के विकल्प",
-    "downloadLanguage": "भाषा डाउनलोड करें",
-    "downloadExplainer": "PulseSoc, Apple के निजी ऑन-डिवाइस अनुवाद का उपयोग करता है। Apple ज़रूरी भाषा को इस iPhone पर डाउनलोड कर सकता है।",
-    "tryAgain": "फिर से कोशिश करें",
-    "failure": {
-      "unavailable": "अनुवाद उपलब्ध नहीं है",
-      "unsupportedLanguage": "इस डिवाइस पर इस भाषा का अनुवाद नहीं हो सकता।",
-      "downloadFailed": "भाषा का डाउनलोड पूरा नहीं हुआ।",
-      "offline": "इस भाषा को डाउनलोड करने के लिए इंटरनेट से कनेक्ट करें।",
-      "preferenceNotSaved": "आपकी अनुवाद प्राथमिकता सहेजी नहीं जा सकी।"
-    },
-    "a11y": {
-      "controls": "अनुवाद नियंत्रण। लक्ष्य भाषा: {{language}}।",
-      "translateTo": "{{language}} में अनुवाद करें",
-      "showOriginal": "मूल पाठ दिखाएँ",
-      "options": "अनुवाद विकल्प। अनूदित पाठ दिखाया जा रहा है।",
-      "alwaysTo": "हमेशा {{language}} में अनुवाद करें",
-      "neverTo": "कभी {{language}} में अनुवाद न करें",
-      "closeOptions": "अनुवाद विकल्प बंद करें",
-      "retry": "अनुवाद फिर से करें",
-      "download": "{{language}} भाषा इस डिवाइस पर डाउनलोड करें"
     }
   }
 }

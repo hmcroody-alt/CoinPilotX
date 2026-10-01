@@ -16,26 +16,9 @@
  * below are the whole reason the screen reads as premium rather than as a
  * gaming HUD: borders sit at ~0.30–0.45, fills at ~0.10–0.18, and only the
  * primary action and the avatar ring are allowed to be genuinely bright.
- *
- * ## What this module is no longer allowed to own: surfaces
- *
- * It used to carry `panel: rgba(9, 20, 38, 0.72)`, `panelRaised` and a blue
- * `hairline`, and those three were the mechanical cause of the flat, cloudy
- * Profile. A translucent navy panel laid over a near-black canvas composites to
- * something a fraction lighter than the canvas, so a card did not read as a
- * card; stacking several of them read as haze. Fixing it by picking a heavier
- * alpha would have been the same mistake with a bigger number — translucency
- * over a dark canvas is a *smoke* effect, and the requirement was depth.
- *
- * Profile surfaces are therefore opaque steps on a shared ramp now, resolved per
- * theme by `theme/profileGraphite.ts`. The three tokens are gone rather than
- * deprecated: leaving them would have left the cloudy look one import away.
- *
- * What stays here is the accent system — hues, alpha fills for *state*, gradient
- * ramps, radii and the tap-target floor. The division is by role: a fill that
- * says "this control is selected" is an accent and lives here; a fill that says
- * "this is a card" is a surface and does not.
  */
+
+import { colors } from "./colors";
 
 export const profileNeon = {
   /** The identity blue. Electric but not fluorescent — readable on #050910. */
@@ -44,14 +27,8 @@ export const profileNeon = {
   cyan: "#61d8ff",
   /** Deep blue for gradient tails and pressed states. */
   deep: "#0b2f6b",
-  /**
-   * Secondary accent. Its own value rather than `colors.intelligence`, because
-   * that token means "AI surface" app-wide and is not free to move with the
-   * profile palette — this one is.
-   */
-  violet: "#9d5cff",
-  /** Tertiary accent, and the warm end of every profile ramp. */
-  magenta: "#f45cd8",
+  /** Sparingly used secondary accent, for the horizon only. */
+  violet: colors.intelligence,
 
   /** Fills. Low alpha by design — see the note above. */
   fillSoft: "rgba(61, 139, 255, 0.10)",
@@ -59,42 +36,19 @@ export const profileNeon = {
   /** Borders. The neon edge that does the work without a glow. */
   border: "rgba(61, 139, 255, 0.34)",
   borderStrong: "rgba(61, 139, 255, 0.52)",
-
-  /**
-   * Framed variants — used only when the hero is drawn over a cover the user
-   * uploaded. The decorative field doubles as a *generated* cover for accounts
-   * that never set one, so at its normal strength it is meant to be the image.
-   * Laid over a real photo at that strength it reads as a shield sitting on top
-   * of the user's content. These alphas are the same geometry at framing
-   * intensity: enough to keep the surface futuristic, not enough to compete
-   * with a face.
-   */
-  borderFramed: "rgba(61, 139, 255, 0.18)",
-  fillFramed: "rgba(61, 139, 255, 0.03)",
   /** Halo behind the avatar ring and the primary action. */
   glow: "rgba(61, 139, 255, 0.45)",
   glowCyan: "rgba(97, 216, 255, 0.38)",
 
-  /**
-   * Gradient ramps. `as const` so they satisfy LinearGradient's tuple type.
-   *
-   * Every ramp walks the same blue → violet → magenta arc, which is what makes
-   * the surface read as one palette rather than as three accent colours used
-   * near each other. Blue always leads: it carries the identity, and the warm
-   * end is a tail, not an equal partner.
-   */
-  primaryAction: ["#4f9bff", "#8b5cff", "#f45cd8"] as const,
-  identityRing: ["#61d8ff", "#4f9bff", "#9d5cff", "#f45cd8"] as const,
-  horizon: ["rgba(61, 139, 255, 0.00)", "rgba(157, 92, 255, 0.24)", "rgba(244, 92, 216, 0.40)"] as const,
-  /** `horizon` at framing intensity. See `borderFramed` for why this exists. */
-  horizonFramed: ["rgba(61, 139, 255, 0.00)", "rgba(157, 92, 255, 0.09)", "rgba(244, 92, 216, 0.15)"] as const,
-  /**
-   * Hue rotation for the Profile OS tiles that carry no fixed brand colour.
-   * Applied by grid position, so the grid reads as a spectrum instead of as
-   * twelve copies of the accent. Tiles that DO own a colour (Presence, Progress,
-   * Premium) opt out — see `MODULES` in ProfileHeader.
-   */
-  tileCycle: ["#3d8bff", "#9d5cff", "#f45cd8", "#61d8ff"] as const,
+  /** Dark translucent panel — the glass every profile card sits on. */
+  panel: "rgba(9, 20, 38, 0.72)",
+  panelRaised: "rgba(14, 30, 54, 0.88)",
+  /** Hairline that separates segments inside a glass panel. */
+  hairline: "rgba(120, 170, 255, 0.16)",
+
+  /** Gradient ramps. `as const` so they satisfy LinearGradient's tuple type. */
+  primaryAction: ["#4f9bff", "#2563eb"] as const,
+  horizon: ["rgba(61, 139, 255, 0.00)", "rgba(61, 139, 255, 0.22)", "rgba(97, 216, 255, 0.40)"] as const,
 
   radius: { panel: 20, card: 16, action: 14 },
   /** Apple's 44pt floor; every profile control is at or above it. */
@@ -102,31 +56,3 @@ export const profileNeon = {
 } as const;
 
 export type ProfileNeon = typeof profileNeon;
-
-/**
- * The accent the profile surface should actually draw with.
- *
- * `/api/pulse/profile` never returns a null theme: when a user has no theme row
- * it substitutes a whole default object, `accent_color` included, and that
- * default is the app-wide teal. So `profile.theme?.accent_color || electric`
- * — the obvious way to write this — can never reach its fallback for any
- * profile this backend serves. Every neon token below was unreachable in
- * production while the tests, which build their own fixtures, stayed green.
- *
- * There is no flag distinguishing "the owner chose teal" from "nobody chose
- * anything", so the legacy default is matched by value and treated as unset.
- * The cost is that an owner who deliberately picks the old teal gets the neon
- * ramp instead; the alternative is that nobody ever sees the palette at all.
- */
-const SERVER_DEFAULT_ACCENT = "#32e6b3";
-
-export function resolveProfileAccent(accentColor?: string | null): string {
-  const chosen = String(accentColor || "").trim().toLowerCase();
-  if (!chosen || chosen === SERVER_DEFAULT_ACCENT) return profileNeon.electric;
-  return chosen;
-}
-
-/** True when the surface is on its own palette and may use the full ramps. */
-export function usesNeonRamp(accent: string): boolean {
-  return accent === profileNeon.electric;
-}

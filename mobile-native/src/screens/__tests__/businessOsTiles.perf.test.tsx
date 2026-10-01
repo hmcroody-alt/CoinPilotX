@@ -24,7 +24,6 @@
  */
 import React from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { activateLocale } from "../../i18n/engine";
 
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 })
@@ -141,36 +140,6 @@ function listing(id: number) {
   return { id, title: `Item ${id}`, buyer_visible: true, status: "active", price_cents: 1000 };
 }
 
-/**
- * Wait for the seller screen to leave its loading gate.
- *
- * This used to wait for the *absence* of "Loading seller controls", which looks
- * right and asserted nothing. The screen renders that copy through
- * `t("commerce:marketplace.loadingSellerControls")`, and no locale is activated
- * under Jest, so `t()` falls back to humanising the key and the spinner actually
- * reads "Loading Seller Controls". `queryAllByText` matched neither the spinner
- * nor anything else, returned 0 on the first tick, and the wait resolved while
- * the screen was still loading.
- *
- * Everything after it then raced the mocked promises. That race is normally won
- * — which is why this passed alone — and normally lost on a worker running the
- * suite in parallel, which is where it surfaced.
- *
- * Waiting on something the *loaded* screen renders cannot rot the same way: if
- * the copy drifts, this times out loudly instead of passing vacuously.
- */
-async function sellerControlsLoaded(view: ReturnType<typeof render>) {
-  await waitFor(() => expect(view.getByText("Listings loaded")).toBeTruthy());
-}
-
-// The seller store reads its copy from the `extended` catalog tier, which the
-// provider preloads after first frame rather than as part of boot. Nothing
-// mounts the provider here, so without this the screen renders humanized key
-// names ("Metric Listings Loaded") and every text assertion below misses.
-beforeAll(async () => {
-  await activateLocale("en");
-});
-
 beforeEach(() => {
   jest.clearAllMocks();
   Object.keys(syncHandlers).forEach((key) => delete syncHandlers[key]);
@@ -238,16 +207,14 @@ describe("Store tile — one request's failure cannot void another's success", (
     });
 
     const view = render(<SellerStoreScreen navigation={{ navigate: jest.fn() }} />);
-    await sellerControlsLoaded(view);
+    await waitFor(() => expect(view.queryAllByText("Loading seller controls").length).toBe(0));
 
     // Three canonical listings, not the seven stale cached ones.
+    expect(view.getByText("Listings loaded")).toBeTruthy();
     expect(view.queryByText("7")).toBeNull();
     expect(view.getAllByText("3").length).toBeGreaterThan(0);
     // And the seller is not told they are offline because a *terms* call failed.
-    // The copy is matched exactly as the screen renders it — "Showing saved data"
-    // stood here for a while and matches nothing, so the offline claim that is
-    // half this test's reason for existing was never actually being checked.
-    expect(view.queryByText("Showing saved seller/store metadata.")).toBeNull();
+    expect(view.queryByText("Showing saved data")).toBeNull();
   });
 
   it("issues the snapshot and the terms request together, not as a waterfall", async () => {
@@ -263,7 +230,7 @@ describe("Store tile — one request's failure cannot void another's success", (
 
   it("collapses concurrent sync invalidations onto a single reload", async () => {
     const view = render(<SellerStoreScreen navigation={{ navigate: jest.fn() }} />);
-    await sellerControlsLoaded(view);
+    await waitFor(() => expect(view.queryAllByText("Loading seller controls").length).toBe(0));
     const baseline = mockSellerSnapshot.mock.calls.length;
 
     // One marketplace write invalidates inventory, marketplace and orders. All
@@ -285,7 +252,7 @@ describe("Store tile — one request's failure cannot void another's success", (
 
   it("registers each invalidation channel exactly once", async () => {
     const view = render(<SellerStoreScreen navigation={{ navigate: jest.fn() }} />);
-    await sellerControlsLoaded(view);
+    await waitFor(() => expect(view.queryAllByText("Loading seller controls").length).toBe(0));
     // A `load` whose identity churns drags these subscriptions with it, so a
     // duplicate here is the visible symptom of an unstable callback.
     expect(syncHandlers.seller_inventory).toHaveLength(1);

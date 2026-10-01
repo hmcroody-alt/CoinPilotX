@@ -1,38 +1,28 @@
 /**
  * Import cart — review, price, import.
  *
- * ## The cart is not the product, and "import" now means published
+ * ## The cart is not the product, and importing is not publishing
  *
  * A cart row is a merchant's *intent* to import. It has no listing id, it is not
- * in the store, and deleting it deletes nothing a buyer could see.
+ * in the store, and deleting it deletes nothing a buyer could see. Import turns
+ * rows into DRAFT listings — and only drafts. This screen never publishes, has
+ * no publish control, and says so on the button ("Import as drafts"), because a
+ * merchant who thinks they just put forty untitled products on their storefront
+ * behaves very differently from one who knows they have forty drafts.
  *
- * Import used to turn rows into drafts and stop, and this screen said so on the
- * button. It no longer does either. The server completes each listing, validates
- * it, and publishes it to the merchant's store — so the honest label is
- * "Import & publish", and the copy here is driven by the store's `autoPublish`
- * policy rather than hardcoded, because a merchant who turned auto-publish off
- * really is getting drafts and must not be told otherwise.
+ * ## Import Selected sends ids
  *
- * ## Import Selected sends ids, and usually not a price rule
- *
- * `importSelected` takes `itemIds` and an *optional* pricing rule. It cannot take
+ * `importSelected` takes `itemIds` and an optional pricing rule. It cannot take
  * a cost, and there is no field on this screen that would produce one. The
  * server re-fetches every economic fact from the provider before it writes. The
  * merchant's markup is arithmetic applied to a cost the *server* fetched, which
  * is why a rule is safe to send and a price is not.
  *
- * The rule is sent only when the merchant changed it here. That is what `override`
- * being `null` means. A screen that always sent its picker's current value would
- * send its own `useState` default on the very first import and silently outrank
- * the pricing policy the merchant saved for the store — §8's priority order
- * inverted by an initial value.
- *
  * ## Partial success is reported per item
  *
- * Nine published and one needing a fix is neither "published" nor "failed", and
+ * Nine imports and one refusal is neither "imported" nor "failed", and
  * collapsing it to either loses the one row the merchant has to do something
- * about. The result sheet lists every outcome by name, and gives the ones the
- * merchant can act on somewhere to go.
+ * about. The result sheet lists every outcome by name.
  *
  * ## Re-importing is safe
  *
@@ -46,20 +36,14 @@ import { FlatList, Image, Pressable, RefreshControl, StyleSheet, Text, View } fr
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   getImportCart,
-  getStoreImportPolicy,
   importNeedsReview,
   importSelected,
-  isBatchTooLarge,
-  isClientTimeout,
   removeImportCartItem,
   stateForError,
   type DropshippingState,
   type ImportCartItem,
-  type ImportItemResult,
-  type ImportOutcome,
   type ImportRunResult,
-  type PricingRule,
-  type StoreImportPolicy
+  type PricingRule
 } from "../../api/dropshipping";
 import { StoreHeader } from "../../components/store";
 import {
@@ -71,7 +55,6 @@ import {
   stateOwnsScreen
 } from "../../components/dropshipping/DropshippingStates";
 import { PricingRulePicker } from "./PricingRulePicker";
-import { anyFixable, publishProblemCopy } from "./publishProblems";
 import { useDropshippingScope } from "./useDropshippingScope";
 import { useFormatters } from "../../i18n/hooks";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../../navigation/BottomNavVisibility";
@@ -87,26 +70,12 @@ type Props = {
 /**
  * What each outcome means to a merchant, and whether it needs them.
  *
- * `Record<ImportOutcome, …>`, not `Record<string, …>`, and that is the whole
- * point of the annotation: an outcome added to `IMPORT_OUTCOMES` without copy
- * here fails the typecheck. As a `Record<string, …>` this table fell behind the
- * server by two outcomes — `PUBLISHED` and `NEEDS_ATTENTION` — and both landed in
- * the fallback below, so a merchant whose twenty products all went live would
- * have read twenty "couldn't be imported" rows.
- *
- * The unknown-outcome fallback is still a warning rather than a success, for the
- * same reason it always was: telling a merchant a product is in their store when
- * it is not sends them looking for something that does not exist.
+ * Every one of the server's eight outcomes has an entry. An outcome this app
+ * does not recognise falls to a neutral "couldn't be imported" rather than to a
+ * success — reporting an unknown outcome as imported would send the merchant
+ * looking for a product that does not exist.
  */
-const OUTCOME_COPY: Record<ImportOutcome, { label: string; tone: "success" | "neutral" | "warning" }> = {
-  // The ordinary outcome now. Worded as two facts rather than one because
-  // "published" alone does not tell a merchant they can stop.
-  PUBLISHED: { label: "Published — live and ready to sell", tone: "success" },
-  // Imported, in the store, not live. A warning tone but not a failure: the
-  // listing exists and the problems below say what to do, which is why these
-  // rows are the ones that get a [Fix this].
-  NEEDS_ATTENTION: { label: "Imported — needs one fix before it can go live", tone: "warning" },
-  // Still reachable: a store with auto-publish turned off gets drafts on purpose.
+const OUTCOME_COPY: Record<string, { label: string; tone: "success" | "neutral" | "warning" }> = {
   IMPORTED: { label: "Imported as a draft", tone: "success" },
   ALREADY_EXISTS: { label: "Already in your store", tone: "neutral" },
   PROVIDER_UNAVAILABLE: { label: "Your supplier didn't respond — try this one again", tone: "warning" },
@@ -114,23 +83,8 @@ const OUTCOME_COPY: Record<ImportOutcome, { label: string; tone: "success" | "ne
   NO_VARIANTS: { label: "No variants to sell", tone: "warning" },
   NO_MEDIA: { label: "No usable images", tone: "warning" },
   RESTRICTED: { label: "This product can't be sold here", tone: "warning" },
-  // The platform's own pending moderation, which is not the merchant's to fix —
-  // hence no action offered on this row, unlike NEEDS_ATTENTION.
-  NEEDS_REVIEW: { label: "Imported, but needs your review before publishing", tone: "warning" },
-  // Neutral, not warning. Nothing went wrong with these and nothing is being
-  // asked of the merchant beyond tapping Import again, so a warning tone would
-  // invent a problem and send them looking for what they did wrong.
-  DEFERRED: { label: "Still in your cart — import again to continue", tone: "neutral" }
+  NEEDS_REVIEW: { label: "Imported, but needs your review before publishing", tone: "warning" }
 };
-
-/**
- * What the picker shows before the store's saved policy has been read.
- *
- * The platform's own default (45% target margin), so the number on screen is the
- * number an unconfigured store would really price at. It is display only — it is
- * never sent, because `override` starts `null`.
- */
-const PLATFORM_FALLBACK_RULE: PricingRule = { type: "TARGET_MARGIN", value: 45 };
 
 export function ImportCartScreen({ route, navigation }: Props) {
   const { connectionId } = route.params;
@@ -141,21 +95,8 @@ export function ImportCartScreen({ route, navigation }: Props) {
 
   const [items, setItems] = useState<ImportCartItem[]>([]);
   const [staleCount, setStaleCount] = useState(0);
-  // How many of a selection one run will actually attempt. Read from the server
-  // rather than held as a constant here, because a client-side copy of the cap
-  // that drifted below the server's would hide rows the server would have
-  // imported, and one above it would promise a run the server defers.
-  const [maxPerImport, setMaxPerImport] = useState<number | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  // Null means "price this the way my store prices things". Only a deliberate
-  // change on the picker makes it non-null, and only a non-null value is sent —
-  // see the module docstring, and `importSelected`'s own note about why an
-  // always-sent rule inverts §8.
-  const [override, setOverride] = useState<PricingRule | null>(null);
-  const [policy, setPolicy] = useState<StoreImportPolicy | null>(null);
-  // Separate from `policy` being null, because "not read yet" and "could not be
-  // read" are different things to say to a merchant about their own pricing.
-  const [policyRead, setPolicyRead] = useState(false);
+  const [rule, setRule] = useState<PricingRule>({ type: "COST_PLUS_PERCENT", value: 60 });
   const [state, setState] = useState<DropshippingState>("LOADING");
   const [refreshing, setRefreshing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -173,7 +114,6 @@ export function ImportCartScreen({ route, navigation }: Props) {
         const cart = await getImportCart(scope, connectionId);
         setItems(cart.items);
         setStaleCount(cart.staleCount);
-        setMaxPerImport(cart.maxPerImport);
         // Everything in the cart is selected by default — a merchant who opened
         // the cart intends to import it. Deselection is the deliberate act.
         setSelected(cart.items.map((item) => item.itemId));
@@ -187,27 +127,6 @@ export function ImportCartScreen({ route, navigation }: Props) {
     },
     [connectionId, scope]
   );
-
-  // Read separately from the cart, and never allowed to fail the screen. The
-  // policy decides what the picker *displays*; the server resolves it again for
-  // itself at import time. So a failed read costs the merchant an accurate
-  // preview, not the ability to import — and it is said out loud rather than
-  // papered over with a plausible-looking number.
-  useEffect(() => {
-    if (!scope) return;
-    let live = true;
-    getStoreImportPolicy(scope)
-      .then((result) => {
-        if (live) setPolicy(result);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (live) setPolicyRead(true);
-      });
-    return () => {
-      live = false;
-    };
-  }, [scope]);
 
   useEffect(() => {
     if (scopeStatus.status.phase === "ready") load().catch(() => undefined);
@@ -243,62 +162,24 @@ export function ImportCartScreen({ route, navigation }: Props) {
     setRunError(null);
     try {
       const result = await importSelected(scope, connectionId, {
-        // `override` and not the effective rule. Sending the resolved store rule
-        // back would record every import as a per-request price, so a later edit
-        // to the store's policy would stop reaching this screen.
         itemIds: selected,
-        pricingRule: override
+        pricingRule: rule
       });
       setRun(result);
       await load("refresh").catch(() => undefined);
     } catch (error) {
-      // Checked ahead of `stateForError`, which has no mapping for this code and
-      // would fall through to a bare "ERROR" — the generic sentence below. That
-      // fallthrough is what a merchant with an over-cap cart used to be told:
-      // nothing about what was wrong, and nothing they could act on.
-      const overCap = isBatchTooLarge(error);
-      // Also ahead of it, and for a stronger reason than clarity. Every sentence
-      // below asserts that nothing was imported. When *we* stopped waiting, that
-      // assertion is not something this device can know — and production showed
-      // it is usually false: the import finishes and commits. So this branch
-      // reports the one true thing (we stopped watching) and then goes and looks.
-      const unknown = isClientTimeout(error);
       const failure = stateForError(error);
       setRunError(
-        overCap
-          ? `That's more products than one import can take${
-              maxPerImport ? `. Untick some so you're importing ${formatters.count(maxPerImport)} or fewer` : ""
-            } — nothing was imported and your cart is unchanged.`
-          : unknown
-            ? "This import is taking longer than usual, so we stopped waiting — but it's still running on PulseSoc. Your cart below updates as products land. Nothing is lost if you import the rest later."
-            : failure === "PROVIDER_UNAVAILABLE"
-              ? "Your supplier didn't respond. Nothing was imported — your cart is unchanged."
-              : failure === "SUPPLIER_DISCONNECTED"
-                ? "Your supplier connection needs attention. Nothing was imported."
-                : "That import didn't run. Nothing was imported and your cart is unchanged."
+        failure === "PROVIDER_UNAVAILABLE"
+          ? "Your supplier didn't respond. Nothing was imported — your cart is unchanged."
+          : failure === "SUPPLIER_DISCONNECTED"
+            ? "Your supplier connection needs attention. Nothing was imported."
+            : "That import didn't run. Nothing was imported and your cart is unchanged."
       );
-      // The success path reloads; this one has to as well, and for a sharper
-      // reason. The rows the server is still importing leave the cart as it
-      // commits them, so the cart is the merchant's only readout on a run this
-      // app is no longer watching. Left unloaded, the screen keeps showing all
-      // 58 ticked rows under a message about an import in flight, and a second
-      // tap re-sends the ones already done. (Safe — the route is idempotent per
-      // product — but it reads as the app having done nothing.)
-      if (unknown) await load("refresh").catch(() => undefined);
     } finally {
       setImporting(false);
     }
-  }, [connectionId, formatters, load, maxPerImport, override, scope, selected]);
-
-  // How many of the ticked rows this run will really attempt. The rest are
-  // deferred by the server and stay in the cart, so the button must not count
-  // them: "Import & publish 58" over a 25-item run is the promise that produced
-  // this screen's production failure report.
-  const attempting = useMemo(
-    () => (maxPerImport && selected.length > maxPerImport ? maxPerImport : selected.length),
-    [maxPerImport, selected.length]
-  );
-  const deferring = selected.length - attempting;
+  }, [connectionId, load, rule, scope, selected]);
 
   const stateBlock = stateOwnsScreen(state) ? (
     <DropshippingStateView
@@ -315,29 +196,7 @@ export function ImportCartScreen({ route, navigation }: Props) {
     />
   ) : null;
 
-  // Rows the merchant ticked whose supplier cost we do not have. No pricing rule
-  // can turn an unknown cost into a sale price, so offering "Import & publish"
-  // over one of these promises something the server will refuse: it imports,
-  // fails the MISSING_PRICE check in `drafts._validate`, and lands as a
-  // price-required draft while the button said it was going live.
-  const unpriced = useMemo(
-    () =>
-      items.filter(
-        (item) => selected.includes(item.itemId) && (item.preview?.costLowCents ?? null) === null
-      ),
-    [items, selected]
-  );
-
-  const importable = selected.length > 0 && !importing && state !== "LOADING" && unpriced.length === 0;
-
-  // What this import will actually price at, in priority order: what the merchant
-  // changed here, then their store's saved rule, then the platform's. The same
-  // order the server resolves in, so the preview and the outcome agree.
-  const effectiveRule = override ?? policy?.pricingRule ?? PLATFORM_FALLBACK_RULE;
-  // Assumed on until told otherwise, matching the server's own default. Assuming
-  // off would label the button "Import as drafts" for the one second before the
-  // policy arrives, on a store that publishes.
-  const autoPublish = policy?.autoPublish !== false;
+  const importable = selected.length > 0 && !importing && state !== "LOADING";
 
   // The pricing preview runs against the costs of what is actually selected,
   // nulls included — an item whose cost could not be read must show up in the
@@ -417,32 +276,12 @@ export function ImportCartScreen({ route, navigation }: Props) {
         ListFooterComponent={
           !stateBlock && items.length > 0 ? (
             <View style={styles.footer}>
-              {/* Held back until the store's policy has been read, rather than
-                  rendered with a placeholder rule and corrected a moment later.
-                  The picker seeds its own text field from `rule` on mount, so a
-                  rule that arrives afterwards would leave the merchant looking at
-                  a number that is not the one in effect. */}
-              {policyRead ? (
-                <View style={styles.pricingBlock}>
-                  <PricingRulePicker
-                    rule={effectiveRule}
-                    onChange={setOverride}
-                    sampleCostCents={selectedCosts}
-                    currency={previewCurrency}
-                  />
-                  <Text style={styles.note}>
-                    {override
-                      ? "Just for this import. Your store's saved pricing is unchanged."
-                      : policy === null
-                        ? "We couldn't read your store's pricing rule, so this preview uses the PulseSoc default. Your store's saved rule still applies when you import."
-                        : policy.configured
-                          ? "This is your store's pricing rule. Change it here to price only this import differently."
-                          : "PulseSoc's default pricing, because your store hasn't set its own."}
-                  </Text>
-                </View>
-              ) : (
-                <Text style={styles.note}>Reading your store's pricing…</Text>
-              )}
+              <PricingRulePicker
+                rule={rule}
+                onChange={setRule}
+                sampleCostCents={selectedCosts}
+                currency={previewCurrency}
+              />
 
               <Pressable
                 style={[styles.primary, importable ? null : styles.primaryDisabled]}
@@ -450,61 +289,18 @@ export function ImportCartScreen({ route, navigation }: Props) {
                 disabled={!importable}
                 accessibilityRole="button"
                 accessibilityState={{ disabled: !importable }}
-                accessibilityLabel={
-                  unpriced.length > 0
-                    ? `Resolve pricing issues on ${unpriced.length} products before importing`
-                    : autoPublish
-                      ? `Import and publish ${attempting} products to your store`
-                      : `Import ${attempting} products as drafts`
-                }
+                accessibilityLabel={`Import ${selected.length} products as drafts`}
               >
                 <Text style={styles.primaryText}>
                   {importing
-                    ? `Importing ${formatters.count(attempting)}…`
-                    : unpriced.length > 0
-                      ? "Resolve pricing issues"
-                      : autoPublish
-                        ? `Import & publish ${formatters.count(attempting)}`
-                        : `Import ${formatters.count(attempting)} as drafts`}
+                    ? "Importing…"
+                    : `Import ${formatters.count(selected.length)} as drafts`}
                 </Text>
               </Pressable>
-              {/* Before the tap, not after. The button stays enabled because the
-                  server serves the first batch and defers the rest, so there is
-                  nothing here for the merchant to fix — only something to know,
-                  which is why this is a note and not the pricing block's block. */}
-              {deferring > 0 ? (
-                <Text style={styles.note}>
-                  {`One import takes ${formatters.count(attempting)} products at a time. The other ${formatters.count(
-                    deferring
-                  )} stay in your cart — import again when this run finishes.`}
-                </Text>
-              ) : null}
-              {/* Named, not counted. "1 product has no cost" leaves the merchant
-                  hunting a list; the title is what they tap to deselect. Re-adding
-                  from the catalogue is what re-asks the supplier, because the cart
-                  caches a read rather than performing one. */}
-              {unpriced.length > 0 ? (
-                <Text style={styles.note}>
-                  {`We couldn't read a supplier cost for ${unpriced
-                    .map((item) => item.preview?.title || "an untitled product")
-                    .join(", ")}, so we can't work out what to charge. Untick ${
-                    unpriced.length === 1 ? "it" : "them"
-                  } to import the rest, or add ${
-                    unpriced.length === 1 ? "it" : "them"
-                  } again from the catalogue to re-check with your supplier.`}
-                </Text>
-              ) : null}
-              {/* Said on the screen, not just in the button, and conditional on
-                  the policy rather than fixed: this line claimed drafts for years,
-                  and under auto-publish that is now the false half. */}
+              {/* Said on the screen, not just in the button, because "import"
+                  reads as "publish" to plenty of merchants. */}
               <Text style={styles.note}>
-                {autoPublish
-                  ? `These go live in your store, priced and ready to sell.${
-                      policy?.marketplaceAutolist
-                        ? " They're also offered across the PulseSoc Marketplace."
-                        : " They stay in your store — turn on Marketplace listing to offer them PulseSoc-wide."
-                    } Anything PulseSoc can't publish safely stays a draft and tells you why.`
-                  : "Imported products are drafts. Nothing appears in your store until you publish it."}
+                Imported products are drafts. Nothing appears in your store until you publish it.
               </Text>
 
               {runError ? <Text style={styles.error}>{runError}</Text> : null}
@@ -515,16 +311,6 @@ export function ImportCartScreen({ route, navigation }: Props) {
                     navigation.navigate("DropshippingProducts", {
                       connectionId,
                       title: "Dropshipping products"
-                    })
-                  }
-                  onViewInStore={(listingId) =>
-                    navigation.navigate("SellerStore", { mode: "product", listingId })
-                  }
-                  onFixItem={(listingId) =>
-                    navigation.navigate("DropshippingDraft", {
-                      connectionId,
-                      listingId,
-                      title: "Finish this product"
                     })
                   }
                 />
@@ -604,89 +390,57 @@ function CartRow({
 }
 
 /**
- * The honest summary of one run: how many are selling, how many need the merchant.
- *
- * §30's rule is that a batch reports itself truthfully — "17 published, 2 need
- * attention, 1 couldn't be imported" — rather than rounding to whichever number
- * flatters the run. Both directions of rounding are wrong: a success banner hides
- * the two rows that need work, and a failure banner hides seventeen products the
- * merchant could be selling this afternoon.
- *
- * Built from `publishedCount` / `needsAttention` and the result rows, not from
- * `imported`, which counts listings created and so counts a draft as a win.
- */
-function runSummary(result: ImportRunResult): string {
-  const parts: string[] = [];
-  if (result.publishedCount > 0) parts.push(`${result.publishedCount} published`);
-  if (result.needsAttention > 0) parts.push(`${result.needsAttention} need attention`);
-  // Created but neither live nor flagged: an auto-publish-off store's drafts, and
-  // anything already in the store. Counted from the rows because the server sends
-  // no single number for it, and inferring it by subtraction would go negative the
-  // first time a new outcome appears.
-  const drafted = result.results.filter(
-    (item) => item.outcome === "IMPORTED" || item.outcome === "ALREADY_EXISTS"
-  ).length;
-  if (drafted > 0) parts.push(`${drafted} saved as drafts`);
-  // Subtracted before the failure count, never folded into it. These were not
-  // reached, so counting them as refusals is the exact lie this screen used to
-  // tell in its loudest form: 58 selected, 25 imported, and a line reading
-  // "33 couldn't be imported" about 33 products with nothing wrong with them.
-  const deferred = result.deferred;
-  const failed =
-    result.requested - result.publishedCount - result.needsAttention - drafted - deferred;
-  if (failed > 0) parts.push(`${failed} couldn't be imported`);
-  if (deferred > 0) parts.push(`${deferred} still in your cart`);
-  if (parts.length === 0) return `Nothing was imported.`;
-  if (parts.length === 1 && result.publishedCount === result.requested) {
-    return result.requested === 1
-      ? "Published and ready to sell."
-      : `All ${result.requested} are published and ready to sell.`;
-  }
-  return `${parts.join(", ")}.`;
-}
-
-/**
  * The per-item outcome of one import run.
  *
  * Lists every item, not just the failures — a merchant needs to see that eight
  * worked as much as they need to see that two did not, and a sheet that only
  * appears on failure teaches them that no news is a silent success.
- *
- * The rows that can be acted on get somewhere to go. That is the §27 half this
- * sheet was missing: before auto-publish every row here was a draft the merchant
- * was going to open anyway, so naming the outcome was enough. Now most rows are
- * finished and a handful are not, and the handful is what the sheet is for.
  */
 function ImportResultSheet({
   result,
-  onOpenProducts,
-  onViewInStore,
-  onFixItem
+  onOpenProducts
 }: {
   result: ImportRunResult;
   onOpenProducts: () => void;
-  onViewInStore: (listingId: number) => void;
-  onFixItem: (listingId: number) => void;
 }) {
   const needsReview = useMemo(() => importNeedsReview(result), [result]);
   return (
     <View style={styles.sheet}>
-      <Text style={styles.sheetTitle}>{runSummary(result)}</Text>
+      <Text style={styles.sheetTitle}>
+        {result.imported === result.requested
+          ? `All ${result.requested} imported as drafts.`
+          : `${result.imported} of ${result.requested} imported as drafts.`}
+      </Text>
 
-      {result.results.map((item) => (
-        <ImportResultRow
-          key={item.itemId || item.externalProductId}
-          item={item}
-          onViewInStore={onViewInStore}
-          onFixItem={onFixItem}
-        />
-      ))}
+      {result.results.map((item) => {
+        const copy = OUTCOME_COPY[String(item.outcome)] || {
+          label: "This one couldn't be imported",
+          tone: "warning" as const
+        };
+        return (
+          <View key={item.itemId || item.externalProductId} style={styles.sheetRow}>
+            <View
+              style={[
+                styles.sheetDot,
+                {
+                  backgroundColor:
+                    copy.tone === "success"
+                      ? storeLight.status.success
+                      : copy.tone === "warning"
+                        ? storeLight.status.warning
+                        : storeLight.status.neutral
+                }
+              ]}
+            />
+            <Text style={styles.sheetText}>
+              {copy.label}
+              {item.variantCount ? ` · ${item.variantCount} variants` : ""}
+            </Text>
+          </View>
+        );
+      })}
 
-      {/* Deferred rows join this note rather than getting one of their own: the
-          sentence a merchant needs is identical, and "import again" is the whole
-          instruction in both cases. Saying it twice in one sheet would read as
-          two different problems. */}
-      {needsReview || result.deferred > 0 ? (
+      {needsReview ? (
         <Text style={styles.sheetNote}>
           You can run this again — anything already imported won't be duplicated.
         </Text>
@@ -700,88 +454,6 @@ function ImportResultSheet({
       >
         <Text style={styles.secondaryText}>Open imported products</Text>
       </Pressable>
-    </View>
-  );
-}
-
-function ImportResultRow({
-  item,
-  onViewInStore,
-  onFixItem
-}: {
-  item: ImportItemResult;
-  onViewInStore: (listingId: number) => void;
-  onFixItem: (listingId: number) => void;
-}) {
-  const copy = OUTCOME_COPY[item.outcome as ImportOutcome] || {
-    label: "This one couldn't be imported",
-    tone: "warning" as const
-  };
-  // Read from the server's field, never from the outcome string, for the reason
-  // `ImportItemResult.published` documents: an outcome this build cannot read
-  // must not be able to make a draft look live.
-  const live = item.published;
-  // A row only gets [Fix this] when there is a listing to open *and* at least one
-  // of its problems is the merchant's to solve. A delisted supplier product and a
-  // pending moderation both have a listing and neither has a fix, and a button
-  // that opens an editor where nothing can be changed is worse than no button.
-  const fixable = item.listingId !== null && anyFixable(item.problems);
-  return (
-    <View style={styles.sheetItem}>
-      <View style={styles.sheetRow}>
-        <View
-          style={[
-            styles.sheetDot,
-            {
-              backgroundColor:
-                copy.tone === "success"
-                  ? storeLight.status.success
-                  : copy.tone === "warning"
-                    ? storeLight.status.warning
-                    : storeLight.status.neutral
-            }
-          ]}
-        />
-        <Text style={styles.sheetText}>
-          {copy.label}
-          {live && item.priceLabel ? ` · ${item.priceLabel}` : ""}
-          {item.variantCount ? ` · ${item.variantCount} variants` : ""}
-        </Text>
-      </View>
-
-      {/* The reason, in words, on the row it belongs to. A code the merchant
-          cannot decode is rendered raw rather than swallowed — they can quote it
-          to support, which is more than a generic apology gives them. */}
-      {item.problems.map((problem) => {
-        const problemCopy = publishProblemCopy(String(problem));
-        return (
-          <Text key={String(problem)} style={styles.sheetProblem}>
-            {problemCopy ? problemCopy.text : String(problem)}
-          </Text>
-        );
-      })}
-
-      {fixable && item.listingId !== null ? (
-        <Pressable
-          onPress={() => onFixItem(item.listingId as number)}
-          hitSlop={8}
-          style={styles.sheetAction}
-          accessibilityRole="button"
-          accessibilityLabel="Fix this product so it can go live"
-        >
-          <Text style={styles.sheetActionText}>Fix this</Text>
-        </Pressable>
-      ) : live && item.listingId !== null ? (
-        <Pressable
-          onPress={() => onViewInStore(item.listingId as number)}
-          hitSlop={8}
-          style={styles.sheetAction}
-          accessibilityRole="button"
-          accessibilityLabel="View this product in your store"
-        >
-          <Text style={styles.sheetActionText}>View in store</Text>
-        </Pressable>
-      ) : null}
     </View>
   );
 }
@@ -848,16 +520,9 @@ const styles = StyleSheet.create({
     borderColor: storeLight.border.hairline
   },
   sheetTitle: { fontSize: 14, fontWeight: "700", color: storeLight.text.primary },
-  sheetItem: { gap: 4 },
   sheetRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   sheetDot: { width: 8, height: 8, borderRadius: 4 },
   sheetText: { flex: 1, fontSize: 12, color: storeLight.text.primary, lineHeight: 17 },
-  // Indented to the width of the dot and its gap, so a problem reads as belonging
-  // to the row above it rather than as another outcome.
-  sheetProblem: { fontSize: 12, color: storeLight.text.muted, lineHeight: 17, paddingLeft: 16 },
-  sheetAction: { minHeight: storeLight.size.tapTarget, justifyContent: "center", paddingLeft: 16 },
-  sheetActionText: { fontSize: 12, fontWeight: "700", color: storeLight.text.link },
-  pricingBlock: { gap: 8 },
   sheetNote: { fontSize: 12, color: storeLight.text.muted, lineHeight: 17 },
   secondary: {
     minHeight: storeLight.size.tapTarget,

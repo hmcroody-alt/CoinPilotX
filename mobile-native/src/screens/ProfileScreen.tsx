@@ -1,28 +1,24 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, FlatList, NativeScrollEvent, NativeSyntheticEvent, Pressable, RefreshControl, StyleSheet, Text, View, ViewToken } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, Animated, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { deletePost, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
-import { withCachedAge } from "../core/sync/ageLabel";
-import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfileEntry, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
+import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
 import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
-import { primaryMediaList } from "../core/media/mediaDescriptors";
-import { useAppForegrounded, useMediaPrefetch, useRouteFocused } from "../core/media/useMediaPrefetch";
 import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/ProfileHeader";
 import { ContentCover, ContentCoverKind } from "../components/covers/ContentCover";
 import { hasMembershipMark } from "../entitlements/membershipMark";
 import { buildProfileContext, subjectName } from "../profile/profileContext";
-import { describeProfilePick, pickProfileImage, ProfileImageKind, profileImageLabel, saveProfileImage } from "../profile/profileMediaEdit";
 import { profileOsDestination, tileNoun, visibleProfileOsTiles } from "../profile/profileOsTiles";
 import { useBriefingsTile } from "../profile/useBriefingsTile";
 import { usePremiumTile } from "../profile/usePremiumTile";
 import { trackPremium } from "../payments/premiumAnalytics";
 import { useAuth } from "../session/auth";
-import { ProfileCanvas } from "../components/ProfileCanvas";
+import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
@@ -30,7 +26,6 @@ import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { colors } from "../theme/colors";
-import { profileSurface } from "../theme/profileGraphite";
 import { profileNeon } from "../theme/profileNeon";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -42,6 +37,10 @@ export function ProfileScreen({ route, navigation }: Props) {
   const dock = useBottomNavSurface();
   const listRef = useRef<FlatList<PulsePost>>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
+  const onScroll = useMemo(
+    () => Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true, listener: dock.handlers.onScroll }),
+    [dock.handlers.onScroll, scrollY]
+  );
   const profileTarget = useMemo<NativeProfileTarget | null>(() => resolveProfileTarget(route?.params || null), [
     route?.params?.profileKey,
     route?.params?.userId,
@@ -61,13 +60,10 @@ export function ProfileScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [offline, setOffline] = useState(false);
-  /** Age of the cached profile on screen; null when it is live or unknown. */
-  const [ageMs, setAgeMs] = useState<number | null>(null);
   const [errorState, setErrorState] = useState<ReturnType<typeof profileErrorState> | null>(null);
   const [contentUnavailable, setContentUnavailable] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
   const [followBusy, setFollowBusy] = useState(false);
-  const [mediaBusy, setMediaBusy] = useState<"" | ProfileImageKind>("");
   const refreshingRef = useRef(false);
   // Every load now has concurrent parts (a cache read racing a network read, a
   // grid request racing the profile request), so a load that has been
@@ -81,47 +77,6 @@ export function ProfileScreen({ route, navigation }: Props) {
   const guard = useSocialActionGuard();
 
   const visiblePosts = useMemo(() => (tab === "media" ? posts.filter((post) => post.media?.length) : posts), [posts, tab]);
-
-  /**
-   * §27. Grid tiles are warmed, never played.
-   *
-   * The `grid` surface policy asks for thumbnails only and sets `warmVideo`
-   * false, so a profile full of video posts costs the same as a profile full of
-   * photos. The window is wide (12 ahead, 6 behind) because three tiles fit per
-   * row -- 12 items is four rows, roughly one more screen, not four.
-   */
-  const gridMedia = useMemo(() => primaryMediaList(visiblePosts), [visiblePosts]);
-  const [gridIndex, setGridIndex] = useState(0);
-  const gridViewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
-  const onGridViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const first = viewableItems.find((token) => token.isViewable && typeof token.index === "number");
-    if (first && typeof first.index === "number") setGridIndex(first.index);
-  }).current;
-  const profileFocused = useRouteFocused();
-  const appForegrounded = useAppForegrounded();
-  const gridPrefetch = useMediaPrefetch({
-    surface: "grid",
-    items: gridMedia,
-    activeIndex: gridIndex,
-    active: profileFocused && appForegrounded
-  });
-  // The dock's hide-on-scroll listener and the Animated.event driving the
-  // parallax both already ride this stream; the prefetcher joins them rather
-  // than replacing either.
-  const onGridScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      dock.handlers.onScroll?.(event);
-      gridPrefetch.onScroll(event);
-    },
-    [dock.handlers, gridPrefetch]
-  );
-  // Declared here rather than beside `scrollY` because it closes over
-  // `onGridScroll`, and a const read during render before its own declaration
-  // is a TDZ crash, not a stale value.
-  const onScroll = useMemo(
-    () => Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true, listener: onGridScroll }),
-    [onGridScroll, scrollY]
-  );
 
   // The single source of truth for "whose profile is this". Every Profile OS
   // tile reads its subject from here, so no destination has to work it out from
@@ -227,12 +182,11 @@ export function ProfileScreen({ route, navigation }: Props) {
     // has already landed.
     let settled = false;
     const cachedSeed = mode === "initial"
-      ? loadCachedProfileEntry(owner ? "me" : profileTarget || profileKey).catch(() => null)
+      ? loadCachedProfile(owner ? "me" : profileTarget || profileKey).catch(() => null)
       : null;
     cachedSeed?.then((cached) => {
       if (!cached || settled || !isCurrent()) return;
-      setProfile(cached.value);
-      setAgeMs(cached.ageMs);
+      setProfile(cached);
       setLoading(false);
     });
 
@@ -249,7 +203,6 @@ export function ProfileScreen({ route, navigation }: Props) {
       settled = true;
       if (!isCurrent()) return;
       setProfile(canonicalProfile);
-      setAgeMs(null);
       const canonicalTarget = profilePostTarget(canonicalProfile);
       // If the eager key disagrees with the server's canonical identity, the
       // grid we raced for belongs to a different lookup. Refetch rather than
@@ -272,11 +225,10 @@ export function ProfileScreen({ route, navigation }: Props) {
       settled = true;
       if (!isCurrent()) return;
       const mappedError = profileErrorState(loadError);
-      const cached = await (cachedSeed || loadCachedProfileEntry(owner ? "me" : profileTarget || profileKey));
+      const cached = await (cachedSeed || loadCachedProfile(owner ? "me" : profileTarget || profileKey));
       if (!isCurrent()) return;
       if (cached) {
-        setProfile(cached.value);
-        setAgeMs(cached.ageMs);
+        setProfile(cached);
         setOffline(Boolean(mappedError.offline || mappedError.retryable));
         setErrorState(mappedError.retryable ? mappedError : null);
         setContentUnavailable(true);
@@ -394,55 +346,6 @@ export function ProfileScreen({ route, navigation }: Props) {
       navigation?.navigate("Call", { conversationId: result.conversation_id, callType, direction: "outgoing", title: profile.display_name });
     } catch (callError) {
       setActionMessage(callError instanceof Error ? callError.message : "Call could not start.");
-    }
-  }
-
-  /**
-   * Change the profile photo or the cover from the profile itself.
-   *
-   * Optimistic only as far as the preview: the picked local file is shown while
-   * the upload runs, and if the upload fails the previous image is put back and
-   * the failure is stated. A profile that keeps showing the new photo after a
-   * failed save is claiming a change the server never accepted.
-   *
-   * Only the media fields are taken from the upload response. The response is
-   * built by merging onto the *cached* profile, which can be older than what is
-   * on screen, so adopting it wholesale would let an avatar change roll back the
-   * visible follower counts.
-   */
-  async function editProfileImage(kind: ProfileImageKind) {
-    if (!profileContext.isOwnProfile || mediaBusy) return;
-    setActionMessage("");
-    const pick = await pickProfileImage(kind).catch(() => ({ status: "cancelled" as const }));
-    if (pick.status !== "picked") {
-      const message = describeProfilePick(kind, pick);
-      if (message) setActionMessage(message);
-      return;
-    }
-    const restore = kind === "avatar"
-      ? { avatar_url: profile?.avatar_url, avatar_thumbnail_url: profile?.avatar_thumbnail_url }
-      : { cover_url: profile?.cover_url, banner_url: profile?.banner_url };
-    setMediaBusy(kind);
-    setProfile((current) => current ? {
-      ...current,
-      ...(kind === "avatar"
-        ? { avatar_url: pick.uri, avatar_thumbnail_url: pick.uri }
-        : { cover_url: pick.uri, banner_url: pick.uri })
-    } : current);
-    try {
-      const saved = await saveProfileImage(kind, pick);
-      setProfile((current) => current ? {
-        ...current,
-        ...(kind === "avatar"
-          ? { avatar_url: saved.avatar_url, avatar_thumbnail_url: saved.avatar_thumbnail_url }
-          : { cover_url: saved.cover_url, banner_url: saved.banner_url })
-      } : saved);
-      setActionMessage(`${profileImageLabel(kind)} updated.`);
-    } catch (mediaError) {
-      setProfile((current) => current ? { ...current, ...restore } : current);
-      setActionMessage(mediaError instanceof Error ? mediaError.message : `${profileImageLabel(kind)} could not be saved.`);
-    } finally {
-      setMediaBusy("");
     }
   }
 
@@ -582,18 +485,7 @@ export function ProfileScreen({ route, navigation }: Props) {
   if (!profile) {
     const state = errorState || profileErrorState(new Error("Profile could not load."));
     return (
-      // `bottomDock={false}` plus `dock.contentPadding`, not the shell's default.
-      //
-      // The shell's own `bottomDock` reserves `Math.max(insets.bottom, 12)` — the
-      // safe area and nothing else — but the floating dock is the safe area *plus*
-      // its own 118pt of height. `LogiNexusStatePanel` is `flex: 1`, so on a
-      // docked Profile its lower edge, its border and the "Try again" button's
-      // breathing room all ran underneath the dock. Turning the shell's padding
-      // off and applying the dock's own derived value instead gives exactly the
-      // number the loaded screen's list uses — one source for the clearance,
-      // computed from the dock's real height and this device's inset rather than
-      // hardcoded for one phone.
-      <LogiNexusScreenShell bottomDock={false} contentStyle={dock.contentPadding}>
+      <LogiNexusScreenShell>
         <LogiNexusStatePanel state="error" title={state.title} body={state.body}>
         {state.retryable ? (
           <Pressable style={styles.retryButton} onPress={() => load("refresh").catch(() => undefined)}>
@@ -607,14 +499,7 @@ export function ProfileScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      {/* `ProfileCanvas`, not `<GalacticAtmosphere variant="profile">`. The
-          atmosphere is the layer the design review rejected: a near-black
-          gradient under 23 stars, two drifting nebulae, a planet, a galaxy smear
-          and a closing scrim, which is the cloudy appearance itself rather than a
-          tint on top of it. `scrollY` is no longer passed because there is nothing
-          left to parallax — see `components/ProfileCanvas.tsx`. Every other
-          variant of the atmosphere is untouched. */}
-      <ProfileCanvas />
+      <GalacticAtmosphere variant="profile" scrollY={scrollY} testID="profile-galactic-atmosphere" />
       <Animated.FlatList
       ref={listRef}
       style={styles.list}
@@ -646,14 +531,9 @@ export function ProfileScreen({ route, navigation }: Props) {
             moduleKeys={profileOsTiles}
             moduleState={moduleState}
             moduleOwnerName={profileContext.isOwnProfile ? "" : subjectName(profileContext)}
-            canEditMedia={profileContext.isOwnProfile}
-            onEditCover={() => editProfileImage("cover").catch(() => undefined)}
-            onEditAvatar={() => editProfileImage("avatar").catch(() => undefined)}
-            avatarBusy={mediaBusy === "avatar"}
-            coverBusy={mediaBusy === "cover"}
           />
           <View style={styles.section}>
-            {offline ? <Text style={styles.offline}>{withCachedAge("Showing saved profile", ageMs)}</Text> : null}
+            {offline ? <Text style={styles.offline}>Showing saved profile</Text> : null}
             {errorState ? <Text style={styles.error}>{errorState.body}</Text> : null}
             {contentUnavailable ? (
               <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => load("refresh").catch(() => undefined)}>
@@ -687,9 +567,6 @@ export function ProfileScreen({ route, navigation }: Props) {
       onEndReachedThreshold={0.55}
       onScroll={onScroll}
       onScrollBeginDrag={dock.handlers.onScrollBeginDrag}
-      onMomentumScrollEnd={gridPrefetch.onScrollSettled}
-      viewabilityConfig={gridViewabilityConfig}
-      onViewableItemsChanged={onGridViewableItemsChanged}
       scrollEventThrottle={dock.handlers.scrollEventThrottle}
       />
     </View>
@@ -746,11 +623,7 @@ function ProfileSkeleton() {
       accessibilityLabel="Loading profile"
       testID="profile-skeleton"
     >
-      {/* The same canvas the loaded screen draws, so the first frame and the
-          second are the same colour. The skeleton's content is top-anchored and
-          ends ~400pt down, so it reserves no dock clearance — there is nothing
-          near the bottom of the screen to trap. */}
-      <ProfileCanvas testID="profile-skeleton-canvas" />
+      <GalacticAtmosphere variant="profile" />
       <View style={styles.skeletonBody}>
         <View style={styles.skeletonAvatar} />
         <View style={styles.skeletonName} />
@@ -767,20 +640,9 @@ function ProfileSkeleton() {
 }
 
 function TabButton({ label, value, active, onPress }: { label: string; value: TabKey; active: TabKey; onPress: (value: TabKey) => void }) {
-  const selected = active === value;
   return (
-    // `role="tab"` plus `selected`, because the strip's own visuals carry the
-    // selection and VoiceOver could not see any of them. Without the state a
-    // screen-reader user hears three identical buttons and has no way to know
-    // which list they are already looking at — which is the same failure as
-    // conveying state by colour alone, one modality over.
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityState={{ selected }}
-      style={[styles.tab, selected ? styles.tabActive : undefined]}
-      onPress={() => onPress(value)}
-    >
-      <Text style={[styles.tabText, selected ? styles.tabTextActive : undefined]}>{label}</Text>
+    <Pressable style={[styles.tab, active === value ? styles.tabActive : undefined]} onPress={() => onPress(value)}>
+      <Text style={[styles.tabText, active === value ? styles.tabTextActive : undefined]}>{label}</Text>
     </Pressable>
   );
 }
@@ -812,56 +674,46 @@ function AboutPanel({ profile, owner, onVerification, onSafety, onSellerStore }:
   );
 }
 
-const styles = createThemedStyles(() => {
-  // Same memoised resolver the header uses, so the screen and its header cannot
-  // disagree about what the canvas is. See `theme/profileGraphite.ts`.
-  const surface = profileSurface(colors);
-  return {
+const styles = createThemedStyles(() => ({
   root: { backgroundColor: "transparent", flex: 1 },
   skeletonBody: { paddingHorizontal: 18, paddingTop: 96 },
-  // The skeleton is the first frame of the screen, so its blocks have to be the
-  // real surfaces: a skeleton painted in a colour the loaded screen never uses
-  // produces a visible recolour the moment data arrives.
-  skeletonAvatar: { backgroundColor: surface.raisedStrong, borderColor: surface.border, borderRadius: 56, borderWidth: 1, height: 112, width: 112 },
-  skeletonName: { backgroundColor: surface.raisedStrong, borderRadius: 8, height: 26, marginTop: 16, width: "58%" },
-  skeletonHandle: { backgroundColor: surface.raised, borderRadius: 6, height: 14, marginTop: 10, width: "36%" },
-  skeletonStats: { backgroundColor: surface.raised, borderColor: surface.border, borderRadius: profileNeon.radius.panel, borderWidth: 1, height: 74, marginTop: 22 },
+  skeletonAvatar: { backgroundColor: profileNeon.panelRaised, borderColor: profileNeon.border, borderRadius: 56, borderWidth: 1, height: 112, width: 112 },
+  skeletonName: { backgroundColor: profileNeon.panelRaised, borderRadius: 8, height: 26, marginTop: 16, width: "58%" },
+  skeletonHandle: { backgroundColor: profileNeon.panel, borderRadius: 6, height: 14, marginTop: 10, width: "36%" },
+  skeletonStats: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border, borderRadius: profileNeon.radius.panel, borderWidth: 1, height: 74, marginTop: 22 },
   skeletonActions: { flexDirection: "row", gap: 8, marginTop: 16 },
-  skeletonAction: { backgroundColor: surface.raised, borderColor: surface.border, borderRadius: profileNeon.radius.action, borderWidth: 1, flex: 1, height: 48 },
-  // Still an accent fill, and deliberately so: this is a transient result banner
-  // ("Message sent"), which is state, and state is what the accent system is
-  // for. It is not a card, so it does not take a surface step.
+  skeletonAction: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border, borderRadius: profileNeon.radius.action, borderWidth: 1, flex: 1, height: 48 },
   actionMessage: {
-    backgroundColor: profileNeon.fillSoft,
-    borderColor: profileNeon.border,
-    borderRadius: profileNeon.radius.action,
+    backgroundColor: colors.signalSoft,
+    borderColor: colors.border,
+    borderRadius: 10,
     borderWidth: 1,
-    color: surface.primaryText,
+    color: colors.accentStrong,
     fontSize: 13,
     marginBottom: 10,
     padding: 10
   },
   about: {
-    backgroundColor: surface.raised,
-    borderColor: surface.border,
-    borderRadius: profileNeon.radius.card,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 8,
     borderWidth: 1,
     gap: 8,
     marginTop: 12,
-    padding: 16
+    padding: 14
   },
   aboutBody: {
-    color: surface.primaryText,
+    color: colors.text,
     fontSize: 15,
     lineHeight: 22
   },
   aboutMeta: {
-    color: surface.secondaryText,
+    color: colors.muted,
     fontSize: 13,
     lineHeight: 19
   },
   aboutTitle: {
-    color: surface.primaryText,
+    color: colors.text,
     fontSize: 18,
     fontWeight: "900"
   },
@@ -873,7 +725,7 @@ const styles = createThemedStyles(() => {
     padding: 24
   },
   centerText: {
-    color: surface.secondaryText,
+    color: colors.muted,
     marginTop: 10,
     textAlign: "center"
   },
@@ -885,25 +737,15 @@ const styles = createThemedStyles(() => {
     paddingTop: 4
   },
   gridRow: { gap: 2, paddingHorizontal: 2 },
-  // The placeholder behind a grid image while it decodes. `raised`, not
-  // `colors.surface`: on the graphite ramp the palette's `surface` is the old
-  // near-black, so every not-yet-loaded tile was a black hole in the grid.
-  gridTile: { aspectRatio: 1, backgroundColor: surface.raised, flex: 1, marginBottom: 2, maxWidth: "33.333%", overflow: "hidden" },
+  gridTile: { aspectRatio: 1, backgroundColor: colors.surface, flex: 1, marginBottom: 2, maxWidth: "33.333%", overflow: "hidden" },
   gridImage: { height: "100%", width: "100%" },
-  /*
-   * `textTile` / `textTileCopy` used to live here, carrying a hardcoded `#0D2030`
-   * — a navy that belonged to no palette and survived every theme switch. They
-   * are deleted rather than retoned: nothing renders them. The text-post cell has
-   * been drawn by `ContentCover kind="text"` since covers were centralized, so
-   * recolouring these two would have been a token reference to a style no frame
-   * ever composites, and a test asserting the new colour would have passed while
-   * proving nothing about the screen.
-   */
+  textTile: { alignItems: "center", backgroundColor: "#0D2030", flex: 1, justifyContent: "center", padding: 10 },
+  textTileCopy: { color: colors.text, fontSize: 13, fontWeight: "800", lineHeight: 17, textAlign: "center" },
   tileSignals: { alignItems: "center", flexDirection: "row", gap: 4, left: 7, position: "absolute", right: 7, top: 7 },
   duration: { color: "#fff", fontSize: 10, fontWeight: "900", marginLeft: "auto", textShadowColor: "#000", textShadowRadius: 4 },
-  loadingMore: { color: surface.secondaryText, padding: 16, textAlign: "center" },
+  loadingMore: { color: colors.muted, padding: 16, textAlign: "center" },
   empty: {
-    color: surface.secondaryText,
+    color: colors.muted,
     padding: 20,
     textAlign: "center"
   },
@@ -913,7 +755,7 @@ const styles = createThemedStyles(() => {
     marginBottom: 10
   },
   errorTitle: {
-    color: surface.primaryText,
+    color: colors.text,
     fontSize: 20,
     fontWeight: "900"
   },
@@ -929,50 +771,37 @@ const styles = createThemedStyles(() => {
     fontSize: 13,
     marginBottom: 10
   },
-  // No `shadowColor`/`shadowOpacity: 1`/`shadowRadius: 14`. That was a 14pt halo
-  // at full opacity around the one button on an otherwise empty error screen —
-  // the largest glow in the Profile tree, on the element a user only ever sees
-  // when something has already gone wrong. The solid electric fill is louder
-  // than the canvas by a wide margin and needs no help being found.
   retryButton: {
-    alignItems: "center",
-    backgroundColor: profileNeon.electric,
-    borderRadius: profileNeon.radius.action,
-    justifyContent: "center",
+    backgroundColor: colors.accent,
+    borderRadius: 8,
     marginTop: 16,
-    minHeight: profileNeon.tapTarget,
-    paddingHorizontal: 18
+    paddingHorizontal: 16,
+    paddingVertical: 11
   },
   retryButtonText: {
-    color: "#04101f",
+    color: colors.background,
     fontWeight: "900"
   },
   tab: {
     alignItems: "center",
-    backgroundColor: surface.raised,
-    borderColor: surface.border,
-    borderRadius: profileNeon.radius.action,
+    borderColor: colors.border,
+    borderRadius: 8,
     borderWidth: 1,
     flex: 1,
-    minHeight: profileNeon.tapTarget,
+    minHeight: 40,
     justifyContent: "center"
   },
-  // Selected is stated three ways and none of them is a glow: an accent fill, a
-  // brighter accent border, and the cyan label below. Three because the brief
-  // forbids conveying state by colour alone — the border weight and the fill step
-  // both survive greyscale and a colour deficiency.
   tabActive: {
-    backgroundColor: profileNeon.fillMedium,
-    borderColor: profileNeon.borderStrong,
-    borderWidth: 2
+    backgroundColor: "rgba(37, 208, 167, 0.14)",
+    borderColor: colors.accent
   },
   tabText: {
-    color: surface.secondaryText,
+    color: colors.muted,
     fontSize: 13,
     fontWeight: "900"
   },
   tabTextActive: {
-    color: profileNeon.cyan
+    color: colors.accent
   },
   tabs: {
     flexDirection: "row",
@@ -980,28 +809,23 @@ const styles = createThemedStyles(() => {
     marginTop: 12
   },
   webButton: {
-    alignItems: "center",
-    backgroundColor: profileNeon.fillSoft,
-    borderColor: profileNeon.border,
-    borderRadius: profileNeon.radius.action,
+    backgroundColor: "transparent",
+    borderColor: colors.border,
+    borderRadius: 8,
     borderWidth: 1,
-    justifyContent: "center",
     marginTop: 16,
-    minHeight: profileNeon.tapTarget,
-    paddingHorizontal: 18
+    paddingHorizontal: 16,
+    paddingVertical: 11
   },
   webButtonText: {
-    color: profileNeon.cyan,
+    color: colors.accentStrong,
     fontWeight: "900"
   },
   webLink: {
-    justifyContent: "center",
-    marginTop: 6,
-    minHeight: profileNeon.tapTarget
+    marginTop: 6
   },
   webLinkText: {
-    color: profileNeon.cyan,
+    color: colors.accentStrong,
     fontWeight: "900"
   }
-  };
-});
+}));

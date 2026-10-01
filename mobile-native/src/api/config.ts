@@ -1,5 +1,5 @@
 import Constants from "expo-constants";
-import { envFlagOn, isFlagValueOn, isFlagValueOnUnlessDisabled } from "../core/envFlag";
+import { envFlagOn, isFlagValueOn } from "../core/envFlag";
 
 const extra = Constants.expoConfig?.extra || {};
 const easConfig = Constants.easConfig || {};
@@ -79,24 +79,10 @@ if (declaredEnvironment && declaredEnvironment !== PULSE_ENVIRONMENT) {
 // can satisfy, so they are only ever reachable from development.
 export const DIGITAL_COMMERCE_ENABLED = isFlagValueOn(process.env.EXPO_PUBLIC_DIGITAL_COMMERCE_ENABLED);
 // Native CallKit + PushKit VoIP (rings the iOS system call UI when the app is
-// backgrounded/killed). The pods, the `voip` background mode and the AppDelegate
-// PushKit delegate have all landed, so this reads the default-ON reader: VoIP push is
-// now the *primary* incoming-call path on iOS, and a primary path must not depend on
-// somebody remembering to export a variable. No VoIP Services Certificate is involved —
-// the same token-based `.p8` credential that signs alert pushes signs VoIP pushes, which
-// is why this no longer waits on an Apple-portal step.
-//
-// The default matters more here than for a normal feature flag because the backend
-// suppresses the ordinary alert push for any device that has registered a VoIP token
-// (services/pulsesoc_voip_push.py). Registration only happens when this is on, so
-// off → no token → no suppression → the alert push still rings: the two halves fail
-// safe together. The dangerous ordering is a build that registers a token and a *later*
-// build that ships with CallKit off, which would leave the server suppressing for a
-// client that no longer answers VoIP pushes. Defaulting to on removes the accidental
-// version of that, and teardownNativeCallKit() revokes the token for the deliberate one.
-//
-// Rollback is still a flag flip, not a revert: EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED=0.
-export const NATIVE_CALLKIT_ENABLED = isFlagValueOnUnlessDisabled(process.env.EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED);
+// backgrounded/killed). Requires react-native-callkeep + react-native-voip-push-notification
+// pods, the `voip` background mode, and a VoIP push certificate under the COINPLOTXAI APNs
+// account (see reports/native_callkit_voip_integration.md). Default OFF until that lands.
+export const NATIVE_CALLKIT_ENABLED = isFlagValueOn(process.env.EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED);
 export const PULSESOC_QA_MESSENGER_FIXTURES =
   envFlagOn("EXPO_PUBLIC_PULSESOC_QA_MESSENGER_FIXTURES") &&
   /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(PULSE_API_BASE_URL);
@@ -134,53 +120,6 @@ export function absoluteApiUrl(value: string | null | undefined) {
   if (!url) return "";
   if (/^(https?:|data:|file:)/i.test(url)) return url;
   return url.startsWith("/") ? `${PULSE_API_BASE_URL}${url}` : `${PULSE_API_BASE_URL}/${url}`;
-}
-
-/**
- * Can a native loader actually fetch this, or will it fail as a blank rectangle?
- *
- * The counterpart to `absoluteApiUrl`, for the places that must CHOOSE between
- * two candidate URLs rather than repair one. React Native's image loader and
- * AVPlayer both reject a site-relative URL, and both do it silently — no error
- * surface, just an empty box or a black frame. So a renderer picking
- * `fresh || fallback` can quietly replace a URL that works with one that cannot,
- * and nothing in the type system or the logs says so.
- *
- * Deliberately a shape test, not a reachability test: it answers "is this
- * well-formed enough to attempt", which is the only question a chooser can
- * answer synchronously. A 404 is still a 404 and is reported as a load failure.
- */
-export function isLoadableMediaUrl(value: string | null | undefined): boolean {
-  return /^(https?:|data:|file:)/i.test(String(value || "").trim());
-}
-
-/**
- * Is this a streaming playlist rather than a file that can be saved or shared?
- *
- * A player and a downloader want different things from the same item, and
- * conflating them is silent. An HLS manifest is a few hundred bytes of text
- * naming segments; hand it to `downloadMedia` and the transfer *succeeds*, the
- * cache gets a `.m3u8`, and Photos rejects the write — reported to the user as
- * "could not save this to your library" about a video that is playing on their
- * screen. Nothing errors anywhere near the cause.
- *
- * The query string is stripped before the test, on purpose. A Mux manifest
- * under the signed playback policy is `.../vod.m3u8?token=<jwt>`, so a check
- * against the whole URL would stop recognising manifests exactly when messenger
- * started using them. DASH is named alongside HLS because it is one Mux
- * configuration away and fails identically.
- *
- * The mirror of `_is_adaptive_manifest` in `pulse_communications_v2/service.py`.
- * The server already separates the two URLs on the wire; this is the client's
- * floor under that, for producers and older payloads that do not.
- */
-export function isAdaptiveManifest(value: string | null | undefined): boolean {
-  const path = String(value || "")
-    .split("?")[0]
-    .split("#")[0]
-    .trim()
-    .toLowerCase();
-  return path.endsWith(".m3u8") || path.endsWith(".mpd");
 }
 
 function normalizeApiBaseUrl(value: string) {

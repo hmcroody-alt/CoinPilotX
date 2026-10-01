@@ -79,10 +79,7 @@ def main() -> int:
         check("Post actions use unified reaction component", '"post-action-button pulse-action-button pulse-reaction-button reel-action reel-action-button"' in js and "reel-action-meta" in js),
         check("Comment composer remains bottom", "renderComposer(card, post)" in render_post and render_post.rfind("renderComposer") > render_post.rfind("renderActions")),
         check("Composer AI shortcut removed", composer_shortcut_removed),
-        # "Feeling" was renamed "Emoji": it used to type the literal string
-        # "Feeling: " into the author's body to fake a field the post contract
-        # does not have, and now opens the shared emoji picker instead.
-        check("Composer core buttons remain", all(label in page for label in ["Photo", "Video", "Music", "Emoji", "Location", "Mention", "Topic", "Public"])),
+        check("Composer core buttons remain", all(label in page for label in ["Photo", "Video", "Music", "Feeling", "Location", "Mention", "Topic", "Public"])),
     ]
     report = {"ok": all(item["passed"] for item in checks), "checks": checks}
     REPORT.parent.mkdir(parents=True, exist_ok=True)

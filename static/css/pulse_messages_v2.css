@@ -4,22 +4,22 @@
 
 :root {
   color-scheme: dark;
-  --bg: var(--surface-primary, var(--pulse-palette-background, #050910));
-  --bg-deep: #050910;
-  --panel: var(--surface-raised, #303843);
-  --panel-soft: rgba(48, 56, 67, .82);
-  --panel-glass: var(--surface-overlay, rgba(48, 56, 67, .82));
-  --text: var(--text-primary, var(--pulse-palette-text, #f2fbff));
-  --muted: var(--text-secondary, var(--pulse-palette-muted, #95aabc));
-  --quiet: var(--text-disabled, #6f8495);
-  --line: var(--border-subtle, rgba(119, 219, 239, .16));
-  --line-strong: var(--border-strong, rgba(119, 219, 239, .32));
-  --cyan: var(--action-secondary, var(--pulse-palette-accent-strong, #69daf0));
-  --green: var(--action-primary, var(--pulse-palette-accent, #38dda0));
-  --purple: var(--domain-intelligence, var(--pulse-palette-intelligence, #9b6cf4));
-  --gold: var(--status-warning, var(--pulse-palette-warning, #f4ca67));
-  --danger: var(--status-error, var(--pulse-palette-danger, #ff7382));
-  --shadow: var(--elevation-card, 0 22px 64px rgba(0, 0, 0, .34));
+  --bg: var(--pulse-palette-background, #020711);
+  --bg-deep: #01040b;
+  --panel: rgba(6, 14, 26, .94);
+  --panel-soft: rgba(11, 24, 41, .82);
+  --panel-glass: rgba(11, 27, 45, .68);
+  --text: var(--pulse-palette-text, #f2fbff);
+  --muted: var(--pulse-palette-muted, #95aabc);
+  --quiet: #6f8495;
+  --line: rgba(119, 219, 239, .16);
+  --line-strong: rgba(119, 219, 239, .32);
+  --cyan: var(--pulse-palette-accent-strong, #69daf0);
+  --green: var(--pulse-palette-accent, #38dda0);
+  --purple: var(--pulse-palette-intelligence, #9b6cf4);
+  --gold: var(--pulse-palette-warning, #f4ca67);
+  --danger: var(--pulse-palette-danger, #ff7382);
+  --shadow: 0 22px 64px rgba(0, 0, 0, .34);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
   --dock-height: 76px;
@@ -41,7 +41,7 @@ body {
   background:
     radial-gradient(circle at 10% 4%, rgba(56, 221, 160, .1), transparent 28rem),
     radial-gradient(circle at 92% 10%, rgba(105, 218, 240, .09), transparent 30rem),
-    linear-gradient(180deg, #050910 0%, #070d17 52%, #050910 100%);
+    linear-gradient(180deg, #020711 0%, #040b16 52%, #01040b 100%);
 }
 
 body::before {
@@ -163,7 +163,7 @@ select:focus-visible {
   margin: 0 auto var(--dock-height);
   overflow: hidden;
   border-inline: 1px solid rgba(105, 218, 240, .09);
-  background: rgba(48, 56, 67, .54);
+  background: rgba(2, 7, 17, .54);
   box-shadow: 0 0 80px rgba(0, 0, 0, .28);
 }
 
@@ -189,7 +189,7 @@ select:focus-visible {
   background:
     radial-gradient(circle at 18% 16%, rgba(56, 221, 160, .07), transparent 28rem),
     radial-gradient(circle at 86% 12%, rgba(105, 218, 240, .06), transparent 26rem),
-    rgba(48, 56, 67, .88);
+    rgba(3, 9, 19, .88);
 }
 
 .comm-toolbar,
@@ -202,7 +202,7 @@ select:focus-visible {
   min-height: 72px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--line);
-  background: rgba(54, 61, 70, .76);
+  background: rgba(2, 7, 15, .76);
   backdrop-filter: blur(20px);
 }
 
@@ -996,7 +996,7 @@ select:focus-visible {
   gap: 8px;
   padding: 8px clamp(16px, 3vw, 34px);
   border-bottom: 1px solid var(--line);
-  background: rgba(54, 61, 70, .92);
+  background: rgba(3, 9, 19, .92);
 }
 
 .thread-search-panel[hidden] {
@@ -1072,7 +1072,7 @@ select:focus-visible {
   gap: 6px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(42, 51, 64, .62);
+  background: rgba(8, 20, 35, .62);
   color: var(--muted);
   text-align: center;
 }
@@ -1092,7 +1092,7 @@ select:focus-visible {
   background:
     radial-gradient(circle at 50% 0, rgba(105, 218, 240, .12), transparent 44%),
     linear-gradient(135deg, rgba(155, 108, 244, .095), rgba(56, 221, 160, .055)),
-    rgba(42, 51, 64, .66);
+    rgba(8, 20, 35, .66);
 }
 
 .pulse-ai-quick-prompts {
@@ -1310,7 +1310,7 @@ select:focus-visible {
   border: 0;
   border-radius: 50%;
   opacity: 0;
-  background: rgba(48, 56, 67, .48);
+  background: rgba(2, 7, 17, .48);
 }
 
 .message:hover .message-menu-trigger,
@@ -1337,7 +1337,7 @@ select:focus-visible {
   border: 0;
   border-left: 3px solid var(--cyan);
   border-radius: 6px;
-  background: rgba(42, 51, 64, .26);
+  background: rgba(2, 7, 17, .26);
   color: var(--muted);
   text-align: left;
   font-size: 10px;
@@ -1404,7 +1404,7 @@ select:focus-visible {
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(54, 61, 70, .97);
+  background: rgba(4, 11, 22, .97);
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
 }
@@ -1442,7 +1442,7 @@ select:focus-visible {
   min-height: 26px;
   padding: 5px clamp(18px, 5vw, 80px);
   color: var(--green);
-  background: rgba(48, 56, 67, .86);
+  background: rgba(3, 9, 19, .86);
   font-size: 11px;
 }
 
@@ -1520,7 +1520,7 @@ select:focus-visible {
   grid-template-rows: auto auto auto;
   min-width: 0;
   border-top: 1px solid var(--line);
-  background: rgba(48, 56, 67, .94);
+  background: rgba(2, 7, 15, .94);
   box-shadow: 0 -18px 46px rgba(0, 0, 0, .22);
   backdrop-filter: blur(20px);
 }
@@ -1543,7 +1543,7 @@ select:focus-visible {
   overflow-x: auto;
   padding: 8px clamp(18px, 5vw, 80px);
   border-bottom: 1px solid rgba(105, 218, 240, .08);
-  background: linear-gradient(180deg, rgba(42, 51, 64, .88), rgba(42, 51, 64, .64));
+  background: linear-gradient(180deg, rgba(6, 17, 31, .88), rgba(3, 9, 19, .64));
 }
 
 .attachment-preview-rail[hidden] {
@@ -1758,18 +1758,20 @@ select:focus-visible {
   font-weight: 900;
 }
 
-.attachment-sheet {
+.attachment-sheet,
+.emoji-panel {
   display: flex;
   min-width: 0;
   gap: 8px;
   overflow-x: auto;
   padding: 8px clamp(18px, 5vw, 80px);
   border-bottom: 1px solid rgba(105, 218, 240, .09);
-  background: linear-gradient(180deg, rgba(54, 61, 70, .92), rgba(54, 61, 70, .72));
+  background: linear-gradient(180deg, rgba(6, 17, 31, .92), rgba(3, 9, 19, .72));
   scrollbar-width: none;
 }
 
-.attachment-sheet[hidden] {
+.attachment-sheet[hidden],
+.emoji-panel[hidden] {
   display: none;
 }
 
@@ -1791,6 +1793,16 @@ select:focus-visible {
 .attachment-sheet button small {
   color: var(--muted);
   font-size: 9px;
+}
+
+.emoji-panel button {
+  flex: 0 0 42px;
+  width: 42px;
+  min-width: 42px;
+  min-height: 42px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 20px;
 }
 
 .composer {
@@ -1885,7 +1897,7 @@ select:focus-visible {
   min-height: 0;
   padding: 0 clamp(18px, 5vw, 80px) 7px;
   color: var(--muted);
-  background: rgba(48, 56, 67, .94);
+  background: rgba(2, 7, 15, .94);
   font-size: 11px;
 }
 
@@ -1907,7 +1919,7 @@ select:focus-visible {
   height: 100dvh;
   overflow-y: auto;
   border-left: 1px solid var(--line);
-  background: rgba(48, 56, 67, .98);
+  background: rgba(4, 11, 22, .98);
   box-shadow: -24px 0 70px rgba(0, 0, 0, .42);
   transform: translateX(105%);
   transition: transform .24s cubic-bezier(.22, .61, .36, 1);
@@ -2022,7 +2034,7 @@ select:focus-visible {
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(54, 61, 70, .98);
+  background: rgba(4, 11, 22, .98);
   box-shadow: var(--shadow);
   transform: translateX(-50%);
   backdrop-filter: blur(20px);
@@ -2073,7 +2085,7 @@ select:focus-visible {
   background:
     radial-gradient(circle at 12% 5%, rgba(39, 229, 194, .18), transparent 16rem),
     radial-gradient(circle at 92% 18%, rgba(158, 88, 255, .20), transparent 17rem),
-    linear-gradient(145deg, rgba(54, 61, 70, .96), rgba(48, 56, 67, .98));
+    linear-gradient(145deg, rgba(4, 12, 26, .96), rgba(5, 8, 18, .98));
   box-shadow: 0 24px 90px rgba(0, 0, 0, .55), 0 0 34px rgba(74, 241, 222, .16);
   transform: translateX(110%);
   opacity: .4;
@@ -2115,7 +2127,7 @@ select:focus-visible {
   border: 1px solid rgba(84, 230, 255, .35);
   border-radius: 50%;
   color: #65f4ff;
-  background: rgba(42, 51, 64, .78);
+  background: rgba(12, 29, 48, .78);
   box-shadow: 0 0 26px rgba(58, 220, 255, .25), inset 0 0 24px rgba(92, 255, 218, .10);
 }
 
@@ -2148,7 +2160,7 @@ select:focus-visible {
   border: 1px solid rgba(101, 230, 255, .20);
   border-radius: 12px;
   color: var(--text);
-  background: rgba(42, 51, 64, .88);
+  background: rgba(10, 22, 39, .88);
 }
 
 .control-panel-status[data-kind="error"] {
@@ -2224,7 +2236,7 @@ select:focus-visible {
   border: 1px solid rgba(84, 230, 255, .35);
   border-radius: 50%;
   color: #65f4ff;
-  background: rgba(42, 51, 64, .78);
+  background: rgba(12, 29, 48, .78);
   box-shadow: 0 0 22px rgba(58, 220, 255, .20);
 }
 
@@ -2245,7 +2257,7 @@ select:focus-visible {
   border-radius: 14px;
   color: var(--text);
   text-align: left;
-  background: rgba(42, 51, 64, .72);
+  background: rgba(10, 22, 39, .72);
   transition: border-color .18s ease, background .18s ease, transform .18s ease;
 }
 
@@ -2253,7 +2265,7 @@ select:focus-visible {
 .control-conversation-choice:focus-visible {
   border-color: rgba(62, 243, 190, .56);
   outline: 0;
-  background: rgba(54, 61, 70, .90);
+  background: rgba(18, 42, 57, .90);
   box-shadow: 0 0 0 3px rgba(62, 243, 190, .10);
 }
 
@@ -2339,7 +2351,7 @@ select:focus-visible {
   border-radius: 16px;
   background:
     linear-gradient(135deg, rgba(27, 255, 196, .10), rgba(132, 80, 255, .08)),
-    rgba(42, 51, 64, .74);
+    rgba(8, 17, 32, .74);
 }
 
 .control-avatar {
@@ -2385,7 +2397,7 @@ select:focus-visible {
 .control-quick-action {
   border: 1px solid rgba(111, 229, 255, .24);
   color: var(--text);
-  background: rgba(42, 51, 64, .78);
+  background: rgba(12, 25, 43, .78);
   box-shadow: inset 0 0 20px rgba(94, 234, 255, .05);
 }
 
@@ -2451,7 +2463,7 @@ select:focus-visible {
   padding: 10px;
   border: 1px solid rgba(111, 229, 255, .18);
   border-radius: 14px;
-  background: rgba(42, 51, 64, .68);
+  background: rgba(10, 21, 37, .68);
 }
 
 .control-info-grid span {
@@ -2482,7 +2494,7 @@ select:focus-visible {
   padding: 0 12px;
   border: 1px solid rgba(109, 231, 255, .24);
   border-radius: 14px;
-  background: rgba(42, 51, 64, .82);
+  background: rgba(7, 16, 30, .82);
 }
 
 .control-search input {
@@ -2518,7 +2530,7 @@ select:focus-visible {
   border-radius: 16px;
   background:
     radial-gradient(circle at 0 0, rgba(68, 245, 215, .14), transparent 18rem),
-    rgba(48, 56, 67, .82);
+    rgba(5, 16, 31, .82);
   box-shadow: 0 18px 52px rgba(0, 0, 0, .22), inset 0 0 28px rgba(80, 235, 255, .04);
 }
 
@@ -2575,7 +2587,7 @@ select:focus-visible {
   padding: 10px;
   border: 1px solid rgba(130, 232, 255, .14);
   border-radius: 13px;
-  background: rgba(42, 51, 64, .72);
+  background: rgba(8, 19, 35, .72);
 }
 
 .control-detail-list article > span:nth-child(2),
@@ -2601,7 +2613,7 @@ select:focus-visible {
   border: 1px solid rgba(84, 233, 255, .24);
   border-radius: 12px;
   color: #66f1ff;
-  background: rgba(54, 61, 70, .88);
+  background: rgba(15, 35, 57, .88);
 }
 
 .control-detail-grid {
@@ -2638,7 +2650,7 @@ select:focus-visible {
   border: 1px solid rgba(111, 229, 255, .24);
   border-radius: 12px;
   color: #dffcff;
-  background: rgba(42, 51, 64, .78);
+  background: rgba(8, 20, 36, .78);
   text-decoration: none;
 }
 
@@ -2646,7 +2658,7 @@ select:focus-visible {
   overflow: hidden;
   border: 1px solid rgba(100, 224, 255, .18);
   border-radius: 16px;
-  background: rgba(48, 56, 67, .68);
+  background: rgba(6, 16, 31, .68);
 }
 
 .control-section.is-danger {
@@ -2676,7 +2688,7 @@ select:focus-visible {
   place-items: center;
   border: 1px solid rgba(101, 230, 255, .22);
   border-radius: 12px;
-  background: rgba(54, 61, 70, .78);
+  background: rgba(15, 29, 51, .78);
 }
 
 .control-section-head small {
@@ -2701,7 +2713,7 @@ select:focus-visible {
   border-bottom: 1px solid rgba(116, 228, 255, .09);
   color: var(--text);
   text-align: left;
-  background: rgba(42, 51, 64, .34);
+  background: rgba(5, 13, 26, .34);
 }
 
 .control-option:last-child {
@@ -2748,7 +2760,7 @@ select:focus-visible {
   height: 24px;
   border: 1px solid rgba(134, 238, 255, .26);
   border-radius: 999px;
-  background: rgba(42, 51, 64, .88);
+  background: rgba(24, 36, 54, .88);
 }
 
 .control-switch::after {
@@ -2783,7 +2795,7 @@ select:focus-visible {
   border: 1px solid rgba(118, 232, 255, .24);
   border-radius: 10px;
   color: var(--text);
-  background: rgba(42, 51, 64, .96);
+  background: rgba(7, 16, 31, .96);
 }
 
 .control-option.is-stat {
@@ -2805,14 +2817,14 @@ select:focus-visible {
   --control-theme-thread:
     radial-gradient(circle at 16% 10%, rgba(53, 244, 182, .10), transparent 28rem),
     radial-gradient(circle at 84% 16%, rgba(102, 231, 255, .08), transparent 28rem),
-    rgba(48, 56, 67, .90);
+    rgba(3, 9, 19, .90);
   --control-theme-header:
-    linear-gradient(110deg, rgba(48, 56, 67, .90), rgba(48, 56, 67, .80)),
-    rgba(48, 56, 67, .76);
+    linear-gradient(110deg, rgba(4, 16, 32, .90), rgba(7, 20, 33, .80)),
+    rgba(2, 7, 15, .76);
   --control-theme-panel:
     radial-gradient(circle at 12% 5%, rgba(53, 244, 182, .18), transparent 16rem),
     radial-gradient(circle at 92% 18%, rgba(155, 103, 255, .20), transparent 17rem),
-    linear-gradient(145deg, rgba(54, 61, 70, .96), rgba(48, 56, 67, .98));
+    linear-gradient(145deg, rgba(4, 12, 26, .96), rgba(5, 8, 18, .98));
   --control-wallpaper:
     radial-gradient(circle at 15% 18%, rgba(53, 244, 182, .08), transparent 30%),
     radial-gradient(circle at 82% 22%, rgba(102, 231, 255, .06), transparent 28%),
@@ -2982,32 +2994,6 @@ select:focus-visible {
   --control-wallpaper-size: auto, 220px 100%, auto, auto;
 }
 
-/*
- * PulseSoc Cosmic — the default conversation wallpaper, and the web twin of
- * `mobile-native/src/theme/chatWallpaper.ts`. Deep navy into indigo, one soft
- * blue glow with a cyan highlight beside it, a light violet accent opposite,
- * and two wide low-alpha curves.
- *
- * Keep these values in step with the native spec. They are not free choices:
- * they are the output of the contrast objective in
- * `mobile-native/src/theme/__tests__/chatWallpaperContrast.test.ts`, which
- * balances the outgoing bubble dissolving into a bright field against the
- * incoming bubble dissolving into a dark one. Brightening any layer here
- * reintroduces the failure that test exists to catch.
- */
-.comm-shell[data-control-wallpaper="pulsesoc_cosmic"] {
-  --control-wallpaper:
-    radial-gradient(circle at 78% 14%, rgba(52, 104, 204, .12), transparent 26rem),
-    radial-gradient(circle at 88% 44%, rgba(72, 196, 226, .06), transparent 16rem),
-    radial-gradient(circle at 14% 80%, rgba(66, 74, 178, .09), transparent 28rem),
-    radial-gradient(circle at 6% 12%, rgba(124, 96, 212, .06), transparent 18rem),
-    radial-gradient(ellipse at 44% 58%, rgba(96, 150, 232, .033), transparent 24rem),
-    linear-gradient(180deg, #050D20 0%, #08132C 34%, #091631 66%, #060F21 100%);
-  --control-wallpaper-size: auto, auto, auto, auto, auto, auto;
-  --control-wallpaper-overlay:
-    linear-gradient(180deg, rgba(4, 9, 20, .20), rgba(4, 9, 20, 0) 45%, rgba(3, 7, 16, .30));
-}
-
 .comm-shell[data-control-wallpaper="cosmic_ocean"] {
   --control-wallpaper: radial-gradient(ellipse at 42% 105%, rgba(45, 224, 192, .18), transparent 28rem), radial-gradient(circle at 88% 18%, rgba(58, 141, 255, .14), transparent 24rem), linear-gradient(180deg, rgba(1, 10, 20, .96), rgba(1, 18, 27, .98));
   --control-wallpaper-size: auto, auto, auto;
@@ -3094,13 +3080,13 @@ select:focus-visible {
 
 .comm-shell .composer {
   background:
-    linear-gradient(180deg, rgba(48, 56, 67, .10), rgba(48, 56, 67, .78)),
+    linear-gradient(180deg, rgba(2, 7, 15, .10), rgba(2, 7, 15, .78)),
     color-mix(in srgb, var(--control-accent) 6%, transparent);
   box-shadow: 0 -18px 45px rgba(0, 0, 0, .24), 0 -1px 0 var(--control-theme-border);
 }
 
 .comm-shell .composer-status {
-  background: color-mix(in srgb, var(--control-accent) 7%, rgba(48, 56, 67, .94));
+  background: color-mix(in srgb, var(--control-accent) 7%, rgba(2, 7, 15, .94));
 }
 
 .comm-shell .composer-input-shell input,
@@ -3238,7 +3224,7 @@ select:focus-visible {
   border-radius: 12px;
   background:
     radial-gradient(circle at 0 0, rgba(56, 221, 160, .08), transparent 20rem),
-    rgba(54, 61, 70, .98);
+    rgba(5, 14, 27, .98);
   box-shadow: var(--shadow);
 }
 
@@ -3286,63 +3272,6 @@ select:focus-visible {
   gap: 8px;
 }
 
-/* Deliberately the inverse condition, so the two cannot both vanish: the nav is
-   hidden by default and only turns on where the dock turns off. */
-.messenger-app-nav {
-  display: none;
-}
-
-@media (min-width: 1024px) {
-  .messenger-app-nav {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 4px;
-    margin: 0 12px 4px;
-    padding: 4px;
-    border: 1px solid rgba(105, 218, 240, .14);
-    border-radius: 12px;
-    background: rgba(255, 255, 255, .03);
-  }
-
-  .messenger-app-nav a {
-    display: grid;
-    gap: 2px;
-    min-width: 0;
-    padding: 6px 2px;
-    border-radius: 9px;
-    color: var(--text-secondary, #9fb5c0);
-    font-weight: 800;
-    text-align: center;
-    text-decoration: none;
-    place-items: center;
-  }
-
-  .messenger-app-nav a > span {
-    font-size: 15px;
-    line-height: 1;
-  }
-
-  .messenger-app-nav small {
-    overflow: hidden;
-    font-size: 10px;
-    line-height: 1;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .messenger-app-nav a:hover {
-    background: rgba(105, 218, 240, .10);
-    color: var(--text-primary, #f2fbff);
-  }
-
-  /* The current page is a destination too -- it just isn't a trip. Marked so
-     the row reads as "where you are" and not as five equal offers. */
-  .messenger-app-nav a.is-active {
-    background: rgba(105, 218, 240, .16);
-    color: var(--text-primary, #f2fbff);
-  }
-}
-
 .pulse-messenger-dock {
   position: fixed;
   left: 50%;
@@ -3356,40 +3285,10 @@ select:focus-visible {
   padding: 6px;
   border: 1px solid rgba(105, 218, 240, .18);
   border-radius: 16px;
-  background: rgba(54, 61, 70, .88);
+  background: rgba(3, 9, 19, .88);
   box-shadow: 0 18px 54px rgba(0, 0, 0, .44), 0 0 28px rgba(105, 218, 240, .08);
   transform: translateX(-50%);
   backdrop-filter: blur(20px);
-}
-
-/* The second floating dock, suppressed above the desktop breakpoint.
-
-   `pulse_desktop_shell.css` suppresses `.mobile-bottom-nav.pulse-universal-dock`
-   above 1024px, and a guard test pins that. Neither reached here: this is a
-   different dock, in a different sheet, under a different class name, and it
-   was declared `position:fixed; display:grid` with no width condition at all --
-   so the phone's navigation floated over the messenger at every desktop width.
-   Measured at 1728px before this change: a 520x62 pill, centred, z-index 60.
-
-   It survived because every other rule that touches it is inside
-   `max-width: 840px`, which reads like a mobile-only component at a glance. The
-   unconditional base rule directly above is the one that was doing the damage.
-
-   1024 rather than this sheet's own 840, because the breakpoint is a statement
-   about which navigation the product is showing, and that answer has to match
-   Home's. Below it, the phone dock; above it, `.messenger-app-nav` in the
-   conversation column. Never both, never neither.
-
-   BELOW the base rule on purpose, and not a stylistic preference. A media query
-   adds no specificity, so the first version of this fix sat above the `display:
-   grid` above and lost the cascade to it -- the sheet parsed, the source guard
-   went green, and the dock still rendered at 1920. Anything that moves this
-   block back up re-opens the bug; `test_no_floating_dock_on_desktop.py` asserts
-   the ordering for that reason. */
-@media (min-width: 1024px) {
-  .pulse-messenger-dock {
-    display: none;
-  }
 }
 
 .pulse-messenger-dock a {
@@ -3672,6 +3571,7 @@ select:focus-visible {
   .attachment-preview-rail,
   .voice-recorder,
   .attachment-sheet,
+  .emoji-panel,
   .composer,
   .composer-status {
     padding-inline: 10px;

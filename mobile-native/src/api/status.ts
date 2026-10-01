@@ -1,8 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL, PULSESOC_QA_STATUS_FIXTURES } from "./config";
 import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "./feed";
-import { isMediaUnavailable } from "../media/mediaContract";
-import { readJsonCacheEntry, writeJsonCache } from "../core/cache";
 import { pulseApi, PulseApiError } from "./pulseApi";
 
 const STATUS_CACHE_PREFIX = "pulsesoc.native.status.";
@@ -23,13 +21,6 @@ export type PulseStatusMusic = {
   mood?: string;
   genre?: string;
   duration_seconds?: number;
-  /**
-   * The owner has taken this track down. The track is still attached -- the
-   * post, its caption and its engagement are untouched -- but no url will be
-   * served for it and nothing should try to load one.
-   */
-  audio_unavailable?: boolean;
-  audio_unavailable_state?: string;
 };
 
 export type StatusVisibility = "public" | "followers" | "private";
@@ -219,37 +210,23 @@ export async function generateStatusAiStory(prompt: string, style = "cinematic")
   });
 }
 
-type CachedStatuses = { items?: PulseStatus[]; rail_items?: PulseStatus[] };
-
-const normalizeCachedStatuses = (cached: CachedStatuses): CachedStatuses => ({
-  items: normalizeStatuses(cached?.items || []),
-  rail_items: normalizeStatuses(cached?.rail_items || [])
-});
-
-/**
- * The cached lane together with how old it is.
- *
- * Status is the surface where age matters most: the content expires by design,
- * so a cached lane shown without its age can be advertising a story that ended
- * hours ago as if it were live.
- */
-export async function loadCachedStatusesSnapshot(lane = "for_you") {
-  const entry = await readJsonCacheEntry<CachedStatuses>(statusCacheKey(lane), normalizeCachedStatuses);
-  return {
-    items: entry?.value.items || [],
-    rail_items: entry?.value.rail_items || [],
-    storedAt: entry?.storedAt ?? null,
-    ageMs: entry?.ageMs ?? null
-  };
-}
-
 export async function loadCachedStatuses(lane = "for_you") {
-  const snapshot = await loadCachedStatusesSnapshot(lane);
-  return { items: snapshot.items, rail_items: snapshot.rail_items };
+  try {
+    const cached = await AsyncStorage.getItem(statusCacheKey(lane));
+    if (!cached) return { items: [], rail_items: [] };
+    const parsed = JSON.parse(cached) as { items?: PulseStatus[]; rail_items?: PulseStatus[] };
+    return {
+      items: normalizeStatuses(parsed.items || []),
+      rail_items: normalizeStatuses(parsed.rail_items || [])
+    };
+  } catch {
+    await AsyncStorage.removeItem(statusCacheKey(lane)).catch(() => undefined);
+    return { items: [], rail_items: [] };
+  }
 }
 
 export async function cacheStatuses(lane: string, items: PulseStatus[], railItems: PulseStatus[]) {
-  await writeJsonCache(statusCacheKey(lane), { items: items.slice(0, 80), rail_items: railItems.slice(0, 24) });
+  await AsyncStorage.setItem(statusCacheKey(lane), JSON.stringify({ items: items.slice(0, 80), rail_items: railItems.slice(0, 24) }));
 }
 
 export async function trackStatusView(statusId: number, params: { completed?: boolean; completionRatio?: number; watchMs?: number } = {}) {
@@ -401,46 +378,12 @@ function readStatusSavedFlag(item: PulseStatus): boolean | undefined {
   return undefined;
 }
 
-/**
- * Video must play from the transcoded stream, never from the uploaded original.
- *
- * `valid_url` is the backend's "this file is reachable" URL, which for a video
- * is the raw `.mov` on the media CDN. Cloudflare answers those with a managed
- * challenge (403 + an HTML page), so AVPlayer is handed a web page instead of a
- * movie: it never loads, never fires a playback error the viewer checks, and
- * the Status renders as a black rectangle with working chrome on top of it.
- * Ordering `valid_url` first therefore broke every video Status while leaving
- * photo Statuses fine, which is exactly how it presented.
- *
- * Reels already resolve `playback_url || hls_url || media_url` and never
- * consult `valid_url`; this brings Statuses onto that same order. The kind
- * check keeps photos on their current path — for an image the backend fills
- * `playback_url` with a first-party `/stream` route, which is not what an
- * `<Image>` should be pointed at.
- *
- * Mux is the transcode pipeline, so the playback id is the primary source and
- * not a fallback: as of 2026-09-14 all 68 video Statuses in production carry a
- * `ready` Mux asset. `reelVideoUrl`, `reelMediaKind`'s `slideVideoUrl` and every
- * web surface build the HLS URL from the id first and only then look at stored
- * URL columns, and Statuses were the one surface that didn't. Deriving from the
- * id means a row whose `playback_url` was never persisted still plays, instead
- * of falling through the chain to `valid_url` and the challenge page.
- */
 export function statusMediaUrl(status: PulseStatus) {
   const media = (status.media || [])[0] || {};
-  if (mediaKind(media) === "video") {
-    const playbackId = String(media.mux_playback_id || "").trim();
-    if (playbackId) return `https://stream.mux.com/${playbackId}.m3u8`;
-  }
-  const preferred = mediaKind(media) === "video"
-    ? media.playback_url || media.hls_url || media.mux_hls_url || media.valid_url || media.media_url || media.url
-    : media.valid_url || media.media_url || media.url;
-  return mediaDisplayUrl({ ...media, media_url: preferred || "" });
-}
-
-/** True when the backend has marked this Status's media as gone for good. */
-export function statusMediaUnavailable(status: PulseStatus) {
-  return isMediaUnavailable((status.media || [])[0]);
+  return mediaDisplayUrl({
+    ...media,
+    media_url: media.valid_url || media.playback_url || media.hls_url || media.media_url || media.url || ""
+  });
 }
 
 export function statusPosterUrl(status: PulseStatus) {
@@ -459,13 +402,6 @@ export function statusMediaKind(status: PulseStatus) {
 
 export function statusMusicLabel(status: PulseStatus) {
   const music = status.music || {};
-  // A taken-down track arrives with its title and artist blanked -- the server
-  // will not hand out a removed song's metadata -- so without this the line
-  // simply vanishes and the status plays silently with no explanation. The
-  // attachment is still real and the status is unchanged; what is gone is the
-  // sound, and saying so is the difference between an honest surface and one
-  // that looks like it lost the music by accident.
-  if (music.audio_unavailable) return "Audio unavailable";
   const title = music.audio_title || music.title || "";
   const artist = music.audio_artist || music.artist || "";
   if (title && artist) return `${title} · ${artist}`;

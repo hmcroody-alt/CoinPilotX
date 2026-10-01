@@ -23,7 +23,6 @@ import {
 } from "../api/messenger";
 import { PULSE_AI_CONVERSATION_ID, PULSE_AI_DISPLAY_NAME } from "../api/messenger";
 import { translate, useTranslation } from "../i18n";
-import { BLUE_GRAPHITE_LEVELS } from "../theme/blueGraphite";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatFileSize } from "../utils/format";
@@ -42,13 +41,6 @@ type Props = {
   // and must never be used to claim the other person is online.
   activityStatus?: string;
   assistantConversation?: boolean;
-  /**
-   * Called with `appearance.wallpaper` whenever this sheet learns it — on load
-   * and after a save. The chat screen draws the background, so it needs to be
-   * told; without this a new pick would not appear until the thread was
-   * reopened.
-   */
-  onWallpaperChange?: (wallpaper: string) => void;
   onClose: () => void;
   onOpenSafety: (section: "reports" | "blocks") => void;
   onStartCall?: (callType: "audio" | "video") => void;
@@ -126,10 +118,7 @@ const OPTIONS: Record<string, SelectOption[]> = {
   mute_choice: [["off", "messaging:controls.options.muteChoice.off"], ["1_hour", "messaging:controls.options.muteChoice.hour1"], ["8_hours", "messaging:controls.options.muteChoice.hours8"], ["today", "messaging:controls.options.muteChoice.today"], ["1_week", "messaging:controls.options.muteChoice.week1"], ["forever", "messaging:controls.options.muteChoice.forever"]],
   sound: [["pulse_beam", "messaging:controls.options.sound.pulseBeam"], ["soft_orbit", "messaging:controls.options.sound.softOrbit"], ["deep_signal", "messaging:controls.options.sound.deepSignal"], ["crystal_ping", "messaging:controls.options.sound.crystalPing"], ["silent", "messaging:controls.options.sound.silent"]],
   theme: [["dark_galaxy", "messaging:controls.options.theme.darkGalaxy"], ["pulse_green", "messaging:controls.options.theme.pulseGreen"], ["deep_space", "messaging:controls.options.theme.deepSpace"], ["nebula", "messaging:controls.options.theme.nebula"], ["cyber_night", "messaging:controls.options.theme.cyberNight"], ["solar_flame", "messaging:controls.options.theme.solarFlame"], ["ocean_signal", "messaging:controls.options.theme.oceanSignal"], ["royal_purple", "messaging:controls.options.theme.royalPurple"], ["haiti_night", "messaging:controls.options.theme.haitiNight"], ["creator_gold", "messaging:controls.options.theme.creatorGold"]],
-  // PulseSoc Cosmic leads the list because it is the default a conversation
-  // already has. Every other id stays exactly where it was — this adds a
-  // choice, it does not take one away.
-  wallpaper: [["pulsesoc_cosmic", "messaging:controls.options.wallpaper.pulsesocCosmic"], ["deep_space", "messaging:controls.options.wallpaper.deepSpace"], ["neon_planet", "messaging:controls.options.wallpaper.neonPlanet"], ["galaxy_grid", "messaging:controls.options.wallpaper.galaxyGrid"], ["pulse_horizon", "messaging:controls.options.wallpaper.pulseHorizon"], ["alien_city", "messaging:controls.options.wallpaper.alienCity"], ["cosmic_ocean", "messaging:controls.options.wallpaper.cosmicOcean"], ["aurora_signal", "messaging:controls.options.wallpaper.auroraSignal"], ["dark_nebula", "messaging:controls.options.wallpaper.darkNebula"], ["star_tunnel", "messaging:controls.options.wallpaper.starTunnel"], ["minimal_black", "messaging:controls.options.wallpaper.minimalBlack"]],
+  wallpaper: [["deep_space", "messaging:controls.options.wallpaper.deepSpace"], ["neon_planet", "messaging:controls.options.wallpaper.neonPlanet"], ["galaxy_grid", "messaging:controls.options.wallpaper.galaxyGrid"], ["pulse_horizon", "messaging:controls.options.wallpaper.pulseHorizon"], ["alien_city", "messaging:controls.options.wallpaper.alienCity"], ["cosmic_ocean", "messaging:controls.options.wallpaper.cosmicOcean"], ["aurora_signal", "messaging:controls.options.wallpaper.auroraSignal"], ["dark_nebula", "messaging:controls.options.wallpaper.darkNebula"], ["star_tunnel", "messaging:controls.options.wallpaper.starTunnel"], ["minimal_black", "messaging:controls.options.wallpaper.minimalBlack"]],
   bubble_color: [["cyan", "messaging:controls.options.bubbleColor.cyan"], ["purple", "messaging:controls.options.bubbleColor.purple"], ["rose", "messaging:controls.options.bubbleColor.rose"], ["orange", "messaging:controls.options.bubbleColor.orange"], ["green", "messaging:controls.options.bubbleColor.green"], ["gold", "messaging:controls.options.bubbleColor.gold"], ["blue", "messaging:controls.options.bubbleColor.blue"]],
   font_size: [["small", "messaging:controls.options.fontSize.small"], ["medium", "messaging:controls.options.fontSize.medium"], ["large", "messaging:controls.options.fontSize.large"], ["extra_large", "messaging:controls.options.fontSize.extraLarge"]],
   density: [["compact", "messaging:controls.options.density.compact"], ["balanced", "messaging:controls.options.density.balanced"], ["relaxed", "messaging:controls.options.density.relaxed"]],
@@ -208,7 +197,7 @@ function createAssistantControlData(messageCount: number, connected: boolean): C
   };
 }
 
-export function ConversationControlCenter({ visible, conversationId, title, messages, connected = true, activityStatus = "", assistantConversation = false, onWallpaperChange, onClose, onOpenSafety, onStartCall }: Props) {
+export function ConversationControlCenter({ visible, conversationId, title, messages, connected = true, activityStatus = "", assistantConversation = false, onClose, onOpenSafety, onStartCall }: Props) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Section[]>(["conversation"]);
@@ -239,15 +228,13 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
       }
       const next = await getConversationControlCenter(conversationId);
       setControlData(next);
-      const wallpaper = next.settings?.appearance?.wallpaper;
-      if (typeof wallpaper === "string") onWallpaperChange?.(wallpaper);
       setNotice("");
     } catch (error) {
       setNotice(errorMessage(error, t("messaging:controls.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [assistantConversation, connected, conversationId, messages.length, onWallpaperChange, t, visible]);
+  }, [assistantConversation, connected, conversationId, messages.length, t, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -456,7 +443,6 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
     try {
       const data = await updateConversationControlSetting(conversationId, row.setting.section, row.setting.key, nextValue);
       setControlData((current) => ({ ...(current || {}), ...data, settings: data.settings || current?.settings }));
-      if (row.setting.section === "appearance" && row.setting.key === "wallpaper" && typeof nextValue === "string") onWallpaperChange?.(nextValue);
       setNotice(t("messaging:controls.settingSaved", { label: row.label }));
     } catch (error) {
       setNotice(errorMessage(error, t("messaging:controls.settingSaveFailed", { label: row.label })));
@@ -996,17 +982,17 @@ function SettingRow({ row, settings, saving, onSaveSetting, onPress }: { row: Ro
 
 const styles = createThemedStyles(() => ({
   backdrop: { backgroundColor: "rgba(0,0,0,0.64)", flex: 1, justifyContent: "flex-end" },
-  sheet: { backgroundColor: BLUE_GRAPHITE_LEVELS.panel, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, height: "92%", padding: 0 },
+  sheet: { backgroundColor: "#030b19", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, height: "92%", padding: 0 },
   handle: { alignSelf: "center", backgroundColor: "#60759a", borderRadius: 3, height: 5, marginTop: 10, width: 54 },
-  header: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.raised, borderBottomColor: "#18395a", borderBottomWidth: 1, flexDirection: "row", gap: 10, padding: 14 },
-  gear: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.inset, borderColor: "#1e6176", borderRadius: 23, borderWidth: 1, height: 46, justifyContent: "center", width: 46 },
+  header: { alignItems: "center", backgroundColor: "#0d1734", borderBottomColor: "#18395a", borderBottomWidth: 1, flexDirection: "row", gap: 10, padding: 14 },
+  gear: { alignItems: "center", backgroundColor: "#10233a", borderColor: "#1e6176", borderRadius: 23, borderWidth: 1, height: 46, justifyContent: "center", width: 46 },
   gearText: { color: "#63e8f5", fontSize: 23 },
   headerCopy: { flex: 1 },
   title: { color: colors.text, fontSize: 18, fontWeight: "900" },
   subtitle: { color: colors.muted, fontSize: 12, marginTop: 2 },
-  headerButton: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.inset, borderColor: "#1e6176", borderRadius: 17, borderWidth: 1, height: 42, justifyContent: "center", width: 42 },
+  headerButton: { alignItems: "center", backgroundColor: "#10233a", borderColor: "#1e6176", borderRadius: 17, borderWidth: 1, height: 42, justifyContent: "center", width: 42 },
   headerButtonText: { color: colors.accent, fontSize: 19, fontWeight: "900" },
-  close: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.inset, borderColor: "#6f4c9c", borderRadius: 17, borderWidth: 1, height: 42, justifyContent: "center", width: 42 },
+  close: { alignItems: "center", backgroundColor: "#171d3b", borderColor: "#6f4c9c", borderRadius: 17, borderWidth: 1, height: 42, justifyContent: "center", width: 42 },
   closeText: { color: colors.text, fontSize: 24 },
   content: { gap: 10, paddingBottom: 38 },
   dashboard: { borderColor: "#17485d", borderRadius: 18, borderWidth: 1, gap: 10, margin: 12, padding: 12 },
@@ -1022,13 +1008,13 @@ const styles = createThemedStyles(() => ({
   quickIcon: { color: "#65eafb", fontSize: 19 },
   quickLabel: { color: colors.text, fontSize: 10, fontWeight: "800", marginTop: 4, textAlign: "center" },
   metrics: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  dashboardMetric: { backgroundColor: BLUE_GRAPHITE_LEVELS.raised, borderColor: "#173c50", borderRadius: 12, borderWidth: 1, minHeight: 58, padding: 9, width: "48.8%" },
+  dashboardMetric: { backgroundColor: "#071326", borderColor: "#173c50", borderRadius: 12, borderWidth: 1, minHeight: 58, padding: 9, width: "48.8%" },
   metricLabel: { color: colors.text, fontSize: 11, fontWeight: "800" },
   metricValue: { color: colors.muted, fontSize: 11, marginTop: 5 },
-  searchWrap: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.inset, borderColor: "#1c4c63", borderRadius: 15, borderWidth: 1, flexDirection: "row", marginHorizontal: 12, paddingHorizontal: 12 },
+  searchWrap: { alignItems: "center", backgroundColor: "#030b19", borderColor: "#1c4c63", borderRadius: 15, borderWidth: 1, flexDirection: "row", marginHorizontal: 12, paddingHorizontal: 12 },
   searchIcon: { color: "#67eafb", fontSize: 18 },
   search: { color: colors.text, flex: 1, minHeight: 48, paddingHorizontal: 10 },
-  detailPanel: { backgroundColor: BLUE_GRAPHITE_LEVELS.raised, borderColor: "#1f6076", borderRadius: 16, borderWidth: 1, gap: 9, marginHorizontal: 12, padding: 12 },
+  detailPanel: { backgroundColor: "#071326", borderColor: "#1f6076", borderRadius: 16, borderWidth: 1, gap: 9, marginHorizontal: 12, padding: 12 },
   detailHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   detailTitle: { color: colors.text, fontSize: 17, fontWeight: "900" },
   detailSubtitle: { color: colors.muted, fontSize: 11, marginTop: 3 },
@@ -1041,8 +1027,8 @@ const styles = createThemedStyles(() => ({
   chatSearchButtonText: { color: "#001118", fontWeight: "900" },
   section: { borderColor: "#143a4e", borderRadius: 16, borderWidth: 1, marginHorizontal: 12, overflow: "hidden" },
   dangerSection: { borderColor: "#702642" },
-  sectionHeader: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.raised, flexDirection: "row", gap: 10, minHeight: 70, padding: 12 },
-  sectionIcon: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.inset, borderColor: "#1d5268", borderRadius: 12, borderWidth: 1, height: 46, justifyContent: "center", width: 46 },
+  sectionHeader: { alignItems: "center", backgroundColor: "#0c1730", flexDirection: "row", gap: 10, minHeight: 70, padding: 12 },
+  sectionIcon: { alignItems: "center", backgroundColor: "#10233a", borderColor: "#1d5268", borderRadius: 12, borderWidth: 1, height: 46, justifyContent: "center", width: 46 },
   sectionIconText: { color: "#61e9f6", fontSize: 20 },
   sectionCopy: { flex: 1 },
   sectionTitle: { color: colors.text, fontSize: 17, fontWeight: "900" },

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" role="img" aria-labelledby="title desc">
+  <title id="title">CoinPilotX whale alert visual</title>
+  <desc id="desc">Original abstract visual showing large blockchain movement and market pressure.</desc>
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#36e58f"/><stop offset="1" stop-color="#6edff6"/></linearGradient></defs>
+  <rect width="640" height="420" rx="34" fill="#08111f"/>
+  <g opacity=".22" stroke="#6edff6"><path d="M86 86h468M86 146h468M86 206h468M86 266h468M86 326h468"/><path d="M116 56v308M216 56v308M316 56v308M416 56v308M516 56v308"/></g>
+  <path d="M104 254c76-70 142-72 224-10 63 47 134 36 208-28" fill="none" stroke="url(#g)" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="455" cy="226" r="66" fill="#36e58f" opacity=".13"/>
+  <path d="M182 186c28-38 80-48 123-20 28 18 64 18 95-3-16 54-65 92-125 92h-66c-22 0-41-12-50-31-12 0-24-5-33-14 19-2 35-10 56-24z" fill="url(#g)" opacity=".9"/>
+  <rect x="88" y="310" width="464" height="58" rx="18" fill="#0d1627" stroke="#6edff6"/>
+  <text x="118" y="347" fill="#f5f8ff" font-family="Arial, sans-serif" font-size="24" font-weight="700">Large Transfer Detected</text>
+</svg>

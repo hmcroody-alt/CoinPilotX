@@ -11,7 +11,6 @@ from datetime import datetime, timedelta
 from . import app_links
 from . import user_context
 from . import email_service
-from . import email_send_guard
 from . import push_service
 from . import sms_service
 from . import db as db_service
@@ -755,14 +754,7 @@ def _ensure_failed_email_queue(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_failed_email_queue_idempotency ON failed_email_queue(idempotency_key)")
 
 
-def _queue_email_job(user_id, to_email, subject, html_body, text_body="", email_type="transactional", metadata=None, notification_id=0, send_after=""):
-    """Put one email in the outbox.
-
-    ``send_after`` (UTC ISO) holds the row back until that moment. The
-    processors already filter on ``next_retry_at <= now``, so a future value
-    schedules the send without needing a scheduler: the retry clock and the
-    "not yet" clock are the same column. Default is "send at the next pass".
-    """
+def _queue_email_job(user_id, to_email, subject, html_body, text_body="", email_type="transactional", metadata=None, notification_id=0):
     metadata = metadata or {}
     trace_id = _notification_trace_id(metadata)
     if not to_email:
@@ -794,7 +786,7 @@ def _queue_email_job(user_id, to_email, subject, html_body, text_body="", email_
         existing_status = existing[1] if not hasattr(existing, "keys") else existing["status"]
         existing_trace = existing[2] if not hasattr(existing, "keys") else existing["trace_id"]
         return {"ok": True, "status": existing_status or "queued", "provider": "brevo", "queue_id": int(existing_id or 0), "trace_id": existing_trace or trace_id, "duplicate": True}
-    next_retry_at = str(send_after or "").strip() or datetime.utcnow().isoformat(timespec="seconds")
+    next_retry_at = datetime.utcnow().isoformat(timespec="seconds")
     cur.execute(
         """
         INSERT INTO failed_email_queue
@@ -820,39 +812,14 @@ def _queue_email_job(user_id, to_email, subject, html_body, text_body="", email_
     queue_id = int(getattr(cur, "lastrowid", 0) or 0)
     conn.commit()
     conn.close()
-    logging.info("PULSE_EMAIL_JOB_QUEUED user_id=%s notification_id=%s queue_id=%s trace_id=%s send_after=%s", user_id, notification_id, queue_id, trace_id, next_retry_at)
-    # A row held for later would only be looked at and put back, so a deferred
-    # enqueue does not wake the processor.
-    if next_retry_at <= datetime.utcnow().isoformat(timespec="seconds"):
-        schedule_email_queue_processing(reason="notification_email_queued")
-    return {"ok": True, "status": "queued", "provider": "brevo", "queue_id": queue_id, "trace_id": trace_id, "send_after": next_retry_at}
+    logging.info("PULSE_EMAIL_JOB_QUEUED user_id=%s notification_id=%s queue_id=%s trace_id=%s", user_id, notification_id, queue_id, trace_id)
+    schedule_email_queue_processing(reason="notification_email_queued")
+    return {"ok": True, "status": "queued", "provider": "brevo", "queue_id": queue_id, "trace_id": trace_id}
 
 
 def _email_retry_at(attempts):
     delay_seconds = min(3600, 30 * (2 ** max(0, int(attempts or 1) - 1)))
     return (datetime.utcnow() + timedelta(seconds=delay_seconds)).isoformat(timespec="seconds")
-
-
-def _finish_email_job(queue_id, status, reason=""):
-    """Close a claimed row without having talked to the provider.
-
-    Used when the guard refuses: the row is terminal, so it must leave
-    'processing' or the claim would strand it, and it must not get a
-    next_retry_at or the next pass would pick it up and ask again forever.
-    """
-    stamp = datetime.utcnow().isoformat(timespec="seconds")
-    conn = user_context.connect()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        UPDATE failed_email_queue
-        SET status=?, last_error=?, next_retry_at='', processed_at=?, updated_at=?
-        WHERE id=?
-        """,
-        (status, str(reason or "")[:1000], stamp, stamp, queue_id),
-    )
-    conn.commit()
-    conn.close()
 
 
 def process_queued_email_notifications(limit=10, provider_send=None):
@@ -877,7 +844,7 @@ def process_queued_email_notifications(limit=10, provider_send=None):
     )
     rows = [dict(row) for row in cur.fetchall()]
     conn.close()
-    sent = retry = dead_letter = skipped = 0
+    sent = retry = dead_letter = 0
     for row in rows:
         queue_id = int(row.get("id") or 0)
         attempts = int(row.get("retry_count") or 0) + 1
@@ -891,19 +858,6 @@ def process_queued_email_notifications(limit=10, provider_send=None):
         claim_conn.commit()
         claim_conn.close()
         if not claimed:
-            continue
-        # The queue doubles as a timer -- a row can be claimed months after it
-        # was written -- so "is this still true?" is asked here, after the claim
-        # and before the send, rather than at enqueue time when the answer was
-        # obviously yes. Email types with no validator are unaffected.
-        may, refusal = email_send_guard.may_send(row)
-        if not may:
-            _finish_email_job(queue_id, "skipped", refusal[:1000])
-            skipped += 1
-            logging.info(
-                "PULSE_EMAIL_JOB_SKIPPED queue_id=%s trace_id=%s reason=%s",
-                queue_id, row.get("trace_id") or "", refusal,
-            )
             continue
         try:
             result = provider_send(
@@ -951,8 +905,7 @@ def process_queued_email_notifications(limit=10, provider_send=None):
         update_conn.commit()
         update_conn.close()
         logging.info("PULSE_EMAIL_JOB_PROCESSED queue_id=%s trace_id=%s status=%s attempts=%s", queue_id, row.get("trace_id") or "", final_status, attempts)
-    return {"ok": True, "attempted": len(rows), "sent": sent, "retry": retry,
-            "dead_letter": dead_letter, "skipped": skipped}
+    return {"ok": True, "attempted": len(rows), "sent": sent, "retry": retry, "dead_letter": dead_letter}
 
 
 def schedule_email_queue_processing(reason="enqueue"):
@@ -1229,14 +1182,8 @@ def create_pulse_notification(
             notification_type = str(metadata.get("type") or note_type or push_type)[:80]
             payload_type = push_type if is_message_like or push_type in {"chat_message", "private_message", "group_message"} else notification_type
             try:
-                # The icon carries one combined number, not the count for
-                # whichever surface happened to fire. Scoping it here (chat for
-                # a message, alerts otherwise) meant every push overwrote the
-                # client reconciler's combined figure with a smaller one, and
-                # dropped commerce unreads entirely — commerce sends no push of
-                # its own, so its count only ever reaches the icon by riding
-                # along on someone else's.
-                badge_count = pulse_icon_badge_count(pulse_badge_counts(user_id))
+                badge_counts = pulse_badge_counts(user_id)
+                badge_count = int(badge_counts.get("chat_unread_count") if is_message_like else badge_counts.get("alert_unread_count") or 0)
             except Exception:
                 badge_count = int(metadata.get("badge") or 0)
             push_metadata = {
@@ -1407,99 +1354,93 @@ def _table_exists(cur, table_name):
 
 
 def pulse_badge_counts(user_id):
-    # Every execute below can raise -- a missing column on any of the optional
-    # tables is enough. The push path calls this per outbound notification and
-    # swallows the exception (notification_service.py:1232), so without the
-    # finally a failure leaks one pooled connection per push, silently.
     conn = user_context.connect()
-    try:
-        cur = conn.cursor()
-        params = [int(user_id), *_message_notification_params()]
-        cur.execute(
-            f"""
-            SELECT COUNT(*)
-            FROM pulse_notifications
-            WHERE user_id=?
-              AND (is_read=0 OR read_at IS NULL)
-              AND NOT ({_message_notification_where_clause()})
-            """,
-            tuple(params),
-        )
-        alert_count = int(cur.fetchone()[0] or 0)
+    cur = conn.cursor()
+    params = [int(user_id), *_message_notification_params()]
+    cur.execute(
+        f"""
+        SELECT COUNT(*)
+        FROM pulse_notifications
+        WHERE user_id=?
+          AND (is_read=0 OR read_at IS NULL)
+          AND NOT ({_message_notification_where_clause()})
+        """,
+        tuple(params),
+    )
+    alert_count = int(cur.fetchone()[0] or 0)
 
-        chat_count = 0
-        commerce_count = 0
-        if _table_exists(cur, "pulse_conversation_participants"):
-            if _table_exists(cur, "pulse_conversations"):
-                # Split by conversation domain. Social Messages lists themselves
-                # already exclude business threads (pulse_conversation_summaries is
-                # called with include_types={"direct"}), so an unscoped badge counts
-                # threads the Messages screen will never render — an unread the user
-                # has no way to clear. Commerce keeps its number; it just carries it
-                # on its own key, for the Commerce Inbox to badge.
-                #
-                # LEFT JOIN, and COALESCE the type: a participant row whose
-                # conversation is missing stays social, which is what it counted as
-                # before this split. Only a row that positively says 'business' moves.
-                cur.execute(
-                    """
-                    SELECT
-                      COALESCE(SUM(CASE WHEN COALESCE(c.conversation_type,'direct') <> 'business'
-                                        AND COALESCE(p.unread_count,0) > 0
-                                   THEN p.unread_count ELSE 0 END),0),
-                      COALESCE(SUM(CASE WHEN COALESCE(c.conversation_type,'direct') = 'business'
-                                        AND COALESCE(p.unread_count,0) > 0
-                                   THEN p.unread_count ELSE 0 END),0)
-                    FROM pulse_conversation_participants p
-                    LEFT JOIN pulse_conversations c ON c.id = p.conversation_id
-                    WHERE p.user_id=? AND COALESCE(p.left_at,'')=''
-                    """,
-                    (int(user_id),),
-                )
-                row = cur.fetchone() or (0, 0)
-                chat_count += int(row[0] or 0)
-                commerce_count += int(row[1] or 0)
-            else:
-                # No conversations table means no conversation_type, and commerce
-                # threads only ever live there — so nothing to separate.
-                cur.execute(
-                    """
-                    SELECT COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)
-                    FROM pulse_conversation_participants
-                    WHERE user_id=? AND COALESCE(left_at,'')=''
-                    """,
-                    (int(user_id),),
-                )
-                chat_count += int(cur.fetchone()[0] or 0)
-        # comm_v2_* and the legacy conversations/private_messages pair carry no
-        # commerce: neither has a business_id or a 'business' conversation_type, and
-        # business_os/messages writes exclusively to pulse_conversations. They are
-        # summed whole, deliberately.
-        if _table_exists(cur, "comm_v2_participants"):
+    chat_count = 0
+    commerce_count = 0
+    if _table_exists(cur, "pulse_conversation_participants"):
+        if _table_exists(cur, "pulse_conversations"):
+            # Split by conversation domain. Social Messages lists themselves
+            # already exclude business threads (pulse_conversation_summaries is
+            # called with include_types={"direct"}), so an unscoped badge counts
+            # threads the Messages screen will never render — an unread the user
+            # has no way to clear. Commerce keeps its number; it just carries it
+            # on its own key, for the Commerce Inbox to badge.
+            #
+            # LEFT JOIN, and COALESCE the type: a participant row whose
+            # conversation is missing stays social, which is what it counted as
+            # before this split. Only a row that positively says 'business' moves.
+            cur.execute(
+                """
+                SELECT
+                  COALESCE(SUM(CASE WHEN COALESCE(c.conversation_type,'direct') <> 'business'
+                                    AND COALESCE(p.unread_count,0) > 0
+                               THEN p.unread_count ELSE 0 END),0),
+                  COALESCE(SUM(CASE WHEN COALESCE(c.conversation_type,'direct') = 'business'
+                                    AND COALESCE(p.unread_count,0) > 0
+                               THEN p.unread_count ELSE 0 END),0)
+                FROM pulse_conversation_participants p
+                LEFT JOIN pulse_conversations c ON c.id = p.conversation_id
+                WHERE p.user_id=? AND COALESCE(p.left_at,'')=''
+                """,
+                (int(user_id),),
+            )
+            row = cur.fetchone() or (0, 0)
+            chat_count += int(row[0] or 0)
+            commerce_count += int(row[1] or 0)
+        else:
+            # No conversations table means no conversation_type, and commerce
+            # threads only ever live there — so nothing to separate.
             cur.execute(
                 """
                 SELECT COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)
-                FROM comm_v2_participants
-                WHERE user_id=? AND COALESCE(membership_state,'active')='active' AND COALESCE(left_at,'')=''
+                FROM pulse_conversation_participants
+                WHERE user_id=? AND COALESCE(left_at,'')=''
                 """,
                 (int(user_id),),
             )
             chat_count += int(cur.fetchone()[0] or 0)
-        if _table_exists(cur, "conversations") and _table_exists(cur, "conversation_members") and _table_exists(cur, "private_messages"):
-            cur.execute(
-                """
-                SELECT COUNT(*)
-                FROM private_messages pm
-                JOIN conversation_members cm ON cm.conversation_id=pm.conversation_id AND cm.user_id=?
-                WHERE pm.sender_user_id != ?
-                  AND pm.deleted_at IS NULL
-                  AND pm.created_at > COALESCE(cm.last_read_at, '')
-                """,
-                (int(user_id), int(user_id)),
-            )
-            chat_count += int(cur.fetchone()[0] or 0)
-    finally:
-        conn.close()
+    # comm_v2_* and the legacy conversations/private_messages pair carry no
+    # commerce: neither has a business_id or a 'business' conversation_type, and
+    # business_os/messages writes exclusively to pulse_conversations. They are
+    # summed whole, deliberately.
+    if _table_exists(cur, "comm_v2_participants"):
+        cur.execute(
+            """
+            SELECT COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)
+            FROM comm_v2_participants
+            WHERE user_id=? AND COALESCE(membership_state,'active')='active' AND COALESCE(left_at,'')=''
+            """,
+            (int(user_id),),
+        )
+        chat_count += int(cur.fetchone()[0] or 0)
+    if _table_exists(cur, "conversations") and _table_exists(cur, "conversation_members") and _table_exists(cur, "private_messages"):
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM private_messages pm
+            JOIN conversation_members cm ON cm.conversation_id=pm.conversation_id AND cm.user_id=?
+            WHERE pm.sender_user_id != ?
+              AND pm.deleted_at IS NULL
+              AND pm.created_at > COALESCE(cm.last_read_at, '')
+            """,
+            (int(user_id), int(user_id)),
+        )
+        chat_count += int(cur.fetchone()[0] or 0)
+    conn.close()
     return {
         "ok": True,
         "alert_unread_count": alert_count,
@@ -1514,30 +1455,6 @@ def pulse_badge_counts(user_id):
         "count": alert_count,
         "unread_count": alert_count,
     }
-
-
-def pulse_icon_badge_count(counts):
-    """The single number the app icon should carry: alert + chat + commerce.
-
-    Deliberately NOT `total_unread_count`. That key excludes commerce so it
-    keeps agreeing with `totalUnreadCount()` in
-    mobile-native/src/api/notifications.ts, which falls back to alert + chat
-    whenever the key is absent or zero. The icon is a different question: it is
-    the one badge that stands for everything unread, and the client's own
-    reconciler writes `badgeFor("combined", ...)` for it — `totalCount +
-    commerceCount`, mobile-native/src/core/unreadCounts.ts:264. A push that
-    stamped a scoped count instead would undo that reconcile until the next
-    foreground.
-
-    Takes an already-fetched counts dict rather than a user_id so a caller that
-    also needs the individual keys does not pay for a second query.
-    """
-    counts = counts or {}
-    return (
-        int(counts.get("alert_unread_count") or 0)
-        + int(counts.get("chat_unread_count") or 0)
-        + int(counts.get("commerce_unread_count") or 0)
-    )
 
 
 def pulse_unread_count(user_id):
@@ -1806,11 +1723,7 @@ def get_preferences(user_id):
             "SELECT category, in_app, push, email, telegram FROM notification_preferences WHERE user_id=?",
             (user_id,),
         )
-        # Not ``tuple(row)``: on Postgres it yields the column NAMES, so this
-        # older-schema fallback built every preference row out of the strings
-        # "category"/"in_app"/... — and since a non-empty string is truthy, it
-        # turned every channel ON for every category. See db.row_values.
-        rows = [db_service.row_values(row) + (0,) for row in cur.fetchall()]
+        rows = [tuple(row) + (0,) for row in cur.fetchall()]
     existing = {
         row[0]: {
             "in_app": bool(row[1]),
@@ -2126,9 +2039,7 @@ def send_multi_channel_notification(user_id, notification_type, title, body, met
         else:
             category = _pulse_category(_pulse_type_for_alert(notification_type))
             try:
-                # Combined, for the same reason as the delivery path above: the
-                # icon is one number covering alerts, chat and commerce.
-                badge_count = pulse_icon_badge_count(pulse_badge_counts(user_id))
+                badge_count = int((pulse_badge_counts(user_id) or {}).get("alert_unread_count") or 0)
             except Exception:
                 badge_count = int(metadata.get("badge") or 0)
             push_metadata = {

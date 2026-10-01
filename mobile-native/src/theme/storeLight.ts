@@ -45,22 +45,11 @@ export const storeLight = {
     /** Page behind the cards. */
     page: "#EAEDED",
     card: "#FFFFFF",
-    /**
-     * The header. Both ends are the same value on purpose.
-     *
-     * These were a navy gradient (#131A22 -> #232F3E). The business surfaces are
-     * locked to black / white / green, and that rules out both the navy and the
-     * gradient. Keeping two keys with one value means the header component does
-     * not have to change shape to become flat, and the pair is still here if a
-     * future design earns a gradient back.
-     */
-    headerFrom: "#0B0B0C",
-    headerTo: "#0B0B0C",
-    /**
-     * The status strip sitting directly under the header. One step lighter than
-     * the header so the seam is still readable as two surfaces rather than one.
-     */
-    strip: "#141518",
+    /** Navy header gradient, top to bottom. */
+    headerFrom: "#131A22",
+    headerTo: "#232F3E",
+    /** The status strip sitting directly under the header. */
+    strip: "#232F3E",
     /** Attention banner fill. */
     warning: "#FCF5EE",
     /** Skeleton blocks and pressed-tile wash. */
@@ -74,64 +63,12 @@ export const storeLight = {
   text: {
     primary: "#0F1111",
     muted: "#565959",
-    /**
-     * Link text on a white card ("Manage all", "Finish listing").
-     *
-     * Was the reference design's teal #007185. Green is the only accent the
-     * business surfaces are allowed, and this value is not a compromise to get
-     * there: it measures 6.09:1 on the card against the teal's 5.67:1.
-     */
-    link: "#0A7050",
-    /** Pressed state for links: the same green driven deeper, 8.82:1 on the card. */
-    linkActive: "#08553F",
+    link: "#007185",
+    /** Pressed state for links. */
+    linkActive: "#C7511F",
     /** Text on the navy header and status strip. */
     onDark: "#FFFFFF",
     onDarkMuted: "#C7CDD3"
-  },
-  /**
-   * Selection mode — §3, §16–§20.
-   *
-   * Two states, and the reason they are tokens rather than inline values is that
-   * both have to mean the same thing in three places at once: the row, the
-   * checkbox inside it, and the bulk action bar that counts them. A seller
-   * scanning for "which of these did I pick" is reading a wash and a tick that
-   * must agree.
-   *
-   * `disabled` is the more important of the two. It is what a row blocked from a
-   * bulk action wears, and it is deliberately a *legible* grey rather than a
-   * faded one: the seller still has to read the title and the reason ("2 things
-   * left") off a row they cannot act on. Dimming it to the point of illegibility
-   * would hide the very thing that tells them how to unblock it.
-   */
-  select: {
-    /** Fill behind a selected row, and the checkbox's box when ticked. */
-    selected: "#E8F6F1",
-    /**
-     * Border and tick of a selected row.
-     *
-     * NOT `STORE_CTA_PULSESOC.to`, which was the obvious choice and measures
-     * 2.25:1 against `bg.card` — below the 3:1 WCAG 1.4.11 asks of a non-text
-     * control, so the one mark distinguishing a selected row would have been
-     * invisible to a low-vision seller. This is the same hue three steps deeper,
-     * at 3.75:1. Selection is still never signalled by colour alone; the tick
-     * is a shape and the row announces `accessibilityState.selected`.
-     */
-    selectedBorder: "#189669",
-    /** Wash behind a row the current bulk action cannot touch. */
-    disabled: "#F4F5F5",
-    /** Title and secondary text on a disabled row. 4.60:1 on `disabled`. */
-    disabledText: "#6B7070",
-    /**
-     * The *reason* a row is blocked, drawn on the wash above.
-     *
-     * A separate token because `status.warning` measures 4.54:1 on the white
-     * card — passing, but with nothing to spare — and drops to 4.16:1 once the
-     * disabled wash is under it. This is the same warm hue darkened to 5.52:1.
-     * The reason is the single most important string on a row the seller cannot
-     * act on, since it is the only thing that says how to unblock it, so it is
-     * the last text that should be allowed to fade.
-     */
-    disabledReason: "#A8431A"
   },
   status: {
     /** In stock, store open, positive trend. */

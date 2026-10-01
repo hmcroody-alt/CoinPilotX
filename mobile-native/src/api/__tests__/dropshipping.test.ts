@@ -25,17 +25,8 @@
  *    provider and a signed-out session produce different states, because they
  *    have different fixes and only one of them is the merchant's to make.
  *
- * 5. THE GAP LEDGER IS NAMED, AND ITS WORDS ARE MERCHANT-READABLE. Faking a
- *    surface changes the names, and the change is reviewed. It was counted
- *    before, which went red on the repair that closed two of them and never
- *    noticed that one `needs` string named a table the repo does not contain.
- *
- * 6. A SUPPLIER ORDER'S STATE IS NEVER GUESSED. `AWAITING_SUPPLIER_ORDER` and
- *    `UNKNOWN` are different facts: the first means no supplier order exists,
- *    the second means one may exist and could not be confirmed. Collapsing
- *    them invites a merchant to place a duplicate supplier order, which is real
- *    money. A state this build has not heard of says so rather than defaulting
- *    to either.
+ * 5. THE GAP LEDGER IS COUNTED. Faking supplier orders would shorten this list,
+ *    and this test says so.
  */
 
 const mockPulseApi = jest.fn();
@@ -56,47 +47,27 @@ jest.mock("../pulseApi", () => ({
 }));
 
 import {
-  CLEAR_SHIPPING_ALLOWANCE,
   DROPSHIPPING_DATA_GAPS,
   IMPORT_OUTCOMES,
   PUBLISH_PROBLEMS,
-  SUPPLIER_OBLIGATION_BLOCKERS,
-  SUPPLIER_OBLIGATION_BLOCKER_COPY,
-  SUPPLIER_ORDER_STATES,
-  SUPPLIER_ORDER_STATE_COPY,
   bindConnectionShop,
-  listSupplierObligations,
-  supplierObligationBlockerCopy,
-  supplierOrderStateCopy,
   centsOrNull,
   connectionCanFulfil,
   connectionIsUsable,
   connectionNeedsAttention,
   listConnectionShops,
   getImportCart,
-  getImportedProduct,
-  getStoreImportPolicy,
   getSupplierProduct,
-  getSupplierStatus,
   importNeedsReview,
   importSelected,
-  isBatchTooLarge,
   listImportedProducts,
   listSupplierConnections,
   previewPricing,
   retryAfterSeconds,
   searchSupplierProducts,
-  shippingAllowanceFromInput,
   stateForError,
-  updateImportedProduct,
-  updateStoreImportPolicy
+  updateImportedProduct
 } from "../dropshipping";
-import {
-  NEXT_ACTION_COPY,
-  actionIsBlocking,
-  operatingMode,
-  ordersCopy
-} from "../../screens/dropshipping/supplierStatusCopy";
 import { PulseApiError } from "../pulseApi";
 
 const SCOPE = { businessId: "biz-1", storeId: 42 } as any;
@@ -511,26 +482,6 @@ describe("stateForError separates causes that have different fixes", () => {
     expect(stateForError(new PulseApiError("x", 500))).toBe("ERROR");
   });
 
-  /**
-   * A shop list the server could not read, which used to be an empty one.
-   *
-   * `connection_shops` translated the supplier's rejection into `shops: []`, so
-   * this failure reached the merchant as a sentence about their supplier
-   * account — "this account has no shops" — when the truth was that we could
-   * not read the list. The live account was told exactly that, over a shop it
-   * had owned since 2026-09-08. The server now reports the failure as a
-   * failure, and this asserts the client has somewhere to put it: a 502 matches
-   * none of the status classes at the foot of `stateForError`, so without the
-   * code it arrives as a bare "Something went wrong" and the trade would have
-   * been one wrong answer for another.
-   */
-  it("reads an unreadable shop list as the supplier being unreachable", () => {
-    expect(stateForError(new PulseApiError("x", 502, "shop_list_unavailable")))
-      .toBe("PROVIDER_UNAVAILABLE");
-    // And the status alone does not get there, so the code is doing the work.
-    expect(stateForError(new PulseApiError("x", 502))).toBe("ERROR");
-  });
-
   it("returns a retry hint only when the server gave one", () => {
     expect(retryAfterSeconds(new PulseApiError("x", 503, "provider_unavailable", { retry_after: 30 }))).toBe(30);
     expect(retryAfterSeconds(new PulseApiError("x", 503))).toBeNull();
@@ -759,68 +710,6 @@ describe("bulk import reports each item, not one verdict", () => {
     });
     expect(importNeedsReview(await importSelected(SCOPE, "c1", { itemIds: ["i1"] }))).toBe(false);
   });
-
-  it("carries the rows the run did not reach, and the cap that stopped it", async () => {
-    // The production failure's wire shape. `requested` is what the seller asked
-    // for and `deferred` is what one run could not take, so a screen can say
-    // "25 of 30" instead of promising all 30 and then reporting five phantom
-    // failures.
-    mockPulseApi.mockResolvedValue({
-      requested: 3,
-      imported: 2,
-      deferred: 1,
-      max_per_import: 2,
-      results: [
-        { item_id: "i1", outcome: "PUBLISHED", listing_id: 5 },
-        { item_id: "i2", outcome: "PUBLISHED", listing_id: 6 },
-        { item_id: "i3", outcome: "DEFERRED" }
-      ]
-    });
-    const run = await importSelected(SCOPE, "c1", { itemIds: ["i1", "i2", "i3"] });
-    expect(run.requested).toBe(3);
-    expect(run.deferred).toBe(1);
-    expect(run.maxPerImport).toBe(2);
-  });
-
-  it("counts the deferred rows itself when the server did not total them", async () => {
-    // A server that names the outcome per row but omits the total must not
-    // collapse to "0 deferred" — that reads as a finished run and the rows left
-    // in the cart never get a second tap.
-    mockPulseApi.mockResolvedValue({
-      requested: 2,
-      imported: 1,
-      results: [{ item_id: "i1", outcome: "PUBLISHED" }, { item_id: "i2", outcome: "DEFERRED" }]
-    });
-    const run = await importSelected(SCOPE, "c1", { itemIds: ["i1", "i2"] });
-    expect(run.deferred).toBe(1);
-    expect(run.maxPerImport).toBeNull();
-  });
-
-  it("does not ask the merchant to review a run that only deferred rows", async () => {
-    // A deferred row is not a problem to look at. Counting it as one would put
-    // a warning on every large cart.
-    mockPulseApi.mockResolvedValue({
-      requested: 2,
-      imported: 1,
-      deferred: 1,
-      results: [{ item_id: "i1", outcome: "PUBLISHED" }, { item_id: "i2", outcome: "DEFERRED" }]
-    });
-    expect(importNeedsReview(await importSelected(SCOPE, "c1", { itemIds: ["i1", "i2"] }))).toBe(false);
-  });
-
-  it("names an over-cap refusal, which stateForError can only call ERROR", async () => {
-    // `batch_too_large` arrives as a 400, which matches none of stateForError's
-    // status classes, so it falls to a bare ERROR and the screen says "That
-    // import didn't run." That fallthrough was the whole of what a seller with
-    // 58 products in the cart was told, which is why this code gets a
-    // predicate of its own rather than another state.
-    const overCap = new PulseApiError("too many", 400, "batch_too_large");
-    expect(isBatchTooLarge(overCap)).toBe(true);
-    expect(stateForError(overCap)).toBe("ERROR");
-    expect(isBatchTooLarge(new PulseApiError("down", 503, "provider_unavailable"))).toBe(false);
-    expect(isBatchTooLarge(new Error("boom"))).toBe(false);
-    expect(isBatchTooLarge(null)).toBe(false);
-  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -844,18 +733,6 @@ describe("the cart is its own layer", () => {
     mockPulseApi.mockResolvedValue({ items: [{ item_id: "i1", external_product_id: "p1" }], count: 1 });
     const cart = await getImportCart(SCOPE, "c1");
     expect(cart.items[0].preview).toBeNull();
-  });
-
-  it("reports how many of a cart one import will take, and null when unsaid", async () => {
-    // The cart can hold more than one run imports. The screen needs the run's
-    // cap from the server rather than a constant of its own, and `null` has to
-    // stay distinguishable from a number so an older server means "do not claim
-    // a limit" rather than "the limit is zero".
-    mockPulseApi.mockResolvedValue({ items: [], count: 0, max_per_import: 25 });
-    expect((await getImportCart(SCOPE, "c1")).maxPerImport).toBe(25);
-
-    mockPulseApi.mockResolvedValue({ items: [], count: 0 });
-    expect((await getImportCart(SCOPE, "c1")).maxPerImport).toBeNull();
   });
 });
 
@@ -882,629 +759,32 @@ describe("connections are values, not a CJ shape", () => {
  * ------------------------------------------------------------------ */
 
 describe("the vocabularies are closed and complete", () => {
-  // This used to spell the whole list out and call itself "covers every import
-  // outcome the server can send", which it could not know. The list it pinned was
-  // the eight pre-auto-publish outcomes, and it went on passing after the server
-  // grew `PUBLISHED` and `NEEDS_ATTENTION` — then failed on the commit that added
-  // them here, reporting the fix as the break. Exactly the mistake documented
-  // below for `PUBLISH_PROBLEMS`, one enumeration along.
-  //
-  // Completeness against the server is measured in
-  // `tests/dropshipping/test_publish_problem_copy.py`, which reads `importer.OUTCOMES`
-  // on the Python side and this array on the TypeScript side. What is left here is
-  // the part that is about *this* file's behaviour.
-  it("names each import outcome once", () => {
-    expect([...new Set(IMPORT_OUTCOMES)]).toHaveLength(IMPORT_OUTCOMES.length);
-  });
-
-  it("knows the two outcomes auto-publish introduced", () => {
-    // Named rather than counted. These are the two whose absence made a live
-    // product render as "couldn't be imported" in the cart's result sheet, and a
-    // length assertion would have been satisfied by any two strings.
-    expect(IMPORT_OUTCOMES).toContain("PUBLISHED");
-    expect(IMPORT_OUTCOMES).toContain("NEEDS_ATTENTION");
-  });
-
-  it("reads liveness from the server's field, not from the outcome word", async () => {
-    // The failure this guards is one-directional and silent: a build that inferred
-    // `published` from an outcome string it did not recognise would tell a merchant
-    // a draft is live, and they would stop looking at it. An unreadable outcome
-    // therefore lands on `INVALID_PRODUCT` and `published: false`, while a row the
-    // server explicitly marks published is published whatever its outcome says.
-    mockPulseApi.mockResolvedValue({
-      requested: 2,
-      imported: 2,
-      results: [
-        { item_id: "i1", outcome: "AN_OUTCOME_FROM_A_NEWER_SERVER", published: true, listing_id: 5 },
-        { item_id: "i2", outcome: "PUBLISHED", listing_id: 6 }
-      ]
-    });
-    const run = await importSelected(SCOPE, "c1", { itemIds: ["i1", "i2"] });
-    expect(run.results[0].outcome).toBe("AN_OUTCOME_FROM_A_NEWER_SERVER");
-    expect(run.results[0].published).toBe(true);
-    // Says PUBLISHED, but the server did not set the field. Not live.
-    expect(run.results[1].published).toBe(false);
-  });
-
-  it("omits the pricing rule entirely when the merchant did not choose one", async () => {
-    // §8's priority order is request → store → platform, and it is expressed on
-    // the wire by the key being *absent*. A `null` would be a value, and a screen
-    // sending its own initial state would outrank the policy the merchant saved.
-    mockPulseApi.mockResolvedValue({ results: [], imported: 0, requested: 1 });
-    await importSelected(SCOPE, "c1", { itemIds: ["i1"] });
-    await importSelected(SCOPE, "c1", { itemIds: ["i1"], pricingRule: null });
-    // Indexed, because `bodyOf()` reads the *first* call — asserting it twice
-    // would have measured the omitted case twice and never the explicit null.
-    expect("pricing_rule" in bodyOf(0)).toBe(false);
-    expect("pricing_rule" in bodyOf(1)).toBe(false);
-  });
-
-  // This used to be `expect(PUBLISH_PROBLEMS).toHaveLength(10)` under the title
-  // "covers every publish problem". A count cannot make that claim: the list was
-  // ten long and three codes short, so the assertion passed for the whole time
-  // the defect existed — and then failed on the fix, reporting the repair as the
-  // regression. The claim it was reaching for spans Python and TypeScript and
-  // cannot be made from inside this file at all; it lives in
-  // `tests/dropshipping/test_publish_problem_copy.py`, which reads the codes
-  // `drafts._validate` can actually emit and checks this list names each one.
-  //
-  // What is left here are the two things this file can honestly measure.
-  it("names each publish problem once, so no entry is dead", () => {
-    // A duplicate is not cosmetic: `PROBLEM_COPY` is keyed by the union, so the
-    // second entry can never be reached and will be maintained anyway.
-    expect([...new Set(PUBLISH_PROBLEMS)]).toHaveLength(PUBLISH_PROBLEMS.length);
-  });
-
-  it("passes a problem it has never heard of through rather than swallowing it", async () => {
-    // The real "none is silently swallowed" claim, and the reason the screen
-    // keeps a runtime fallback beside a total `Record`: a server ahead of this
-    // build can name a code the union does not have. Dropping it here would
-    // leave the merchant a refusal with an empty reason list, which reads as a
-    // bug in the button rather than as something to fix about the product.
-    mockPulseApi.mockResolvedValue({
-      listing_id: 1,
-      validation: { publishable: false, problems: ["A_CODE_FROM_A_NEWER_SERVER"] }
-    });
-    const draft = await getImportedProduct(SCOPE, "c1", 1);
-    expect(draft.validation.problems).toEqual(["A_CODE_FROM_A_NEWER_SERVER"]);
-  });
-
-  describe("supplier obligations", () => {
-    const OBLIGATION = {
-      order_id: 91,
-      listing_id: 14,
-      title: "Cotton Tee",
-      quantity: 2,
-      amount_cents: 4000,
-      currency: "USD",
-      order_status: "paid",
-      paid_at: "2026-09-12T00:00:00",
-      ordered_at: "2026-09-12T00:00:00",
-      provider: "CJ",
-      provider_product_id: "P1",
-      provider_variant_id: "P1-V1",
-      supplier_sku: "P1-V1-SKU",
-      supplier_cost_cents: 820,
-      supplier_cost_currency: "USD",
-      intent_id: null,
-      intent_created_at: null,
-      blockers: [],
-      can_place_supplier_order: true,
-      state: "AWAITING_SUPPLIER_ORDER",
-      supplier_order_placed: false,
-      provider_order_id: null,
-      supplier_order_status: null,
-      last_error: null,
-      intent_updated_at: null
-    };
-
-    it("asks the supplier route, with the scope in the query string", async () => {
-      mockPulseApi.mockResolvedValue({ obligations: [], isSandbox: 1 });
-      await listSupplierObligations(SCOPE, "conn a/b", { limit: 50 });
-      const [url] = mockPulseApi.mock.calls[0];
-      // Encoded, because a connection id is server-chosen and this one has a
-      // slash in it purely to prove the call site encodes rather than trusts.
-      expect(url).toContain("/suppliers/cj/connections/conn%20a%2Fb/obligations");
-      expect(url).toContain("business_id=");
-      expect(url).toContain("limit=50");
-      // No body, no method: a merchant opening this screen must not be able to
-      // generate a write, and a GET is what makes that structural.
-      expect(mockPulseApi.mock.calls[0][1]).toBeUndefined();
-    });
-
-    it("keeps an unplaced supplier order unplaced", async () => {
-      mockPulseApi.mockResolvedValue({ obligations: [OBLIGATION], isSandbox: 1 });
-      const { obligations, isSandbox } = await listSupplierObligations(SCOPE, "c1");
-      expect(obligations).toHaveLength(1);
-      expect(obligations[0].intentId).toBeNull();
-      expect(obligations[0].supplierOrderPlaced).toBe(false);
-      expect(obligations[0].state).toBe("AWAITING_SUPPLIER_ORDER");
-      expect(obligations[0].supplierCostCents).toBe(820);
-      expect(obligations[0].provider).toBe("cj");
-      expect(isSandbox).toBe(true);
-    });
-
-    it("does not infer that a supplier order was placed from a present state", async () => {
-      // The trap: an intent whose outbox row is missing. `state` falls back to
-      // AWAITING, but the row does have an `intent_id`, and the server says so.
-      // Re-deriving `supplierOrderPlaced` on this device from either field
-      // would answer differently depending on which field it chose.
-      mockPulseApi.mockResolvedValue({
-        obligations: [{ ...OBLIGATION, intent_id: "cjf_1", supplier_order_placed: true, state: "" }],
-        isSandbox: 1
-      });
-      const { obligations } = await listSupplierObligations(SCOPE, "c1");
-      expect(obligations[0].supplierOrderPlaced).toBe(true);
-      expect(obligations[0].state).toBe("AWAITING_SUPPLIER_ORDER");
-    });
-
-    it("reads sandbox from the server and not from a build flag", async () => {
-      // Absent, not false: a server that stopped stating it must not be read as
-      // "fulfilment is live" or as "fulfilment is off". The screen only shows
-      // the sandbox promise on an explicit 1.
-      mockPulseApi.mockResolvedValue({ obligations: [OBLIGATION] });
-      expect((await listSupplierObligations(SCOPE, "c1")).isSandbox).toBe(false);
-      mockPulseApi.mockResolvedValue({ obligations: [OBLIGATION], isSandbox: 0 });
-      expect((await listSupplierObligations(SCOPE, "c1")).isSandbox).toBe(false);
-    });
-
-    it("has words for every state it can name", () => {
-      // The `Record` is total, so this cannot fail by omission — it is a
-      // compile error first. What it catches is an entry present but empty,
-      // which renders as a blank chip beside a paid order.
-      SUPPLIER_ORDER_STATES.forEach((state) => {
-        expect(SUPPLIER_ORDER_STATE_COPY[state].length).toBeGreaterThan(4);
-        expect(SUPPLIER_ORDER_STATE_COPY[state]).not.toBe(state);
-      });
-    });
-
-    it("never tells a merchant an unconfirmed supplier order was not placed", () => {
-      // The most expensive confusion in this feature. UNKNOWN means the write
-      // may have landed; copy that reads like AWAITING invites a second
-      // supplier order for the same sale.
-      expect(SUPPLIER_ORDER_STATE_COPY.UNKNOWN).not.toEqual(
-        SUPPLIER_ORDER_STATE_COPY.AWAITING_SUPPLIER_ORDER
-      );
-      expect(SUPPLIER_ORDER_STATE_COPY.UNKNOWN.toLowerCase()).toContain("do not re-order");
-    });
-
-    it("says so about a state from a newer server rather than guessing", () => {
-      // The `SUPPLIER_VARIANT_UNBOUND` failure, one subsystem over: the screen
-      // rendered a raw backend identifier because the union had not caught up.
-      const copy = supplierOrderStateCopy("PARTIALLY_SHIPPED_FROM_A_NEWER_SERVER");
-      expect(copy).not.toContain("PARTIALLY_SHIPPED");
-      expect(copy).toContain("does not recognise");
-      // And a known one still gets its own words, so the fallback has not
-      // swallowed the whole map.
-      expect(supplierOrderStateCopy("LINKED")).toBe(SUPPLIER_ORDER_STATE_COPY.LINKED);
-    });
-
-    it("reads the bound variant's SKU, not the product's", async () => {
-      // The gap-15 defect, on the wire. The obligation used to carry
-      // `external_sku` from `marketplace_product_sources`, which is the
-      // *product*-level column and is normally empty, while the supplier order
-      // is matched on the *variant*'s. The two columns sit one table apart and
-      // the wrong one was sent, so the honest case looked like a missing SKU and
-      // a populated one looked like a binding bug.
-      //
-      // The legacy key is supplied here alongside the new one, deliberately: a
-      // client that still preferred `external_sku` would pick the product's and
-      // pass this test's absence of a compile error while failing here.
-      mockPulseApi.mockResolvedValue({
-        obligations: [{ ...OBLIGATION, supplier_sku: "VARIANT-SKU", external_sku: "PRODUCT-SKU" }],
-        isSandbox: 1
-      });
-      const { obligations } = await listSupplierObligations(SCOPE, "c1");
-      expect(obligations[0].supplierSku).toBe("VARIANT-SKU");
-      expect(JSON.stringify(obligations[0])).not.toContain("PRODUCT-SKU");
-    });
-
-    it("carries the blockers and the server's own verdict on them", async () => {
-      mockPulseApi.mockResolvedValue({
-        obligations: [{
-          ...OBLIGATION,
-          supplier_sku: null,
-          blockers: ["SUPPLIER_SKU_MISSING", "SUPPLIER_COST_UNKNOWN"],
-          can_place_supplier_order: false
-        }],
-        isSandbox: 1
-      });
-      const { obligations } = await listSupplierObligations(SCOPE, "c1");
-      expect(obligations[0].blockers).toEqual(["SUPPLIER_SKU_MISSING", "SUPPLIER_COST_UNKNOWN"]);
-      expect(obligations[0].canPlaceSupplierOrder).toBe(false);
-    });
-
-    it("does not re-derive whether an order can be placed from the blocker list", async () => {
-      // A server that names no blocker but still refuses — because the reason is
-      // one this list does not model — must not be read as "ready". Recomputing
-      // `blockers.length === 0` on the device is the copy that can disagree, and
-      // the field it disagrees with is the one a merchant would act on.
-      mockPulseApi.mockResolvedValue({
-        obligations: [{ ...OBLIGATION, blockers: [], can_place_supplier_order: false }],
-        isSandbox: 1
-      });
-      const { obligations } = await listSupplierObligations(SCOPE, "c1");
-      expect(obligations[0].blockers).toEqual([]);
-      expect(obligations[0].canPlaceSupplierOrder).toBe(false);
-      // And the absent case is not read as permission either.
-      mockPulseApi.mockResolvedValue({ obligations: [OBLIGATION], isSandbox: 1 });
-      delete (OBLIGATION as Record<string, unknown>).can_place_supplier_order;
-      expect((await listSupplierObligations(SCOPE, "c1")).obligations[0].canPlaceSupplierOrder)
-        .toBe(false);
-      (OBLIGATION as Record<string, unknown>).can_place_supplier_order = true;
-    });
-
-    it("drops nothing but blanks out of a blocker list", async () => {
-      // Passed through, not narrowed: a blocker a newer server names has to
-      // reach the copy function, which says it does not recognise it. Empty
-      // strings are the one thing removed, because they render as a blank
-      // warning line under a paid order.
-      mockPulseApi.mockResolvedValue({
-        obligations: [{
-          ...OBLIGATION,
-          blockers: ["A_BLOCKER_FROM_A_NEWER_SERVER", "", null, 7],
-          can_place_supplier_order: false
-        }],
-        isSandbox: 1
-      });
-      const { obligations } = await listSupplierObligations(SCOPE, "c1");
-      expect(obligations[0].blockers).toEqual(["A_BLOCKER_FROM_A_NEWER_SERVER", "7"]);
-    });
-
-    it("has words for every blocker it can name, and none of them is the identifier", () => {
-      SUPPLIER_OBLIGATION_BLOCKERS.forEach((blocker) => {
-        expect(SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker].length).toBeGreaterThan(20);
-        expect(SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker]).not.toBe(blocker);
-        // Prose, not an identifier: these render as a warning line a merchant
-        // reads. Same check the data-gap copy gets, for the same reason.
-        expect(SUPPLIER_OBLIGATION_BLOCKER_COPY[blocker]).not.toMatch(/[a-z]_[a-z]|\(\)|[A-Z]{3}/);
-      });
-    });
-
-    it("says so about a blocker from a newer server rather than guessing", () => {
-      const copy = supplierObligationBlockerCopy("CUSTOMS_DECLARATION_MISSING_FROM_A_NEWER_SERVER");
-      expect(copy).not.toContain("CUSTOMS");
-      expect(copy).toBe(
-        "Something about this order stops it being sent to your supplier"
-      );
-      expect(supplierObligationBlockerCopy("SHOP_BINDING_REQUIRED"))
-        .toBe(SUPPLIER_OBLIGATION_BLOCKER_COPY.SHOP_BINDING_REQUIRED);
-    });
-
-    it("never asks a merchant to supply a buyer's address", () => {
-      // `DESTINATION_MISSING` and `DESTINATION_INCOMPLETE` are the two blockers a
-      // merchant cannot act on: the address belongs to the buyer and this screen
-      // is not shown one. Copy that read like a prompt would send merchants
-      // inventing delivery addresses for other people's parcels.
-      [SUPPLIER_OBLIGATION_BLOCKER_COPY.DESTINATION_MISSING,
-       SUPPLIER_OBLIGATION_BLOCKER_COPY.DESTINATION_INCOMPLETE].forEach((copy) => {
-        expect(copy.toLowerCase()).not.toMatch(/\b(enter|add|type|provide|fill)\b/);
-      });
-    });
-
-    it("carries no part of the buyer's address, however the server answers", async () => {
-      // §27/§95, on the field the fix reads. The server derives the destination
-      // to decide the blockers and must not forward it; this proves the client
-      // would not surface one even if a later server did.
-      mockPulseApi.mockResolvedValue({
-        obligations: [{
-          ...OBLIGATION,
-          metadata_json: '{"fulfillment":{"details":{"address_line1":"1 Leak Street"}}}',
-          seller_transaction_id: 7001,
-          shipping_destination: { shippingAddress: "1 Leak Street", shippingCity: "Leakville" }
-        }],
-        isSandbox: 1
-      });
-      const { obligations } = await listSupplierObligations(SCOPE, "c1");
-      const encoded = JSON.stringify(obligations[0]);
-      ["1 Leak Street", "Leakville", "7001", "metadata_json", "address_line1"].forEach((leak) => {
-        expect(encoded).not.toContain(leak);
-      });
-    });
-  });
-
-  it("names the surfaces this app has no data for", () => {
-    // Named rather than counted. "Supplier orders list" and "Shipment tracking"
-    // left this list when `listSupplierObligations` arrived; a length assertion
-    // would have gone red on that repair and said nothing about which surfaces
-    // were declared, which is the claim worth making. If someone fakes one of
-    // these, the names change and the change is reviewed rather than shipped.
-    expect(DROPSHIPPING_DATA_GAPS.map((gap) => gap.surface)).toEqual([
-      "Cancelling a supplier order"
+  it("covers every import outcome the server can send", () => {
+    expect([...IMPORT_OUTCOMES]).toEqual([
+      "IMPORTED",
+      "ALREADY_EXISTS",
+      "PROVIDER_UNAVAILABLE",
+      "INVALID_PRODUCT",
+      "NO_VARIANTS",
+      "NO_MEDIA",
+      "RESTRICTED",
+      "NEEDS_REVIEW"
     ]);
   });
 
-  it("states each gap in words a merchant can read", () => {
-    // Both screens that render this list render `needs` directly, so `needs` is
-    // merchant-facing copy. It used to be an implementation note, and one entry
-    // named `business_os_supplier_fulfillment_intents` — a table that exists
-    // nowhere in the repo. That string was wrong for two years' worth of
-    // readers in two different ways at once: it was shown to merchants, and the
-    // implementer it was written for could not grep it.
-    //
-    // An identifier is the tell, so that is what this looks for: snake_case,
-    // camelCase runs, or a `()` call. Not a spell-check — a check that the
-    // field holding merchant copy holds prose.
-    DROPSHIPPING_DATA_GAPS.forEach((gap) => {
-      expect(gap.needs).not.toMatch(/[a-z]_[a-z]|\(\)|[a-z][A-Z]/);
-      // A sentence, not a fragment: these render as the body of a card.
-      expect(gap.needs.length).toBeGreaterThan(40);
-      expect(gap.needs.trim()).toMatch(/[.!]$/);
-    });
-  });
-});
-
-/* ------------------------------------------------------------------ *
- * 7. A freight allowance of nothing is not a freight allowance of zero
- * ------------------------------------------------------------------ */
-
-/**
- * §12's client half, and the invariant is the one from section 1 wearing a
- * different hat.
- *
- * `null` and `0` are two different declarations here and they cannot be allowed to
- * collapse into each other in either direction:
- *
- * - `null` → `0` prices a $2 item that costs $9 to ship as though the $9 did not
- *   exist. Every margin on the store reads healthy and every sale loses money.
- * - `0` → `null` throws away a real answer the merchant gave, and the store starts
- *   asking them again for a number they already supplied.
- *
- * The server has the identical distinction (`store_policy.CLEAR_ALLOWANCE` versus
- * a zero), so the two ends of the wire are pinned against the same rule.
- */
-describe("the shipping allowance keeps unknown and zero apart", () => {
-  describe("reading a policy", () => {
-    async function policyFrom(raw: Record<string, unknown>) {
-      mockPulseApi.mockResolvedValue({ policy: raw });
-      return getStoreImportPolicy(SCOPE);
-    }
-
-    it("reads a missing allowance as unknown, not as free shipping", async () => {
-      const policy = await policyFrom({ pricing_rule: { type: "TARGET_MARGIN", value: 45 } });
-      expect(policy.shippingAllowanceCents).toBeNull();
-      // Not `toBeFalsy`: `0` is falsy and is the exact wrong answer here, so an
-      // assertion that accepted it would pass on the bug.
-      expect(policy.shippingAllowanceCents).not.toBe(0);
-      expect(policy.shippingAllowanceSource).toBe("PLATFORM_DEFAULT");
-    });
-
-    it("keeps a declared zero, because it is a merchant's real answer", async () => {
-      const policy = await policyFrom({
-        shipping_allowance_cents: 0,
-        shipping_allowance_source: "STORE"
-      });
-      expect(policy.shippingAllowanceCents).toBe(0);
-      expect(policy.shippingAllowanceSource).toBe("STORE");
-    });
-
-    it("keeps a declared amount", async () => {
-      const policy = await policyFrom({
-        shipping_allowance_cents: 900,
-        shipping_allowance_source: "STORE"
-      });
-      expect(policy.shippingAllowanceCents).toBe(900);
-    });
-
-    it.each([
-      ["900", "a string"],
-      [900.5, "a fraction of a cent"],
-      [-1, "a negative"],
-      [true, "a boolean"],
-      [null, "a null"],
-      [[900], "an array"]
-    ] as [unknown, string][])(
-      "refuses %p (%s) rather than rendering it as an amount",
-      async (raw) => {
-        const policy = await policyFrom({ shipping_allowance_cents: raw });
-        expect(policy.shippingAllowanceCents).toBeNull();
-      }
-    );
-
-    it("will not say the merchant set a figure it just threw away", async () => {
-      // The realistic way to get `STORE` beside a `null` number: the server sends
-      // a value this client rejects. Trusting the source on its own would light up
-      // "you set this" on a field showing nothing, and the merchant would go
-      // looking for the amount they supposedly saved.
-      const policy = await policyFrom({
-        shipping_allowance_cents: "900",
-        shipping_allowance_source: "STORE"
-      });
-      expect(policy.shippingAllowanceCents).toBeNull();
-      expect(policy.shippingAllowanceSource).toBe("PLATFORM_DEFAULT");
-    });
+  it("covers every publish problem, so none is silently swallowed", () => {
+    expect(PUBLISH_PROBLEMS).toHaveLength(10);
+    expect([...PUBLISH_PROBLEMS]).toContain("NEGATIVE_MARGIN");
+    expect([...PUBLISH_PROBLEMS]).toContain("UNKNOWN_INVENTORY");
   });
 
-  describe("what the merchant types", () => {
-    it("reads a plain amount in dollars and stores it in cents", () => {
-      expect(shippingAllowanceFromInput("9")).toBe(900);
-      expect(shippingAllowanceFromInput("4.50")).toBe(450);
-      expect(shippingAllowanceFromInput(" $12.99 ")).toBe(1299);
-    });
-
-    it("rounds rather than truncating", () => {
-      // `Number.parseFloat("9.29") * 100` is 928.9999999999999. Truncating would
-      // quietly shave a cent off a good half of everything merchants type, and the
-      // merchant would see 9.28 in the field they typed 9.29 into.
-      expect(shippingAllowanceFromInput("9.29")).toBe(929);
-      expect(shippingAllowanceFromInput("0.07")).toBe(7);
-    });
-
-    it("reads zero as zero, because a merchant may mean it", () => {
-      expect(shippingAllowanceFromInput("0")).toBe(0);
-      expect(shippingAllowanceFromInput("0.00")).toBe(0);
-    });
-
-    it.each(["", "   ", ".", "abc", "-4", "4.5.6", "1e3", "Infinity"])(
-      "returns null for %p, which the caller must read as do-not-send",
-      (input) => {
-        expect(shippingAllowanceFromInput(input)).toBeNull();
-      }
-    );
-
-    it("refuses an amount above the server's own ceiling", () => {
-      // `pricing.MAX_PRICE_CENTS`. Caught here so the merchant is told by the
-      // field rather than by a 400 the screen then has to translate.
-      expect(shippingAllowanceFromInput("10000000")).toBe(1_000_000_000);
-      expect(shippingAllowanceFromInput("10000000.01")).toBeNull();
-    });
-  });
-
-  describe("writing a policy", () => {
-    beforeEach(() => {
-      mockPulseApi.mockResolvedValue({ policy: {} });
-    });
-
-    it("sends only the allowance when only the allowance changed", async () => {
-      await updateStoreImportPolicy(SCOPE, { shippingAllowanceCents: 900 });
-      expect(bodyOf().shipping_allowance_cents).toBe(900);
-      // The other three fields absent, not null: four settings share one row, and
-      // a null would be indistinguishable from a merchant clearing their rule.
-      expect(bodyOf()).not.toHaveProperty("pricing_rule");
-      expect(bodyOf()).not.toHaveProperty("auto_publish");
-      expect(bodyOf()).not.toHaveProperty("marketplace_autolist");
-    });
-
-    it("sends a declared zero as zero rather than dropping it", async () => {
-      // `if (changes.shippingAllowanceCents)` is the one-word mistake that loses
-      // this, and it loses it silently: the PATCH succeeds, the merchant is told
-      // it saved, and the field still says nobody has declared anything.
-      await updateStoreImportPolicy(SCOPE, { shippingAllowanceCents: 0 });
-      expect(bodyOf().shipping_allowance_cents).toBe(0);
-    });
-
-    it("clears with a sentinel, since the cleared value is absence itself", async () => {
-      await updateStoreImportPolicy(SCOPE, {
-        shippingAllowanceCents: CLEAR_SHIPPING_ALLOWANCE
-      });
-      expect(bodyOf().shipping_allowance_cents).toBe("UNKNOWN");
-    });
-
-    it("agrees with the server about the sentinel's spelling", () => {
-      // The constant travels as a bare string over the wire and is compared for
-      // equality against `store_policy.CLEAR_ALLOWANCE` at the other end. A rename
-      // on either side turns every Clear into a 400, so the literal is pinned.
-      expect(CLEAR_SHIPPING_ALLOWANCE).toBe("UNKNOWN");
-    });
-
-    it("leaves the allowance alone when it is not part of the change", async () => {
-      await updateStoreImportPolicy(SCOPE, { autoPublish: false });
-      expect(bodyOf()).not.toHaveProperty("shipping_allowance_cents");
-    });
-  });
-});
-
-/**
- * The payload production actually sends, byte for byte.
- *
- * Every other fixture in this file was written by the same person who wrote the
- * normaliser, which makes them a check on internal consistency and not on the
- * wire. This one was captured on 2026-09-22 by running the deployed
- * `services.business_os.suppliers.status` against the live database for the only
- * merchant who has a supplier connected, and pasted here unedited — spellings,
- * nesting, `null`s and all.
- *
- * It is here because the mission's own QA step could not be completed on the
- * merchant's phone, and a fixture that agrees with the client's assumptions is
- * exactly the evidence that failure mode produces. If the server ever renames
- * `real_order_submission_enabled` or moves `orders` under the products block,
- * this is the test that goes red rather than a merchant's screen going blank.
- */
-const PRODUCTION_PAYLOAD_2026_09_22 = {
-  environment: "SANDBOX",
-  real_order_submission_enabled: false,
-  needs_attention: true,
-  suppliers: [
-    {
-      connection_id: "sc_366edc85175345eeb4ce86913ed21f1e",
-      provider: "cj",
-      connection_state: "CONNECTED",
-      message: null,
-      environment: "SANDBOX",
-      real_order_submission_enabled: false,
-      fulfillment_shop_state: "NOT_SELECTED",
-      external_shop_id: "",
-      credential_present: true,
-      last_verified_at: "2026-09-22T05:32:47.460333+00:00",
-      last_sync_at: "2026-09-22T05:32:48.741121+00:00",
-      last_product_sync_at: "2026-09-22T05:31:56",
-      products: {
-        imported: 38,
-        published: 11,
-        awaiting_review: 0,
-        draft: 27,
-        blocked: 0,
-        archived: 0,
-        other: 0,
-        by_status: { "published/approved": 11, "draft/pending_review": 27 }
-      },
-      sync_state: "SYNCED",
-      sync: { PENDING: 0, SYNCED: 38, STALE: 0, ERROR: 0, DISCONNECTED: 0, REMOVED: 0, UNKNOWN: 0 },
-      issues: {
-        products: 0,
-        cost: 0,
-        stock: 0,
-        by_reason: {
-          MARGIN_LOST: 0,
-          SELLING_BELOW_COST: 0,
-          COST_UNAVAILABLE: 0,
-          SUPPLIER_OUT_OF_STOCK: 0,
-          STOCK_UNREADABLE: 0,
-          REPRICE_IMPOSSIBLE: 0
-        }
-      },
-      orders: {
-        awaiting_supplier_order: 0,
-        ready_to_place: 0,
-        blocked: 0,
-        placed: 0,
-        counted_through: 200
-      },
-      next_action: "CHOOSE_FULFILLMENT_SHOP",
-      needs_attention: true
-    }
-  ]
-};
-
-describe("getSupplierStatus against the real production payload", () => {
-  it("reads every field the screens render, off the wire the server really uses", async () => {
-    mockPulseApi.mockResolvedValue(PRODUCTION_PAYLOAD_2026_09_22);
-    const status = await getSupplierStatus(SCOPE);
-    const supplier = status.suppliers[0];
-
-    expect(status.environment).toBe("SANDBOX");
-    expect(status.realOrderSubmissionEnabled).toBe(false);
-    expect(status.needsAttention).toBe(true);
-    expect(supplier.connectionState).toBe("CONNECTED");
-    // The live account's real defect: connected, importing, publishing — and no
-    // shop chosen, so nothing can be ordered. This is the one state the merchant
-    // has to be told about, and the one a "green tick because connected" screen
-    // would hide.
-    expect(supplier.fulfillmentShopState).toBe("NOT_SELECTED");
-    expect(supplier.nextAction).toBe("CHOOSE_FULFILLMENT_SHOP");
-    expect(supplier.products.imported).toBe(38);
-    expect(supplier.products.published).toBe(11);
-    expect(supplier.products.draft).toBe(27);
-    expect(supplier.syncState).toBe("SYNCED");
-    expect(supplier.issues.products).toBe(0);
-    expect(supplier.orders).toEqual({ awaitingSupplierOrder: 0, readyToPlace: 0, blocked: 0, placed: 0 });
-  });
-
-  it("turns that payload into the three sentences the merchant is shown", async () => {
-    mockPulseApi.mockResolvedValue(PRODUCTION_PAYLOAD_2026_09_22);
-    const status = await getSupplierStatus(SCOPE);
-
-    // §1: who, which environment, and whether anything ships — all three, in the
-    // dull case as much as the alarming one.
-    expect(operatingMode(status).line).toBe("CJ connected · Sandbox mode · Real fulfilment OFF");
-    // §3: one thing to do next, and the button that does it.
-    expect(NEXT_ACTION_COPY[status.suppliers[0].nextAction!].button).toBe("Choose fulfilment shop");
-    expect(actionIsBlocking(status.suppliers[0].nextAction)).toBe(true);
-    // §6: zero waiting is a real zero here — the server read the tables and
-    // found nothing, which is a different answer from `null`.
-    expect(ordersCopy(status.suppliers[0].orders)).toEqual({
-      label: "Nothing waiting",
-      attention: false
-    });
+  it("counts the surfaces this app has no data for", () => {
+    // Two. If someone fakes supplier orders, this number changes and the change
+    // is reviewed rather than shipped quietly.
+    expect(DROPSHIPPING_DATA_GAPS).toHaveLength(2);
+    expect(DROPSHIPPING_DATA_GAPS.map((gap) => gap.surface)).toEqual([
+      "Supplier orders list",
+      "Shipment tracking"
+    ]);
   });
 });

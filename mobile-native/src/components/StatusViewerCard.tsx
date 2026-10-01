@@ -2,7 +2,7 @@ import { Audio, ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { DEFAULT_STATUS_REACTION, PulseStatus, pulseStatusUrl, StatusReactionType, statusMediaKind, statusMediaUnavailable, statusMediaUrl, statusMusicLabel, statusPosterUrl } from "../api/status";
+import { DEFAULT_STATUS_REACTION, PulseStatus, pulseStatusUrl, StatusReactionType, statusMediaKind, statusMediaUrl, statusMusicLabel, statusPosterUrl } from "../api/status";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
@@ -59,47 +59,18 @@ export function StatusViewerCard({
   const likeBurstRef = useRef<LikeBurstHandle>(null);
   const lastZoneTap = useRef<{ time: number; side: "left" | "right" }>({ time: 0, side: "left" });
   const [buffering, setBuffering] = useState(false);
-  const [playbackFailed, setPlaybackFailed] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [paused, setPaused] = useState(false);
   const [saveError, setSaveError] = useState("");
   const saveState = useSavedState("status", status.id, status.saved);
   const mediaUrl = useMemo(() => statusMediaUrl(status), [status]);
   const posterUrl = useMemo(() => statusPosterUrl(status), [status]);
   const kind = statusMediaKind(status);
-  // Waiting for the player to report an error is too late and not guaranteed: a
-  // source the backend already knows is gone still mounts, and a dead URL that
-  // never resolves leaves the card black instead of saying so. Trust the record.
-  const failed = playbackFailed || statusMediaUnavailable(status);
   const author = status.author || {};
   const music = statusMusicLabel(status);
   const musicPolicy = useMemo(() => resolveStatusMusicPolicy(status.music), [status.music]);
   const playbackOwnerId = `status:${status.id}`;
   const drivesPlayback = kind === "video" || musicPolicy.hasAttachedMusic;
-
-  /**
-   * `playbackFailed` and `buffering` describe one Status's media, but the viewer
-   * keeps a single mounted card and pages a new `status` through it -- so
-   * without this they carry over. One image that fails to decode then marks
-   * every Status the user pages to afterwards as broken, which is why a single
-   * bad item presents as "Statuses only show a black screen" rather than as one
-   * bad Status.
-   *
-   * Only the player-reported half is cleared. `statusMediaUnavailable` is read
-   * from the record on every render, so a Status the backend really has lost
-   * still reports itself the moment it comes up -- this resets a verdict about
-   * the previous Status, not the current one's evidence.
-   *
-   * Reset during render rather than in an effect: an effect resets after the
-   * paint, so the next Status flashes the previous one's error state first.
-   * This is React's documented "adjust state when a prop changes" pattern, and
-   * the extra render it schedules is discarded before the UI sees it.
-   */
-  const [renderedStatusId, setRenderedStatusId] = useState(status.id);
-  if (renderedStatusId !== status.id) {
-    setRenderedStatusId(status.id);
-    setPlaybackFailed(false);
-    setBuffering(false);
-  }
 
   useEffect(() => {
     if (active && drivesPlayback && !muted) {
@@ -240,7 +211,7 @@ export function StatusViewerCard({
           posterSource={posterUrl ? { uri: posterUrl } : undefined}
           onPlaybackStatusUpdate={(playbackStatus) => {
             if (!playbackStatus.isLoaded) {
-              setPlaybackFailed(Boolean(playbackStatus.error));
+              setFailed(Boolean(playbackStatus.error));
               setBuffering(false);
               return;
             }
@@ -250,15 +221,10 @@ export function StatusViewerCard({
               onNext();
             }
           }}
-          onError={() => setPlaybackFailed(true)}
+          onError={() => setFailed(true)}
         />
-      ) : kind === "image" && mediaUrl && !failed ? (
-        // onError is load-bearing, not defensive. Without it a photo whose URL
-        // 404s or is refused renders nothing at all, and the card's own dark
-        // background reads as a deliberately black Status -- an error wearing
-        // the empty state's clothes. Failing into the branch below at least
-        // says so and offers the share link.
-        <Image source={{ uri: mediaUrl }} style={styles.media} resizeMode="cover" onError={() => setPlaybackFailed(true)} />
+      ) : kind === "image" && mediaUrl ? (
+        <Image source={{ uri: mediaUrl }} style={styles.media} resizeMode="cover" />
       ) : (
         <View style={styles.textStatus}>
           {status.body ? (
@@ -268,14 +234,8 @@ export function StatusViewerCard({
               text={status.body}
               textStyle={styles.textStatusBody}
             />
-          ) : null}
-          {/* The notice is not an alternative to the body: a caption on a Status
-              whose video is gone still needs to say the video is gone, or the
-              caption reads as the whole Status and the loss is invisible. */}
-          {failed ? (
-            <Text style={styles.textStatusBody}>Status media is unavailable.</Text>
-          ) : status.body ? null : (
-            <Text style={styles.textStatusBody}>PulseSoc Status</Text>
+          ) : (
+            <Text style={styles.textStatusBody}>{failed ? "Status media is unavailable." : "PulseSoc Status"}</Text>
           )}
           {failed ? (
             <Pressable style={styles.webButton} onPress={() => sharePulseObject({

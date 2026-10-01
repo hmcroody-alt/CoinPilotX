@@ -29,48 +29,24 @@
  * `anon` exists because media is legitimately cached before sign-in — public
  * feed previews on the launch screen. It is purged alongside the rest.
  *
- * ## Why the key comes from the shared identity authority
+ * ## Why the key strips the query string
  *
  * PulseSoc serves private media through signed URLs whose signature and expiry
  * rotate on every issue. Keying on the full URL would therefore produce a fresh
  * miss every few minutes for a file that never changed — an unbounded download
- * loop that looks like a cache.
+ * loop that looks like a cache. Keying on the *path* (or, better, on the
+ * canonical media id when the caller has one) makes re-signing free.
  *
- * Identity derivation is NOT done here. It belongs to `core/media/mediaIdentity`,
- * which the in-memory prefetch cache already uses, and having two modules derive
- * their own key for the same asset is how the memory tier and the disk tier come
- * to disagree about whether something is cached. It also cost us the Mux playback
- * id: that is the most stable identity a video has, the identity authority
- * prefers it, and this module could not see it at all — so the same video cached
- * under two different CDN hosts was two files.
- *
- * ## Why the rendition is part of the key
- *
- * A poster and the video it previews share a media id. Keying on the id alone
- * therefore made them the same cache entry, and whichever downloaded first
- * answered for both: fetch a reel's poster, and the cache would then report the
- * *video* as present and hand a decoder a JPEG. That is the specific reason a
- * rendition is required rather than optional — an entry that cannot say which
- * rendition it holds cannot answer "is this playable offline?" honestly.
+ * The cost is real and worth stating: two genuinely different files served from
+ * one path with different query parameters would collide. PulseSoc does not do
+ * that — R2 object keys are content-addressed per media id — and the size check
+ * on read catches the case if it ever starts.
  *
  * ## Eviction
  *
- * An age ceiling first, then retention tier, then LRU within the tier. Age
- * matters independently of size because a cache that never fills its quota still
- * holds a year-old private thumbnail forever, and "we were under quota" is not
- * an answer to that.
- *
- * The tier exists because recency alone gets the important case backwards. A
- * speculative warm is written at the instant it is guessed at, making it the
- * newest entry in the cache, while a file the user deliberately saved an hour
- * ago is among the oldest — so plain LRU discards what was asked for in order to
- * protect what was merely predicted. See {@link MediaRetention}.
- *
- * ## Budget
- *
- * `maxBytes` is a hard ceiling; the effective budget is that ceiling narrowed by
- * how much room the device actually has. One fixed number is wrong at both ends
- * of the hardware range at once. See {@link mediaBudgetForDisk}.
+ * LRU by last access, with an age ceiling on top. Age matters independently of
+ * size because a cache that never fills its quota still holds a year-old private
+ * thumbnail forever, and "we were under quota" is not an answer to that.
  *
  * Integrity is verified on every read: the file must exist and its size must
  * match what was recorded at write. A truncated file — the app was killed
@@ -89,24 +65,7 @@ import {
   moveAsync
 } from "expo-file-system/legacy";
 
-import {
-  mediaCacheKey as identityCacheKey,
-  mediaIdentityOf,
-  type MediaRendition
-} from "../core/media/mediaIdentity";
 import { trackMediaEvent } from "./mediaTelemetry";
-
-/**
- * Why these bytes are on disk, which decides who gives them up first.
- *
- * `explicit` means a person asked for this specific file — saved it, shared it,
- * opened it. `predictive` means we guessed they might want it: the radio track
- * after the one playing, a warmed poster. The distinction is not about value,
- * it is about who notices. Re-fetching a guess costs nothing anybody asked for;
- * re-fetching a file the user deliberately pulled down costs them the thing
- * they pulled it down for, which on a bad connection is the whole point.
- */
-export type MediaRetention = "explicit" | "predictive";
 
 export type MediaCacheEntry = {
   key: string;
@@ -115,21 +74,13 @@ export type MediaCacheEntry = {
   mimeType?: string;
   createdAt: number;
   lastAccessAt: number;
-  /**
-   * Absent on entries written before retention existed. Read as `predictive`
-   * everywhere — see `retentionOf`.
-   */
-  retention?: MediaRetention;
 };
 
 export type MediaCacheStats = {
   scope: string;
   entries: number;
   bytes: number;
-  /** The hard ceiling. */
   maxBytes: number;
-  /** What the ceiling actually works out to on this device right now. */
-  budgetBytes: number;
 };
 
 /**
@@ -161,52 +112,6 @@ let maxAgeMs = 14 * 24 * 60 * 60 * 1000;
  * user sees the whole phone misbehave.
  */
 let minFreeDiskBytes = 128 * 1024 * 1024;
-
-/**
- * Smallest budget the cache will ever operate under.
- *
- * Without a floor, a nearly-full disk computes a budget near zero, which evicts
- * the entire cache on the next write and frees nothing the user cares about —
- * the disk is full of photos and other apps, not of us. A cache that small is
- * also actively harmful: every read misses, so a device already short on space
- * starts re-downloading everything it looks at.
- */
-export const MEDIA_BUDGET_FLOOR_BYTES = 32 * 1024 * 1024;
-
-/** Share of free disk the cache is willing to claim. We are a guest here. */
-const FREE_DISK_SHARE = 0.1;
-
-/**
- * What the ceiling works out to on a device with `freeDiskBytes` available.
- *
- * A fixed byte cap is wrong in both directions at once: it is a rounding error
- * on a 1TB phone and an eviction storm on a phone with 300MB left. The ceiling
- * stays the hard cap — this only ever tightens it, never raises it — so a
- * caller that has deliberately configured a small budget keeps the budget it
- * configured.
- *
- * Exported pure so the policy can be asserted directly. An unreadable disk
- * yields the ceiling rather than zero: a failed stat is not evidence of a full
- * disk, and treating it as one would disable offline playback on that device.
- */
-export function mediaBudgetForDisk(freeDiskBytes: number, ceilingBytes: number): number {
-  const ceiling = Math.max(0, Number(ceilingBytes) || 0);
-  if (!Number.isFinite(freeDiskBytes)) return ceiling;
-  const share = Math.floor(Math.max(0, freeDiskBytes) * FREE_DISK_SHARE);
-  return Math.min(ceiling, Math.max(share, Math.min(MEDIA_BUDGET_FLOOR_BYTES, ceiling)));
-}
-
-/** The live budget, reading the device. Falls back to the ceiling if it cannot. */
-async function currentBudget(): Promise<number> {
-  if (maxBytes <= 0) return 0;
-  const free = await getFreeDiskStorageAsync().catch(() => Number.POSITIVE_INFINITY);
-  return mediaBudgetForDisk(free, maxBytes);
-}
-
-/** Entries from before retention existed are the cheap tier; see the type. */
-function retentionOf(entry: MediaCacheEntry): MediaRetention {
-  return entry.retention === "explicit" ? "explicit" : "predictive";
-}
 
 let scope = ANON_SCOPE;
 let indexCache: Record<string, MediaCacheEntry> | null = null;
@@ -265,83 +170,25 @@ function digest(input: string): string {
 }
 
 /**
- * Tag a row id with the id space it came from.
- *
- * A row id is only unique within its own table, and the app routinely holds two
- * of them at once: a Comm-v2 message carries a `chat_media_uploads` id in
- * `media_upload_id` and a `comm_v2_attachments` id in `attachment_id`, drawn
- * from independent autoincrements, so the same number names two unrelated
- * files. Keyed as bare integers they collapse onto one entry and one file on
- * disk — whichever downloads first is what the other one opens.
- *
- * Nothing downstream can catch that. The entry is internally consistent and its
- * recorded size matches the file, so the integrity check on read passes; the
- * user simply gets the wrong document. Separating the id spaces at the point the
- * key is built is the only place it is cheap.
- *
- * Returns null when there is no usable id, which callers pass straight through
- * so the key falls back to the URL. That is honest; a fabricated id is not.
- */
-export function namespacedMediaId(namespace: string, id: unknown): string | null {
-  const safeNamespace = namespace.replace(/[^A-Za-z0-9_]/g, "").toLowerCase();
-  const numeric = Number(id);
-  if (!safeNamespace || !Number.isFinite(numeric) || numeric <= 0) return null;
-  return `${safeNamespace}:${Math.trunc(numeric)}`;
-}
-
-const NAMESPACED_MEDIA_ID = /^[A-Za-z0-9_]+:[0-9]+$/;
-
-/**
- * A bare number keys as itself, so every entry written before namespacing
- * existed still resolves. A namespaced identity is carried through whole and
- * must never meet `Number()`, which turns `attachment:7` into NaN and silently
- * drops the caller back to URL keying — the failure mode being fixed here,
- * wearing a different hat.
- */
-function normalizeMediaIdentity(value: number | string | null | undefined): string {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (NAMESPACED_MEDIA_ID.test(trimmed)) return trimmed.toLowerCase();
-  }
-  const numeric = Number(value || 0);
-  return numeric > 0 ? String(numeric) : "";
-}
-
-/**
  * Normalize a media reference to a cache key.
  *
- * Identity comes from the shared authority so the disk tier and the memory tier
- * agree; the rendition is appended so two renditions of one asset are two
- * entries. Defaults to `full` because that is what every existing caller —
- * save-to-gallery, share, open-document — is actually asking for.
- *
- * Returns "" when there is nothing durable to key on. Callers must treat that as
- * "not cacheable" rather than inventing a key: a synthesised one would be unique
- * per call and would consume the budget while never being hit.
+ * Canonical media id wins whenever the caller has one: it is the identity the
+ * backend already guarantees, and it survives the CDN host changing underneath
+ * us. The URL path is the fallback for media that has no record yet.
  */
-export function mediaCacheKey(input: {
-  mediaId?: number | string | null;
-  url?: string | null;
-  rendition?: MediaRendition;
-}): string {
-  // `0`, "" and "0" all mean "no id" here, but a bare 0 is a finite number and
-  // the identity authority would accept it as row zero. Normalising first keeps
-  // that judgement in the one place that knows this caller's conventions.
-  //
-  // The result stays a string all the way into the authority. A namespaced
-  // identity must never meet `Number()` -- it yields NaN, which drops the caller
-  // back to URL keying and reinstates the collision the namespace exists to
-  // prevent. `mediaIdentityOf` takes a string row id, so `media_upload:7` and
-  // `attachment:7` derive two identities, while a plain `7` derives the same
-  // `media:7` it always did.
-  const usableId = normalizeMediaIdentity(input.mediaId) || null;
+export function mediaCacheKey(input: { mediaId?: number | string | null; url?: string | null }): string {
+  const mediaId = Number(input.mediaId || 0);
+  if (mediaId > 0) return `id:${mediaId}`;
+  const url = String(input.url || "").trim();
+  if (!url) return "";
+  return `u:${digest(normalizeUrlForKey(url))}`;
+}
 
-  const identity = mediaIdentityOf({
-    id: usableId,
-    media_url: input.url ?? null
-  });
-  if (!identity) return "";
-  return identityCacheKey(identity, input.rendition || "full");
+function normalizeUrlForKey(url: string): string {
+  // Drop fragment, then query — see the module note on signed URLs.
+  const withoutFragment = url.split("#")[0];
+  const withoutQuery = withoutFragment.split("?")[0];
+  return withoutQuery.toLowerCase();
 }
 
 async function readIndex(): Promise<Record<string, MediaCacheEntry>> {
@@ -421,40 +268,6 @@ export async function lookupCachedMedia(key: string): Promise<MediaCacheEntry | 
 }
 
 /**
- * Ask whether a key is present and intact, without counting as a use.
- *
- * `lookupCachedMedia` is the read path: it bumps the LRU and emits hit/miss
- * telemetry, both correct when something is about to consume the bytes. Asking
- * "what do I hold for this media?" is a different question — a playback-state
- * report probes several renditions per asset and would otherwise fabricate a
- * miss for every rendition that was never supposed to exist, and keep entries
- * alive purely by inspecting them.
- *
- * Integrity is still verified, and a bad entry is still dropped. A peek that
- * skipped verification would be the one thing worse than no peek: it would
- * report a vanished file as cached.
- */
-export async function peekCachedMedia(key: string): Promise<MediaCacheEntry | null> {
-  if (!key) return null;
-  const index = await readIndex();
-  const entry = index[key];
-  if (!entry) return null;
-
-  if (maxAgeMs > 0 && Date.now() - entry.createdAt > maxAgeMs) {
-    await dropEntries([entry], "age");
-    return null;
-  }
-
-  const info = await getInfoAsync(entry.fileUri).catch(() => ({ exists: false }) as { exists: boolean });
-  const size = Number((info as { size?: number }).size || 0);
-  if (!info.exists || (entry.bytes > 0 && size !== entry.bytes)) {
-    await dropEntries([entry], "corrupt");
-    return null;
-  }
-  return entry;
-}
-
-/**
  * Make room for `bytes`, or refuse.
  *
  * Called before a download starts rather than after it fails, so the user is
@@ -468,8 +281,7 @@ export async function ensureRoomFor(bytes: number): Promise<void> {
   if (maxBytes > 0 && wanted > 0) {
     const index = await readIndex();
     const used = totalBytes(index);
-    const budget = await currentBudget();
-    if (used + wanted > budget) await evictMediaCache(used + wanted - budget);
+    if (used + wanted > maxBytes) await evictMediaCache(used + wanted - maxBytes);
   }
 
   if (wanted > 0) {
@@ -498,8 +310,6 @@ export async function commitCachedMedia(input: {
   fileUri: string;
   mimeType?: string;
   destinationUri?: string;
-  /** Defaults to `predictive` — see {@link MediaRetention}. */
-  retention?: MediaRetention;
 }): Promise<MediaCacheEntry | null> {
   if (!input.key || !input.fileUri) return null;
   await ensureRootDirectory();
@@ -528,8 +338,7 @@ export async function commitCachedMedia(input: {
     bytes,
     mimeType: input.mimeType,
     createdAt: now,
-    lastAccessAt: now,
-    retention: input.retention === "explicit" ? "explicit" : "predictive"
+    lastAccessAt: now
   };
 
   const index = await readIndex();
@@ -543,22 +352,8 @@ function totalBytes(index: Record<string, MediaCacheEntry>): number {
 }
 
 /**
- * Evict aged-out entries, then by priority, until the cache is under budget
- * with at least `headroom` bytes to spare.
- *
- * ORDER, AND WHY IT IS NOT JUST RECENCY
- *
- * Recency alone inverts in the case that matters. A speculative warm is written
- * at the moment it is guessed at, so it is always the newest thing here, while
- * a file the user deliberately saved an hour ago is among the oldest. Sorting
- * on `lastAccessAt` therefore discards what the user asked for in order to
- * protect what nobody has asked for yet — and it does that hardest exactly when
- * storage is tight, which is when they are least able to fetch it again.
- *
- * So the speculative tier is drained first, in LRU order, and explicit
- * downloads are touched only once there is nothing left to guess with. Within a
- * tier it is still plain LRU; priority orders the tiers, it does not replace
- * recency inside one.
+ * Evict aged-out entries, then LRU until the cache is under quota with at least
+ * `headroom` bytes to spare.
  */
 export async function evictMediaCache(headroom = 0): Promise<number> {
   const index = await readIndex();
@@ -573,11 +368,8 @@ export async function evictMediaCache(headroom = 0): Promise<number> {
     else survivors.push(entry);
   }
 
-  const budget = Math.max(0, (await currentBudget()) - Math.max(0, headroom));
-  survivors.sort((a, b) => {
-    const priority = tierRank(a) - tierRank(b);
-    return priority !== 0 ? priority : a.lastAccessAt - b.lastAccessAt;
-  });
+  const budget = Math.max(0, maxBytes - Math.max(0, headroom));
+  survivors.sort((a, b) => a.lastAccessAt - b.lastAccessAt);
   let used = totalBytes(Object.fromEntries(survivors.map((entry) => [entry.key, entry])));
   while (maxBytes > 0 && used > budget && survivors.length) {
     const victim = survivors.shift() as MediaCacheEntry;
@@ -588,11 +380,6 @@ export async function evictMediaCache(headroom = 0): Promise<number> {
   if (!doomed.length) return 0;
   await dropEntries(doomed, "quota");
   return doomed.length;
-}
-
-/** Lower rank is given up first. */
-function tierRank(entry: MediaCacheEntry): number {
-  return retentionOf(entry) === "explicit" ? 1 : 0;
 }
 
 async function dropEntries(entries: MediaCacheEntry[], reason: "age" | "quota" | "corrupt") {
@@ -612,38 +399,9 @@ async function dropEntries(entries: MediaCacheEntry[], reason: "age" | "quota" |
   await writeIndex(next);
 }
 
-/**
- * Delete one entry that a consumer has proven is unusable.
- *
- * `lookupCachedMedia` already drops an entry whose file is missing or the wrong
- * size, but a file can pass both checks and still be unplayable — a download
- * that finished with the right byte count and the wrong bytes, or a container
- * truncated at a boundary the size check cannot see. Only the player that tried
- * to open it knows that, and without this it would have no way to say so: the
- * entry would be re-served on every attempt and the media would be permanently
- * broken for that account until an unrelated eviction happened to reach it.
- *
- * Reported as `corrupt` rather than `quota` so the eviction telemetry does not
- * read as budget pressure.
- */
-export async function dropCachedMedia(key: string): Promise<boolean> {
-  if (!key) return false;
-  const index = await readIndex();
-  const entry = index[key];
-  if (!entry) return false;
-  await dropEntries([entry], "corrupt");
-  return true;
-}
-
 export async function mediaCacheStats(): Promise<MediaCacheStats> {
   const index = await readIndex();
-  return {
-    scope,
-    entries: Object.keys(index).length,
-    bytes: totalBytes(index),
-    maxBytes,
-    budgetBytes: await currentBudget()
-  };
+  return { scope, entries: Object.keys(index).length, bytes: totalBytes(index), maxBytes };
 }
 
 /**

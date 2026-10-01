@@ -1,9 +1,9 @@
 /**
  * The order timeline — the single component that makes the two perspectives read
- * as one order. It renders the SAME step model (whichever `stepsForVariant`
- * returns) for seller and buyer; only the per-step label swaps (sellerLabel vs
- * buyerLabel), never the shape or the reached position. A step the seller sees as
- * "Shipped" the buyer sees as "On its way" — same dot, same fill, same index.
+ * as one order. It renders the SAME step model (SHIPPING_STEPS / PICKUP_STEPS)
+ * for seller and buyer; only the per-step label swaps (sellerLabel vs buyerLabel),
+ * never the shape or the reached position. A step the seller sees as "Shipped" the
+ * buyer sees as "On its way" — same dot, same fill, same index.
  *
  * Colour is the surface's green "progress / arrival" rule: filled dots and the
  * connecting fill are green (`timeline.fill`) on a neutral track (`timeline.track`),
@@ -20,8 +20,9 @@ import {
   OrderPerspective,
   OrderStep,
   OrderTimelineVariant,
-  reachedStepIndex,
-  stepsForVariant
+  PICKUP_STEPS,
+  SHIPPING_STEPS,
+  reachedStepIndex
 } from "../../api/ordersDashboard";
 
 export function OrderTimeline({
@@ -33,10 +34,7 @@ export function OrderTimeline({
   variant: OrderTimelineVariant;
   perspective: OrderPerspective;
 }) {
-  // One source for the strip, shared with `reachedStepIndex`. This used to be a
-  // second `variant === "pickup" ? … : …` written out here, which would have
-  // drawn a digital order's two dots against a four-step reached index.
-  const steps = stepsForVariant(variant);
+  const steps = variant === "pickup" ? PICKUP_STEPS : SHIPPING_STEPS;
   const reached = reachedStepIndex(status, variant);
 
   return (

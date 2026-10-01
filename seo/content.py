@@ -1,4 +1,3 @@
-from . import commerce_policies, features
 from .schema import SHARE_IMAGE_URL, SITE_URL
 
 COMMON_FAQS = [
@@ -208,12 +207,17 @@ SEO_PAGES.update({
         "faqs": COMMON_FAQS,
         "related": ["/features", "/pricing", "/support"],
     },
-    # "features" used to live here, describing an AI crypto assistant, Scam
-    # Shield, Wallet Intel and a Telegram companion bot. It was the only
-    # /features URL on a domain whose product is a social iPhone app, so it now
-    # belongs to `seo/features.py` and `bot.features_hub_page`, which serves the
-    # hub for the eight /features/<slug> pages. The crypto topics it listed were
-    # not deleted -- they have their own pages, and the new hub links to them.
+    "features": {
+        "title": "PulseSoc Features | AI Crypto Intelligence Platform",
+        "description": "Explore PulseSoc platform features: AI crypto assistant, live market intelligence, Scam Shield, Wallet Intel, portfolio tracking, alerts, Sports Edge, and optional Telegram companion access.",
+        "h1": "PulseSoc Platform Features",
+        "eyebrow": "Platform Features",
+        "intro": "PulseSoc is a standalone web and mobile-first crypto intelligence platform with optional Telegram companion access.",
+        "answer": "The platform combines AI analysis, live market context, public wallet intelligence, scam detection, portfolio monitoring, alerts, and educational decision support in one account-based SaaS workflow.",
+        "points": ["AI Crypto Assistant", "Live Market Intelligence", "Scam Shield", "Wallet Intel", "Portfolio and Watchlist", "Optional Telegram Alerts"],
+        "faqs": COMMON_FAQS,
+        "related": ["/app", "/ai-market-analysis", "/crypto-safety", "/portfolio-intelligence"],
+    },
     "pricing": {
         "title": "PulseSoc Pricing | Free Market Tools and Pro Arena Training",
         "description": "Compare PulseSoc Free and Pro access for market tracking, limited AI, alerts, education, Scam Shield, Pro Arena battles, live rooms, and immersive fake-money crypto training.",
@@ -1107,13 +1111,7 @@ def search_pages(query, limit=12):
 
 
 def all_public_paths():
-    paths = ["/", "/app", "/about", "/signup", "/support", "/privacy", "/terms", "/quote", "/quote/crypto/BTC", "/quote/crypto/ETH", "/predictions/crypto", "/sports-edge", "/arena-preview"]
-    paths += features.all_paths()
-    # The four commerce policy pages. They enter the sitemap through the same
-    # list as every other written page rather than through a special case,
-    # because they are ordinary indexable pages -- what makes them notable is
-    # only that Merchant Center refuses to approve an account without them.
-    paths += commerce_policies.all_paths()
+    paths = ["/", "/about", "/signup", "/support", "/privacy", "/terms", "/quote", "/quote/crypto/BTC", "/quote/crypto/ETH", "/predictions/crypto", "/sports-edge", "/arena-preview"]
     paths += ["/" + slug for slug in SEO_PAGES]
     paths += ["/markets/" + slug for slug in MARKET_PAGES]
     paths += ["/markets/" + slug + "/prediction" for slug in MARKET_PAGES]

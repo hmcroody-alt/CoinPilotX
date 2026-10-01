@@ -1,13 +1,10 @@
-import type { PulseCommerceOverlay } from "./pulseCommerceOverlay";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { absoluteApiUrl, PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 import { profileTargetFromAuthor } from "./profileTarget";
 import { CanonicalMediaRecord, hasRenderableImage, hasRenderableMediaUrl, mediaRecordForCache } from "../media/mediaContract";
-import { renditionUrl } from "../core/media/mediaIdentity";
 import { buildCommentTree } from "../social/commentTree";
 import { observeSavedState } from "../social/savedStore";
-import { readJsonCacheEntry, writeJsonCache } from "../core/cache";
 
 const FEED_CACHE_PREFIX = "pulsesoc.native.feed.";
 const POST_CACHE_PREFIX = "pulsesoc.native.post.";
@@ -58,13 +55,6 @@ export type PulsePostMusic = {
   /** Music is already digitally mixed into the uploaded MP4; retain attribution without double playback. */
   audio_baked_in?: boolean;
   original_audio_muted?: boolean;
-  /**
-   * The owner has taken this track down. The track is still attached -- the
-   * post, its caption and its engagement are untouched -- but no url will be
-   * served for it and nothing should try to load one.
-   */
-  audio_unavailable?: boolean;
-  audio_unavailable_state?: string;
 };
 
 export type PulseComment = {
@@ -95,12 +85,6 @@ export type PulseComment = {
 export type PulsePost = {
   id: number;
   post_id: number;
-  /**
-   * Live commerce, present only on a PulseDrop Signal. Absent on every other
-   * post. On a repost it rides on `original_post`, not on the wrapper: the
-   * resharing user is not the publisher and the nested card is the product.
-   */
-  commerce?: PulseCommerceOverlay;
   user_id?: number;
   post_type?: string;
   content_type?: string;
@@ -199,21 +183,6 @@ export type CreatePostPayload = {
   audio_start_time?: number;
   audio_volume?: number;
   audio_baked_in?: boolean;
-  /**
-   * Marketplace listing ids the creator says this post is about.
-   *
-   * Ownership-checked server-side per id (`bot.pulse_attach_products_to_content`),
-   * so sending an id you do not own is refused rather than an error — and a
-   * refusal does not cost you the post. Capped at
-   * `PULSE_PRODUCT_TAG_REQUEST_LIMIT` (20) per request and at 5 stored per piece
-   * of content; the picker reads both limits from the server rather than
-   * hardcoding them.
-   *
-   * Owning a listing is not the same as the listing being servable. A tag can be
-   * accepted and the product still never shown — see
-   * `fetchTaggableProducts`, whose whole purpose is to say which.
-   */
-  product_listing_ids?: number[];
 };
 
 export type CreatePostResponse = {
@@ -266,27 +235,20 @@ export async function listFeed(params: FeedParams = {}) {
   };
 }
 
-/**
- * The cached feed together with how old it is.
- *
- * Age is the point. A screen that shows cached posts without saying when they
- * were fetched is making a claim about freshness it cannot support, and the
- * reader has no way to tell yesterday's feed from this minute's. `storedAt` is
- * null only for a record written by a build that predates the cache envelope —
- * unknown age stays unknown rather than being guessed at as "now", which would
- * make the oldest possible cache look like the newest.
- */
-export async function loadCachedFeedSnapshot(feed = "for_you") {
-  const entry = await readJsonCacheEntry<PulsePost[]>(`${FEED_CACHE_PREFIX}${feed}`, normalizePosts);
-  return { posts: entry?.value || [], storedAt: entry?.storedAt ?? null, ageMs: entry?.ageMs ?? null };
-}
-
 export async function loadCachedFeed(feed = "for_you") {
-  return (await loadCachedFeedSnapshot(feed)).posts;
+  const key = `${FEED_CACHE_PREFIX}${feed}`;
+  try {
+    const cached = await AsyncStorage.getItem(key);
+    if (!cached) return [];
+    return normalizePosts(JSON.parse(cached) as PulsePost[]);
+  } catch {
+    await AsyncStorage.removeItem(key).catch(() => undefined);
+    return [];
+  }
 }
 
 export async function cacheFeed(feed: string, posts: PulsePost[]) {
-  await writeJsonCache(`${FEED_CACHE_PREFIX}${feed}`, posts.slice(0, 80).map(postForCache));
+  await AsyncStorage.setItem(`${FEED_CACHE_PREFIX}${feed}`, JSON.stringify(posts.slice(0, 80).map(postForCache)));
 }
 
 export async function getPostDetail(postId: number) {
@@ -320,15 +282,7 @@ export async function createPost(payload: CreatePostPayload) {
         payload.original_audio_muted ?? Boolean(payload.music_track_id),
       audio_start_time: payload.audio_start_time ?? 0,
       audio_volume: payload.audio_volume ?? 1,
-      audio_baked_in: Boolean(payload.audio_baked_in),
-      // This body is a whitelist, not a spread of `payload`. A field absent from
-      // this literal is dropped with no error on either side, which is why
-      // adding a create-payload field means editing two places and why the
-      // omission presents as "the server ignores my tags" rather than as a
-      // client bug. Sent unconditionally: an empty array is a valid statement
-      // ("no products"), and the server treats a missing key and an empty list
-      // identically.
-      product_listing_ids: payload.product_listing_ids || []
+      audio_baked_in: Boolean(payload.audio_baked_in)
     })
   });
   const post = data.post ? normalizePost(data.post) : undefined;
@@ -672,90 +626,14 @@ export function mediaDisplayUrl(media: PulseMedia) {
     media.mux_hls_url, media.cdn_url, media.valid_url, media.thumbnail_url, media.poster_url
   ];
   const url = candidates.find((value) => typeof value === "string" && value.trim().length > 0)?.trim() || "";
-  return absoluteMediaUrl(url);
-}
-
-/**
- * Absolute URIs (http(s), plus local preview schemes: file:, content:, ph:,
- * asset:, data:, blob:) are returned as-is. Only server-relative paths get the
- * API base prefix. This lets pre-publish previews render local device media
- * through the exact same renderers as published content.
- */
-function absoluteMediaUrl(value: string) {
-  const url = value.trim();
   if (!url) return "";
+  // Absolute URIs (http(s), plus local preview schemes: file:, content:, ph:,
+  // asset:, data:, blob:) are returned as-is. Only server-relative paths get the
+  // API base prefix. This lets pre-publish previews render local device media
+  // through the exact same renderers as published content.
   if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
   if (url.startsWith("/")) return `${PULSE_API_BASE_URL}${url}`;
   return `${PULSE_API_BASE_URL}/${url}`;
-}
-
-/**
- * The still frame for a record -- what an `<Image>` may be pointed at.
- *
- * This is a different question from `mediaDisplayUrl`, and conflating the two
- * is what put a black rectangle in every shared-post card. That resolver answers
- * "where does this media live", so for a video it answers with the video:
- * `playback_url` and `hls_url` sit third and fourth in its candidate list, ahead
- * of `thumbnail_url` and `poster_url`. Hand that to an `<Image>` and you get no
- * error, no `onError`, and a filled aspect box that never draws -- the failure is
- * invisible to the component and to any test that only checks a URL was produced.
- *
- * The still chain itself is not re-spelled here. `renditionUrl(media, "thumb")`
- * is the app's existing answer, used by the prefetcher, and it is deliberately
- * strict: it will not fall back from a poster to the full asset. A second
- * ordering written locally would be a second answer to drift from.
- *
- * Two things are added on top of it.
- *
- * The first is that the still fields are not taken on trust. `thumbnail_url` is
- * the first link in that chain and the server can put a video in it: both
- * `media_service.resolve_media` and `pulse_feed_engine._canonical_media_payload`
- * blank a video out of the *poster* and then fall the *thumbnail* back to the
- * asset itself one line later. Both have been fixed, but a payload cached on
- * this device from before the fix is still sitting in AsyncStorage and will be
- * served to a card on the next cold start. A client that believes a field named
- * `thumbnail_url` must be a thumbnail has no way to notice; the URL is a
- * perfectly good URL, and an `<Image>` pointed at an `.m3u8` reports nothing at
- * all. So a still candidate that is plainly a video is discarded and the chain
- * moves on to `mux_thumbnail_url`, which is where the real frame lives.
- *
- * The second is the kind-aware tail. A video with no still returns `""` so the
- * caller draws no media at all, which is honest -- better a card with no picture
- * than a black box captioned "Video". A still image with no separate thumbnail
- * is its own poster, so it falls through to the display URL rather than losing
- * its preview to a strictness that was only ever about video.
- */
-export function mediaPosterUrl(media: PulseMedia) {
-  const still = renditionUrl(stillFieldsOf(media), "thumb");
-  if (still && still.trim()) return absoluteMediaUrl(still);
-  if (mediaKind(media) === "video") return "";
-  return mediaDisplayUrl(media);
-}
-
-/**
- * The record with anything video-shaped removed from its still fields.
- *
- * Deliberately not a filter over a candidate list: keeping the record whole is
- * what lets `renditionUrl` stay the only place the still ordering is written
- * down. Extension-sniffing is a weak test, but it is the same test the server
- * uses (`media_service._is_video_url`) and it only ever *removes* a candidate,
- * so its failure mode is falling through to the next still rather than drawing
- * the wrong thing.
- */
-function stillFieldsOf(media: PulseMedia) {
-  const record = media as PulseMedia & { mux_thumbnail_url?: string };
-  return {
-    ...record,
-    thumbnail_url: stillCandidate(record.thumbnail_url),
-    poster_url: stillCandidate(record.poster_url),
-    mux_thumbnail_url: stillCandidate(record.mux_thumbnail_url)
-  };
-}
-
-function stillCandidate(value: string | undefined | null) {
-  const url = String(value || "").trim();
-  if (!url) return "";
-  return /\.(mp4|mov|m3u8|webm|m4v|qt)(\?|#|$)/i.test(url) ? "" : url;
 }
 
 export function mediaKind(media: PulseMedia) {
@@ -768,17 +646,11 @@ export function mediaKind(media: PulseMedia) {
 
 /**
  * Renderability for a feed post's media, kind-aware. Still images must clear the
- * stricter `hasRenderableImage` gate -- a drawable URL that the server has not
- * marked unavailable -- so a failed/skipped Insight image, which the serializer
- * still hands back with a populated `media_url`, never reserves a media box.
- * Video/live keep the plain URL gate: a clip legitimately renders from a poster
- * while its playback asset is still processing.
- *
- * That image gate used to also demand real dimensions, and this comment used to
- * say so. It was the wrong proxy: `chat_media_uploads.width/height` are nullable
- * and nothing on the upload path ever filled them, so healthy user photos were
- * filtered out here and their posts rendered with no picture at all. Availability
- * is the signal; size is a layout detail with a 4:5 fallback.
+ * strict `hasRenderableImage` gate (drawable URL, server-available, real
+ * dimensions) so a failed/skipped Insight image -- which the serializer still
+ * hands back with a populated `media_url` and zeroed dimensions -- never reserves
+ * a media box. Video/live keep the URL gate: a clip legitimately renders from a
+ * poster while its playback asset is still processing and carries no image dims.
  */
 export function feedRenderableMedia(list: readonly PulseMedia[] | null | undefined): PulseMedia[] {
   return (list || []).filter((media) =>

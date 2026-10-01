@@ -12,7 +12,6 @@ from flask import Blueprint, Response, jsonify, redirect, render_template, reque
 from . import flags, service
 from services import pulsesoc_communications_engine as call_engine
 from services import pulsesoc_reliability
-from services.route_auth import auth_required
 
 
 comm_v2_blueprint = Blueprint("pulse_communications_v2", __name__)
@@ -1116,21 +1115,6 @@ def conversation_control_media(conversation_ref):
     return _timed_json("conversation_control_media", lambda: service.conversation_control_media(user["user_id"], conversation_ref, request.args))
 
 
-@comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/media")
-@auth_required
-def conversation_media_history(conversation_ref):
-    """Paginated image+video history for the full-screen chat media gallery.
-
-    Membership is checked inside `service.conversation_media_history`, which
-    refuses before it reads any attachment row — changing the conversation id
-    here gets a 403, not somebody else's photos.
-    """
-    user, denied = _require_user()
-    if denied:
-        return denied
-    return _timed_json("conversation_media_history", lambda: service.conversation_media_history(user["user_id"], conversation_ref, request.args))
-
-
 @comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/control-center/links")
 def conversation_control_links(conversation_ref):
     user, denied = _require_user()
@@ -1196,11 +1180,7 @@ def read_state(conversation_ref):
     user, denied = _require_user()
     if denied:
         return denied
-    payload = request.get_json(silent=True) or {}
-    through = payload.get("through_message_id")
-    if through is not None and (type(through) is not int or through < 0):
-        return _json({"ok": False, "http_status": 400})
-    return _timed_json("read_receipt", lambda: service.mark_read(user["user_id"], conversation_ref, through_message_id=through))
+    return _timed_json("read_receipt", lambda: service.mark_read(user["user_id"], conversation_ref))
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/pin")
@@ -1407,44 +1387,6 @@ def api_call_capabilities():
     if denied:
         return denied
     return _timed_json("api_call_capabilities", lambda: call_engine.call_capabilities(user["user_id"]))
-
-
-@comm_v2_blueprint.post("/api/calls/voip-token")
-@auth_required
-def api_register_voip_token():
-    """Store this device's PushKit VoIP token so incoming calls can ring it.
-
-    Signed-in only, and the token is always filed against the *session's* user —
-    never a user id from the body. A VoIP token is a ring credential: whoever
-    holds a row for it can make that handset ring full-screen through CallKit,
-    so letting a request name its own owner would be a way to make someone
-    else's phone ring on demand.
-    """
-    user, denied = _require_user()
-    if denied:
-        return denied
-    return _timed_json(
-        "api_call_voip_token_register",
-        lambda: call_engine.register_voip_token(user["user_id"], request.get_json(silent=True) or {}),
-    )
-
-
-@comm_v2_blueprint.post("/api/calls/voip-token/revoke")
-@auth_required
-def api_revoke_voip_token():
-    """Stop VoIP pushes to this device — logout, permission loss, or uninstall.
-
-    Revocation is scoped to the session's user for the same reason registration
-    is: an unscoped revoke by raw token would let any signed-in account silence
-    any handset whose token it could guess or replay.
-    """
-    user, denied = _require_user()
-    if denied:
-        return denied
-    return _timed_json(
-        "api_call_voip_token_revoke",
-        lambda: call_engine.revoke_voip_token(user["user_id"], request.get_json(silent=True) or {}),
-    )
 
 
 @comm_v2_blueprint.post("/api/calls/<path:call_id>/decline")
@@ -1822,22 +1764,3 @@ def notification_preview():
 
 def register(app) -> None:
     app.register_blueprint(comm_v2_blueprint)
-
-
-@comm_v2_blueprint.post(f"{API_PREFIX}/notifications/reconcile")
-@auth_required
-def reconcile_message_notifications():
-    user, denied = _require_user()
-    if denied:
-        return denied
-    from .notification_reconciliation import reconcile
-    payload = request.get_json(silent=True) or {}
-    entries = payload.get("entries")
-    if not isinstance(entries, list) or len(entries) > 100:
-        return _json({"ok": False, "http_status": 400})
-    conn, cur = service._open_db()
-    try:
-        result = reconcile(cur, int(user["user_id"]), entries)
-    finally:
-        conn.close()
-    return _json({"ok": True, "recipientUserId": int(user["user_id"]), "dismiss": result})

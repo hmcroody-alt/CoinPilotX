@@ -1,4 +1,3 @@
-import { reconcileMessageNotifications } from "../core/messageNotificationReconciliation";
 import { BottomTabNavigationProp, createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
@@ -13,7 +12,7 @@ import { AppState } from "react-native";
 import { businessOsSection } from "../api/businessOs";
 import { getMyProfile, PulseProfile } from "../api/profile";
 import { isMember } from "../entitlements/canonicalTier";
-import { loadCanonicalTier, useCanonicalTier } from "../entitlements/useCanonicalTier";
+import { useCanonicalTier } from "../entitlements/useCanonicalTier";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { MinimizedCallBanner } from "../calls/MinimizedCallBanner";
 import { invalidateNativeSync, registerSyncInvalidation, startNativeEventSync } from "../core/eventSync";
@@ -36,10 +35,20 @@ import { CryptoAlertHistoryScreen } from "../screens/CryptoAlertHistoryScreen";
 import { CryptoPortfolioScreen } from "../screens/CryptoPortfolioScreen";
 import { MarketPulseScreen } from "../screens/MarketPulseScreen";
 import { PrivateOfficeScreen } from "../screens/PrivateOfficeScreen";
+import { PrivateFactsScreen } from "../screens/PrivateFactsScreen";
+import { PrivateOperationsScreen } from "../screens/PrivateOperationsScreen";
+import { CapitalGraphScreen } from "../screens/CapitalGraphScreen";
+import { CapitalEntityScreen } from "../screens/CapitalEntityScreen";
 import { PrivateOfficeSecurityScreen } from "../screens/PrivateOfficeSecurityScreen";
+import { PrivateDocumentsScreen } from "../screens/PrivateDocumentsScreen";
 import { PrivatePeopleScreen } from "../screens/PrivatePeopleScreen";
+import { PrivateBriefingsScreen } from "../screens/PrivateBriefingsScreen";
+import { PrivateShieldScreen } from "../screens/PrivateShieldScreen";
+import { PrivateConciergeScreen } from "../screens/PrivateConciergeScreen";
 import { PrivateMeetingsScreen } from "../screens/PrivateMeetingsScreen";
 import { PrivateMeetingRoomScreen } from "../screens/PrivateMeetingRoomScreen";
+import { PrivateConversationsScreen } from "../screens/PrivateConversationsScreen";
+import { PrivateConversationInfoScreen } from "../screens/PrivateConversationInfoScreen";
 import { PortfolioScreen } from "../screens/PortfolioScreen";
 import { WatchlistsScreen } from "../screens/WatchlistsScreen";
 import { ActivityRoute } from "../screens/ActivityRoute";
@@ -65,7 +74,6 @@ import { DropshippingOrdersScreen } from "../screens/dropshipping/DropshippingOr
 import { DropshippingProductsScreen } from "../screens/dropshipping/DropshippingProductsScreen";
 import { DropshippingSyncScreen } from "../screens/dropshipping/DropshippingSyncScreen";
 import { ImportCartScreen } from "../screens/dropshipping/ImportCartScreen";
-import { ImportPolicyScreen } from "../screens/dropshipping/ImportPolicyScreen";
 import { ReviewImportedProductScreen } from "../screens/dropshipping/ReviewImportedProductScreen";
 import { SupplierCatalogScreen } from "../screens/dropshipping/SupplierCatalogScreen";
 import { SupplierProductScreen } from "../screens/dropshipping/SupplierProductScreen";
@@ -128,7 +136,6 @@ import { AboutSettingsScreen } from "../screens/settings/AboutSettingsScreen";
 import { AccessibilitySettingsScreen } from "../screens/settings/AccessibilitySettingsScreen";
 import { AppearanceSettingsScreen } from "../screens/settings/AppearanceSettingsScreen";
 import { BlockedUsersScreen } from "../screens/settings/BlockedUsersScreen";
-import { CommerceSettingsScreen } from "../screens/settings/CommerceSettingsScreen";
 import { DataPrivacySettingsScreen } from "../screens/settings/DataPrivacySettingsScreen";
 import { HelpSettingsScreen } from "../screens/settings/HelpSettingsScreen";
 import { LanguageSettingsScreen } from "../screens/settings/LanguageSettingsScreen";
@@ -294,7 +301,8 @@ export function AppNavigator() {
    * beside it, so it is the one place the total does not double-count.
    */
   const refreshBadges = useCallback(async () => {
-    await reconcileMessageNotifications();
+    const next = await refreshUnreadCounts();
+    await Notifications.setBadgeCountAsync(next.totalCount).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -302,26 +310,9 @@ export function AppNavigator() {
     const refreshBadgeSync = () => refreshBadges();
     const unregisterNotifications = registerSyncInvalidation("notifications", refreshBadgeSync);
     const unregisterActivity = registerSyncInvalidation("activity", refreshBadgeSync);
-    const unregisterMessages = registerSyncInvalidation("messenger", refreshBadgeSync);
     const stopSync = startNativeEventSync({
       fullResyncOnStart: true,
-      subsystems: [
-        "messenger",
-        "activity",
-        "notifications",
-        "orders",
-        "marketplace",
-        "seller_inventory",
-        "status",
-        "reels",
-        // Entitlement belongs here for the *fallback* leg specifically. A delta
-        // poll invalidates whatever its events name, so a premium event already
-        // reaches the subscription below without this list. But when the delta
-        // endpoint fails, the fallback invalidates this list and nothing else —
-        // and "the sync endpoint is down" is exactly the moment a member who was
-        // just granted Premium would otherwise keep seeing it locked.
-        "premium"
-      ]
+      subsystems: ["activity", "notifications", "orders", "marketplace", "seller_inventory", "status", "reels"]
     });
     // The shared bell store (every seller header + Activity read from this one
     // source). Opt-in so importing the store never triggers network; wired once
@@ -337,56 +328,15 @@ export function AppNavigator() {
     return () => {
       unregisterNotifications();
       unregisterActivity();
-      unregisterMessages();
       stopSync();
       stopUnreadSync();
       appState.remove();
       received.remove();
     };
-  }, [refreshBadges, authState.user]);
+  }, [refreshBadges]);
 
   useEffect(() => {
-    // The drawer and header identity are fetched once, so without the
-    // subscription below a member who changed their profile photo kept seeing
-    // the old one in the header for the rest of the process — the avatar had
-    // changed everywhere the server was asked, and nowhere it was not.
-    const reload = () => {
-      getMyProfile().then(setProfile).catch(() => undefined);
-    };
-    reload();
-    return registerSyncInvalidation("profile", reload);
-  }, []);
-
-  useEffect(() => {
-    // An admin grant is the one entitlement change the device cannot observe.
-    // Purchase and restore are local acts, so `PremiumCenterScreen` re-reads
-    // straight after them; sign-in re-reads in `auth.ts`. A grant happens on a
-    // server the app is not talking to, to a member who is holding the phone —
-    // and until this subscription existed the only thing that would deliver it
-    // was `PremiumFeatureGate`'s foreground listener. A member who never
-    // backgrounds the app never foregrounds it either, so "restart the app" was
-    // the actual remedy for a grant, which is the shape of the complaint that
-    // started this: paid for it / was given it / still locked.
-    //
-    // The server already routes the event here — `subsystemsForSyncEvent` maps
-    // anything matching premium|subscription|entitlement|founder onto the
-    // "premium" subsystem. The delivery path ran end to end and terminated in
-    // no subscriber.
-    //
-    // Subscribing here rather than inside the cache module keeps the cache free
-    // of network lifecycle: this is mounted exactly while signed in
-    // (`App.tsx` renders AppNavigator only then), which is exactly the window
-    // in which entitlement means anything. One subscription serves every
-    // Premium surface because they all read the one shared answer.
-    return registerSyncInvalidation("premium", () => {
-      // Deliberately a plain load, not a reset-then-load. A reset publishes
-      // UNKNOWN_TIER to every gate first, so a member watching a Premium screen
-      // would see it blank out and come back for no reason they caused. There
-      // is no stale-identity risk here — sign-out resets on its own path — so
-      // the honest move is to leave the current answer standing until a better
-      // one arrives.
-      void loadCanonicalTier();
-    });
+    getMyProfile().then(setProfile).catch(() => setProfile(null));
   }, []);
 
   const canonicalTier = useCanonicalTier();
@@ -604,7 +554,6 @@ export function AppNavigator() {
       <Stack.Screen name="DropshippingCatalog" component={SupplierCatalogScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DropshippingProduct" component={SupplierProductScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DropshippingCart" component={ImportCartScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="DropshippingImportPolicy" component={ImportPolicyScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DropshippingProducts" component={DropshippingProductsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DropshippingDraft" component={ReviewImportedProductScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DropshippingOrders" component={DropshippingOrdersScreen} options={{ headerShown: false }} />
@@ -690,27 +639,27 @@ export function AppNavigator() {
       <Stack.Screen name="Watchlists" component={WatchlistsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.watchlists") })} />
       <Stack.Screen name="Portfolio" component={PortfolioScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.portfolio") })} />
       <Stack.Screen name="MarketPulse" component={MarketPulseScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.marketPulse") })} />
-      {/* Private Office and the three surfaces it contains — Relationship
-          Intelligence, Private Meetings, Office Security — are ordinary pushed
-          screens with ordinary back behaviour. They are registered
-          unconditionally: the navigator does not know the member's tier and
-          must not learn it, so entry is controlled by whether anything links
-          here, and the screens themselves render the server's answer —
-          including "you do not have this" — rather than being absent from the
-          graph.
-
-          That reasoning is about *entitlement*, not about existence, and the
-          difference is why the ten withdrawn screens are deregistered rather
-          than left in place to render a refusal. A screen that says "you do not
-          have this" is telling the truth to a member who could buy it. A screen
-          for a feature that no longer exists has nothing true to say, and
-          keeping it registered would keep it reachable from any stale deep
-          link, saved state or push payload still naming it. */}
+      {/* Private Office and Private Facts are ordinary pushed screens with
+          ordinary back behaviour. They are registered unconditionally: the
+          navigator does not know the member's tier and must not learn it, so
+          entry is controlled by whether anything links here, and the screens
+          themselves render the server's answer — including "you do not have
+          this" — rather than being absent from the graph. */}
       <Stack.Screen name="PrivateOffice" component={PrivateOfficeScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateOffice") })} />
+      <Stack.Screen name="PrivateFacts" component={PrivateFactsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateFacts") })} />
+      <Stack.Screen name="PrivateOperations" component={PrivateOperationsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateOperations") })} />
+      <Stack.Screen name="CapitalGraph" component={CapitalGraphScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.capitalGraph") })} />
+      <Stack.Screen name="CapitalEntity" component={CapitalEntityScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.capitalEntity") })} />
       <Stack.Screen name="PrivateOfficeSecurity" component={PrivateOfficeSecurityScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateOfficeSecurity") })} />
+      <Stack.Screen name="PrivateDocuments" component={PrivateDocumentsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateDocuments") })} />
       <Stack.Screen name="PrivatePeople" component={PrivatePeopleScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privatePeople") })} />
+      <Stack.Screen name="PrivateBriefings" component={PrivateBriefingsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateBriefings") })} />
+      <Stack.Screen name="PrivateShield" component={PrivateShieldScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateShield") })} />
+      <Stack.Screen name="PrivateConcierge" component={PrivateConciergeScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateConcierge") })} />
       <Stack.Screen name="PrivateMeetings" component={PrivateMeetingsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateMeetings") })} />
       <Stack.Screen name="PrivateMeetingRoom" component={PrivateMeetingRoomScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="PrivateConversations" component={PrivateConversationsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateConversations") })} />
+      <Stack.Screen name="PrivateConversationInfo" component={PrivateConversationInfoScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateConversationInfo") })} />
       {/* This is the first-frame title only: AssetDetailScreen calls
           `setOptions` on mount and replaces it with the asset's name, which is a
           proper noun and so is deliberately not routed through the catalog. The
@@ -766,7 +715,6 @@ export function AppNavigator() {
       <Stack.Screen name="AppearanceSettings" component={AppearanceSettingsScreen} options={{ title: t("common:screens.appearance") }} />
       <Stack.Screen name="AccessibilitySettings" component={AccessibilitySettingsScreen} options={{ title: t("common:screens.accessibility") }} />
       <Stack.Screen name="LanguageSettings" component={LanguageSettingsScreen} options={{ title: t("common:screens.languageRegion") }} />
-      <Stack.Screen name="CommerceSettings" component={CommerceSettingsScreen} options={{ title: t("common:screens.marketplaceSuggestions") }} />
       <Stack.Screen name="StorageSettings" component={StorageSettingsScreen} options={{ title: t("common:screens.storageData") }} />
       <Stack.Screen name="PermissionsSettings" component={PermissionsSettingsScreen} options={{ title: t("common:screens.devicePermissions") }} />
       <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} options={{ title: t("common:screens.privacy") }} />
@@ -816,7 +764,6 @@ const SETTINGS_ROUTE_NAMES = new Set([
   "AppearanceSettings",
   "AccessibilitySettings",
   "LanguageSettings",
-  "CommerceSettings",
   "StorageSettings",
   "PermissionsSettings",
   "PrivacySettings",

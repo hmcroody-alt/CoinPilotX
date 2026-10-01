@@ -10,7 +10,6 @@ media queue jobs, and reports worker heartbeats for observability.
 
 from __future__ import annotations
 
-import functools
 import logging
 import os
 import signal
@@ -22,20 +21,6 @@ import time
 import traceback
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-
-from services import undx_call_guard
-
-# Same reasoning as `alert_worker.py`, which is ordering rather than absence: this
-# module *does* import `bot`, at module scope, 29 lines below (inside the `try` further
-# down). Installing here first means the guard is live for whatever `bot` does at its
-# own import time — module-scope work that `bot`'s own `install()` cannot cover, because
-# that call runs partway through the same import. `bot`'s call then no-ops on
-# `_installed`. An earlier version of this comment said "no `bot`, no `undx_router`",
-# which the import below contradicts outright.
-#
-# This process shells out to ffmpeg and talks to R2, and has no business reaching a chat
-# provider at all.
-undx_call_guard.install()
 
 print("CoinPilotX media engine boot starting", flush=True)
 print("DATABASE_URL present=", bool(os.getenv("DATABASE_URL")), flush=True)
@@ -65,7 +50,7 @@ if running_on_railway() and not os.getenv("DATABASE_URL"):
 
 try:
     import bot
-    from services import agora_cloud_recording_service, agora_media_push_service, media_covers, media_service, media_storage, messenger_media_foundation, mux_live_service
+    from services import agora_cloud_recording_service, agora_media_push_service, media_covers, media_service, media_storage, mux_live_service
 except Exception as exc:
     print("CoinPilotX media engine import failed", repr(exc), flush=True)
     traceback.print_exc()
@@ -76,9 +61,8 @@ WORKER_NAME = "coinpilotx-media-engine"
 INTERVAL_SECONDS = max(5, int(os.getenv("MEDIA_WORKER_INTERVAL_SECONDS", "5")))
 BATCH_SIZE = max(1, min(int(os.getenv("MEDIA_WORKER_BATCH_SIZE", "25")), 100))
 MAX_ATTEMPTS = max(1, int(os.getenv("MEDIA_WORKER_MAX_ATTEMPTS", "3")))
-MEDIA_JOB_TYPES = {"generate_thumbnail", "process_video", "finalize_live_replay"} | messenger_media_foundation.PROCESSING_JOB_TYPES
+MEDIA_JOB_TYPES = {"generate_thumbnail", "process_video", "finalize_live_replay"}
 REPLAY_WAIT_MAX_AGE_HOURS = max(1, int(os.getenv("MEDIA_WORKER_REPLAY_WAIT_MAX_AGE_HOURS", "72")))
-AVAILABILITY_RECHECK_HOURS = max(1, int(os.getenv("MEDIA_WORKER_AVAILABILITY_RECHECK_HOURS", "24")))
 RUNNING = True
 REPLAYS_READY_TO_PUBLISH: set[int] = set()
 
@@ -310,11 +294,6 @@ def _needs_playback_transcode(row: dict) -> bool:
         return False
     if str(row.get("playback_storage_key") or "").strip():
         return False
-    # Mux is the primary transcoder; this R2 path is the fallback. A row Mux has already
-    # made playable has a playback_url but never a playback_storage_key, so keying only on
-    # the storage key leaves it in the backlog forever.
-    if str(row.get("playback_url") or "").strip():
-        return False
     mime_type = str(row.get("mime_type") or "").lower()
     storage_key = str(row.get("storage_key") or row.get("object_key") or row.get("media_url") or "").lower()
     return mime_type in {"video/quicktime", "application/quicktime"} or storage_key.split("?", 1)[0].endswith((".mov", ".qt"))
@@ -352,67 +331,10 @@ def _playback_key_for(row: dict) -> str:
     return f"{stem}-playback.mp4"
 
 
-@functools.lru_cache(maxsize=1)
-def _decodable_audio_codecs() -> frozenset[str]:
-    """Audio codec names this box can actually decode.
-
-    Recognising a codec is not the same as decoding it: ffmpeg names Apple's
-    ``apple_apac`` spatial track but ships no decoder for it, so a stream list alone
-    cannot tell you what is safe to map.
-    """
-    ffmpeg_path = shutil.which("ffmpeg")
-    if not ffmpeg_path:
-        return frozenset()
-    try:
-        result = subprocess.run([ffmpeg_path, "-hide_banner", "-decoders"], capture_output=True, text=True, timeout=20)
-    except Exception:
-        return frozenset()
-    names = set()
-    body = result.stdout.split("------", 1)[-1]
-    for line in body.splitlines():
-        parts = line.split()
-        if len(parts) >= 2 and len(parts[0]) == 6 and parts[0][0] == "A":
-            names.add(parts[1])
-    return frozenset(names)
-
-
-def _audio_map_specifier(source: Path) -> str | None:
-    """The first audio track worth mapping, or None to produce a video-only MP4.
-
-    iPhone spatial-audio .mov files carry an undecodable ``apple_apac`` track beside
-    the AAC one, and ffmpeg's `?` suffix only tolerates *zero* matches -- it does not
-    skip a stream it cannot decode. Track order is not stable either: the same phone
-    writes video-first and audio-first layouts, which is why the same failure showed up
-    as both "input stream #0:1" and "#0:2". So pick by decodability, not by position.
-    """
-    ffprobe_path = shutil.which("ffprobe")
-    decodable = _decodable_audio_codecs()
-    if not ffprobe_path or not decodable:
-        # Best effort: Apple writes the AAC compatibility track first in both layouts.
-        return "0:a:0?"
-    try:
-        result = subprocess.run(
-            [ffprobe_path, "-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(source)],
-            capture_output=True,
-            text=True,
-            timeout=int(os.getenv("MEDIA_WORKER_PROBE_TIMEOUT_SECONDS", "30")),
-        )
-    except Exception:
-        return "0:a:0?"
-    codecs = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    for position, codec in enumerate(codecs):
-        if codec in decodable:
-            return f"0:a:{position}?"
-    if codecs:
-        logging.warning("MEDIA_WORKER_NO_DECODABLE_AUDIO source=%s codecs=%s producing video-only", source.name, ",".join(codecs))
-    return None
-
-
 def _transcode_video_to_mp4(source: Path, target: Path) -> None:
     ffmpeg_path = shutil.which("ffmpeg")
     if not ffmpeg_path:
         raise RuntimeError("ffmpeg is not installed")
-    audio_map = _audio_map_specifier(source)
     command = [
         ffmpeg_path,
         "-y",
@@ -420,7 +342,8 @@ def _transcode_video_to_mp4(source: Path, target: Path) -> None:
         str(source),
         "-map",
         "0:v:0",
-        *(("-map", audio_map) if audio_map else ()),
+        "-map",
+        "0:a?",
         "-c:v",
         "libx264",
         "-preset",
@@ -539,8 +462,6 @@ def process_playback_backlog(limit: int = 2) -> dict:
         WHERE deleted_at IS NULL
           AND media_type='video'
           AND COALESCE(playback_storage_key, '')=''
-          AND COALESCE(playback_url, '')=''
-          AND COALESCE(processing_status, '') <> 'processing_blocked'
           AND (
             LOWER(COALESCE(mime_type, '')) IN ('video/quicktime', 'application/quicktime')
             OR LOWER(COALESCE(storage_key, object_key, media_url, '')) LIKE ?
@@ -586,7 +507,6 @@ def process_cover_backlog(limit: int = 4) -> dict:
         WHERE deleted_at IS NULL
           AND media_type IN ('image', 'gif', 'video')
           AND COALESCE(is_available, 1)=1
-          AND COALESCE(mime_type, '') NOT LIKE 'audio/%'
           AND COALESCE(cover_attempts, 0) < ?
           AND COALESCE(cover_generated_at, '')=''
           AND (
@@ -626,71 +546,6 @@ def process_cover_backlog(limit: int = 4) -> dict:
     return {"checked": len(rows), "processed": processed, "failed": failed}
 
 
-def process_media_asset_cover_sync(limit: int = 25) -> dict:
-    """Copy generated covers onto the Pulse feed's mirror table.
-
-    `pulse_media_assets` is populated once, at upload, from the upload result --
-    and for a video that result's `thumbnail_url` is the video's own URL,
-    because covers are generated afterwards. The only other writers are the Mux
-    webhooks, which touch the `mux_*` columns and never the cover ones. So a
-    cover that lands on `chat_media_uploads` has never reached the mirror the
-    feed actually reads.
-
-    A `image.mux.com` poster counts as fillable here: it is a machine fallback
-    the apps must fetch live, not a cover anyone chose, and a stored JPEG of
-    ours is strictly better. Anything else is left alone.
-    """
-    conn = bot.db()
-    conn.row_factory = bot.sqlite3.Row
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT p.id AS asset_id, c.thumbnail_url AS cover_thumbnail, c.poster_url AS cover_poster
-        FROM pulse_media_assets p
-        JOIN chat_media_uploads c ON c.id = p.media_id
-        WHERE COALESCE(c.thumbnail_url, '') LIKE '%-cover-%'
-          AND (
-            COALESCE(p.thumbnail_url, '')='' OR p.thumbnail_url=COALESCE(p.public_url, '')
-            OR COALESCE(p.poster_url, '')='' OR p.poster_url=COALESCE(p.public_url, '')
-            OR COALESCE(p.poster_url, '') LIKE '%image.mux.com%'
-          )
-        ORDER BY p.id DESC
-        LIMIT ?
-        """,
-        (max(1, min(int(limit or 25), 200)),),
-    )
-    rows = [dict(row) for row in cur.fetchall()]
-    synced = 0
-    for row in rows:
-        thumbnail = str(row.get("cover_thumbnail") or "")
-        cur.execute(
-            """
-            UPDATE pulse_media_assets
-            SET thumbnail_url=CASE
-                    WHEN COALESCE(thumbnail_url, '')='' OR thumbnail_url=COALESCE(public_url, '') THEN ?
-                    ELSE thumbnail_url
-                END,
-                poster_url=CASE
-                    WHEN COALESCE(poster_url, '')='' OR poster_url=COALESCE(public_url, '')
-                         OR COALESCE(poster_url, '') LIKE '%image.mux.com%' THEN ?
-                    ELSE poster_url
-                END,
-                updated_at=?
-            WHERE id=?
-            """,
-            (
-                thumbnail,
-                str(row.get("cover_poster") or "") or thumbnail,
-                _now(),
-                int(row.get("asset_id") or 0),
-            ),
-        )
-        synced += 1
-    conn.commit()
-    conn.close()
-    return {"checked": len(rows), "synced": synced}
-
-
 def _fail_or_retry_job(cur, job, error: Exception) -> None:
     attempts = int(job.get("attempts") or 0) + 1
     max_attempts = int(job.get("max_attempts") or MAX_ATTEMPTS)
@@ -713,83 +568,11 @@ def _fail_or_retry_job(cur, job, error: Exception) -> None:
         )
 
 
-def _process_messenger_attachment_job(cur, job, job_type: str, target_id: int) -> None:
-    """Run a Messenger attachment's derived-asset job.
-
-    Deferral and failure are different answers and must not share a path. A
-    deferral means the inputs are not there yet — the bytes have not landed, or
-    this dyno has no ffmpeg — so the job goes back on the queue *without*
-    spending its error budget, because three fast retries followed by permanent
-    retirement would strand the attachment at ``queued`` forever, which is the
-    exact state this whole handler exists to end.
-    """
-    job_id = int(job.get("id") or 0)
-    if not target_id:
-        _complete_job(cur, job_id, "done")
-        return
-    try:
-        result = messenger_media_foundation.process_attachment(cur, target_id, job_type)
-    except messenger_media_foundation.MessengerMediaError as exc:
-        # A deleted or missing attachment is settled, not retryable.
-        logging.info("MESSENGER_MEDIA_PROCESS_UNAVAILABLE job_id=%s attachment_id=%s error=%s", job_id, target_id, exc.error)
-        _complete_job(cur, job_id, "done", exc.error)
-        return
-    status = str(result.get("status") or "")
-    if status == "deferred":
-        logging.info("MESSENGER_MEDIA_PROCESS_DEFERRED job_id=%s attachment_id=%s reason=%s", job_id, target_id, result.get("reason"))
-        _reschedule(cur, job, seconds=120)
-        return
-    _warn_if_still_unprocessed(cur, job_id, target_id, status, result.get("reason"))
-    logging.info("MESSENGER_MEDIA_PROCESS_DONE job_id=%s attachment_id=%s status=%s", job_id, target_id, status)
-    _complete_job(cur, job_id, "done")
-
-
-def _warn_if_still_unprocessed(cur, job_id: int, attachment_id: int, status: str, reason) -> None:
-    """Say so when a job retires while its attachment is still waiting.
-
-    This pair -- a job row reading ``done``/``attempts=1`` with no error, beside
-    an attachment still at ``queued`` with no ``thumbnail_key`` -- is what the
-    original defect looked like in the database, and it is indistinguishable
-    from a healthy completion unless something checks. It went unnoticed for
-    months and cost every messenger photo, video and voice note its preview.
-
-    Attachment 87 is the same shape again after the dispatcher was fixed: two
-    jobs, both retired in under three seconds, the row untouched. Nothing in the
-    code that survived elimination explains it, and by the time it was noticed
-    the platform's log window had rolled. So this is not a fix for that
-    attachment -- ``reconcile_processing_backlog`` already bounds it -- it is
-    the line that will name the cause the next time it happens.
-
-    One indexed read per completed job, and only on the completion path.
-    """
-    try:
-        cur.execute(
-            "SELECT processing_status, thumbnail_key FROM message_attachments WHERE id=? LIMIT 1",
-            (attachment_id,),
-        )
-        row = cur.fetchone()
-    except Exception:
-        return
-    if not row:
-        return
-    processing_status = str((row["processing_status"] if hasattr(row, "keys") else row[0]) or "").lower()
-    if processing_status not in {"queued", "processing"}:
-        return
-    logging.warning(
-        "MESSENGER_MEDIA_PROCESS_RETIRED_UNPROCESSED job_id=%s attachment_id=%s "
-        "result_status=%s reason=%s processing_status=%s",
-        job_id, attachment_id, status, reason, processing_status,
-    )
-
-
 def _process_media_job(cur, job) -> None:
     job_type = str(job.get("job_type") or "")
     target_id = int(job.get("target_id") or 0)
     if job_type == "finalize_live_replay":
         _process_live_replay_job(cur, job)
-        return
-    if job_type in messenger_media_foundation.PROCESSING_JOB_TYPES:
-        _process_messenger_attachment_job(cur, job, job_type, target_id)
         return
     if job_type not in MEDIA_JOB_TYPES:
         _complete_job(cur, int(job.get("id") or 0), "done")
@@ -950,21 +733,8 @@ def _process_live_replay_job(cur, job) -> None:
             mux_live_service.disable_mux_live_stream(live_stream_id)
         mux_status = (mux_asset.get("mux_status") or "").lower()
         if mux_status == "errored":
-            # A dead asset used to retire the job here, so a recording that is
-            # intact in R2 stayed unplayable until the host pressed retry. Drop
-            # the dead identity and rebuild from the original once, keyed on the
-            # dead asset id so a rebuild that errors again does not loop.
-            if not str(live.get("agora_recording_filename") or "") or str(live.get("replay_retry_key") or ""):
-                raise RuntimeError("Mux confirmed that the recording could not be processed.")
-            cur.execute(
-                "UPDATE pulse_live_sessions SET replay_retry_key=?, mux_recording_asset_id='', mux_recording_playback_id='', replay_url='', recording_status='processing_replay', recording_error='', updated_at=? WHERE id=?",
-                (asset_id, _now(), live_id),
-            )
-            logging.info("LIVE_REPLAY_REBUILD_AFTER_ERRORED_ASSET live_id=%s dead_asset_id=%s", live_id, asset_id)
-            live["replay_retry_key"] = asset_id
-            live["recording_status"] = "processing_replay"
-            asset_id = ""
-        elif mux_status == "ready" and mux_asset.get("mux_recording_playback_id") and mux_asset.get("playback_url"):
+            raise RuntimeError("Mux confirmed that the recording could not be processed.")
+        if mux_status == "ready" and mux_asset.get("mux_recording_playback_id") and mux_asset.get("playback_url"):
             playback_id = mux_asset.get("mux_recording_playback_id") or live.get("mux_recording_playback_id") or ""
             playback_url = mux_asset.get("playback_url") or ""
             cur.execute(
@@ -985,12 +755,11 @@ def _process_live_replay_job(cur, job) -> None:
             REPLAYS_READY_TO_PUBLISH.add(live_id)
             _complete_job(cur, int(job.get("id") or 0), "done")
             return
-        else:
-            # A provider-confirmed preparing asset is delayed, not failed, regardless
-            # of its age. Slow checks are bounded per cycle and never recreate it.
-            age = bot.live_archive_service.replay_age_seconds(live)
-            _reschedule(cur, job, seconds=300 if age >= 300 else 30)
-            return
+        # A provider-confirmed preparing asset is delayed, not failed, regardless
+        # of its age. Slow checks are bounded per cycle and never recreate it.
+        age = bot.live_archive_service.replay_age_seconds(live)
+        _reschedule(cur, job, seconds=300 if age >= 300 else 30)
+        return
 
     filename = str(live.get("agora_recording_filename") or "")
     marker = "pulse_replay:" + str(live_id) + ":" + str(live.get("agora_recording_sid") or "") + ":" + str(live.get("replay_retry_key") or "")
@@ -1118,11 +887,6 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
     # still recoverable. The source predicate below is what makes that safe, and the
     # drain is one-way: a session either resolves to mux_asset_ready or exhausts its
     # attempts into 'replay_failed', which stays excluded.
-    #
-    # A ready replay whose canonical Feed post the creator deleted is the one
-    # exception that is not one-way: the publisher refuses to resurrect the post,
-    # so replay_reel_id can never be claimed and the publication arm below would
-    # requeue the session on every cycle forever.
     cur.execute(
         """
         SELECT id, recording_status
@@ -1132,7 +896,7 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
           AND COALESCE(recording_status,'') NOT IN ('replay_failed')
           AND COALESCE(record_replay,1)=1
           AND NOT EXISTS (SELECT 1 FROM pulse_jobs j WHERE j.job_type='finalize_live_replay' AND j.target_type='live' AND j.target_id=pulse_live_sessions.id AND j.status IN ('pending','processing'))
-          AND (COALESCE(recording_status,'') NOT IN ('mux_asset_ready','replay_ready') OR (COALESCE(replay_reel_id,0)=0 AND COALESCE(replay_publish_enabled,1)=1 AND NOT EXISTS (SELECT 1 FROM pulse_posts p WHERE p.id=pulse_live_sessions.feed_post_id AND p.deleted_at IS NOT NULL)))
+          AND (COALESCE(recording_status,'') NOT IN ('mux_asset_ready','replay_ready') OR (COALESCE(replay_reel_id,0)=0 AND COALESCE(replay_publish_enabled,1)=1))
         ORDER BY updated_at ASC, id ASC LIMIT ?
         """,
         (max(1, int(limit or 25)),),
@@ -1172,247 +936,13 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
     return {"queued": queued, "stale_recovered": recovered, "terminal_posts_repaired": terminal_repaired}
 
 
-DURATION_RECONCILE_MAX_AGE_DAYS = max(1, int(os.getenv("MEDIA_WORKER_DURATION_RECONCILE_MAX_AGE_DAYS", "7")))
-
-
-def reconcile_stored_video_durations(limit: int = 25) -> dict:
-    """Measure stored videos Mux never told us about, and enforce the ceiling.
-
-    The webhook is the fast path, not the guaranteed one: it needs
-    MUX_WEBHOOK_SECRET set and the endpoint registered in the Mux dashboard, and
-    a single lost delivery would otherwise leave a video permanently unmeasured --
-    which is indistinguishable, to every reader, from a video that is within the
-    limit. So the asset is polled as well, and both paths reach the same
-    enforcement function rather than each deciding for themselves.
-
-    Bounded by age because an asset Mux has since deleted can never be measured;
-    without the window those rows would be re-fetched every cycle forever.
-    """
-    if not media_service.mux_diagnostics().get("configured"):
-        return {"skipped": "mux_not_configured"}
-    conn = bot.db()
-    conn.row_factory = bot.sqlite3.Row
-    cur = conn.cursor()
-    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=DURATION_RECONCILE_MAX_AGE_DAYS)).isoformat(timespec="seconds")
-    cur.execute(
-        """
-        SELECT id, mux_asset_id
-        FROM chat_media_uploads
-        WHERE media_type='video'
-          AND COALESCE(mux_asset_id,'')<>''
-          AND COALESCE(duration_seconds,0)<=0
-          AND COALESCE(moderation_status,'')<>'blocked'
-          AND deleted_at IS NULL
-          AND COALESCE(created_at,'')>=?
-        ORDER BY created_at ASC, id ASC LIMIT ?
-        """,
-        (cutoff, max(1, int(limit or 25))),
-    )
-    candidates = [(int(row["id"]), str(row["mux_asset_id"] or "")) for row in cur.fetchall()]
-    measured = 0
-    blocked: list[int] = []
-    for media_id, asset_id in candidates:
-        try:
-            asset = media_service.get_mux_asset(asset_id)
-        except Exception as exc:
-            logging.warning("MEDIA_DURATION_RECONCILE_FETCH_FAILED media_id=%s error=%s", media_id, str(exc)[:200])
-            continue
-        if not asset.get("ok") or str(asset.get("mux_status") or "").lower() not in {"ready", "asset_ready", "available"}:
-            continue
-        try:
-            duration = float((asset.get("asset") or {}).get("duration") or 0)
-        except (TypeError, ValueError):
-            duration = 0.0
-        if duration <= 0:
-            continue
-        outcome = media_service.enforce_measured_video_duration(cur, media_id=media_id, duration_seconds=duration)
-        measured += 1
-        blocked.extend(outcome.get("blocked") or [])
-    conn.commit()
-    conn.close()
-    return {"candidates": len(candidates), "measured": measured, "blocked": blocked}
-
-
-def reconcile_messenger_media_backlog(limit: int = 50) -> dict:
-    """Give stranded messenger attachments their processing job back.
-
-    Runs before ``process_media_jobs`` so anything re-queued here is picked up in
-    the same cycle rather than the next one.
-    """
-    conn = bot.db()
-    conn.row_factory = bot.sqlite3.Row
-    cur = conn.cursor()
-    try:
-        result = messenger_media_foundation.reconcile_processing_backlog(cur, limit)
-        conn.commit()
-    except Exception as exc:
-        logging.warning("MESSENGER_MEDIA_RECONCILE_FAILED error=%s", str(exc)[:300])
-        result = {"error": str(exc)[:200]}
-    finally:
-        conn.close()
-    return result
-
-
-def _object_presence(key: str):
-    """True if the object is there, False if storage says it is not, None if it could not be asked.
-
-    The three-way answer is the point. Treating an unanswerable check as absence
-    would let one bad minute of bucket connectivity mark healthy media dead across
-    the whole library, and nothing downstream would ever put it back.
-    """
-    key = str(key or "").strip().replace("\\", "/").lstrip("/")
-    if not key:
-        return None
-    try:
-        media_storage.head_object(key)
-        return True
-    except Exception as exc:
-        code = ""
-        response = getattr(exc, "response", None)
-        if isinstance(response, dict):
-            code = str(response.get("Error", {}).get("Code") or response.get("ResponseMetadata", {}).get("HTTPStatusCode") or "")
-        text = f"{code} {exc}"
-        if "404" in text or "NoSuchKey" in text or "Not Found" in text:
-            return False
-        return None
-
-
-def reconcile_media_availability(limit: int = 10) -> dict:
-    """Retire the promise of media the bucket no longer holds.
-
-    Nothing revisited a row once it went ready: the upload path set is_available=1
-    and moved on, so an object later deleted -- or never durably written -- left the
-    row promising bytes forever while the client drew an empty player. Verifying at
-    read time would put a bucket round-trip in front of every feed request, so the
-    check lives here and the read path goes on trusting the column.
-
-    Only durable-store rows are examined. A 'local' row's bytes sit on the web
-    container's disk, which this worker cannot see, so asking here would report every
-    one of them missing; those are handled out-of-band by
-    scripts/repair_media_rows_with_lost_source.py, which asks over HTTP instead.
-    """
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=AVAILABILITY_RECHECK_HOURS)).isoformat()
-    conn = bot.db()
-    conn.row_factory = bot.sqlite3.Row
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT id, COALESCE(storage_key, '') AS storage_key, COALESCE(object_key, '') AS object_key,
-               COALESCE(playback_storage_key, '') AS playback_storage_key,
-               COALESCE(playback_url, '') AS playback_url, COALESCE(mux_playback_id, '') AS mux_playback_id,
-               COALESCE(mux_status, '') AS mux_status
-        FROM chat_media_uploads
-        WHERE deleted_at IS NULL
-          AND COALESCE(is_available, 1) <> 0
-          AND LOWER(COALESCE(storage_provider, '')) IN ('r2', 's3')
-          AND COALESCE(storage_key, object_key, '') <> ''
-          AND COALESCE(availability_checked_at, '') < ?
-        ORDER BY COALESCE(availability_checked_at, '') ASC
-        LIMIT ?
-        """,
-        (cutoff, max(1, min(int(limit or 10), 100))),
-    )
-    rows = [dict(row) for row in cur.fetchall()]
-    checked = 0
-    downgraded = 0
-    for row in rows:
-        media_id = int(row.get("id") or 0)
-        checked += 1
-        if row.get("mux_playback_id") and str(row.get("mux_status") or "").lower() in {"ready", "asset_ready", "available"}:
-            # Mux serves this one; the bucket copy is not what playback depends on.
-            presences = [True]
-        else:
-            keys = [str(row[column]).strip() for column in ("storage_key", "object_key", "playback_storage_key") if str(row[column] or "").strip()]
-            presences = [_object_presence(key) for key in keys]
-        # Every key the row carries had to be answered, and every answer had to be
-        # "absent". A single None -- one key we could not ask about -- means the row
-        # might still be fine, and the row keeps its promise for another day.
-        if presences and all(value is False for value in presences):
-            cur.execute(
-                """
-                UPDATE chat_media_uploads
-                SET is_available=0,
-                    processing_status='failed',
-                    availability_error=?,
-                    availability_checked_at=?,
-                    updated_at=?
-                WHERE id=?
-                """,
-                ("SOURCE_MEDIA_MISSING", _now(), _now(), media_id),
-            )
-            downgraded += 1
-            logging.warning("MEDIA_WORKER_AVAILABILITY_DOWNGRADED media_id=%s keys=%s", media_id, row.get("storage_key"))
-        else:
-            cur.execute("UPDATE chat_media_uploads SET availability_checked_at=? WHERE id=?", (_now(), media_id))
-    conn.commit()
-    conn.close()
-    return {"checked": checked, "downgraded": downgraded}
-
-
-def pulsedrop_cycle() -> dict:
-    """PulseDrop's render drain and curator tick, isolated from the rest.
-
-    Imported inside the function, and wrapped, for the same reason the optional
-    route packs in ``bot.py`` are: this loop runs every few seconds and
-    everything else in it is media that a member is waiting on. A curator that
-    raises — a schema not yet created, a marketplace column that moved — must
-    not be able to stop a video from being transcoded. PulseDrop going quiet is
-    always recoverable; the media pipeline stopping is not.
-
-    Both halves are cheap on the overwhelming majority of cycles: the kill
-    switch is a memoised settings read, and the lease is one UPDATE that matches
-    no rows until the curator is due.
-    """
-    try:
-        from services.pulsedrop import curator
-
-        return curator.worker_cycle()
-    except Exception as exc:
-        logging.exception("PULSEDROP_CYCLE_FAILED error=%s", exc)
-        return {"outcome": "error", "reason": str(exc)[:200]}
-
-
-#: Outcomes that mean "the curator looked and correctly did nothing". This loop
-#: runs every few seconds, so logging these would bury the cycle log in a line
-#: that never changes — and they are already visible on /admin/pulsedrop and in
-#: the heartbeat metadata, which is where "is it ticking at all" is answered.
-_PULSEDROP_QUIET = frozenset({"not_due", "disabled"})
-
-
-def _log_pulsedrop(outcome) -> None:
-    """Log a PulseDrop cycle that did something, and stay silent otherwise.
-
-    Worth its own line rather than folding into ``MEDIA_WORKER_CYCLE`` because
-    the failure mode PulseDrop actually has is going quiet, and a curator whose
-    every result is a dict nested inside a media log line is a curator nobody
-    notices has stopped publishing. Everything interesting — a publication, a
-    render, a rejection, an error — is rare enough to print.
-    """
-    if not isinstance(outcome, dict):
-        return
-    name = str(outcome.get("outcome") or "").lower()
-    # Renders drain *before* the tick, so a cycle can be ``not_due`` and still
-    # have started, finished or failed an encode. Keying only on the outcome
-    # would hide a failing renderer behind the quietest outcome there is.
-    renders = outcome.get("renders")
-    busy = isinstance(renders, dict) and any(renders.values())
-    if not busy and (not name or name in _PULSEDROP_QUIET):
-        return
-    logging.info("PULSEDROP_CYCLE %s", outcome)
-
-
 def run_cycle() -> dict:
     replay = reconcile_live_replay_backlog(BATCH_SIZE)
     uploads = process_pending_uploads(BATCH_SIZE)
-    messenger = reconcile_messenger_media_backlog(int(os.getenv("MEDIA_WORKER_MESSENGER_RECONCILE_BATCH", "50")))
     jobs = process_media_jobs(BATCH_SIZE)
     playback = process_playback_backlog(int(os.getenv("MEDIA_WORKER_PLAYBACK_BACKLOG_BATCH", "2")))
     covers = process_cover_backlog(int(os.getenv("MEDIA_WORKER_COVER_BACKLOG_BATCH", "4")))
-    cover_sync = process_media_asset_cover_sync(int(os.getenv("MEDIA_WORKER_COVER_SYNC_BATCH", "25")))
-    durations = reconcile_stored_video_durations(int(os.getenv("MEDIA_WORKER_DURATION_RECONCILE_BATCH", "25")))
-    availability = reconcile_media_availability(int(os.getenv("MEDIA_WORKER_AVAILABILITY_RECONCILE_BATCH", "10")))
-    pulsedrop = pulsedrop_cycle()
-    return {"replay": replay, "uploads": uploads, "messenger": messenger, "jobs": jobs, "playback": playback, "covers": covers, "cover_sync": cover_sync, "durations": durations, "availability": availability, "pulsedrop": pulsedrop}
+    return {"replay": replay, "uploads": uploads, "jobs": jobs, "playback": playback, "covers": covers}
 
 
 def main() -> None:
@@ -1439,7 +969,6 @@ def main() -> None:
             result["dependencies"] = dependency_snapshot()
             bot.record_worker_heartbeat(WORKER_NAME, "healthy", metadata=result)
             logging.info("MEDIA_WORKER_CYCLE uploads=%s jobs=%s", result.get("uploads"), result.get("jobs"))
-            _log_pulsedrop(result.get("pulsedrop"))
         except Exception as exc:
             logging.exception("MEDIA_WORKER_CYCLE_FAILED error=%s", exc)
             try:

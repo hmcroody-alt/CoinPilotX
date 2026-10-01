@@ -35,7 +35,6 @@ may later persist one, but preparing it asserts nothing and writes nothing.
 
 from __future__ import annotations
 
-import hashlib
 from typing import Any
 
 from services.private_office import audit
@@ -45,49 +44,12 @@ from services.private_office import graph as graph_mod
 from services.private_office import model
 from services.private_office import records as records_mod
 
-#: Identity facts. Closed vocabulary so a directory read is a handful of fact
-#: types, not a scan; anything else a member records about a person is still
-#: shown on the profile, just not treated as identity.
-#:
-#: ``relationship_role`` carries what the member calls the relationship —
-#: "lawyer", "sister", "contractor". There is deliberately no second
-#: ``relationship_type`` field beside it: two columns for one idea is how a
-#: screen ends up showing one and a search ends up reading the other.
+#: Identity facts. Closed vocabulary so a directory read is two fact types,
+#: not a scan; anything else a member records about a person is still shown on
+#: the profile, just not treated as identity.
 FACT_NAME = "name"
 FACT_ROLE = "relationship_role"
-FACT_PHONE = "contact_phone"
-FACT_EMAIL = "contact_email"
-FACT_USERNAME = "pulsesoc_username"
-FACT_PHOTO = "contact_photo_media_id"
-FACT_NOTES = "contact_notes"
-FACT_SOURCE = "contact_source"
-FACT_FAVORITE = "contact_favorite"
-IDENTITY_FACT_TYPES: tuple[str, ...] = (
-    FACT_NAME, FACT_ROLE, FACT_PHONE, FACT_EMAIL, FACT_USERNAME,
-    FACT_PHOTO, FACT_SOURCE, FACT_FAVORITE,
-)
-
-#: The single-valued contact fields, in the order the resolver and the editor
-#: both read them. ``contact_notes`` is absent on purpose — notes accumulate.
-CONTACT_FACT_TYPES: tuple[str, ...] = (
-    FACT_NAME, FACT_ROLE, FACT_PHONE, FACT_EMAIL, FACT_USERNAME,
-    FACT_PHOTO, FACT_SOURCE, FACT_FAVORITE,
-)
-
-#: How a person came to be in the directory. Provenance for the *record*, as
-#: distinct from the fact store's provenance for each value: both matter, and
-#: "the member typed this" and "this arrived because they scheduled a meeting"
-#: are the same provenance to the fact store and very different to a member
-#: looking at a name they do not remember adding.
-SOURCE_MANUAL = "MANUAL"
-SOURCE_MEETING_INVITEE = "PRIVATE_MEETING_INVITEE"
-SOURCE_PULSESOC_USER = "PULSESOC_USER"
-SOURCE_IMPORTED_CONTACT = "IMPORTED_CONTACT"
-SOURCE_OTHER = "OTHER"
-SOURCES: tuple[str, ...] = (
-    SOURCE_MANUAL, SOURCE_MEETING_INVITEE, SOURCE_PULSESOC_USER,
-    SOURCE_IMPORTED_CONTACT, SOURCE_OTHER,
-)
+IDENTITY_FACT_TYPES: tuple[str, ...] = (FACT_NAME, FACT_ROLE)
 
 #: The record primitives a person can be committed through, and the evidence
 #: kind each serializes to.
@@ -104,14 +66,6 @@ COMMITMENT_TYPES: tuple[str, ...] = (records_mod.TYPE_OBLIGATION, records_mod.TY
 MAX_DIRECTORY = 200
 MAX_TIMELINE = 50
 MAX_NAME_CHARS = 120
-MAX_NOTES_CHARS = 2000
-MAX_HANDLE_CHARS = 64
-
-#: A PulseSoc account id, written as a graph external reference. The scheme is
-#: spelled out rather than assembled ad hoc because ``node_key`` hashes it: one
-#: caller writing ``pulsesoc:user:7`` and another ``user:7`` would produce two
-#: nodes for one account, and nothing would ever notice.
-EXTERNAL_REF_SCHEME = "pulsesoc:user:"
 
 
 class PrivateRelationshipRejected(ValueError):
@@ -119,516 +73,8 @@ class PrivateRelationshipRejected(ValueError):
 
 
 # ---------------------------------------------------------------------------
-# Normalization — the shapes identity is compared in
-# ---------------------------------------------------------------------------
-#
-# Matching happens on normalized values only. "Dana@Example.COM " and
-# "dana@example.com" are one identifier written twice, and a directory that
-# treats them as two is a duplicate generator with extra steps. The normalizers
-# are deliberately conservative: they fold away formatting, never meaning.
-
-def normalize_email(raw: object) -> str:
-    """Lowercased, trimmed, and only if it is plausibly an address.
-
-    No deliverability check and no lookup — see §34 of the product rules and
-    the module docstring. Nothing is *asked* about anybody; this only decides
-    whether two strings the member typed are the same string.
-    """
-    text = str(raw or "").strip().lower()
-    if not text or " " in text:
-        return ""
-    local, sep, domain = text.partition("@")
-    if not sep or not local or "." not in domain or domain.startswith(".") \
-            or domain.endswith("."):
-        return ""
-    return text[:MAX_NAME_CHARS]
-
-
-def normalize_phone(raw: object) -> str:
-    """Digits, with a leading ``+`` kept when the member wrote one.
-
-    Punctuation is presentation: ``+1 (415) 555-0134`` and ``+14155550134``
-    are one number. What is *not* folded is the country prefix — a bare
-    ``4155550134`` stays distinct from ``+14155550134``, because inventing a
-    country code for a member's contact is exactly the kind of helpful guess
-    that silently merges two people.
-    """
-    text = str(raw or "").strip()
-    if not text:
-        return ""
-    plus = text.startswith("+")
-    digits = "".join(ch for ch in text if ch.isdigit())
-    if len(digits) < 6 or len(digits) > 18:
-        return ""
-    return ("+" if plus else "") + digits
-
-
-def normalize_username(raw: object) -> str:
-    """Lowercased, ``@`` stripped. The handle as PulseSoc stores it."""
-    text = str(raw or "").strip().lstrip("@").strip().lower()
-    if not text or " " in text:
-        return ""
-    return text[:MAX_HANDLE_CHARS]
-
-
-def normalize_source(raw: object) -> str:
-    text = str(raw or "").strip().upper()
-    return text if text in SOURCES else SOURCE_OTHER
-
-
-def external_ref_for(pulsesoc_user_id: object) -> str:
-    """``pulsesoc:user:<id>`` for a real account id, ``""`` for anything else."""
-    try:
-        account = int(pulsesoc_user_id or 0)
-    except (TypeError, ValueError):
-        return ""
-    return f"{EXTERNAL_REF_SCHEME}{account}" if account > 0 else ""
-
-
-def account_id_from_ref(external_ref: object) -> int:
-    """The inverse. ``0`` when the node is not linked to an account."""
-    text = str(external_ref or "").strip()
-    if not text.startswith(EXTERNAL_REF_SCHEME):
-        return 0
-    try:
-        return int(text[len(EXTERNAL_REF_SCHEME):])
-    except ValueError:
-        return 0
-
-
-# ---------------------------------------------------------------------------
-# Identity resolution
-# ---------------------------------------------------------------------------
-
-def _contact_facts(cur, *, owner_user_id: int, node_ids: list[int]) -> dict[int, dict]:
-    """node_id → {fact_type: {"value", "fact_id"}} for the contact vocabulary.
-
-    Rows arrive newest-first, so the first of each type per node is the current
-    value; the older ones stay in the store and stay on the timeline, which is
-    the point of keeping contact details as facts rather than as columns.
-    """
-    if not node_ids:
-        return {}
-    rows = facts_mod.list_facts_for_subjects(
-        cur, owner_user_id=int(owner_user_id or 0),
-        subject_type=facts_mod.SUBJECT_NODE,
-        subject_ids=[str(n) for n in node_ids], fact_types=CONTACT_FACT_TYPES,
-    )
-    out: dict[int, dict] = {}
-    for row in rows:
-        try:
-            subject = int(str(row.get("subject_id") or "0"))
-        except ValueError:
-            continue
-        kind = str(row.get("fact_type") or "")
-        current = out.setdefault(subject, {})
-        if kind and kind not in current:
-            current[kind] = {"value": str(row.get("typed_value") or ""),
-                             "fact_id": int(row.get("id") or 0)}
-    return out
-
-
-def _contact_index(cur, *, owner_user_id: int) -> dict[str, Any]:
-    """The owner's people, indexed by every identifier they can be matched on.
-
-    Built by reading the member's own bounded directory rather than by querying
-    the fact store for a value. That is a deliberate trade: a value predicate on
-    ``list_facts`` would be faster and would also be a way to ask the substrate
-    "who has this email address" — a question with an answer even when the
-    caller owns nobody, which is the shape of an existence oracle. Here the
-    scan is over rows the caller already owns, so an identifier that is not
-    theirs simply is not in the index.
-    """
-    owner = int(owner_user_id or 0)
-    nodes = graph_mod.list_nodes(
-        cur, owner_user_id=owner, node_types=[model.NODE_PERSON],
-        limit=MAX_DIRECTORY)
-    node_ids = [int(n["id"]) for n in nodes]
-    contact = _contact_facts(cur, owner_user_id=owner, node_ids=node_ids)
-
-    by_account: dict[int, int] = {}
-    by_email: dict[str, int] = {}
-    by_phone: dict[str, int] = {}
-    by_username: dict[str, int] = {}
-    for node in nodes:
-        node_id = int(node["id"])
-        account = account_id_from_ref(node.get("external_ref"))
-        if account:
-            by_account.setdefault(account, node_id)
-        values = contact.get(node_id, {})
-        email = normalize_email(values.get(FACT_EMAIL, {}).get("value"))
-        if email:
-            by_email.setdefault(email, node_id)
-        phone = normalize_phone(values.get(FACT_PHONE, {}).get("value"))
-        if phone:
-            by_phone.setdefault(phone, node_id)
-        handle = normalize_username(values.get(FACT_USERNAME, {}).get("value"))
-        if handle:
-            by_username.setdefault(handle, node_id)
-    return {"nodes": nodes, "contact": contact, "by_account": by_account,
-            "by_email": by_email, "by_phone": by_phone,
-            "by_username": by_username}
-
-
-#: Why the resolver matched, returned alongside the node id. The screen needs
-#: it: "this is already your contact" and "someone here has that phone number"
-#: are different sentences, and a member asked to confirm a merge deserves to
-#: be told which identifier collided.
-MATCH_ACCOUNT = "pulsesoc_user_id"
-MATCH_USERNAME = "pulsesoc_username"
-MATCH_EMAIL = "email"
-MATCH_PHONE = "phone"
-
-
-def resolve_person(
-    cur,
-    *,
-    owner_user_id: int,
-    pulsesoc_user_id: object = 0,
-    username: object = "",
-    email: object = "",
-    phone: object = "",
-    index: dict | None = None,
-) -> dict | None:
-    """Which of the member's people, if any, these identifiers already name.
-
-    Priority, highest first:
-
-    1. the canonical PulseSoc account id,
-    2. a linked PulseSoc username,
-    3. a normalized email address,
-    4. a normalized phone number.
-
-    **A name is not on this list and never will be.** Two people called Dana
-    Whitfield are two people; the store has no way to know otherwise and the
-    member does. Returns ``{"node_id", "matched_on"}`` or ``None``.
-    """
-    idx = index if index is not None else _contact_index(
-        cur, owner_user_id=int(owner_user_id or 0))
-    account = int(pulsesoc_user_id or 0) if str(pulsesoc_user_id or "").lstrip("-").isdigit() else 0
-    for value, table, reason in (
-        (account, idx["by_account"], MATCH_ACCOUNT),
-        (normalize_username(username), idx["by_username"], MATCH_USERNAME),
-        (normalize_email(email), idx["by_email"], MATCH_EMAIL),
-        (normalize_phone(phone), idx["by_phone"], MATCH_PHONE),
-    ):
-        if value and value in table:
-            return {"node_id": int(table[value]), "matched_on": reason}
-    return None
-
-
-# ---------------------------------------------------------------------------
 # Writes — everything through the canonical writers
 # ---------------------------------------------------------------------------
-
-#: What ``save_person`` did, so a caller can tell the member the truth.
-SAVE_CREATED = "created"
-SAVE_UPDATED = "updated"
-SAVE_UNCHANGED = "unchanged"
-
-
-def _text(value: object, limit: int = MAX_NAME_CHARS) -> str:
-    return " ".join(str(value or "").split())[:limit]
-
-
-def _set_field(
-    cur,
-    *,
-    owner_user_id: int,
-    node_id: int,
-    fact_type: str,
-    value: str,
-    current: dict,
-    domain: object,
-    sensitivity: object,
-    actor_user_id: int,
-) -> bool:
-    """Bring one contact field to ``value``. True when anything was written.
-
-    A value equal to the current one writes nothing. That is not an
-    optimization — ``record_fact`` would happily accept it and refresh the
-    observation time, so a screen that saves an untouched form would march
-    every field's "as of" date forward and quietly destroy the answer to "when
-    did I last actually check this number".
-
-    A value *different* from the current one supersedes it. Recording alone is
-    not enough, because ``record_fact`` links a predecessor only when the
-    caller names one: without the supersede below, editing a contact's email
-    leaves both addresses ACTIVE on the same person forever. The directory read
-    hides that — it takes the newest row per type, so the screen looks correct —
-    but the store is left holding two live claims about one field, the person's
-    own timeline renders the stale one as current, and ``detect_conflicts`` sees
-    a genuine contradiction where there is only an edit.
-
-    ``supersede_facts`` says the same thing in its own docstring, about
-    projections: the previous value "is not a second opinion to weigh against
-    the new one; it is the previous state of the same ledger". A member
-    correcting their own contact's phone number is exactly that shape. Nothing
-    is deleted — the old row stays, with its provenance and its place on the
-    timeline, marked as what it is.
-    """
-    held = str((current.get(fact_type) or {}).get("value") or "")
-    if value == held:
-        return False
-    if not value:
-        fact_id = int((current.get(fact_type) or {}).get("fact_id") or 0)
-        if fact_id:
-            facts_mod.retire_fact(
-                cur, owner_user_id=owner_user_id, fact_id=fact_id,
-                actor_user_id=actor_user_id, reason_code="member_cleared",
-                purpose="user_request")
-            return True
-        return False
-    written = facts_mod.record_fact(
-        cur, owner_user_id=owner_user_id, subject_type=facts_mod.SUBJECT_NODE,
-        subject_id=str(node_id), fact_type=fact_type, value=value,
-        value_type=model.VALUE_STRING,
-        provenance_type=model.PROVENANCE_USER_ASSERTED,
-        domain=domain, sensitivity=sensitivity,
-        actor_user_id=actor_user_id, purpose="user_request",
-    )
-    # Scoped to this one person and this one field, keeping the row just
-    # written. It cannot reach another subject, another fact type or another
-    # owner, so the blast radius of an edit to Dana's phone number is Dana's
-    # phone number.
-    facts_mod.supersede_facts(
-        cur, owner_user_id=owner_user_id, subject_type=facts_mod.SUBJECT_NODE,
-        subject_id=str(node_id), fact_type=fact_type,
-        keep_fact_id=int((written or {}).get("fact_id") or 0),
-        actor_user_id=actor_user_id, purpose="user_request",
-    )
-    return True
-
-
-def save_person(
-    cur,
-    *,
-    owner_user_id: int,
-    name: object = None,
-    role: object = None,
-    phone: object = None,
-    email: object = None,
-    username: object = None,
-    pulsesoc_user_id: object = 0,
-    photo_media_id: object = None,
-    notes: object = None,
-    source: object = SOURCE_MANUAL,
-    node_id: object = None,
-    domain: object = None,
-    sensitivity: object = None,
-    actor_user_id: int | None = None,
-) -> dict[str, Any]:
-    """Create or update one person, resolving identity first. The write path.
-
-    Three ways in, one behaviour:
-
-    * ``node_id`` given — an edit of a person the member already picked.
-    * no ``node_id``, but an identifier that :func:`resolve_person` matches —
-      the same person arriving again, from a meeting invite or a re-typed
-      form. Updated in place. This is what makes scheduling the same meeting
-      twice produce one contact rather than two.
-    * nothing matches — a new person.
-
-    ``None`` means "not supplied" and leaves a field alone; ``""`` means
-    "clear it", which retires the current fact rather than deleting anything.
-    The distinction exists because a partial write is the normal case here: a
-    meeting invite knows an account id and nothing else, and must not blank
-    the phone number the member typed last week.
-    """
-    owner = int(owner_user_id or 0)
-    if owner <= 0:
-        raise PrivateRelationshipRejected("owner_user_id is required")
-    actor = int(actor_user_id or owner)
-
-    clean_name = _text(name) if name is not None else None
-    clean_role = _text(role) if role is not None else None
-    clean_phone = normalize_phone(phone) if phone is not None else None
-    clean_email = normalize_email(email) if email is not None else None
-    clean_handle = normalize_username(username) if username is not None else None
-    clean_photo = _text(photo_media_id, MAX_HANDLE_CHARS) if photo_media_id is not None else None
-    clean_notes = _text(notes, MAX_NOTES_CHARS) if notes is not None else None
-    account_ref = external_ref_for(pulsesoc_user_id)
-
-    # A field the member filled in that does not survive normalization is a
-    # typo, and accepting it silently would store an address nothing can ever
-    # match on while the screen shows it as saved.
-    if phone is not None and str(phone or "").strip() and not clean_phone:
-        raise PrivateRelationshipRejected("that phone number is not usable")
-    if email is not None and str(email or "").strip() and not clean_email:
-        raise PrivateRelationshipRejected("that email address is not usable")
-
-    index = _contact_index(cur, owner_user_id=owner)
-    target: int | None = None
-    matched_on = ""
-
-    if node_id is not None:
-        person = _person_node(cur, owner_user_id=owner, node_id=node_id)
-        if person is None:
-            raise PrivateRelationshipRejected("person not found")
-        target = int(person["id"])
-    else:
-        hit = resolve_person(
-            cur, owner_user_id=owner, pulsesoc_user_id=pulsesoc_user_id,
-            username=clean_handle or "", email=clean_email or "",
-            phone=clean_phone or "", index=index)
-        if hit:
-            target = int(hit["node_id"])
-            matched_on = str(hit["matched_on"])
-
-    if target is None:
-        if not clean_name:
-            raise PrivateRelationshipRejected("a person needs a name")
-        node = graph_mod.upsert_node(
-            cur, owner_user_id=owner, node_type=model.NODE_PERSON,
-            external_ref=account_ref, sensitivity=sensitivity, domain=domain,
-            actor_user_id=actor, purpose="user_request",
-        )
-        target = int(node["node_id"])
-        status = SAVE_CREATED
-        current: dict = {}
-        node_domain, node_sensitivity = node["domain"], node["sensitivity"]
-    else:
-        person = _person_node(cur, owner_user_id=owner, node_id=target)
-        if person is None:  # pragma: no cover - index and store move together
-            raise PrivateRelationshipRejected("person not found")
-        status = SAVE_UNCHANGED
-        current = index["contact"].get(target) or _contact_facts(
-            cur, owner_user_id=owner, node_ids=[target]).get(target, {})
-        node_domain = person.get("domain")
-        node_sensitivity = person.get("sensitivity")
-        if account_ref and not str(person.get("external_ref") or "").strip():
-            # §45: the account turned up later. One node, one more identifier.
-            graph_mod.attach_external_ref(
-                cur, owner_user_id=owner, node_id=target,
-                external_ref=account_ref, actor_user_id=actor)
-            status = SAVE_UPDATED
-
-    wrote = False
-    for fact_type, value in (
-        (FACT_NAME, clean_name),
-        (FACT_ROLE, clean_role),
-        (FACT_PHONE, clean_phone),
-        (FACT_EMAIL, clean_email),
-        (FACT_USERNAME, clean_handle),
-        (FACT_PHOTO, clean_photo),
-    ):
-        if value is None:
-            continue
-        wrote |= _set_field(
-            cur, owner_user_id=owner, node_id=target, fact_type=fact_type,
-            value=value, current=current, domain=node_domain,
-            sensitivity=node_sensitivity, actor_user_id=actor)
-
-    if status == SAVE_CREATED:
-        _set_field(
-            cur, owner_user_id=owner, node_id=target, fact_type=FACT_SOURCE,
-            value=normalize_source(source), current=current, domain=node_domain,
-            sensitivity=node_sensitivity, actor_user_id=actor)
-
-    if clean_notes:
-        # Notes accumulate rather than replace: a note is a dated observation,
-        # and the one it would overwrite is the one the member wrote down
-        # because they did not want to lose it.
-        facts_mod.record_fact(
-            cur, owner_user_id=owner, subject_type=facts_mod.SUBJECT_NODE,
-            subject_id=str(target), fact_type=FACT_NOTES, value=clean_notes,
-            value_type=model.VALUE_STRING,
-            provenance_type=model.PROVENANCE_USER_ASSERTED,
-            domain=node_domain, sensitivity=node_sensitivity,
-            actor_user_id=actor, purpose="user_request",
-        )
-        wrote = True
-
-    if status == SAVE_UNCHANGED and wrote:
-        status = SAVE_UPDATED
-
-    summary = person_summary(cur, owner_user_id=owner, node_id=target)
-    if summary is None:  # pragma: no cover - just written
-        raise PrivateRelationshipRejected("person not found")
-    summary["status"] = status
-    summary["matched_on"] = matched_on
-    return summary
-
-
-def person_summary(cur, *, owner_user_id: int, node_id: object) -> dict[str, Any] | None:
-    """The contact card fields for one person, read back from the store.
-
-    Every write returns this rather than an echo of its arguments — §51 wants
-    the screen to render what was *stored*, so a value the fact store trimmed,
-    lowercased or refused shows up as the stored one and not as the hopeful
-    one the client sent.
-    """
-    owner = int(owner_user_id or 0)
-    person = _person_node(cur, owner_user_id=owner, node_id=node_id)
-    if person is None:
-        return None
-    person_id = int(person["id"])
-    values = _contact_facts(cur, owner_user_id=owner, node_ids=[person_id]).get(person_id, {})
-
-    def held(fact_type: str) -> str:
-        return str((values.get(fact_type) or {}).get("value") or "")
-
-    return {
-        "node_id": person_id,
-        "person_id": person_id,
-        "ref": evidence.format_ref("node", person_id),
-        "name": held(FACT_NAME),
-        "role": held(FACT_ROLE),
-        "phone": held(FACT_PHONE),
-        "email": held(FACT_EMAIL),
-        "username": held(FACT_USERNAME),
-        "pulsesoc_user_id": account_id_from_ref(person.get("external_ref")),
-        "photo_media_id": held(FACT_PHOTO),
-        "source": held(FACT_SOURCE) or SOURCE_OTHER,
-        "favorite": held(FACT_FAVORITE) == "true",
-        "domain": person.get("domain") or "",
-        "sensitivity": person.get("sensitivity") or "",
-        "created_at": person.get("created_at") or "",
-        "updated_at": person.get("updated_at") or "",
-    }
-
-
-def set_favorite(
-    cur, *, owner_user_id: int, node_id: object, favorite: bool,
-    actor_user_id: int | None = None,
-) -> dict[str, Any]:
-    """Pin or unpin a person. Ordering only; nothing about them changes."""
-    owner = int(owner_user_id or 0)
-    person = _person_node(cur, owner_user_id=owner, node_id=node_id)
-    if person is None:
-        raise PrivateRelationshipRejected("person not found")
-    person_id = int(person["id"])
-    current = _contact_facts(
-        cur, owner_user_id=owner, node_ids=[person_id]).get(person_id, {})
-    _set_field(
-        cur, owner_user_id=owner, node_id=person_id, fact_type=FACT_FAVORITE,
-        value="true" if favorite else "", current=current,
-        domain=person.get("domain"), sensitivity=person.get("sensitivity"),
-        actor_user_id=int(actor_user_id or owner))
-    return person_summary(cur, owner_user_id=owner, node_id=person_id) or {}
-
-
-def remove_person(
-    cur, *, owner_user_id: int, node_id: object, actor_user_id: int | None = None,
-) -> bool:
-    """Take a person out of the directory. Archives the node; deletes nothing.
-
-    Explicitly **not** a cascade. The member's meetings, their messages and the
-    PulseSoc account behind the contact are not this feature's to remove, and a
-    contact list that could delete a conversation would be a delete button
-    wearing a smaller word. The facts stay in the store with their provenance
-    intact, so removing the wrong person is recoverable and the audit trail
-    still explains what was there.
-    """
-    owner = int(owner_user_id or 0)
-    person = _person_node(cur, owner_user_id=owner, node_id=node_id)
-    if person is None:
-        return False
-    return graph_mod.set_node_lifecycle(
-        cur, owner_user_id=owner, node_id=int(person["id"]),
-        lifecycle_state=model.LIFECYCLE_ARCHIVED,
-        actor_user_id=int(actor_user_id or owner), purpose="user_request")
-
 
 def add_person(
     cur,
@@ -642,151 +88,51 @@ def add_person(
 ) -> dict[str, Any]:
     """One new PERSON node plus its identity facts. Returns the profile summary.
 
-    A name and a role and nothing else, so every call creates a new person —
-    two advisors who share a name are two people, and merging them because
-    their names collide would be the graph silently rewriting the member's
-    world. :func:`save_person` is the same write with identifiers attached; it
-    matches on those, never on this.
-    """
-    if not _text(name):
-        raise PrivateRelationshipRejected("a person needs a name")
-    saved = save_person(
-        cur, owner_user_id=owner_user_id, name=name, role=role or "",
-        domain=domain, sensitivity=sensitivity, actor_user_id=actor_user_id,
-        source=SOURCE_MANUAL,
-    )
-    return {
-        "node_id": saved["node_id"],
-        "ref": saved["ref"],
-        "name": saved["name"],
-        "role": saved["role"],
-        "domain": saved["domain"],
-        "sensitivity": saved["sensitivity"],
-    }
-
-
-#: The source label a person-from-a-meeting carries, recorded on every fact
-#: this path writes. It is a ``ProvenanceRef.source_type``, not a new
-#: ``PROVENANCE_TYPES`` member, and the distinction is deliberate: provenance
-#: *type* answers "why should anyone believe this" and its ordering decides
-#: contradictions, so the honest type here is ``USER_ASSERTED`` — a host typed
-#: a name and an address. "Came from a meeting invitation" is *where* it came
-#: from, which is what a provenance ref is for, and putting it in the strength
-#: table instead would have been inventing a rank for a category that has none.
-PROVENANCE_MEETING_INVITEE = "PRIVATE_MEETING_INVITEE"
-
-#: An invitee's address is written as :data:`FACT_EMAIL` — the directory's own
-#: email fact, declared once at the top of this module — so someone invited to
-#: a meeting is a contact like any other: findable by address, editable from
-#: the contact screen, and resolvable onto the person already there.
-#:
-#: There used to be a second ``FACT_EMAIL = "email"`` here, written on a
-#: lineage where the directory had no email fact to collide with. Landing it
-#: beside the contacts work rebound the module global: the tuples at the top
-#: had already captured ``"contact_email"``, while every function body reads
-#: the name at call time and so saw ``"email"``. Writes went to one fact type,
-#: reads to the other, and every contact's email came back blank. Neither side
-#: was wrong by itself, which is why it passed both sets of tests — it is
-#: precisely the collision the comment above :data:`FACT_NAME` warns about.
-
-
-def _invitee_external_ref(*, user_id: int = 0, email: str = "") -> str:
-    """The identity a meeting invitee is linked by — never their name.
-
-    A member is :func:`external_ref_for` — the directory's own
-    ``pulsesoc:user:<id>`` — because an account has exactly one identity here
-    and a meeting is not a reason to invent a second. This said ``pmu:<id>``
-    once, and the result was the failure the comment on
-    :data:`EXTERNAL_REF_SCHEME` predicts: the host invited a member, the
-    invite path filed them under ``pulsesoc:user:7703`` and this path under
-    ``pmu:7703``, and the directory listed one person twice — the second copy
-    unlinked, unnamed, and reporting ``pulsesoc_user_id`` 0, so no read that
-    went looking for the member could see it.
-
-    Someone invited by address is ``pme:<sha256 of the normalized address>``,
-    hashed for two reasons: the graph's ``external_ref`` is identifier-shaped
-    and an address is not (``@`` is not in the permitted character class), and
-    a person's email is not something to leave sitting in a join key. That
-    scheme is this path's own, because an outside guest has no account to be
-    keyed by; it stops being used the moment there is a ``user_id``.
-
-    A name is never part of this. Two advisors called "John Smith" are two
-    people, and an identity derived from a name would quietly merge them — or
-    worse, attach one member's notes to a stranger who happens to be a
-    namesake. No identifier, no link: the caller gets nothing back and the
-    invite still stands on its own.
-    """
-    if int(user_id or 0) > 0:
-        return external_ref_for(user_id)
-    address = str(email or "").strip().lower()
-    if not address:
-        return ""
-    return "pme:" + hashlib.sha256(address.encode("utf-8")).hexdigest()[:40]
-
-
-def link_meeting_invitee(
-    cur,
-    *,
-    owner_user_id: int,
-    name: str = "",
-    email: str = "",
-    invitee_user_id: int = 0,
-    meeting_ref: str = "",
-    domain: object = None,
-    sensitivity: object = None,
-    actor_user_id: int | None = None,
-) -> dict[str, Any]:
-    """Link this meeting invitee to a person, creating the person if new.
-
-    Unlike :func:`add_person`, this is idempotent: it is keyed on
-    ``_invitee_external_ref``, so inviting the same person to a second meeting
-    adds to the person you already have rather than making a second one. That
-    is safe here precisely *because* the key is an account or an address. The
-    reason ``add_person`` refuses to dedupe is that it only has a name to go on.
-
-    Writes nothing the member did not supply, notifies nobody, and returns
-    ``{}`` when there is no identity to key on.
+    Every call creates a new person — two advisors who share a name are two
+    people, and merging them because their names collide would be the graph
+    silently rewriting the member's world. Dedupe is the member's decision,
+    made on a screen that shows both.
     """
     owner = int(owner_user_id or 0)
     if owner <= 0:
         raise PrivateRelationshipRejected("owner_user_id is required")
-    ref = _invitee_external_ref(user_id=invitee_user_id, email=email)
-    if not ref:
-        return {}
+    clean_name = " ".join(str(name or "").split())[:MAX_NAME_CHARS]
+    if not clean_name:
+        raise PrivateRelationshipRejected("a person needs a name")
+    clean_role = " ".join(str(role or "").split())[:MAX_NAME_CHARS]
 
     node = graph_mod.upsert_node(
         cur, owner_user_id=owner, node_type=model.NODE_PERSON,
-        external_ref=ref, sensitivity=sensitivity, domain=domain,
+        external_ref="", sensitivity=sensitivity, domain=domain,
         actor_user_id=actor_user_id or owner, purpose="user_request",
     )
     node_id = int(node["node_id"])
-    source = facts_mod.ProvenanceRef(
-        source_type=PROVENANCE_MEETING_INVITEE,
-        source_id=str(meeting_ref or "")[:64])
 
-    def remember(fact_type: str, value: str) -> None:
-        if not value:
-            return
+    facts_mod.record_fact(
+        cur, owner_user_id=owner, subject_type=facts_mod.SUBJECT_NODE,
+        subject_id=str(node_id), fact_type=FACT_NAME, value=clean_name,
+        value_type=model.VALUE_STRING,
+        provenance_type=model.PROVENANCE_USER_ASSERTED,
+        domain=domain, sensitivity=sensitivity,
+        actor_user_id=actor_user_id or owner, purpose="user_request",
+    )
+    if clean_role:
         facts_mod.record_fact(
             cur, owner_user_id=owner, subject_type=facts_mod.SUBJECT_NODE,
-            subject_id=str(node_id), fact_type=fact_type, value=value,
+            subject_id=str(node_id), fact_type=FACT_ROLE, value=clean_role,
             value_type=model.VALUE_STRING,
             provenance_type=model.PROVENANCE_USER_ASSERTED,
-            provenance=source, domain=domain, sensitivity=sensitivity,
+            domain=domain, sensitivity=sensitivity,
             actor_user_id=actor_user_id or owner, purpose="user_request",
         )
-
-    remember(FACT_NAME, " ".join(str(name or "").split())[:MAX_NAME_CHARS])
-    # Normalised the directory's way, not this path's way. The same address
-    # typed into the contact editor and into the guest list has to reduce to
-    # the same string, or the resolver files one person under two records.
-    remember(FACT_EMAIL, normalize_email(email)[:MAX_NAME_CHARS])
 
     return {
         "node_id": node_id,
         "ref": evidence.format_ref("node", node_id),
-        "status": node["status"],
-        "external_ref": ref,
+        "name": clean_name,
+        "role": clean_role,
+        "domain": node["domain"],
+        "sensitivity": node["sensitivity"],
     }
 
 
@@ -826,22 +172,35 @@ def record_person_fact(
 # ---------------------------------------------------------------------------
 
 def _person_node(cur, *, owner_user_id: int, node_id: object) -> dict | None:
-    """The owner's live PERSON node, or ``None``.
-
-    Absent, foreign, not a person and removed are one answer. The last of those
-    is the one worth stating: :func:`remove_person` archives rather than
-    deletes, so the row is still there to be fetched by id. If that reached the
-    callers, a removed contact would go on answering reads and accepting edits
-    while the directory said they were gone — "remove" would be a filter
-    wearing a bigger word. The facts keep their provenance in the store; they
-    are simply no longer reachable as a contact.
-    """
     node = graph_mod.get_node(cur, owner_user_id=int(owner_user_id or 0), node_id=node_id)
     if node is None or str(node.get("node_type")) != model.NODE_PERSON:
-        return None
-    if str(node.get("lifecycle_state") or "") != model.LIFECYCLE_ACTIVE:
+        # Absent, foreign, or not a person — one answer for all three.
         return None
     return node
+
+
+def _identity_map(cur, *, owner_user_id: int, node_ids: list[int]) -> dict[int, dict]:
+    """node_id → {"name", "role", "name_fact_id"} from the fact store."""
+    if not node_ids:
+        return {}
+    rows = facts_mod.list_facts_for_subjects(
+        cur, owner_user_id=owner_user_id, subject_type=facts_mod.SUBJECT_NODE,
+        subject_ids=[str(n) for n in node_ids], fact_types=IDENTITY_FACT_TYPES,
+    )
+    out: dict[int, dict] = {}
+    # Rows arrive newest-first; the first name seen per node is the current one.
+    for row in rows:
+        try:
+            subject = int(str(row.get("subject_id") or "0"))
+        except ValueError:
+            continue
+        entry = out.setdefault(subject, {"name": "", "role": "", "name_fact_id": 0})
+        if row.get("fact_type") == FACT_NAME and not entry["name"]:
+            entry["name"] = str(row.get("typed_value") or "")
+            entry["name_fact_id"] = int(row.get("id") or 0)
+        elif row.get("fact_type") == FACT_ROLE and not entry["role"]:
+            entry["role"] = str(row.get("typed_value") or "")
+    return out
 
 
 def _records_citing(cur, *, owner_user_id: int, node_ref: str,
@@ -870,49 +229,12 @@ def _is_open(record: dict) -> bool:
     return record.get("status") not in spec_closing
 
 
-#: How the directory may be ordered. Three orderings, all of them stable and
-#: all of them derived from rows — there is no "relevance" here, because a
-#: contact list that reorders itself by a score nobody can inspect is a contact
-#: list the member stops being able to predict.
-SORT_RECENT = "recent"
-SORT_NAME = "name"
-SORT_ACTIVITY = "activity"
-SORTS: tuple[str, ...] = (SORT_RECENT, SORT_NAME, SORT_ACTIVITY)
-
-
-def _matches_query(row: dict, needle: str) -> bool:
-    """Substring match over the fields the member can see on the card.
-
-    Notes are excluded. They are the most private thing in the record and the
-    member did not ask for them to be a search index; a name surfacing because
-    of something written in confidence about them is a leak into the member's
-    own screen, and from there into a screenshot.
-    """
-    if not needle:
-        return True
-    haystack = " ".join(str(row.get(field) or "") for field in
-                        ("name", "role", "email", "phone", "username")).lower()
-    return needle in haystack
-
-
-def directory(
-    cur,
-    *,
-    owner_user_id: int,
-    limit: int = MAX_DIRECTORY,
-    query: object = "",
-    sort: object = SORT_RECENT,
-    favorites_only: bool = False,
-) -> list[dict[str, Any]]:
-    """Every person the member has, with counts that are counts.
+def directory(cur, *, owner_user_id: int, limit: int = MAX_DIRECTORY) -> list[dict[str, Any]]:
+    """Every person the member has, newest first, with counts that are counts.
 
     ``open_commitments`` and ``connections`` are computed from the rows this
     module can show on the profile — never an estimate, so tapping through
     always finds exactly what the number promised.
-
-    ``query`` filters; it does not rank. Filtering happens after the
-    owner-scoped read, over rows already proven to be the caller's, so a search
-    term can never be a probe for somebody else's contact.
     """
     owner = int(owner_user_id or 0)
     nodes = graph_mod.list_nodes(
@@ -921,7 +243,7 @@ def directory(
     # list_nodes returns id ASC; the directory promises newest first.
     nodes = list(reversed(nodes))
     node_ids = [int(n["id"]) for n in nodes]
-    contact = _contact_facts(cur, owner_user_id=owner, node_ids=node_ids)
+    identity = _identity_map(cur, owner_user_id=owner, node_ids=node_ids)
 
     commitments_by_node: dict[int, int] = {}
     for record_type in COMMITMENT_TYPES:
@@ -937,53 +259,23 @@ def directory(
                 if parsed and parsed[0] == "node":
                     commitments_by_node[parsed[1]] = commitments_by_node.get(parsed[1], 0) + 1
 
-    needle = str(query or "").strip().lower()[:MAX_NAME_CHARS]
     out = []
     for node in nodes:
         node_id = int(node["id"])
-        values = contact.get(node_id, {})
-
-        def held(fact_type: str, _values: dict = values) -> str:
-            return str((_values.get(fact_type) or {}).get("value") or "")
-
-        row = {
+        who = identity.get(node_id, {})
+        out.append({
             "node_id": node_id,
-            "person_id": node_id,
             "ref": evidence.format_ref("node", node_id),
-            "name": held(FACT_NAME),
-            "role": held(FACT_ROLE),
-            "phone": held(FACT_PHONE),
-            "email": held(FACT_EMAIL),
-            "username": held(FACT_USERNAME),
-            "pulsesoc_user_id": account_id_from_ref(node.get("external_ref")),
-            "photo_media_id": held(FACT_PHOTO),
-            "source": held(FACT_SOURCE) or SOURCE_OTHER,
-            "favorite": held(FACT_FAVORITE) == "true",
+            "name": who.get("name") or "",
+            "role": who.get("role") or "",
             "domain": node.get("domain") or "",
             "sensitivity": node.get("sensitivity") or "",
             "created_at": node.get("created_at") or "",
-            "updated_at": node.get("updated_at") or "",
             "open_commitments": commitments_by_node.get(node_id, 0),
             "connections": len(graph_mod.neighbors(
                 cur, owner_user_id=owner, node_id=node_id,
                 direction=graph_mod.DIRECTION_BOTH)),
-        }
-        if favorites_only and not row["favorite"]:
-            continue
-        if not _matches_query(row, needle):
-            continue
-        out.append(row)
-
-    order = str(sort or SORT_RECENT).strip().lower()
-    if order not in SORTS:
-        order = SORT_RECENT
-    if order == SORT_NAME:
-        out.sort(key=lambda r: (r["name"].lower(), -r["node_id"]))
-    elif order == SORT_ACTIVITY:
-        out.sort(key=lambda r: (r["open_commitments"], r["connections"],
-                                r["node_id"]), reverse=True)
-    # Favourites lead every ordering; within them the chosen order still holds.
-    out.sort(key=lambda r: 0 if r["favorite"] else 1)
+        })
     return out
 
 
@@ -1025,7 +317,8 @@ def profile(cur, *, owner_user_id: int, node_id: object) -> dict[str, Any] | Non
     fact_rows = facts_mod.list_facts_for_subjects(
         cur, owner_user_id=owner, subject_type=facts_mod.SUBJECT_NODE,
         subject_ids=[str(person_id)])
-    who = person_summary(cur, owner_user_id=owner, node_id=person_id) or {}
+    identity = _identity_map(cur, owner_user_id=owner, node_ids=[person_id])
+    who = identity.get(person_id, {})
 
     edges = graph_mod.neighbors(
         cur, owner_user_id=owner, node_id=person_id,
@@ -1062,9 +355,13 @@ def profile(cur, *, owner_user_id: int, node_id: object) -> dict[str, Any] | Non
     )
 
     return {
-        **who,
         "node_id": person_id,
         "ref": node_ref,
+        "name": who.get("name") or "",
+        "role": who.get("role") or "",
+        "domain": person.get("domain") or "",
+        "sensitivity": person.get("sensitivity") or "",
+        "created_at": person.get("created_at") or "",
         "facts": [_fact_view(row) for row in fact_rows],
         "connections": [{
             "edge_id": int(edge.get("id") or 0),

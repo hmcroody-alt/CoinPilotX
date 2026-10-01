@@ -1,4 +1,3 @@
-import { reconcileMessageNotifications } from "../core/messageNotificationReconciliation";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File } from "expo-file-system";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "./config";
@@ -14,8 +13,6 @@ import {
 // messengerOrdering imports only TYPES from this module, so the cycle is erased
 // at runtime and this value import is safe.
 import { mintClientMessageId } from "./messengerOrdering";
-import { drainOutbox, enqueueMutation, registerOutboxHandler, outboxScope } from "../core/mutations/outbox";
-import { PARALLEL_PARTS, openPartSource, uploadBlob, withRetry } from "../media/resumableUploadTransport";
 
 const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.v2.conversations";
 /**
@@ -98,25 +95,8 @@ export type MessengerMessage = {
   type?: string;
   message_type?: string;
   media_url?: string;
-  /**
-   * The downloadable file, when the server distinguishes it from `media_url`.
-   *
-   * For a Mux-backed video `media_url` is the playback source — an HLS manifest,
-   * which is a playlist and not a movie. Save to Photos and Share need the
-   * progressive original, so the server sends both and this carries the second
-   * one through the normalizer rather than letting each consumer re-derive it
-   * from the URL's shape. Empty on attachments where the two are one resource,
-   * and on payloads from a server that predates the split.
-   */
-  download_url?: string;
   thumbnail_url?: string;
   file_size?: number;
-  /**
-   * The attachment's canonical MIME type. Load-bearing for documents: it is what
-   * picks the iOS UTI, and without it the document viewer is handed an opaque
-   * blob and offers nothing that can read it.
-   */
-  mime_type?: string;
   duration?: number;
   duration_seconds?: number;
   waveform?: number[];
@@ -725,105 +705,48 @@ export async function sendConversationMessage(conversationId: number, payload: S
   return { ...result, data: serverMessage };
 }
 
-/**
- * Messenger's view of the shared mutation outbox.
- *
- * The queue used to live here, and that was the problem: its retry policy, its
- * capacity rule and its drain were messenger's alone, so every other surface
- * that needed to survive being offline would have grown its own. What is left
- * here is the part that is genuinely about messages — the stream is the
- * conversation, the idempotency key is the `client_message_id` the server
- * already dedupes on, and the response has to be stamped before the reconciler
- * sees it. Everything else now belongs to the outbox.
- */
-const MESSENGER_OUTBOX_TYPE = "messenger.send";
-
-type MessengerOutboxPayload = { conversationId: number; payload: SendMessagePayload };
-
-/** Where a drained send parks its server row, so the drain can hand it back. */
-const drainedMessages = new Map<string, MessengerMessage>();
-
-registerOutboxHandler(MESSENGER_OUTBOX_TYPE, async (operation) => {
-  const { conversationId, payload } = operation.payload as MessengerOutboxPayload;
-  const result = await sendConversationMessage(conversationId, payload);
-  // The client id is stamped back on rather than trusted from the response.
-  // A drained message ALWAYS has a bubble already on screen -- that is what
-  // being queued means -- so a server row that came back without the client
-  // id would give the reconciler no way to see the two as one message, and
-  // every message the queue sent would appear twice.
-  if (result.data) {
-    drainedMessages.set(operation.id, {
-      ...result.data,
-      client_message_id: result.data.client_message_id || payload.client_message_id
-    });
-  }
-});
-
-export const messengerOutboxStream = (conversationId: number) => `conversation:${conversationId}`;
-
 export async function enqueueMessengerMessage(conversationId: number, payload: SendMessagePayload) {
-  await migrateLegacyOutboundQueue();
+  const queue = await readOutboundQueue();
   // The clock-only fallback that used to live here could collide when several
   // messages were queued in the same millisecond -- an offline burst is exactly
   // that shape -- and two colliding ids now mean the server treats the second
   // message as a repeat of the first and drops it.
   const clientId = payload.client_message_id || mintClientMessageId("queued");
-  await enqueueMutation({
-    type: MESSENGER_OUTBOX_TYPE,
-    idempotencyKey: clientId,
-    stream: messengerOutboxStream(conversationId),
-    payload: { conversationId, payload: { ...payload, client_message_id: clientId } }
-  });
+  if (!queue.some((item) => item.payload.client_message_id === clientId)) {
+    queue.push({ conversationId, payload: { ...payload, client_message_id: clientId } });
+    await AsyncStorage.setItem(OUTBOUND_QUEUE_KEY, JSON.stringify(queue.slice(-100)));
+  }
 }
 
 export async function drainMessengerQueue(conversationId: number) {
-  await migrateLegacyOutboundQueue();
-  const result = await drainOutbox({ stream: messengerOutboxStream(conversationId) });
+  const queue = await readOutboundQueue();
+  const remaining: typeof queue = [];
   const sent: MessengerMessage[] = [];
-  for (const operation of result.delivered) {
-    const message = drainedMessages.get(operation.id);
-    if (message) sent.push(message);
-    drainedMessages.delete(operation.id);
+  for (const item of queue) {
+    if (item.conversationId !== conversationId) { remaining.push(item); continue; }
+    try {
+      const result = await sendConversationMessage(item.conversationId, item.payload);
+      // The client id is stamped back on rather than trusted from the response.
+      // A drained message ALWAYS has a bubble already on screen -- that is what
+      // being queued means -- so a server row that came back without the client
+      // id would give the reconciler no way to see the two as one message, and
+      // every message the queue sent would appear twice.
+      if (result.data) {
+        sent.push({
+          ...result.data,
+          client_message_id: result.data.client_message_id || item.payload.client_message_id
+        });
+      }
+    } catch {
+      remaining.push(item);
+    }
   }
+  await AsyncStorage.setItem(OUTBOUND_QUEUE_KEY, JSON.stringify(remaining));
   return sent;
 }
 
-/**
- * Carry messages queued by an older build into the outbox.
- *
- * An unsent message is something the user has already written and believes they
- * have sent. Shipping a new queue and leaving the old one behind would lose
- * exactly those — silently, and only for the users who were offline across the
- * upgrade, which is the population least likely to report it. The legacy key is
- * removed only after the operations are durably in the outbox, so a crash in
- * between repeats the migration rather than dropping it.
- */
-async function migrateLegacyOutboundQueue(): Promise<void> {
-  let legacy: Array<{ conversationId: number; payload: SendMessagePayload }>;
-  try {
-    const raw = await AsyncStorage.getItem(OUTBOUND_QUEUE_KEY);
-    if (!raw) return;
-    legacy = JSON.parse(raw);
-    if (!Array.isArray(legacy) || !legacy.length) {
-      await AsyncStorage.removeItem(OUTBOUND_QUEUE_KEY).catch(() => undefined);
-      return;
-    }
-  } catch {
-    await AsyncStorage.removeItem(OUTBOUND_QUEUE_KEY).catch(() => undefined);
-    return;
-  }
-
-  for (const item of legacy) {
-    const clientId = item?.payload?.client_message_id;
-    if (!clientId || !item.conversationId) continue;
-    await enqueueMutation({
-      type: MESSENGER_OUTBOX_TYPE,
-      idempotencyKey: clientId,
-      stream: messengerOutboxStream(item.conversationId),
-      payload: item
-    }).catch(() => undefined);
-  }
-  await AsyncStorage.removeItem(OUTBOUND_QUEUE_KEY).catch(() => undefined);
+async function readOutboundQueue(): Promise<Array<{ conversationId: number; payload: SendMessagePayload }>> {
+  try { return JSON.parse((await AsyncStorage.getItem(OUTBOUND_QUEUE_KEY)) || "[]"); } catch { return []; }
 }
 
 export async function reactToMessage(messageId: number, reactionType = "pulse") {
@@ -844,58 +767,10 @@ export async function reactToMessage(messageId: number, reactionType = "pulse") 
 }
 
 export async function deleteMessage(messageId: number, scope: "self" | "everyone" = "self") {
-  const result = await pulseApi<{ ok?: boolean; deleted?: boolean; message?: string }>(`${MESSENGER_API}/messages/${messageId}`, {
+  return pulseApi<{ ok?: boolean; deleted?: boolean; message?: string }>(`${MESSENGER_API}/messages/${messageId}`, {
     method: "DELETE",
     body: JSON.stringify({ delete_for: scope })
   });
-  if (result.ok) void reconcileMessageNotifications();
-  return result;
-}
-
-/**
- * Amend a message you already sent.
- *
- * The server owns the rules and refuses anything else: not your message is a
- * 403 `forbidden`, past its window a 403 `edit_window_expired`, empty a 400
- * `empty_message`. Nothing is checked twice here -- the menu hides Edit when
- * it can tell the answer in advance, but the answer itself comes from there.
- *
- * Deliberately does not send `edit_window_minutes`. The endpoint reads that
- * key from the request body, which means a client can pick its own time
- * limit; honouring the server's default is the only correct thing for a
- * client to do with a parameter like that.
- */
-export async function editMessage(messageId: number, body: string) {
-  const result = await pulseApi<{ ok?: boolean; message?: MessengerMessage; error?: string }>(
-    `${MESSENGER_API}/messages/${messageId}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ body })
-    }
-  );
-  return {
-    ...result,
-    message: result.message ? normalizeMessages([result.message], 0)[0] : undefined
-  };
-}
-
-/**
- * Copy a message into other conversations.
- *
- * The server caps this at ten targets and silently skips any conversation the
- * sender cannot post to, so `count` is what actually happened and may be
- * smaller than the list asked for. Callers should report `count`, not the
- * length of their own selection.
- */
-export async function forwardMessage(messageId: number, conversationIds: number[]) {
-  const targets = Array.from(new Set(conversationIds.map((id) => Number(id) || 0).filter(Boolean))).slice(0, 10);
-  return pulseApi<{ ok?: boolean; forwarded_message_ids?: number[]; count?: number; message?: string }>(
-    `${MESSENGER_API}/messages/${messageId}/forward`,
-    {
-      method: "POST",
-      body: JSON.stringify({ conversation_ids: targets })
-    }
-  );
 }
 
 export async function reportMessage(messageId: number, reason = "Needs review") {
@@ -912,28 +787,8 @@ export async function pinConversation(conversationId: number, pinned = true) {
   });
 }
 
-type MessageReadOperation = { conversationId: number; messageIds: number[]; accountScope: string };
-registerOutboxHandler("messenger.read", async operation => {
-  const payload = operation.payload as MessageReadOperation;
-  if (payload.accountScope !== outboxScope()) throw new Error("Read account changed");
-  const result = await pulseApi<{ ok: boolean }>(`${MESSENGER_API}/conversations/${payload.conversationId}/read`, {
-    method: "POST", body: JSON.stringify({ through_message_id: Math.max(...payload.messageIds) })
-  });
-  if (!result.ok) throw new Error("Read acknowledgement failed");
-  void reconcileMessageNotifications();
-});
-
-export async function markConversationSeen(conversationId: number, displayed?: MessengerMessage[]) {
-  const messages = displayed ?? await loadCachedMessages(conversationId);
-  const messageIds = [...new Set(messages.map(m => Number(m.id)).filter(n => Number.isSafeInteger(n) && n > 0))];
-  const accountScope = outboxScope();
-  if (!messageIds.length || accountScope === "anon") return { ok: false };
-  await enqueueMutation({ type: "messenger.read", stream: `read:${conversationId}`,
-    idempotencyKey: `read:${accountScope}:${conversationId}:${messageIds.join(",")}`,
-    payload: { conversationId, messageIds, accountScope } });
-  void reconcileMessageNotifications();
-  void drainOutbox().then(() => reconcileMessageNotifications()).catch(() => undefined);
-  return { ok: true };
+export async function markConversationSeen(conversationId: number) {
+  return pulseApi<{ ok: boolean; last_read_message_id?: number }>(`${MESSENGER_API}/conversations/${conversationId}/read`, { method: "POST" });
 }
 
 export async function sendTyping(conversationId: number, typing: boolean) {
@@ -1125,23 +980,6 @@ export async function updateCachedConversationPreview(conversationId: number, pr
   });
 }
 
-export type MessengerUploadInit = {
-  ok?: boolean;
-  attachment_id?: number;
-  upload_method?: "direct" | "resumable";
-  upload_url?: string;
-  part_size_bytes?: number;
-  part_count?: number;
-  max_parts_per_request?: number;
-  session_expires_at?: string;
-};
-
-export type MessengerUploadProgress = {
-  bytesSent: number;
-  totalBytes: number;
-  percent: number;
-};
-
 export async function uploadMessengerMedia(input: {
   conversationId: number;
   uri: string;
@@ -1150,7 +988,6 @@ export async function uploadMessengerMedia(input: {
   sizeBytes?: number;
   voice?: boolean;
   durationSeconds?: number;
-  onProgress?: (value: MessengerUploadProgress) => void;
 }) {
   if (input.conversationId === PULSE_AI_CONVERSATION_ID) {
     throw new PulseApiError("UNDX can chat by text right now. Remove the attachment and send a message.", 400, "pulse_ai_text_only");
@@ -1167,7 +1004,7 @@ export async function uploadMessengerMedia(input: {
       "local_file_size_unavailable"
     );
   }
-  const init = await pulseApi<MessengerUploadInit>("/api/messages/media/init", {
+  const init = await pulseApi<{ ok?: boolean; attachment_id?: number }>("/api/messages/media/init", {
     method: "POST",
     body: JSON.stringify({
       conversation_id: input.conversationId,
@@ -1179,37 +1016,6 @@ export async function uploadMessengerMedia(input: {
   });
   const attachmentId = Number(init.attachment_id || 0);
   if (!attachmentId) throw new PulseApiError("Media upload did not return an attachment id.", 502, "attachment_init_failed");
-
-  // The server decides which transport this file gets, and it decides from the
-  // size it was told. A single POST cannot carry a 90-minute video off a phone:
-  // one dropped connection restarts the whole transfer, and the bytes would pass
-  // through Flask's memory on the way. Above the threshold the server opens a
-  // multipart session and the parts go straight to storage.
-  if (init.upload_method === "resumable") {
-    const durationMs = input.durationSeconds ? Math.max(1, Math.round(input.durationSeconds * 1000)) : 0;
-    const finished = await uploadMessengerMediaInParts({
-      attachmentId,
-      uri: input.uri,
-      mimeType,
-      sizeBytes,
-      session: init,
-      durationMs,
-      onProgress: input.onProgress
-    });
-    const resumableDownloadUrl = String(finished.download_url || `/api/messages/media/${attachmentId}/download`);
-    return {
-      ...finished,
-      attachment_id: attachmentId,
-      media_id: Number(finished.media_id || 0),
-      media_url: String(finished.signed_url || finished.media_url || resumableDownloadUrl),
-      playback_url: String(finished.playback_url || finished.signed_url || resumableDownloadUrl),
-      thumbnail_url: String(finished.thumbnail_url || ""),
-      download_url: resumableDownloadUrl,
-      message_type: input.voice ? "voice" : mediaType === "photo" ? "image" : mediaType,
-      type: input.voice ? "voice" : mediaType === "photo" ? "image" : mediaType,
-      file_size: Number(finished.file_size || finished.size_bytes || sizeBytes)
-    };
-  }
 
   const form = new FormData();
   form.append("attachment_id", String(attachmentId));
@@ -1259,113 +1065,6 @@ export async function uploadMessengerMedia(input: {
     type: input.voice ? "voice" : mediaType === "photo" ? "image" : mediaType,
     file_size: Number(completed.file_size || completed.size_bytes || sizeBytes)
   };
-}
-
-/**
- * Send a large attachment as parts, straight to storage.
- *
- * Two things here are deliberate and easy to undo by accident:
- *
- * The resume point is asked of the server, never assumed. `/upload/state` reports
- * what storage actually holds, so a retry re-sends only the gap. The client does
- * not tell the server which parts landed -- it has no way to know, and a claim it
- * cannot back would leave a hole in the finished object.
- *
- * The blob is fetched once and sliced. RN blob slices are descriptors over native
- * memory, so a 2 GB file never enters JS. Reading each part into a buffer instead
- * would work on a short clip and run the phone out of memory on a long one.
- */
-async function uploadMessengerMediaInParts(input: {
-  attachmentId: number;
-  uri: string;
-  mimeType: string;
-  sizeBytes: number;
-  session: MessengerUploadInit;
-  durationMs: number;
-  onProgress?: (value: MessengerUploadProgress) => void;
-}): Promise<MediaUploadResult> {
-  const { attachmentId, mimeType, sizeBytes } = input;
-  const partSize = Math.max(1, Number(input.session.part_size_bytes || 0));
-  const partCount = Math.max(1, Number(input.session.part_count || 0));
-  const perRequest = Math.max(1, Number(input.session.max_parts_per_request || 1));
-  if (!input.session.part_size_bytes || !input.session.part_count) {
-    throw new PulseApiError("Media upload session was incomplete.", 502, "attachment_session_incomplete");
-  }
-
-  const state = await pulseApi<{ missing_parts?: number[]; bytes_stored?: number }>(
-    "/api/messages/media/upload/state",
-    { method: "POST", body: JSON.stringify({ attachment_id: attachmentId }) }
-  );
-  const pending = Array.isArray(state.missing_parts) && state.missing_parts.length
-    ? state.missing_parts.map((value) => Number(value)).filter((value) => value >= 1 && value <= partCount)
-    : Array.from({ length: partCount }, (_, index) => index + 1);
-
-  const sentByPart = new Map<number, number>();
-  const alreadyStored = Math.max(0, Number(state.bytes_stored || 0));
-  const report = () => {
-    const sent = alreadyStored + [...sentByPart.values()].reduce((total, value) => total + value, 0);
-    input.onProgress?.({
-      bytesSent: Math.min(sizeBytes, sent),
-      totalBytes: sizeBytes,
-      percent: Math.min(99, Math.round((Math.min(sizeBytes, sent) / Math.max(1, sizeBytes)) * 100))
-    });
-  };
-
-  // One part at a time off disk rather than the whole attachment as a single native Blob.
-  // `nativeBlobFromUri` costs the full file size in dirty native memory before any byte is
-  // sent, which a long video does not survive -- and a multipart send is by definition
-  // already past the size where that starts to matter.
-  const source = await openPartSource(input.uri, mimeType);
-  let cursor = 0;
-  const worker = async () => {
-    while (cursor < pending.length) {
-      // A batch of signatures per round trip rather than one each: ~250 parts for a
-      // 2 GB file would otherwise be 250 extra requests before any bytes move.
-      const batch = pending.slice(cursor, cursor + perRequest);
-      cursor += batch.length;
-      const signed = await withRetry(
-        () => pulseApi<{ parts?: Array<{ part_number: number; upload_url: string }> }>(
-          "/api/messages/media/upload/parts",
-          { method: "POST", body: JSON.stringify({ attachment_id: attachmentId, part_numbers: batch }) }
-        ),
-        () => undefined,
-        () => false
-      );
-      for (const part of signed.parts || []) {
-        const number = Number(part.part_number);
-        const start = (number - 1) * partSize;
-        const end = Math.min(sizeBytes, start + partSize);
-        await withRetry(
-          async () => {
-            await uploadBlob(part.upload_url, source.read(start, end), mimeType, (loaded) => {
-              sentByPart.set(number, loaded);
-              report();
-            }, () => undefined);
-            sentByPart.set(number, end - start);
-            report();
-          },
-          () => undefined,
-          () => false
-        );
-      }
-    }
-  };
-  try {
-    await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, pending.length) }, worker));
-  } finally {
-    source.close();
-  }
-
-  return pulseApi<MediaUploadResult>("/api/messages/media/upload/finish", {
-    method: "POST",
-    body: JSON.stringify({
-      attachment_id: attachmentId,
-      duration_ms: input.durationMs || "",
-      width: "",
-      height: "",
-      waveform_json: ""
-    })
-  });
 }
 
 export function resolveLocalMessengerFileSize(uri: string, declaredSize?: number) {
@@ -1548,8 +1247,7 @@ export function normalizeMessages(items: MessengerMessage[], fallbackConversatio
         body,
         message_type: messageType,
         delivery_status: safeText(item.delivery_status) || safeText(item.status) || safeText(item.local_status) || "sent",
-        file_size: Number(item.file_size || attachment?.file_size || attachment?.file_size_bytes || 0),
-        mime_type: safeText(item.mime_type) || attachmentValue(item, "mime_type"),
+        file_size: Number(item.file_size || 0),
         duration_seconds: Number(item.duration_seconds || item.duration || attachment?.duration_seconds || attachment?.duration || 0),
         waveform: normalizeVoiceWaveform(item.waveform || attachment?.waveform || attachment?.waveform_json),
         attachment_id: Number(item.attachment_id || attachment?.attachment_id || attachment?.id || 0) || undefined,
@@ -1560,12 +1258,6 @@ export function normalizeMessages(items: MessengerMessage[], fallbackConversatio
         reactions: normalizeReactionCounts(item.reactions),
         viewer_reaction: safeText(item.viewer_reaction) || safeText((item as MessengerMessage & { my_reaction?: string }).my_reaction),
         media_url: safeText(item.media_url) || attachmentValue(item, "url") || attachmentValue(item, "cdn_url") || attachmentValue(item, "playback_url"),
-        // NOT falling back to `media_url`: an absent download URL has to stay
-        // distinguishable from one that equals the playback URL, because the
-        // consumers treat them differently. Empty means "the server did not
-        // separate these", which the viewer answers by using `url` — copying
-        // `media_url` in here would instead assert that a manifest is a file.
-        download_url: safeText(item.download_url) || attachmentValue(item, "download_url"),
         thumbnail_url: safeText(item.thumbnail_url) || attachmentValue(item, "thumbnail_url"),
         reply_preview: messageText(item.reply_preview),
         sender_display_name: safeText(item.sender_display_name),

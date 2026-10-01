@@ -35,25 +35,8 @@ from decimal import Decimal
 from services import db, marketplace_variants as variants
 from services import marketplace_listing_lifecycle as lifecycle
 from services import marketplace_supplier_schema as supplier_schema
-from services.business_os.suppliers import (connections, normalize, policy, pricing,
-                                            store_policy)
+from services.business_os.suppliers import connections, normalize, policy, pricing
 from services.business_os.suppliers.errors import SupplierError
-
-
-def _revisions():
-    """``revisions``, imported on call because it imports this module.
-
-    ``revisions`` needs ``_sold_variant`` and ``_checkout_price_label`` from here,
-    so the module-scope edge runs one way only and this direction has to be
-    deferred; ``worker`` reaches for it the same way. What the two functions below
-    borrow is the *reader* for ``attention_json`` — a column ``revisions`` owns and
-    writes. Re-implementing the parse on this side is how a merchant's product
-    screen and the reconciler that wrote the row end up disagreeing about what an
-    unrecognised reason, or a malformed blob, means.
-    """
-    from . import revisions
-    return revisions
-
 
 # Publication validation codes. Every one names a specific thing the merchant
 # can act on; there is deliberately no generic catch-all in this list.
@@ -84,20 +67,6 @@ PRICE_ABOVE_CHECKOUT_LIMIT = "PRICE_ABOVE_CHECKOUT_LIMIT"
 #: contract exists to prevent. Measured on production listing 14: published,
 #: moderator-approved, on sale, and unbound.
 SUPPLIER_VARIANT_UNBOUND = "SUPPLIER_VARIANT_UNBOUND"
-#: The publish write did not land, discovered by reading the row back. §35.
-#:
-#: Not a validation failure -- validation passed, and then the database did not
-#: end up in the state the write asked for. The realistic cause is an UPDATE
-#: whose ``WHERE`` matched nothing (a seller identity that does not own the row),
-#: which raises no error and affects no rows. Distinct from every other code here
-#: because the merchant cannot fix it and should not be asked to.
-PUBLISH_NOT_PERSISTED = "PUBLISH_NOT_PERSISTED"
-#: The listing has no ``marketplace_product_sources`` row, so nothing records
-#: which supplier product it came from. Fulfilment reads that row to place the
-#: order, so a listing without one is unshippable in the same way an unbound one
-#: is -- checked at read-back because it is a precondition the publish gate
-#: assumes rather than asserts.
-SUPPLIER_MAPPING_MISSING = "SUPPLIER_MAPPING_MISSING"
 
 #: The checkout's ceiling, mirrored from ``bot.MAX_PRICE_LABEL_CENTS``.
 #:
@@ -219,13 +188,6 @@ def get_draft(business_id, store_id, actor_user_id, connection_id, listing_id, *
     try:
         _, seller_user_id = _scope(conn, business_id, store_id, actor_user_id,
                                    connection_id, context=context)
-        # The Review screen's margin must be the margin the publish gate will
-        # judge. Two different bases between the number a merchant reads and the
-        # number that decides whether their product goes live is the worst
-        # possible place for this to disagree: they would be told HEALTHY and
-        # then refused for NEGATIVE_MARGIN on the same listing.
-        shipping_cents, shipping_source = store_policy.resolve_shipping_allowance(
-            conn, business_id, store_id)
         cur = conn.cursor()
         listing_id, listing = _owned_listing(cur, listing_id, seller_user_id)
         source = variants.source_for(cur, listing_id)
@@ -239,8 +201,7 @@ def get_draft(business_id, store_id, actor_user_id, connection_id, listing_id, *
 
     priced = []
     for variant in rows:
-        economics = pricing.quote(rule, variant.get("cost_cents"), _retail_of(variant),
-                                  shipping_cents=shipping_cents)
+        economics = pricing.quote(rule, variant.get("cost_cents"), _retail_of(variant))
         priced.append({
             "variant_id": variant.get("id"),
             "options": variant.get("options"),
@@ -266,40 +227,14 @@ def get_draft(business_id, store_id, actor_user_id, connection_id, listing_id, *
         "media": media,
         "cover_image_url": _cover_of(listing),
         "variants": priced,
-        # Stated once at the top level rather than only implied by each
-        # variant's `margin_basis`. A screen showing "45%" beside a cost needs to
-        # be able to say what that percentage is *of* without inspecting a
-        # variant, and `None` here is the honest report that no freight figure
-        # exists -- not that shipping is free.
-        "shipping_allowance_cents": shipping_cents,
-        "shipping_allowance_source": shipping_source,
         "supplier": {
             "provider": source.get("provider"),
             "fulfillment_mode": source.get("fulfillment_mode"),
             "sync_state": source.get("sync_state"),
-            # Beside `sync_state`, never instead of it, and the pair is the
-            # point: SYNCED + ["SELLING_BELOW_COST"] is the state this column
-            # exists for. The tile and this screen have to agree about what is
-            # wrong with a product for the same reason they have to agree about
-            # its cover image, so both read the same column through the same
-            # parser -- see `list_drafts`, which explains the import direction.
-            "attention": _revisions().stored_attention(source),
             "last_synced_at": source.get("last_synced_at"),
             "supplier_cost_cents": source.get("supplier_cost_cents"),
             "supplier_cost_currency": source.get("supplier_cost_currency"),
             "external_sku": source.get("external_sku"),
-            # The binding, served because `SUPPLIER_VARIANT_UNBOUND` is
-            # otherwise a refusal nothing can answer. `bind-product` takes
-            # (canonical_product_id, pid, vid); the variant list above already
-            # carries every candidate `vid`, so the only missing halves were the
-            # `pid` to bind against and which variant — if any — is bound now.
-            #
-            # Merchant-private, on a merchant-private payload: this block
-            # already carries `supplier_cost_cents`, and §27/§95 are about what
-            # reaches a *buyer*. `pulse_buyer_order_response` does not read this
-            # function; nothing buyer-facing does.
-            "provider_product_id": source.get("provider_product_id"),
-            "provider_variant_id": source.get("provider_variant_id"),
             "merchant_owned_fields": source.get("overridden_fields") or [],
         },
         "pricing_rule": rule,
@@ -392,18 +327,9 @@ def update_draft(business_id, store_id, actor_user_id, connection_id, listing_id
             # listing would see the new number everywhere they look while the
             # cart went on charging the old one until they happened to republish.
             if lifecycle.normalized(listing.get("status")) in lifecycle.PUBLIC_STATUSES:
-                updates["price_label"], updates["price_minor"] = _live_price_label(
-                    cur, listing_id, listing)
+                updates["price_label"] = _live_price_label(cur, listing_id, listing)
 
         if updates:
-            # `price_minor` is the storefront's sort key and must never describe
-            # a price the listing no longer carries. This UPDATE is assembled
-            # from a dict, so a future branch could add `price_label` to it
-            # without thinking about the companion column; refusing here turns
-            # that into a loud failure at the one moment it is still cheap to
-            # fix, rather than a grid that sorts by a stale number.
-            if ("price_label" in updates) != ("price_minor" in updates):
-                raise SupplierError("price_columns_desynced", http_status=500)
             updates["updated_at"] = _iso()
             assignments = ", ".join(f"{column}=?" for column in updates)
             cur.execute(
@@ -421,14 +347,7 @@ def update_draft(business_id, store_id, actor_user_id, connection_id, listing_id
 
 
 def _live_price_label(cur, listing_id, listing):
-    """The ``(label, cents)`` a *published* listing should now carry, or a refusal.
-
-    Returns both halves because ``marketplace_listings`` stores both: the label
-    the buyer reads and ``price_minor``, the integer the storefront sorts on.
-    Handing back only the label would leave the caller to re-derive the number
-    by parsing the string it was just rendered from, which is how the two
-    columns drift apart. ``cents`` here is the same integer that went into the
-    label, not a reading of it.
+    """The label a *published* listing should now carry, or a refusal.
 
     Re-reads the variants after the write rather than working from the request
     body, because the merchant may have repriced only some of them and it is the
@@ -449,8 +368,7 @@ def _live_price_label(cur, listing_id, listing):
     distinct = {v["retail_cents"] for v in offered}
     if len(distinct) > 1 or max(distinct) > MAX_CHECKOUT_PRICE_CENTS:
         raise SupplierError("publication_blocked", http_status=422)
-    cents = offered[0]["retail_cents"]
-    return _checkout_price_label(cents, listing.get("currency")), int(cents)
+    return _checkout_price_label(offered[0]["retail_cents"], listing.get("currency"))
 
 
 def _set_prices(cur, listing_id, seller_user_id, payload):
@@ -638,26 +556,11 @@ def _validate(listing, priced, source, media):
 
     # Nothing can be ordered for an unbound dropship listing. This is a refusal
     # to publish a product that a buyer could pay for and nobody could ship --
-    # see `SUPPLIER_VARIANT_UNBOUND`. `STOCKED` sources are exempt: the merchant
-    # holds that inventory and places no supplier order, so there is nothing to
-    # bind.
-    #
-    # This used to be defended here with "it is only a fair thing to demand
-    # because `importer` binds at import when the merchant's selection names one
+    # see `SUPPLIER_VARIANT_UNBOUND`. It is only a fair thing to demand because
+    # `importer` now binds at import when the merchant's selection names one
     # variant, so the ordinary path satisfies it without the merchant doing
-    # anything." That was a claim about a screen, asserted in the backend, and it
-    # was false: `SupplierProductScreen.defaultSelection` pre-selects *every*
-    # in-stock variant, so the ordinary path is the multi-variant one and
-    # `importer` writes NULL for it. Measured by
-    # `scripts/probe_dropship_multivariant_publish.py` -- a two-variant import
-    # through the real importer and the real evaluator comes back
-    # `publishable: False, problems: ['SUPPLIER_VARIANT_UNBOUND']`.
-    #
-    # The guard is right and stays. What was missing is the answer to it: the
-    # draft now serves `supplier.provider_product_id` / `provider_variant_id`,
-    # and `ReviewImportedProductScreen` asks the merchant which variant this
-    # listing sells and calls `bind-product`. A guard is only finished when
-    # something reachable can satisfy it.
+    # anything. `STOCKED` sources are exempt: the merchant holds that inventory
+    # and places no supplier order, so there is nothing to bind.
     if str(source.get("fulfillment_mode") or "").upper() == supplier_schema.MODE_DROPSHIP \
             and priced and sold is None:
         problems.append(SUPPLIER_VARIANT_UNBOUND)
@@ -672,125 +575,6 @@ def _validate(listing, priced, source, media):
     if approval in {"rejected", "suspended"}:
         problems.append(RESTRICTED_PRODUCT)
     return {"publishable": not problems, "problems": problems}
-
-
-def _publish_core(cur, listing_id, seller_user_id, listing, shipping_cents=None):
-    """The publish gate and the write it guards, against an open cursor.
-
-    Extracted so that the merchant's explicit Publish and the importer's
-    automatic finish are the *same* code rather than two implementations that
-    agree today. §32 asks for one pipeline, and the reason is specific: every
-    rule in :func:`_validate` is a rule about what a buyer may be shown, so a
-    second publisher is a second, unreviewed answer to "may this be sold". The
-    automatic path is the one that will run thousands of times without a human
-    looking at the result, which makes it the worse of the two to let drift.
-
-    Returns ``(verdict, result)``. ``result`` is ``None`` exactly when the
-    verdict refused, so the caller decides whether a refusal is a 422 (the
-    merchant asked to publish this specific product) or a per-item needs-attention
-    outcome (the merchant asked to import twenty and this one could not finish).
-    That is the only difference between the two callers, and it is a difference
-    in reporting, not in rules.
-
-    Commits nothing. The caller owns the transaction, which is what lets the
-    importer publish inside the same transaction that created the listing: a
-    listing that cannot be published and a listing that was never created are
-    both recoverable, but a committed listing whose publish half rolled back is
-    the unpriced orphan this whole mission is about.
-    """
-    source = variants.source_for(cur, listing_id)
-    if source is None:
-        raise SupplierError("not_a_supplier_product", http_status=404)
-    rows = variants.variants_for(cur, listing_id)
-    priced = [{
-        "provider_variant_id": v.get("provider_variant_id"),
-        "stock_quantity": v.get("stock_quantity"),
-        "retail_cents": _retail_of(v),
-        "availability": variants.availability(v),
-        "margin_state": pricing.margin_state(
-            _retail_of(v), pricing.basis(v.get("cost_cents"), shipping_cents)[1]),
-    } for v in rows]
-    media = _media_of(listing)
-    verdict = _validate(listing, priced, source, media)
-    if not verdict["publishable"]:
-        return verdict, None
-
-    # Two numbers, deliberately kept apart. `sellable` counts *variants* and
-    # is what the merchant's draft screen renders as "N variants are on sale";
-    # `units` is the buyer's stock ledger. They were one integer until now,
-    # which is why a product with 132 units in the warehouse offered one.
-    sellable = sum(1 for v in rows if variants.availability(v) == variants.AVAILABLE)
-    offered = _offered(priced, source)
-    units = _sellable_units(offered[0])
-    # `_validate` has just established that every offered variant carries the
-    # same price, so there is exactly one number here and it is the merchant's
-    # own -- nothing is being chosen on their behalf.
-    retail_cents = int(offered[0]["retail_cents"])
-    label = _checkout_price_label(retail_cents, listing.get("currency"))
-    # `_validate` has just established `media` is non-empty. `media[0]` is the
-    # cover by this package's own definition, and it is what `_cover_of`
-    # answers for a listing with media -- so nothing is being chosen on the
-    # merchant's behalf here either. This does *not* go through `_cover_of`:
-    # that function exists to reconcile two stores for a reader, and a writer
-    # reconciling with the store it is about to overwrite would preserve
-    # whatever stale value was already there.
-    cover = media[0]
-    cur.execute(
-        "UPDATE marketplace_listings SET status='published', quantity=?, "
-        "price_label=?, price_minor=?, cover_image_url=?, published_at=?, updated_at=? "
-        "WHERE id=? AND seller_user_id=?",
-        (units, label, retail_cents, cover, _iso(), _iso(), listing_id, int(seller_user_id)))
-    return verdict, {
-        "listing_id": listing_id,
-        "status": "published",
-        # Published is not the same as publicly discoverable. Moderation still
-        # has to approve, and saying otherwise here would have the merchant
-        # looking for their product in a marketplace that is correctly hiding it.
-        "awaiting_moderation": True,
-        "sellable_variants": sellable,
-        "price_label": label,
-        "quantity": units,
-    }
-
-
-def verify_published(cur, listing_id, seller_user_id) -> dict:
-    """Read the listing back and confirm it is really sellable. §35.
-
-    The publish write is not the evidence that a publish happened -- it is the
-    thing whose effect needs checking. This re-reads the row from the database
-    after the UPDATE and re-derives the facts the caller is about to *claim* to
-    the merchant, so "PUBLISHED" is a measurement rather than an assumption.
-
-    That distinction has teeth on this path. The importer reports an outcome per
-    product across a batch, and a wrong ``UPDATE ... WHERE seller_user_id=?``
-    (mismatched identity, a listing id from the wrong row) updates zero rows and
-    raises nothing at all. Without this read the merchant would be told twenty
-    products published while the store still held twenty drafts.
-
-    Returns the same problem-code vocabulary as :func:`_validate` so a caller
-    never has to switch on where a refusal came from.
-    """
-    cur.execute("SELECT * FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1",
-                (listing_id, int(seller_user_id)))
-    row = cur.fetchone()
-    if row is None:
-        # The row is gone, or never belonged to this seller. Either way the
-        # publish did not happen to the merchant's product.
-        return {"verified": False, "problems": [PUBLISH_NOT_PERSISTED]}
-    listing = dict(row)
-    problems = []
-    if str(listing.get("status") or "").lower() != "published":
-        problems.append(PUBLISH_NOT_PERSISTED)
-    if not (listing.get("price_label") or "").strip():
-        problems.append(MISSING_PRICE)
-    if _cover_of(listing) is None:
-        problems.append(NO_VALID_MEDIA)
-    source = variants.source_for(cur, listing_id)
-    if source is None:
-        problems.append(SUPPLIER_MAPPING_MISSING)
-    if not variants.variants_for(cur, listing_id):
-        problems.append(NO_VARIANTS_SELECTED)
-    return {"verified": not problems, "problems": problems}
 
 
 def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, context=None):
@@ -840,121 +624,60 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
                                    connection_id, context=context, write=True)
         cur = conn.cursor()
         listing_id, listing = _owned_listing(cur, listing_id, seller_user_id)
-        # The gate has to weigh the same cost the importer priced against. A
-        # store that declared its freight and whose product is above water on
-        # item cost but under it once shipping is counted is exactly the listing
-        # NEGATIVE_MARGIN exists to stop, and resolving the rule but not the
-        # allowance would wave it through.
-        shipping_cents, _ = store_policy.resolve_shipping_allowance(
-            conn, business_id, store_id)
-        _, result = _publish_core(cur, listing_id, seller_user_id, listing,
-                                  shipping_cents)
-        if result is None:
+        source = variants.source_for(cur, listing_id)
+        if source is None:
+            raise SupplierError("not_a_supplier_product", http_status=404)
+        rows = variants.variants_for(cur, listing_id)
+        priced = [{
+            "provider_variant_id": v.get("provider_variant_id"),
+            "stock_quantity": v.get("stock_quantity"),
+            "retail_cents": _retail_of(v),
+            "availability": variants.availability(v),
+            "margin_state": pricing.margin_state(_retail_of(v), v.get("cost_cents")),
+        } for v in rows]
+        media = _media_of(listing)
+        verdict = _validate(listing, priced, source, media)
+        if not verdict["publishable"]:
             raise SupplierError("publication_blocked", http_status=422)
-        # The same read-back the automatic path performs. A merchant who tapped
-        # Publish deserves the same standard of evidence as one who tapped
-        # Import: both are told the product is live, and neither should be told
-        # it on the strength of an UPDATE nobody checked.
-        readback = verify_published(cur, listing_id, seller_user_id)
-        if not readback["verified"]:
-            conn.rollback()
-            raise SupplierError("publication_not_verified", http_status=409)
+
+        # Two numbers, deliberately kept apart. `sellable` counts *variants* and
+        # is what the merchant's draft screen renders as "N variants are on sale";
+        # `units` is the buyer's stock ledger. They were one integer until now,
+        # which is why a product with 132 units in the warehouse offered one.
+        sellable = sum(1 for v in rows if variants.availability(v) == variants.AVAILABLE)
+        offered = _offered(priced, source)
+        units = _sellable_units(offered[0])
+        # `_validate` has just established that every offered variant carries the
+        # same price, so there is exactly one number here and it is the merchant's
+        # own -- nothing is being chosen on their behalf.
+        label = _checkout_price_label(offered[0]["retail_cents"],
+                                      listing.get("currency"))
+        # `_validate` has just established `media` is non-empty. `media[0]` is the
+        # cover by this package's own definition, and it is what `_cover_of`
+        # answers for a listing with media -- so nothing is being chosen on the
+        # merchant's behalf here either. This does *not* go through `_cover_of`:
+        # that function exists to reconcile two stores for a reader, and a writer
+        # reconciling with the store it is about to overwrite would preserve
+        # whatever stale value was already there.
+        cover = media[0]
+        cur.execute(
+            "UPDATE marketplace_listings SET status='published', quantity=?, "
+            "price_label=?, cover_image_url=?, published_at=?, updated_at=? "
+            "WHERE id=? AND seller_user_id=?",
+            (units, label, cover, _iso(), _iso(), listing_id, int(seller_user_id)))
         conn.commit()
     finally:
         conn.close()
-    return result
-
-
-def _release_for_review(cur, listing_id, seller_user_id):
-    """Move an imported listing off ``draft`` and into "the merchant has asked".
-
-    The merchant's action was "Import & publish". That is a release, and it
-    already happened -- so the listing's own axis must say so even when the
-    publish gate declined to finish the job. Leaving it at ``draft`` states the
-    opposite of what the merchant did, and :mod:`services.business_os.marketplace.seller_metrics`
-    says why in its own words: a submitted listing filed under Drafts "would tell
-    them their publish did not work".
-
-    It was not a cosmetic lie either. :data:`lifecycle.MERCHANT_RELEASED_STATUSES`
-    excludes ``draft`` on purpose, so :func:`lifecycle.awaiting_moderation` was
-    false for every one of these rows. They carried ``approval_status =
-    'pending_review'`` -- the column's own ``DEFAULT``, not a claim anybody made
-    -- and no moderator could see them. Measured in production on 2026-09-27:
-    seller 1 held **67** such listings, every one of them reading "pending review"
-    and none of them in any queue. They would have sat there forever, because the
-    only route out was the merchant opening each product and submitting it by
-    hand.
-
-    This does **not** widen what a buyer can reach, and that is the property to
-    check on any edit here. ``review_ready`` is not in
-    :data:`lifecycle.PUBLIC_STATUSES`, so :func:`lifecycle.is_public` is false
-    before and after; the gate still refused, the listing is still unsellable,
-    and the codes saying why still travel to the merchant unmodified. The only
-    thing that changes is the answer to "did the merchant ask" -- from a wrong no
-    to a right yes.
-
-    ``published_at`` is cleared because this is also the landing state for a
-    publish that wrote and did not stick, where the column *was* set. Clearing it
-    unconditionally keeps one function correct for both callers rather than
-    making the caller remember which case it is in.
-    """
-    cur.execute(
-        "UPDATE marketplace_listings SET status=?, published_at=NULL, updated_at=? "
-        "WHERE id=? AND seller_user_id=?",
-        (lifecycle.REVIEW_READY, _iso(), listing_id, int(seller_user_id)))
-
-
-def autopublish(cur, listing_id, seller_user_id, shipping_cents=None) -> dict:
-    """Finish a freshly imported listing: run the gate, publish, read it back.
-
-    The importer's half of §18. It exists so that :mod:`importer` never contains
-    a publish rule of its own -- it hands a listing id to this function and is
-    told either "published" or exactly which of :func:`_validate`'s codes stopped
-    it. Every rule about buyer-visibility therefore still lives in one file.
-
-    Takes a cursor rather than opening its own connection, because the importer
-    is mid-transaction with the listing it just created. Publishing on a second
-    connection would have to read a row the first has not committed.
-
-    Never raises for a refusal. A batch of twenty imports where three cannot be
-    finished is not an error -- it is three products that need attention, and
-    :func:`import_selected` reports them per item. It *does* let
-    ``not_a_supplier_product`` out, because that one means the caller passed a
-    listing this module has no business publishing, which is a programming error
-    rather than a merchant-facing outcome.
-    """
-    listing_id, listing = _owned_listing(cur, listing_id, seller_user_id)
-    verdict, result = _publish_core(cur, listing_id, seller_user_id, listing,
-                                    shipping_cents)
-    if result is None:
-        # Refused, and released anyway. See `_release_for_review`: the gate's
-        # verdict is about whether a buyer may see this, and the merchant's
-        # `status` is about whether they asked. A no to the first is not a no to
-        # the second, and writing it as one is what buried 67 listings.
-        _release_for_review(cur, listing_id, seller_user_id)
-        return {"published": False, "problems": verdict["problems"]}
-    readback = verify_published(cur, listing_id, seller_user_id)
-    if not readback["verified"]:
-        # Publishing "succeeded" and the row does not say so. Report the read-back
-        # rather than the write.
-        #
-        # And undo the write, explicitly, rather than leaving it for the caller to
-        # roll back. The caller is mid-transaction with the listing it just
-        # created: a `rollback` here would discard the import as well, so the
-        # merchant would lose a product that imported perfectly well over a
-        # publish that did not stick. Writing the row back keeps the import and
-        # makes the committed state match what this function is about to report.
-        # Anything else commits a row claiming `published` while the merchant is
-        # told it is not.
-        #
-        # Back to `review_ready`, not to `draft`. This branch is the one case
-        # where the merchant is told something they cannot act on
-        # (`PUBLISH_NOT_PERSISTED`), so filing it under their unfinished work
-        # would be doubly wrong: they released it, and the reason it is not live
-        # is ours.
-        _release_for_review(cur, listing_id, seller_user_id)
-        return {"published": False, "problems": readback["problems"]}
-    return {"published": True, "problems": [], **result}
+    return {
+        "listing_id": listing_id,
+        "status": "published",
+        # Published is not the same as publicly discoverable. Moderation still
+        # has to approve, and saying otherwise here would have the merchant
+        # looking for their product in a marketplace that is correctly hiding it.
+        "awaiting_moderation": True,
+        "sellable_variants": sellable,
+        "price_label": label,
+    }
 
 
 def validate(business_id, store_id, actor_user_id, connection_id, listing_id, *, context=None):
@@ -994,25 +717,16 @@ def list_drafts(business_id, store_id, actor_user_id, connection_id, *,
         if wanted:
             source += " AND LOWER(l.status)=?"
             params.append(wanted)
-        revisions = _revisions()
         cur = conn.cursor()
         cur.execute(
             "SELECT l.id, l.title, l.status, l.approval_status, l.currency, "
             "l.cover_image_url, l.listing_metadata_json, l.updated_at, "
-            "s.provider, s.sync_state, s.attention_json, "
+            "s.provider, s.sync_state, "
             "s.supplier_cost_cents, s.provider_product_id " + source +
             " ORDER BY l.id DESC LIMIT ?", tuple(params) + (limit,))
         rows = []
         for row in cur.fetchall():
             row = dict(row)
-            # What the last supplier read concluded needs a human, parsed here so
-            # the wire carries a list rather than a string containing a list.
-            # `sync_state` alone cannot carry it: a listing that is now selling
-            # below cost synced perfectly, so every screen keyed on sync state
-            # shows it as healthy -- which is not silence, it is a false
-            # all-clear, and worse than saying nothing.
-            row["attention"] = revisions.stored_attention(row)
-            row.pop("attention_json", None)
             # The list tile and the detail screen have to agree about the cover,
             # so they have to ask the same question. This read used to take the
             # column raw while `get_draft` derived it from the metadata media,
@@ -1035,190 +749,3 @@ def list_drafts(business_id, store_id, actor_user_id, connection_id, *,
     finally:
         conn.close()
     return {"items": rows, "count": total}
-
-
-#: Sync states ordered worst-first. Rolling many products into one word means
-#: choosing which product speaks for the set, and the only safe choice is the
-#: unhappiest: a merchant told "Synced" because 99 of 100 products synced will
-#: not go looking for the hundredth. ``UNKNOWN`` outranks every named state
-#: because a value this module does not recognise is one it cannot vouch for.
-_SYNC_SEVERITY = ("UNKNOWN", supplier_schema.SYNC_ERROR, supplier_schema.SYNC_DISCONNECTED,
-                  supplier_schema.SYNC_REMOVED, supplier_schema.SYNC_STALE,
-                  supplier_schema.SYNC_PENDING, supplier_schema.SYNC_SYNCED)
-
-
-def _rollup(counts):
-    """The worst sync state present, or None when there is nothing to speak for."""
-    present = {state for state, n in counts.items() if n > 0}
-    if not present:
-        return None
-    for state in _SYNC_SEVERITY:
-        if state in present:
-            return state
-    return "UNKNOWN"
-
-
-def status_counts(business_id, store_id, actor_user_id, connection_id, *, context=None):
-    """How many imported products are in each state, for one connection.
-
-    Aggregated in SQL rather than by paging :func:`list_drafts`, because a
-    caller that wants the number and not the rows should not pay for the rows --
-    and because a count computed from a page is a count of the page. That exact
-    defect is recorded a few lines above this one.
-
-    ## ``published`` requires both axes to agree
-
-    ``status`` and ``approval_status`` are separate authorities and a listing
-    needs both to be visible to a buyer: ``marketplace_listing_lifecycle``
-    gates on ``status in PUBLIC_STATUSES and approval == APPROVED``. Counting
-    ``status='published'`` alone would report a listing sitting in moderation as
-    live, which is the one error a merchant cannot detect from this screen --
-    everything looks shipped and nothing is selling. So the awaiting-review rows
-    are counted under ``awaiting_review`` no matter what ``status`` says.
-
-    ## ``live`` is a different number, and the smaller one
-
-    Those two columns are necessary and not sufficient. Publication also needs
-    stock, an approved seller and a store name, so ``published`` means "the
-    merchant and a moderator have both said yes" while ``live`` means "a buyer
-    can actually reach it" -- precisely the gap :func:`lifecycle.live_blocker`
-    exists to name. Reporting ``published`` under the word *live* is how a
-    catalogue of 101 products, 62 of them at quantity 0, was shown to its own
-    merchant as 101 live while buyer discovery returned 39.
-
-    So ``live`` is counted from :func:`lifecycle.public_sql` -- the predicate
-    buyer discovery itself runs -- and not from a second copy of its rules.
-    Keeping a copy is the mistake that table already exists to prevent.
-
-    ## Cost and stock attention are not a second sync clock
-
-    There is one ``sync_state`` column, so this returns one sync rollup. A
-    caller wanting to show separate "inventory" and "pricing" health must read
-    ``cost_attention`` / ``stock_attention``, which count products whose last
-    *successful* read found a problem -- a listing selling below cost synced
-    perfectly, and reporting that as a sync failure would merge "the supplier is
-    unreachable" with "the supplier raised their price". Inventing a second
-    per-product sync state to fill a field name would be the same fabrication in
-    the other direction.
-    """
-    policy.require_enabled()
-    revisions = _revisions()
-    conn = db.connect()
-    try:
-        _, seller_user_id = _scope(conn, business_id, store_id, actor_user_id,
-                                   connection_id, context=context)
-        source = ("FROM marketplace_product_sources s "
-                  "JOIN marketplace_listings l ON l.id = s.listing_id "
-                  "WHERE s.seller_user_id=? AND s.supplier_connection_id=? "
-                  "AND s.business_id=? AND s.store_id=?")
-        params = (int(seller_user_id), connection_id, business_id, store_id)
-        cur = conn.cursor()
-
-        cur.execute("SELECT LOWER(COALESCE(l.status,'')) AS st, "
-                    "LOWER(COALESCE(l.approval_status,'')) AS ap, COUNT(*) AS n "
-                    + source + " GROUP BY 1, 2", params)
-        by_status, imported = {}, 0
-        published = awaiting = draft = blocked = archived = other = 0
-        for row in cur.fetchall():
-            status_value = str(row[0] or "")
-            approval = str(row[1] or "")
-            n = int(row[2] or 0)
-            imported += n
-            key = f"{status_value}/{approval}" if approval else status_value
-            by_status[key] = by_status.get(key, 0) + n
-            if status_value == lifecycle.DRAFT:
-                # Checked before approval, and that order is the whole
-                # correctness of this bucket. `importer` seeds every new row
-                # `status='draft', approval_status='pending_review'`, so reading
-                # the approval column first reports a draft the merchant is
-                # still writing as sitting in moderation -- and since that is
-                # how every import starts, the draft count would be zero for
-                # everyone. `lifecycle.MERCHANT_RELEASED_STATUSES` excludes
-                # draft for the same reason: nobody has asked for a decision
-                # yet, so a pending approval value is a seed, not a claim.
-                draft += n
-            elif status_value in lifecycle.AWAITING_DECISION_STATES \
-                    or approval in lifecycle.AWAITING_DECISION_STATES:
-                awaiting += n
-            elif status_value in lifecycle.PUBLIC_STATUSES and approval in lifecycle.APPROVED_STATES:
-                published += n
-            elif status_value in {lifecycle.REJECTED, lifecycle.CHANGES_REQUESTED,
-                                  lifecycle.SUSPENDED} or approval == lifecycle.REJECTED:
-                blocked += n
-            elif status_value == lifecycle.ARCHIVED:
-                archived += n
-            else:
-                # Published-but-unapproved lands here, and so does any status
-                # added after this was written. Both are "not live and not a
-                # draft", which is true without claiming to know which.
-                other += n
-
-        # Buyer reachability, asked of the buyer's own predicate. The seller row
-        # it gates on is joined here and nowhere else in this function, so this
-        # runs as its own statement rather than widening `source` -- which would
-        # put a second table under the three aggregates that do not need it, and
-        # make every count above depend on a join added for one of them.
-        #
-        # LEFT JOIN, matching every other caller of `public_sql`: a source row
-        # whose seller record is missing must count as not-live, and an inner
-        # join would drop it from the denominator instead of failing it.
-        cur.execute("SELECT COUNT(*) FROM marketplace_product_sources s "
-                    "JOIN marketplace_listings l ON l.id = s.listing_id "
-                    "LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id "
-                    "WHERE s.seller_user_id=? AND s.supplier_connection_id=? "
-                    "AND s.business_id=? AND s.store_id=? "
-                    f"AND {lifecycle.public_sql('l', 'ms')}", params)
-        live = int((cur.fetchone() or (0,))[0] or 0)
-
-        cur.execute("SELECT UPPER(COALESCE(s.sync_state,'')) AS ss, COUNT(*) AS n "
-                    + source + " GROUP BY 1", params)
-        sync = {state: 0 for state in supplier_schema.SYNC_STATES}
-        sync["UNKNOWN"] = 0
-        for row in cur.fetchall():
-            state = str(row[0] or "").strip() or supplier_schema.SYNC_PENDING
-            sync[state if state in sync else "UNKNOWN"] += int(row[1] or 0)
-
-        # LIKE over the stored JSON rather than fetching every flagged row and
-        # parsing it here: the reasons are fixed uppercase tokens from
-        # ATTENTION_REASONS, none is a substring of another, and quoting them
-        # makes each match exact. Built from the module constant and never from
-        # request data, so the interpolation cannot carry anything a caller sent.
-        reasons = tuple(revisions.ATTENTION_REASONS)
-        assert all(r.replace("_", "").isalnum() for r in reasons)
-        sums = ", ".join(
-            f"SUM(CASE WHEN s.attention_json LIKE '%\"{r}\"%' THEN 1 ELSE 0 END) AS r{i}"
-            for i, r in enumerate(reasons))
-        cur.execute(f"SELECT {sums}, "
-                    "SUM(CASE WHEN COALESCE(s.attention_json,'') NOT IN ('','[]','null') "
-                    "THEN 1 ELSE 0 END) AS any_flagged, MAX(s.last_synced_at) AS last_synced "
-                    + source, params)
-        row = cur.fetchone() or ()
-        attention = {r: int((row[i] if i < len(row) else 0) or 0) for i, r in enumerate(reasons)}
-        flagged = int((row[len(reasons)] if len(row) > len(reasons) else 0) or 0)
-        last_synced_at = (row[len(reasons) + 1] if len(row) > len(reasons) + 1 else None) or None
-    finally:
-        conn.close()
-
-    return {
-        "imported": imported,
-        "published": published,
-        # Never greater than `published`: every rule `public_sql` adds is on top
-        # of the two `published` already checks.
-        "live": live,
-        "awaiting_review": awaiting,
-        "draft": draft,
-        "blocked": blocked,
-        "archived": archived,
-        "other": other,
-        # The raw histogram travels beside the rollups so a reader can always
-        # recover what the buckets were built from, and so a status added later
-        # is visible here before anyone teaches the buckets about it.
-        "by_status": by_status,
-        "sync": sync,
-        "sync_state": _rollup(sync),
-        "attention": attention,
-        "attention_products": flagged,
-        "cost_attention": sum(attention[r] for r in revisions.COST_REASONS),
-        "stock_attention": sum(attention[r] for r in revisions.STOCK_REASONS),
-        "last_synced_at": last_synced_at,
-    }

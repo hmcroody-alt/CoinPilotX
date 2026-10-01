@@ -17,7 +17,7 @@ import {
   DEFAULT_STATUS_REACTION,
   deleteStatus,
   listStatuses,
-  loadCachedStatusesSnapshot,
+  loadCachedStatuses,
   PulseStatus,
   pulseStatusUrl,
   reactToStatus,
@@ -36,9 +36,6 @@ import { mutePostAuthor } from "../api/feed";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { blockPulseUser, reportPulseTarget } from "../api/support";
 import { registerSyncInvalidation } from "../core/eventSync";
-import { withCachedAge } from "../core/sync/ageLabel";
-import { primaryMediaList } from "../core/media/mediaDescriptors";
-import { useAppForegrounded, useMediaPrefetch, usePagerDirection, useRouteFocused } from "../core/media/useMediaPrefetch";
 import { StatusCreator } from "../components/StatusCreator";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { StatusViewerCard } from "../components/StatusViewerCard";
@@ -68,8 +65,6 @@ export function StatusScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [offline, setOffline] = useState(false);
-  /** Age of what is shown; null when it is live, and null when it is unknown. */
-  const [ageMs, setAgeMs] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [muted, setMuted] = useState(false);
@@ -96,46 +91,17 @@ export function StatusScreen({ route, navigation }: Props) {
     setOffline(false);
     if (mode === "initial") setLoading(true);
     if (mode === "refresh") setRefreshing(true);
-
-    // Cache-first on the initial load only. A refresh is the reader explicitly
-    // asking for new content, so repainting the same cached items under them
-    // would answer a different question than the one they asked.
-    let paintedFromCache = false;
-    if (mode === "initial") {
-      try {
-        const cached = await loadCachedStatusesSnapshot(LANE);
-        if (cached.items.length) {
-          setItems(focusInitialStatus(cached.items, initialStatusId));
-          setRailItems(cached.rail_items);
-          setAgeMs(cached.ageMs);
-          setLoading(false);
-          // Deliberately not setting `viewerIndex` here. Opening a viewer is
-          // the one thing a cached paint must not do on its own: the deep link
-          // that carried `initialStatusId` may point at a status that expired
-          // hours ago, and a full-screen viewer over stale media is a worse
-          // answer than the list the reader can act on.
-          paintedFromCache = true;
-        }
-      } catch {
-        // No usable cache. The network attempt below is the one that matters.
-      }
-    }
-
     try {
       const data = await listStatuses({ lane: LANE });
       const nextItems = focusInitialStatus(data.items || [], initialStatusId);
       setItems(nextItems);
       setRailItems(data.rail_items || []);
-      setAgeMs(null);
       if (initialStatusId && nextItems.length) setViewerIndex(Math.max(0, nextItems.findIndex((item) => item.id === initialStatusId)));
     } catch (err) {
-      const cached = paintedFromCache ? null : await loadCachedStatusesSnapshot(LANE);
-      if (paintedFromCache) {
-        setOffline(true);
-      } else if (cached && cached.items.length) {
+      const cached = await loadCachedStatuses(LANE);
+      if (cached.items.length) {
         setItems(focusInitialStatus(cached.items, initialStatusId));
         setRailItems(cached.rail_items);
-        setAgeMs(cached.ageMs);
         setOffline(true);
         if (initialStatusId) setViewerIndex(0);
       } else {
@@ -158,30 +124,6 @@ export function StatusScreen({ route, navigation }: Props) {
   useEffect(() => registerSyncInvalidation("status", () => load("refresh")), []);
 
   const activeStatus = useMemo(() => (viewerIndex === null ? null : items[viewerIndex] || null), [items, viewerIndex]);
-
-  /**
-   * Statuses ride the same scheduler, cache and signed-URL lifecycle as Reels
-   * and the feed -- the `status` surface policy, not a second engine.
-   *
-   * One hook covers both halves of the screen deliberately. With the viewer
-   * closed the index parks at 0, so the list warms the Statuses the user is
-   * about to tap; opening the viewer moves the same window along the same
-   * items. Running a second prefetch for the closed state would fight the first
-   * for the same surface slot and cancel its own work on every open and close.
-   */
-  const statusMedia = useMemo(() => primaryMediaList(items), [items]);
-  const statusIndex = viewerIndex ?? 0;
-  const statusDirection = usePagerDirection(statusIndex);
-  const screenFocused = useRouteFocused();
-  const appForegrounded = useAppForegrounded();
-  const statusPlayable = screenFocused && appForegrounded;
-  useMediaPrefetch({
-    surface: "status",
-    items: statusMedia,
-    activeIndex: statusIndex,
-    active: statusPlayable,
-    direction: statusDirection
-  });
 
   function openStatus(status: PulseStatus) {
     const index = items.findIndex((item) => item.id === status.id);
@@ -304,7 +246,7 @@ export function StatusScreen({ route, navigation }: Props) {
             <View style={styles.headerRow}>
               <View>
                 <Text style={styles.title}>Status</Text>
-                <Text style={styles.subtitle}>{offline ? withCachedAge("Showing saved Status", ageMs) : "PulseSoc native Status"}</Text>
+                <Text style={styles.subtitle}>{offline ? "Showing saved Status" : "PulseSoc native Status"}</Text>
               </View>
               <View style={styles.headerActions}>
                 <Pressable accessibilityRole="button" accessibilityLabel="Open Status camera" style={styles.cameraButton} onPress={() => navigation.navigate("CameraStudio", { target: "status", mode: "status", title: "Status Camera" })}>
@@ -339,11 +281,7 @@ export function StatusScreen({ route, navigation }: Props) {
         {activeStatus ? (
           <StatusViewerCard
             status={activeStatus}
-            // Was a literal `active`. §9/§10: a Status that kept its claim on
-            // the playback coordinator while the app was backgrounded went on
-            // advancing its own timer, so the user came back to a viewer that
-            // had silently walked several Statuses past the one they left on.
-            active={statusPlayable}
+            active
             muted={muted}
             busy={guard.isItemBusy(activeStatus.id)}
             reactionPending={guard.isBusy(actionKey("status_react", activeStatus.id))}

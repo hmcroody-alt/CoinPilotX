@@ -73,24 +73,6 @@ import { preloadNamespaces } from "../../i18n/engine";
 import { businessModuleId, isLaunchGated } from "../../launch/readiness";
 import { BusinessOsScreen, resetBusinessOsFreshness } from "../BusinessOsScreen";
 
-/**
- * A seller snapshot carrying the canonical counts.
- *
- * These tests pin ordering, caching and request count — not what "live" means.
- * But the hub reads its two numbers from `metrics` now, not from the length of
- * the row arrays, so a fixture has to say what the server counted. The arrays
- * stay because the rest of the screen still renders rows from them; the numbers
- * asserted below come from here.
- */
-function sellerStore(live: number, orders = 0) {
-  return {
-    listings: Array.from({ length: live }, (_, index) => ({ id: index + 1 })),
-    orders: Array.from({ length: orders }, (_, index) => ({ id: index + 1 })),
-    metrics: { live_listings: live, confirmed_orders: orders }
-  };
-}
-
-
 // Locked tiles read their label out of the lazily-loaded `commerce` catalog.
 // Without it every gated tile humanizes to the same "Locked Label", which is
 // both wrong copy and an ambiguous lookup. See the note in
@@ -172,7 +154,7 @@ beforeEach(() => {
   Object.keys(syncHandlers).forEach((key) => delete syncHandlers[key]);
   mockListAdAccounts.mockResolvedValue({ accounts: [] });
   mockGetAdAnalytics.mockResolvedValue({ analytics: EMPTY_ANALYTICS });
-  mockSellerSnapshot.mockResolvedValue(sellerStore(0));
+  mockSellerSnapshot.mockResolvedValue({ listings: [], orders: [] });
   mockCachedAccounts.mockResolvedValue([]);
   mockCachedAnalytics.mockResolvedValue(null);
   mockCachedSeller.mockResolvedValue(null);
@@ -198,7 +180,7 @@ describe("Business OS hub — shell is never blocked", () => {
   });
 
   it("keeps the numbers on screen while a refresh runs instead of blanking them", async () => {
-    mockSellerSnapshot.mockResolvedValue(sellerStore(2));
+    mockSellerSnapshot.mockResolvedValue({ listings: [{ id: 1 }, { id: 2 }], orders: [] });
     const view = render(<BusinessOsScreen navigation={navigationSpy()} />);
     await waitFor(() => expect(view.getByLabelText("Live listings: 2")).toBeTruthy());
 
@@ -213,7 +195,7 @@ describe("Business OS hub — shell is never blocked", () => {
 
     expect(view.getByLabelText("Live listings: 2")).toBeTruthy();
     await act(async () => {
-      pending.resolve(sellerStore(0));
+      pending.resolve({ listings: [], orders: [] });
     });
   });
 });
@@ -228,7 +210,7 @@ describe("Business OS hub — cache is painted, never authoritative", () => {
       ...EMPTY_ANALYTICS,
       totals: { ...EMPTY_ANALYTICS.totals, spend_cents: 1234 }
     });
-    mockCachedSeller.mockResolvedValue(sellerStore(3));
+    mockCachedSeller.mockResolvedValue({ listings: [{ id: 1 }, { id: 2 }, { id: 3 }], orders: [] });
 
     const view = render(<BusinessOsScreen navigation={navigationSpy()} />);
     await waitFor(() => expect(view.getByLabelText("Ad spend: $12.34")).toBeTruthy());
@@ -242,7 +224,7 @@ describe("Business OS hub — cache is painted, never authoritative", () => {
 
   it("never lets a slow cache read overwrite a canonical response that already landed", async () => {
     // The canonical store answers immediately with two listings.
-    mockSellerSnapshot.mockResolvedValue(sellerStore(2));
+    mockSellerSnapshot.mockResolvedValue({ listings: [{ id: 9 }, { id: 10 }], orders: [] });
     // The cache answers late, with a stale count from a previous session.
     const cache = deferred<{ listings: unknown[]; orders: unknown[] }>();
     mockCachedSeller.mockReturnValue(cache.promise);
@@ -251,7 +233,7 @@ describe("Business OS hub — cache is painted, never authoritative", () => {
     await waitFor(() => expect(view.getByLabelText("Live listings: 2")).toBeTruthy());
 
     await act(async () => {
-      cache.resolve(sellerStore(5));
+      cache.resolve({ listings: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }], orders: [] });
       await Promise.resolve();
     });
 
@@ -279,7 +261,7 @@ describe("Business OS hub — request count", () => {
 
     // Something must be in cache for the window to be honoured — the window is
     // about not re-asking for values already held, not about showing nothing.
-    mockCachedSeller.mockResolvedValue(sellerStore(1));
+    mockCachedSeller.mockResolvedValue({ listings: [{ id: 1 }], orders: [] });
 
     const second = render(<BusinessOsScreen navigation={navigationSpy()} />);
     await waitFor(() => expect(second.getByLabelText("Live listings: 1")).toBeTruthy());
@@ -306,7 +288,7 @@ describe("Business OS hub — request count", () => {
     // One extra load — three requests — not three loads and nine requests.
     expect(requestCount()).toBe(baseline + 3);
     await act(async () => {
-      pending.resolve(sellerStore(0));
+      pending.resolve({ listings: [], orders: [] });
     });
   });
 
@@ -330,7 +312,7 @@ describe("Business OS hub — failure isolation", () => {
   it("renders the store count even when advertising fails outright", async () => {
     mockListAdAccounts.mockRejectedValue(new Error("ads down"));
     mockGetAdAnalytics.mockRejectedValue(new Error("ads down"));
-    mockSellerSnapshot.mockResolvedValue(sellerStore(3, 1));
+    mockSellerSnapshot.mockResolvedValue({ listings: [{ id: 1 }, { id: 2 }, { id: 3 }], orders: [{ id: 5 }] });
 
     const view = render(<BusinessOsScreen navigation={navigationSpy()} />);
     await waitFor(() => expect(view.getByLabelText("Live listings: 3")).toBeTruthy());

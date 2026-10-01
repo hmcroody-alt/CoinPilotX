@@ -19,23 +19,11 @@
 const mockListListings = jest.fn();
 const mockListOrders = jest.fn();
 const mockLoadCached = jest.fn();
-const mockLoadMetrics = jest.fn();
 
-// Only the three network calls are replaced. `requireActual` keeps every other
-// export real -- constants included.
-//
-// It was a wholesale mock listing just these three, which meant any other export
-// `storeDashboard` imported came back `undefined` at runtime while still
-// typechecking perfectly. `READINESS_CODES.OUT_OF_STOCK` threw the moment the
-// module started reading the server's verdict, and the failure was in the mock,
-// not in the code. A mock that silently deletes the rest of a module can only
-// hide contracts; this one now deletes exactly what it means to.
 jest.mock("../marketplace", () => ({
-  ...jest.requireActual("../marketplace"),
   listMarketplaceSellerListings: (...args: unknown[]) => mockListListings(...args),
   listMarketplaceSellerOrders: (...args: unknown[]) => mockListOrders(...args),
-  loadCachedSellerStore: (...args: unknown[]) => mockLoadCached(...args),
-  loadSellerMetrics: (...args: unknown[]) => mockLoadMetrics(...args)
+  loadCachedSellerStore: (...args: unknown[]) => mockLoadCached(...args)
 }));
 
 import {
@@ -62,7 +50,6 @@ import {
 import type {
   MarketplaceListing,
   MarketplaceSellerOrder,
-  SellerMetrics,
   SellerStoreSnapshot
 } from "../marketplace";
 
@@ -70,11 +57,6 @@ beforeEach(() => {
   mockListListings.mockReset();
   mockListOrders.mockReset();
   mockLoadCached.mockReset();
-  // Defaults to "the metrics call failed", so any test that cares about a
-  // number has to say so. A default of zeroes would let a test pass while the
-  // screen was reading nothing.
-  mockLoadMetrics.mockReset();
-  mockLoadMetrics.mockResolvedValue(null);
 });
 
 /* ------------------------------------------------------------------ *
@@ -117,47 +99,11 @@ function order(over: Partial<MarketplaceSellerOrder> = {}): MarketplaceSellerOrd
 }
 
 function snapshot(over: Partial<SellerStoreSnapshot> = {}): SellerStoreSnapshot {
-  return { listings: [], orders: [], metrics: null, ...over };
-}
-
-/**
- * An all-zero canonical payload — the shape of a store that has genuinely sold
- * nothing, which is what seller 1 in production actually is. Overrides go on
- * top, so each test states only the field it is about.
- */
-function metricsFixture(over: Partial<SellerMetrics> = {}): SellerMetrics {
-  return {
-    total_listings: 0,
-    live_listings: 0,
-    draft_listings: 0,
-    pending_review_listings: 0,
-    suppressed_listings: 0,
-    removed_listings: 0,
-    confirmed_orders: 0,
-    open_orders: 0,
-    fulfilled_orders: 0,
-    refunded_orders: 0,
-    cash_pending_orders: 0,
-    today_sales_minor: 0,
-    sold_last_7_days: 0,
-    sales_last_7_days_minor: [0, 0, 0, 0, 0, 0, 0],
-    sales_trend_ratio: null,
-    units_sold_last_7_days_by_listing: {},
-    net_sales_minor: 0,
-    currency: "USD",
-    active_campaigns: 0,
-    ad_spend_minor: 0,
-    raw_order_rows: 0,
-    raw_listing_rows: 0,
-    order_breakdown: {},
-    listing_breakdown: {},
-    unmatched_payments: 0,
-    ...over
-  };
+  return { listings: [], orders: [], ...over };
 }
 
 function rowsOf(listings: MarketplaceListing[], orders: MarketplaceSellerOrder[] = []) {
-  return deriveRows(snapshot({ listings, orders }));
+  return deriveRows(snapshot({ listings, orders }), NOW);
 }
 
 /* ------------------------------------------------------------------ *
@@ -167,7 +113,7 @@ function rowsOf(listings: MarketplaceListing[], orders: MarketplaceSellerOrder[]
 describe("STORE_MOCK_DATA_GAPS", () => {
   it("names every field the design asks for that has no backend source", () => {
     // Pinned deliberately. Faking one of these changes a number a reviewer reads.
-    expect(STORE_MOCK_DATA_GAPS).toHaveLength(7);
+    expect(STORE_MOCK_DATA_GAPS).toHaveLength(8);
     expect(STORE_MOCK_DATA_GAPS.map((gap) => gap.field)).toEqual([
       "Views · 7 days",
       "Seller rating",
@@ -175,10 +121,7 @@ describe("STORE_MOCK_DATA_GAPS", () => {
       "Open orders — N ship today",
       "Listing rating and review count",
       "Store open / paused",
-      // "Stock tracked / not tracked" used to sit here. It is RESOLVED: the entry
-      // named its own fix -- quantity preserved as null through normalization --
-      // and both that and a server-side verdict now exist. The list shrinking is
-      // the intended result, so this count going down is a pass, not a regression.
+      "Stock tracked / not tracked",
       // Added with the readiness ladder: five rungs ship, two cannot be sourced.
       "Store restricted / suspended"
     ]);
@@ -191,7 +134,7 @@ describe("STORE_MOCK_DATA_GAPS", () => {
   });
 
   it("leaves the unsourced KPIs null rather than inventing them", () => {
-    const kpis = deriveKpis(snapshot({ orders: [order()] }));
+    const kpis = deriveKpis(snapshot({ orders: [order()] }), NOW);
     expect(kpis.views7d).toBeNull();
     expect(kpis.viewsTrend).toBeNull();
     expect(kpis.sellerRating).toBeNull();
@@ -221,68 +164,11 @@ describe("listingHealth", () => {
     expect(listingHealth(listing({ quantity: -3 }))).toBe("out_of_stock");
   });
 
-  it("does not mark a physical listing without a quantity out of stock", () => {
-    // Nor in stock. This test used to expect "in_stock", and its comment said "a
-    // course or a service has no stock count" -- but the fixture is neither: it
-    // carries no `product_type` at all, so it is a PHYSICAL listing whose
-    // quantity is simply missing. The comment described the case below this one;
-    // this case was quietly asserting a false all-clear over a different one.
-    //
-    // Through the real normalizer the same row came out the opposite way --
-    // `Number(undefined || 0)` made it a hard 0 and the seller's own store filed
-    // it under Out with a red banner. So the client was wrong in BOTH directions
-    // depending on which path a listing took to reach this function. That is
-    // what a locally derived verdict buys you.
-    expect(listingHealth(listing({ quantity: undefined }))).toBe("unknown_stock");
-    expect(listingHealth(listing({ quantity: null as never }))).toBe("unknown_stock");
-  });
-
-  it("renders the server's verdict rather than recomputing it", () => {
-    // The point of the whole exercise. A quantity that would locally read as a
-    // comfortable 40 still reports out-of-stock when the server says so, because
-    // the server is the side bound by test to what checkout actually does.
-    const verdict = (warnings: string[]) => ({
-      publishable: true,
-      resubmittable: false,
-      checkout_ready: false,
-      blockers: [] as string[],
-      warnings,
-      summary: "Ready to publish",
-      fixes: [],
-      notes: warnings.map((code) => ({ code, label: "Restock", section: "inventory" }))
-    });
-    expect(listingHealth(listing({ quantity: 40, readiness: verdict(["OUT_OF_STOCK"]) }))).toBe(
-      "out_of_stock"
-    );
-    expect(
-      listingHealth(listing({ quantity: 40, readiness: verdict(["UNKNOWN_INVENTORY"]) }))
-    ).toBe("unknown_stock");
-    expect(listingHealth(listing({ quantity: 40, readiness: verdict(["LOW_STOCK"]) }))).toBe(
-      "low_stock"
-    );
-    // A verdict carrying no stock code is a positive statement that stock is
-    // fine, not an absence of information -- so it outranks the local count.
-    expect(listingHealth(listing({ quantity: 0, readiness: verdict([]) }))).toBe("in_stock");
-  });
-
-  it("keeps unknown stock distinct from an empty shelf", () => {
-    // The distinction the client used to lose. Different causes, different
-    // fixes, different words on the row -- so they must not share a state.
-    const unknown = listingHealth(listing({ quantity: null as never }));
-    const empty = listingHealth(listing({ quantity: 0 }));
-    expect(unknown).not.toBe(empty);
-    expect(unknown).toBe("unknown_stock");
-    expect(empty).toBe("out_of_stock");
-  });
-
-  it("does not read a missing verdict as a clean bill of health", () => {
-    // A cached snapshot from an older build carries no `readiness`. Falling back
-    // to the local reading is correct; treating the absence itself as "nothing
-    // wrong" would make every stale payload look healthy.
-    expect(listingHealth(listing({ quantity: 0, readiness: undefined }))).toBe("out_of_stock");
-    expect(listingHealth(listing({ quantity: null as never, readiness: undefined }))).toBe(
-      "unknown_stock"
-    );
+  it("does not mark a listing without a quantity out of stock", () => {
+    // A course or a service has no stock count. Reading an absent quantity as
+    // zero would hide every digital listing in the store.
+    expect(listingHealth(listing({ quantity: undefined }))).toBe("in_stock");
+    expect(listingHealth(listing({ quantity: null as never }))).toBe("in_stock");
   });
 
   it("does not mark a stockless product type out of stock at quantity zero", () => {
@@ -321,30 +207,6 @@ describe("listingHealth", () => {
       "hidden"
     );
   });
-
-  /**
-   * The state a seller reaches by succeeding.
-   *
-   * Publishing writes `status='pending_review'` (bot.py's submit route, and the
-   * re-review path for a material edit). That value matched no branch here and
-   * fell into `hidden`, so the row a seller had just published flipped from
-   * "Draft — not published" to "Hidden from buyers" — and, because `hidden` is
-   * in the Out tab, the store's not-buyable count went *up* by one. The whole
-   * visible reward for finishing a listing was two pieces of bad news.
-   */
-  it("does not call a just-submitted listing hidden", () => {
-    for (const status of ["pending_review", "review_ready"]) {
-      expect(listingHealth(listing({ status, quantity: 50 }))).toBe("pending_review");
-    }
-  });
-
-  it("keeps a listing the safety engine stopped in the hidden bucket", () => {
-    // `blocked_review` contains "review" and is the opposite situation: a
-    // decision was made and it went against the seller. Matching review states
-    // by substring — which `SellerStoreScreen.statusKey` does — swallows it and
-    // would tell that seller to sit and wait for an answer they already have.
-    expect(listingHealth(listing({ status: "blocked_review", quantity: 50 }))).toBe("hidden");
-  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -352,72 +214,134 @@ describe("listingHealth", () => {
  * ------------------------------------------------------------------ */
 
 describe("deriveKpis", () => {
-  /*
-   * This block used to test a local derivation that no longer exists.
-   *
-   * `deriveKpis` bucketed `snapshot.orders` by day with no status filter, so
-   * every checkout a buyer opened and abandoned was counted as money the seller
-   * had taken, and it decided "open" with a substring match over a hand-written
-   * status list — a second definition of "order" living on the phone, which
-   * disagreed with Business OS's and with the server's.
-   *
-   * Both questions are now answered once by
-   * `services/business_os/marketplace/seller_metrics.py`, and the behaviour
-   * those old cases described is tested there against the real status
-   * vocabulary (`tests/business_os/test_seller_metrics.py`). What is left to
-   * test here is the only thing this function still does: read the server's
-   * numbers, and invent nothing when they are missing.
-   */
-
-  it("reads the server's figures rather than recounting the rows", () => {
+  it("sums today's gross in minor units", () => {
     const kpis = deriveKpis(
       snapshot({
-        // Deliberately contradictory. Thirty-two rows of abandoned checkout is
-        // what production actually held, and the old code turned them into
-        // money. If any of these leak into the output, the derivation is back.
         orders: [
-          order({ id: 1, status: "checkout_created", gross_amount_cents: 90_000 }),
-          order({ id: 2, status: "checkout_expired", gross_amount_cents: 70_000 })
-        ],
-        metrics: metricsFixture({
-          today_sales_minor: 2000,
-          open_orders: 3,
-          sales_trend_ratio: 0.2,
-          sales_last_7_days_minor: [100, 0, 0, 0, 0, 0, 700],
-          currency: "NGN"
-        })
-      })
+          order({ id: 1, gross_amount_cents: 1200 }),
+          order({ id: 2, gross_amount_cents: 800 }),
+          order({ id: 3, gross_amount_cents: 9900, created_at: daysAgo(1) })
+        ]
+      }),
+      NOW
     );
     expect(kpis.salesTodayMinor).toBe(2000);
-    expect(kpis.openOrders).toBe(3);
+  });
+
+  it("prefers gross over net when both are present", () => {
+    const kpis = deriveKpis(
+      snapshot({ orders: [order({ amount_cents: 1000, gross_amount_cents: 1200 })] }),
+      NOW
+    );
+    expect(kpis.salesTodayMinor).toBe(1200);
+  });
+
+  it("compares against the same weekday last week", () => {
+    const kpis = deriveKpis(
+      snapshot({
+        orders: [
+          order({ id: 1, gross_amount_cents: 1200 }),
+          order({ id: 2, gross_amount_cents: 1000, created_at: daysAgo(7) })
+        ]
+      }),
+      NOW
+    );
     expect(kpis.salesTrend).toBeCloseTo(0.2, 6);
-    expect(kpis.sparkline).toEqual([100, 0, 0, 0, 0, 0, 700]);
-    expect(kpis.currency).toBe("NGN");
   });
 
-  it("reports nothing rather than zero when the metrics call failed", () => {
-    // A store with rows but no metrics must read "—", not "$0.00". Zero is a
-    // claim about the business; null is a claim about this app.
-    const kpis = deriveKpis(snapshot({ orders: [order({ gross_amount_cents: 1200 })] }));
-    expect(kpis.salesTodayMinor).toBeNull();
-    expect(kpis.openOrders).toBeNull();
+  it("reports a fall as a negative ratio", () => {
+    const kpis = deriveKpis(
+      snapshot({
+        orders: [
+          order({ id: 1, gross_amount_cents: 500 }),
+          order({ id: 2, gross_amount_cents: 1000, created_at: daysAgo(7) })
+        ]
+      }),
+      NOW
+    );
+    expect(kpis.salesTrend).toBeCloseTo(-0.5, 6);
+  });
+
+  it("returns no trend when there is no last-week baseline", () => {
+    // A store's first week must not read "+100%".
+    const kpis = deriveKpis(snapshot({ orders: [order({ gross_amount_cents: 1200 })] }), NOW);
     expect(kpis.salesTrend).toBeNull();
-    expect(kpis.sparkline).toEqual([]);
   });
 
-  it("passes a real zero through as a zero", () => {
-    // The seller 1 case: the server counted, and the answer genuinely is none.
-    // This must be distinguishable from the failure above.
-    const kpis = deriveKpis(snapshot({ metrics: metricsFixture() }));
+  it("ignores yesterday when building the trend", () => {
+    const kpis = deriveKpis(
+      snapshot({
+        orders: [
+          order({ id: 1, gross_amount_cents: 1200 }),
+          order({ id: 2, gross_amount_cents: 5000, created_at: daysAgo(1) })
+        ]
+      }),
+      NOW
+    );
+    expect(kpis.salesTrend).toBeNull();
+  });
+
+  it("builds a seven-slot sparkline, oldest first", () => {
+    const kpis = deriveKpis(
+      snapshot({
+        orders: [
+          order({ id: 1, gross_amount_cents: 100, created_at: daysAgo(6) }),
+          order({ id: 2, gross_amount_cents: 700, created_at: daysAgo(0) })
+        ]
+      }),
+      NOW
+    );
+    expect(kpis.sparkline).toHaveLength(7);
+    expect(kpis.sparkline[0]).toBe(100);
+    expect(kpis.sparkline[6]).toBe(700);
+  });
+
+  it("excludes orders older than the sparkline window", () => {
+    const kpis = deriveKpis(
+      snapshot({ orders: [order({ gross_amount_cents: 9999, created_at: daysAgo(9) })] }),
+      NOW
+    );
+    expect(kpis.sparkline).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it("counts unfulfilled orders as open and excludes settled ones", () => {
+    const kpis = deriveKpis(
+      snapshot({
+        orders: [
+          order({ id: 1, status: "pending" }),
+          order({ id: 2, status: "paid" }),
+          order({ id: 3, status: "processing" }),
+          order({ id: 4, status: "completed" }),
+          order({ id: 5, status: "cancelled" }),
+          order({ id: 6, status: "refunded" }),
+          order({ id: 7, status: "delivered" })
+        ]
+      }),
+      NOW
+    );
+    expect(kpis.openOrders).toBe(3);
+  });
+
+  it("survives an unparseable timestamp instead of producing NaN", () => {
+    const kpis = deriveKpis(
+      snapshot({ orders: [order({ created_at: "not a date" as never })] }),
+      NOW
+    );
+    expect(kpis.salesTodayMinor).toBe(0);
+    expect(kpis.sparkline.every((value) => Number.isFinite(value))).toBe(true);
+  });
+
+  it("returns zeroes for an empty store rather than throwing", () => {
+    const kpis = deriveKpis(snapshot(), NOW);
     expect(kpis.salesTodayMinor).toBe(0);
     expect(kpis.openOrders).toBe(0);
+    expect(kpis.sparkline).toEqual([0, 0, 0, 0, 0, 0, 0]);
+    expect(kpis.currency).toBe("USD");
   });
 
-  it("leaves the unsourced KPIs null rather than inventing them", () => {
-    const kpis = deriveKpis(snapshot({ metrics: metricsFixture() }));
-    expect(kpis.shippingToday).toBeNull();
-    expect(kpis.sellerRating).toBeNull();
-    expect(kpis.onTimeDispatch).toBeNull();
+  it("takes the currency from the orders rather than hardcoding one", () => {
+    const kpis = deriveKpis(snapshot({ orders: [order({ currency: "NGN" })] }), NOW);
+    expect(kpis.currency).toBe("NGN");
   });
 });
 
@@ -426,39 +350,34 @@ describe("deriveKpis", () => {
  * ------------------------------------------------------------------ */
 
 describe("deriveRows", () => {
-  it("takes units sold from the server rather than counting order rows", () => {
-    // The old derivation counted every order row whose status did not contain
-    // "cancel" or "refund". The two abandoned checkouts below are exactly what
-    // it used to count, and exactly what put "Sold · 7 days: 3" on a store that
-    // had never sold anything.
-    const rows = deriveRows(
-      snapshot({
-        listings: [listing({ id: 1, listing_id: 1 }), listing({ id: 2, listing_id: 2, title: "Mug" })],
-        orders: [
-          order({ id: 1, item_id: 1, status: "checkout_created" }),
-          order({ id: 2, item_id: 1, status: "checkout_expired" })
-        ],
-        metrics: metricsFixture({ units_sold_last_7_days_by_listing: { "1": 2, "2": 1 } })
-      })
+  it("counts units sold in the trailing seven days per listing", () => {
+    const rows = rowsOf(
+      [listing({ id: 1, listing_id: 1 }), listing({ id: 2, listing_id: 2, title: "Mug" })],
+      [
+        order({ id: 1, item_id: 1, created_at: daysAgo(0) }),
+        order({ id: 2, item_id: 1, created_at: daysAgo(6) }),
+        order({ id: 3, item_id: 1, created_at: daysAgo(30) }),
+        order({ id: 4, item_id: 2, created_at: daysAgo(2) })
+      ]
     );
     expect(rows[0].unitsSold7d).toBe(2);
     expect(rows[1].unitsSold7d).toBe(1);
   });
 
-  it("shows no units sold when the metrics call failed", () => {
-    // Not "0 sold" as a claim about the business — the row simply has no figure
-    // to show, and the alternative is the client counting again.
-    const rows = rowsOf([listing()], [order({ item_id: 1, status: "paid" })]);
-    expect(rows[0].unitsSold7d).toBe(0);
+  it("does not count cancelled or refunded orders as units sold", () => {
+    const rows = rowsOf(
+      [listing()],
+      [
+        order({ id: 1, item_id: 1, status: "cancelled" }),
+        order({ id: 2, item_id: 1, status: "refunded" }),
+        order({ id: 3, item_id: 1, status: "paid" })
+      ]
+    );
+    expect(rows[0].unitsSold7d).toBe(1);
   });
 
   it("prefers listing_id over id when they differ", () => {
-    const rows = deriveRows(
-      snapshot({
-        listings: [listing({ id: 999, listing_id: 42 })],
-        metrics: metricsFixture({ units_sold_last_7_days_by_listing: { "42": 1 } })
-      })
-    );
+    const rows = rowsOf([listing({ id: 999, listing_id: 42 })], [order({ item_id: 42 })]);
     expect(rows[0].id).toBe(42);
     expect(rows[0].unitsSold7d).toBe(1);
   });
@@ -532,33 +451,6 @@ describe("tabs", () => {
     expect(filterRows(rows, "out")).toHaveLength(1);
     expect(filterRows(rows, "active")).toHaveLength(0);
   });
-
-  /**
-   * Submitting a listing must not raise the seller's problem count.
-   *
-   * This is the tab half of the `pending_review` bug and the more damaging one,
-   * because it is arithmetic rather than wording: an in-review listing counted
-   * as `hidden`, `hidden` is in Out, and Out is one of the two tabs
-   * `needsAttention` colours. So the reward for publishing was a red badge.
-   */
-  it("does not count an in-review listing as a problem", () => {
-    const rows = rowsOf([listing({ status: "pending_review", quantity: 40 })]);
-    expect(filterRows(rows, "out")).toHaveLength(0);
-    expect(filterRows(rows, "drafts")).toHaveLength(0);
-    // Not Active either: a buyer still cannot order it. It is simply in flight.
-    expect(filterRows(rows, "active")).toHaveLength(0);
-    expect(filterRows(rows, "all")).toHaveLength(1);
-    expect(deriveTabs(rows).every((tab) => !tab.needsAttention)).toBe(true);
-  });
-
-  it("moves a listing out of Drafts when it is submitted", () => {
-    // The seller's proof that Publish did something. Asserted as a transition
-    // rather than a state, because the point is the change they watch for.
-    const before = rowsOf([listing({ id: 9, listing_id: 9, status: "draft" })]);
-    const after = rowsOf([listing({ id: 9, listing_id: 9, status: "pending_review" })]);
-    expect(filterRows(before, "drafts")).toHaveLength(1);
-    expect(filterRows(after, "drafts")).toHaveLength(0);
-  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -611,34 +503,13 @@ describe("deriveAttention", () => {
  * Status strip
  * ------------------------------------------------------------------ */
 
-/**
- * The superseded path, still the one the App Store build runs.
- *
- * `storeReadiness` below replaces this function, but only behind
- * `EXPO_PUBLIC_STORE_READINESS`, and `eas.json` sets that flag on development,
- * development-simulator and preview — not on `production`. The omission is
- * deliberate (4594ceac promoted the ladder to internal builds and said so), so
- * these assertions are not dead code pending a delete: they describe the strip a
- * paying seller sees today.
- *
- * They are therefore written as CHARACTERISATION, not as approval. Two of the
- * three answers below are wrong, and each one's test says which sentence it puts
- * on a real seller's screen. Nobody should read a green tick here as "the legacy
- * strip is fine", and nobody should repair these cases in place either — patching
- * `deriveStatus` into something that can distinguish five states is how you end
- * up with two readiness implementations that drift. The fix is promoting the
- * flag; this block is the checklist of what promoting it corrects.
- */
-describe("deriveStatus (legacy, pre-readiness strip)", () => {
-  it("calls an empty store open — the sentence the ladder exists to remove", () => {
-    // Not an endorsement. `storeReadiness` answers `not_set_up` here, and the
-    // whole reason it was written is that this line means a seller who has never
-    // listed anything reads "Open for orders" over an empty catalogue.
+describe("deriveStatus", () => {
+  it("treats an empty store as open, not paused", () => {
+    // Empty is a different screen state, with its own invitation to add a listing.
     expect(deriveStatus([])).toEqual({ open: true });
   });
 
   it("is open while at least one listing is orderable", () => {
-    // The one answer this function gets right in both directions.
     const rows = rowsOf([
       listing({ id: 1, listing_id: 1, quantity: 0 }),
       listing({ id: 2, listing_id: 2, quantity: 1 })
@@ -653,49 +524,6 @@ describe("deriveStatus (legacy, pre-readiness strip)", () => {
       listing({ id: 3, listing_id: 3, status: "draft" })
     ]);
     expect(deriveStatus(rows)).toEqual({ open: false });
-  });
-
-  /**
-   * The case that made this block worth annotating, observed on a device.
-   *
-   * A seller selects six products, taps Bulk Actions → Publish, and the request
-   * succeeds: `bot.py` writes `status` and `approval_status` to `pending_review`
-   * on all six. The strip then tells them their store is paused and hands them a
-   * "Reopen" button, because nothing spans the seam between the two functions —
-   * `listingHealth` maps a `pending_review` publication state to health
-   * `"pending_review"`, and `deriveStatus` only looks for `in_stock` or
-   * `low_stock`, so "waiting on a reviewer" and "the seller closed the shop"
-   * arrive here as the same boolean.
-   *
-   * `open: false` is not even defensible as a narrow reading of "orderable".
-   * The word on screen is the damage: it reports an action the seller did not
-   * take, immediately after the one they did, and the button it offers cannot
-   * fix it — `StoreDashboardScreen`'s legacy branch answers "Reopen" with
-   * `setTab("out"); setExpanded(true)`, a filter change. The seller is told they
-   * broke their store and handed a control that does nothing about it.
-   *
-   * Asserted rather than fixed, and asserted with the failing-rung comparison
-   * inline, so that whoever enables the flag for `production` can see in one
-   * place what changes. {@link storeReadiness} gets this right — see "calls a
-   * store that just bulk-published 'waiting on review', not paused".
-   */
-  it("cannot tell a store awaiting review from one the seller paused", () => {
-    const justPublished = [1, 2, 3, 4, 5, 6].map((id) =>
-      listing({ id, listing_id: id, status: "pending_review", approval_status: "pending_review" })
-    );
-    // Every row is in review, none is orderable, and the function has no rung
-    // for that — so it reports the store as paused.
-    expect(deriveStatus(rowsOf(justPublished))).toEqual({ open: false });
-    // What the strip does with that boolean, spelled out: the legacy branch in
-    // StoreDashboardScreen renders "Paused — buyers can't order" / "Reopen" for
-    // `open: false`. The ladder renders "Waiting on review" / "Manage".
-    const ladder = storeReadiness({ listings: justPublished, rows: rowsOf(justPublished) });
-    expect(ladder.readiness).toBe("pending_review");
-    expect(ladder.openForOrders).toBe(false);
-    // Same boolean, different sentence. `openForOrders` is not what the seller
-    // reads; `statusLabel` is, and that is the whole difference between the two
-    // paths in this case.
-    expect(ladder.statusLabel).not.toMatch(/paused/i);
   });
 });
 
@@ -790,12 +618,7 @@ describe("loadStoreDashboard", () => {
     mockListOrders.mockResolvedValue({});
 
     const result = await loadStoreDashboard();
-    expect(snapshotFrom(result)).toEqual({
-      listings: [],
-      orders: [],
-      metrics: null,
-      cached_at: undefined
-    });
+    expect(snapshotFrom(result)).toEqual({ listings: [], orders: [], cached_at: undefined });
   });
 });
 
@@ -809,7 +632,7 @@ describe("snapshotFrom", () => {
     expect(snap.listings).toHaveLength(1);
     expect(snap.orders).toEqual([]);
     // Rows still render; only the order-derived figures go to zero.
-    const rows: StoreListingRow[] = deriveRows(snap);
+    const rows: StoreListingRow[] = deriveRows(snap, NOW);
     expect(rows[0].unitsSold7d).toBe(0);
   });
 });
@@ -915,37 +738,6 @@ describe("storeReadiness", () => {
     const state = readinessOf([listing({ status: "active", approval_status: "pending" })]);
     expect(state.readiness).toBe("pending_review");
     expect(state.openForOrders).toBe(false);
-  });
-
-  /**
-   * The state a bulk publish actually leaves behind, written the way the server
-   * writes it.
-   *
-   * Every case above reaches review through `approval_status: "pending"` over an
-   * `active` row. A real "Publish 6" does something different: `bot.py` sets
-   * *both* columns to the single word `pending_review`, so the ladder is asked
-   * about a status string it is never handed anywhere else in this file. The
-   * substring rule in {@link listingAwaitsReview} covers it — `pending_review`
-   * contains `pending` — but that is the rule holding, not the case being
-   * tested, and a future tightening to an exact-match list would pass every
-   * assertion above while turning the seller's whole store into "Paused".
-   *
-   * "Paused" is the specific wrong word here, which is why it is asserted
-   * against rather than just checking the rung: it tells a seller who has just
-   * sent six products for review that they stopped something, and hands them a
-   * "Reopen" button for a store nobody closed.
-   */
-  it("calls a store that just bulk-published 'waiting on review', not paused", () => {
-    const justPublished = [1, 2, 3, 4, 5, 6].map((id) =>
-      listing({ id, listing_id: id, status: "pending_review", approval_status: "pending_review" })
-    );
-    const state = readinessOf(justPublished);
-    expect(state.readiness).toBe("pending_review");
-    expect(state.openForOrders).toBe(false);
-    expect(state.statusLabel).not.toMatch(/paused/i);
-    // The strip's control comes with the rung. "Reopen" belongs to `paused`, and
-    // offering it here would be a button for a state the seller is not in.
-    expect(state.action.label).not.toMatch(/reopen/i);
   });
 
   /**

@@ -358,31 +358,44 @@
       "requests_other": "メッセージリクエスト{{count}}件"
     },
     "chat": {
+      "placeholder": "メッセージ…",
+      "typing": "{{name}}が入力中…",
+      "typingMultiple": "複数の人が入力中…",
+      "delivered": "配信済み",
+      "read": "既読",
+      "sent": "送信済み",
+      "failed": "未配信",
+      "tapToRetry": "タップして再送信",
+      "editedLabel": "編集済み",
+      "deletedMessage": "このメッセージは削除されました",
+      "replyingTo": "{{name}}に返信",
+      "forwarded": "転送",
+      "attachPhoto": "写真",
+      "attachFile": "ファイル",
+      "attachVoice": "音声メッセージ",
+      "recordingVoice": "録音中…",
+      "slideToCancel": "スライドしてキャンセル",
+      "newMessagesDivider": "新着メッセージ",
+      "encryptedNotice": "メッセージは送信中に暗号化されます。",
+      "emptyTitle": "あいさつしてみましょう",
+      "emptyBody": "ここから会話が始まります。",
       "a11yAddAttachment": "添付を追加",
       "a11yAddEmoji": "笑顔の絵文字を追加",
       "a11yBack": "会話一覧に戻る",
       "a11yBackFive": "5秒戻る",
-      "a11yCancelEdit": "編集をキャンセル",
       "a11yCancelReply": "返信をキャンセル",
       "a11yCancelUndxAction": "UNDXの操作をキャンセル",
       "a11yCloseAttachmentSheet": "添付シートを閉じる",
-      "a11yCloseForward": "転送を閉じる",
-      "a11yCloseInfo": "メッセージ情報を閉じる",
       "a11yComposer": "メッセージ入力欄",
       "a11yComposerUndx": "UNDXへのメッセージ入力欄",
       "a11yConfirmUndxAction": "UNDXの操作を確認",
       "a11yDiscardRecording": "音声の録音を破棄",
       "a11yDismissStatus": "メッセージのステータスを閉じる",
       "a11yForwardFive": "5秒進む",
-      "a11yGalleryPhotoPosition": "{{sender}}さんの写真、{{total}}件中{{position}}件目",
-      "a11yGalleryVideoPosition": "{{sender}}さんの動画、{{total}}件中{{position}}件目",
       "a11yGifAttachment": "{{label}}。GIFの添付。",
-      "a11yGridPhotoTile": "{{label}}。写真 {{total}} 件中 {{position}} 件目。",
-      "a11yGridVideoTile": "{{label}}。動画 {{total}} 件中 {{position}} 件目。",
       "a11yImageAttachment": "{{label}}。画像の添付。",
       "a11yOpenControls": "会話の設定を開く",
       "a11yOpenUndxResult": "{{type}}の結果を開く",
-      "a11yOpensDocument": "ドキュメントビューアで開きます",
       "a11yOpensViewer": "全画面ビューアを開きます",
       "a11yPauseVoice": "音声メッセージを一時停止",
       "a11yPlayVoice": "音声メッセージを再生",
@@ -392,7 +405,6 @@
       "a11yRecordingVoice": "音声メッセージを録音中。{{duration}}",
       "a11yRetryLoad": "メッセージの読み込みを再試行",
       "a11yRetryVoice": "音声メッセージを再試行",
-      "a11ySaveEdit": "編集を保存",
       "a11ySend": "メッセージを送信",
       "a11yStartAudioCall": "音声通話を開始",
       "a11yStartVideoCall": "ビデオ通話を開始",
@@ -401,26 +413,20 @@
       "a11yUndxAttachmentsOff": "UNDXは添付に対応していません",
       "a11yUndxVoiceOff": "UNDXは音声メッセージに対応していません",
       "a11yUploadingAttachment": "添付をアップロード中",
-      "a11yVideoAttachment": "動画、タップして再生",
-      "a11yVideoAttachmentDuration": "動画、{{duration}}、タップして再生",
       "a11yVoiceDuration": "長さ{{duration}}",
       "a11yVoiceProgress": "音声メッセージの再生位置",
       "a11yVoiceUnavailable": "{{label}}。音声メッセージはご利用いただけません。",
       "assistantAlwaysAvailable": "いつでも利用可能 · PulseSocインテリジェンス",
-      "assistantConnecting": "接続中 · PulseSocインテリジェンス",
       "assistantReconnecting": "サービスに再接続中",
       "attachCamera": "カメラ",
       "attachCameraDetail": "その場で撮影",
       "attachDocument": "ドキュメント",
       "attachDocumentDetail": "安全なファイル",
-      "attachFile": "ファイル",
-      "attachPhoto": "写真",
       "attachPhotoDetail": "最適化された画像",
       "attachRecordingNow": "録音中",
       "attachStopSend": "停止して送信",
       "attachVideo": "動画",
       "attachVideoDetail": "最長2分",
-      "attachVoice": "音声メッセージ",
       "attachVoiceNote": "ボイスメモ",
       "attachVoiceNoteDetail": "手早く音声で送信",
       "attachmentFailedTitle": "添付に失敗しました",
@@ -442,33 +448,12 @@
       "deleteForMe": "自分から削除",
       "deleteHidden": "この端末でメッセージを非表示にしました。",
       "deleteRequested": "メッセージの削除を依頼しました。",
-      "deletedMessage": "このメッセージは削除されました",
       "deletedMessageBody": "このメッセージは削除されました。",
-      "delivered": "配信済み",
-      "durationMinutes": "{{minutes}}分",
-      "durationMinutesSeconds": "{{minutes}}分{{seconds}}秒",
-      "durationSeconds": "{{seconds}}秒",
-      "editEmpty": "編集したメッセージを空にはできません。",
-      "editFailed": "このメッセージを編集できませんでした。",
-      "editSaved": "メッセージを編集しました。",
-      "editedLabel": "編集済み",
-      "editingMessage": "メッセージを編集中",
-      "emptyBody": "ここから会話が始まります。",
       "emptyThreadBody": "このチャットのメッセージがここに表示されます。",
-      "emptyTitle": "あいさつしてみましょう",
-      "encryptedNotice": "メッセージは送信中に暗号化されます。",
-      "failed": "未配信",
       "fileAttachment": "ファイルの添付",
       "filePickerFailed": "ファイルの選択画面を開けませんでした。",
       "fileSharingUnavailableTitle": "ファイル共有をご利用いただけません",
-      "forwardFailed": "このメッセージを転送できませんでした。",
-      "forwardNoConversations": "転送できる他の会話がありません。",
-      "forwardSend": "{{total}} 件に転送",
-      "forwardSent": "{{total}} 件に転送しました。",
-      "forwarded": "転送",
       "forwardedSignal": "転送されたシグナル",
-      "galleryUnavailable": "利用できません",
-      "galleryUnavailableOffline": "オフラインでは利用できません",
       "headerCachedHistory": "キャッシュされた履歴",
       "headerLiveChannel": "ライブチャネル",
       "headerReconnecting": "再接続中",
@@ -476,26 +461,6 @@
       "imageAttachment": "画像の添付",
       "imagePickerFailed": "画像の選択画面を開けませんでした。",
       "imageSharingUnavailableTitle": "画像共有をご利用いただけません",
-      "infoDelivered": "配信済み",
-      "infoDeliveredAt": "配信",
-      "infoDuration": "長さ",
-      "infoEditedAt": "編集",
-      "infoForwarded": "転送済み",
-      "infoForwardedYes": "はい",
-      "infoFrom": "送信者",
-      "infoId": "メッセージID",
-      "infoRead": "既読",
-      "infoReadAt": "既読",
-      "infoReadGroup": "少なくとも1人が既読",
-      "infoSent": "送信済み",
-      "infoSentAt": "送信",
-      "infoSize": "サイズ",
-      "infoStatus": "状態",
-      "infoType": "種類",
-      "infoTypeMedia": "メディア",
-      "infoTypeText": "テキスト",
-      "infoTypeUnavailable": "利用できません",
-      "infoTypeVoice": "ボイスメッセージ",
       "liveVoiceKicker": "ライブボイスパルス",
       "loadFailed": "メッセージを読み込めませんでした。",
       "loadFailedBody": "PulseSocはこの会話を読み込めませんでした。「再試行」をタップして、正規のメッセージ履歴に再接続してください。",
@@ -510,16 +475,12 @@
       "microphoneUnavailableTitle": "マイクをご利用いただけません",
       "moderatedMessageBody": "このメッセージは安全審査によりご利用いただけません。",
       "muteBlock": "ミュート / ブロック",
-      "newMessagesDivider": "新着メッセージ",
-      "openDocument": "タップして開く",
       "openViewer": "ビューアを開く",
       "openingBody": "サーバーから会話の履歴を読み込んでいます。",
-      "openingDocument": "開いています…",
       "openingTitle": "チャットを開いています",
       "pendingRemoved": "送信待ちのメッセージを削除しました。",
       "photosUnavailableBody": "画像を共有するには、設定で写真へのアクセスを許可してください。",
       "photosUnavailableTitle": "写真をご利用いただけません",
-      "placeholder": "メッセージ…",
       "presenceActivityDirect": "{{activity}} · ダイレクト",
       "presenceOffline": "オフライン",
       "presenceOnline": "オンライン",
@@ -529,14 +490,11 @@
       "reactPending": "送信待ちのメッセージには、サーバーが受け付けたあとにリアクションできます。",
       "reactionFailed": "リアクションに失敗しました。",
       "reactionSent": "リアクションを送信しました。",
-      "read": "既読",
       "realtimeReconnecting": "リアルタイム接続を再確立しています。メッセージ履歴は引き続き表示されます。",
       "recordingDiscarded": "音声の録音を破棄しました。",
       "recordingFailed": "音声の録音を開始できませんでした。",
       "recordingNoFile": "録音から音声ファイルが作成されませんでした。",
       "recordingStarted": "音声メッセージを録音中… 送信するにはマイクをもう一度タップしてください。",
-      "recordingVoice": "録音中…",
-      "replyingTo": "{{name}}に返信",
       "reportConversationTitle": "会話を報告",
       "reportFailed": "報告に失敗しました。",
       "reportPending": "送信待ちのメッセージは、サーバーが受け付けるまで報告できません。",
@@ -545,17 +503,12 @@
       "retryFailedSend": "送信の失敗を再試行",
       "sendFailed": "メッセージを送信できませんでした。",
       "sendingVoice": "音声メッセージを送信しています…",
-      "sent": "送信済み",
       "showingCached": "PulseSocの再接続中は、キャッシュされたメッセージを表示します。",
-      "slideToCancel": "スライドしてキャンセル",
       "stateReconnecting": "再接続中",
       "stateRecording": "録音中",
       "stateSecureReady": "保護済み · 準備完了",
       "stateSendingMedia": "メディアを送信中",
       "stateUndxReady": "UNDX · 準備完了",
-      "tapToRetry": "タップして再送信",
-      "typing": "{{name}}が入力中…",
-      "typingMultiple": "複数の人が入力中…",
       "undxActionFailed": "UNDXの操作に失敗しました。",
       "undxActionFinished": "UNDXの操作が完了しました。",
       "undxAttachmentsUnsupported": "UNDXは現在、ネイティブチャットでのテキストの会話に対応しています。バックエンドでアシスタントのメディアが有効になるまで、添付は人とのチャットのみでご利用いただけます。",
@@ -581,8 +534,6 @@
       "uploadingAttachment": "添付をアップロードしています…",
       "videoAttachment": "動画の添付",
       "videoPickerFailed": "動画の選択画面を開けませんでした。",
-      "videoPosterFailed": "プレビューを利用できません",
-      "videoProcessing": "動画を処理しています…",
       "videoSharingUnavailableTitle": "動画共有をご利用いただけません",
       "videosUnavailableBody": "動画を共有するには、設定で写真へのアクセスを許可してください。",
       "videosUnavailableTitle": "動画をご利用いただけません",
@@ -593,8 +544,7 @@
       "voiceSent": "音声メッセージを送信しました。",
       "voiceUnavailable": "音声メッセージをご利用いただけません",
       "voiceUnavailableTitle": "音声メッセージをご利用いただけません",
-      "yourMessage": "あなたのメッセージ",
-      "moreReactions": "その他のリアクション"
+      "yourMessage": "あなたのメッセージ"
     },
     "group": {
       "createGroup": "グループを作成",
@@ -912,7 +862,6 @@
           "minimalBlack": "ミニマルブラック",
           "neonPlanet": "ネオンプラネット",
           "pulseHorizon": "パルスホライズン",
-          "pulsesocCosmic": "PulseSoc グラファイト",
           "starTunnel": "スタートンネル"
         }
       },
@@ -1091,140 +1040,9 @@
       "signInTitle": "ログインしてチャットを始める",
       "subtitle": "実際のPulseSocネットワークを検索します。既存のダイレクトチャットは自動的に再開されます。",
       "title": "会話を始める"
-    },
-    "postCard": {
-      "a11yOpen": "{{author}} の PulseSoc の投稿を開く",
-      "a11yOpenGeneric": "この PulseSoc の投稿を開く",
-      "cta": "投稿を見る →",
-      "eyebrow": "PULSESOC の投稿",
-      "forbidden": "このコンテンツは表示できません。",
-      "loading": "投稿を読み込んでいます…",
-      "missing": "この投稿は利用できなくなりました。",
-      "unavailable": "コンテンツを利用できません",
-      "video": "動画"
-    },
-    "profileCard": {
-      "eyebrow": "PULSESOC のプロフィール",
-      "cta": "プロフィールを見る →",
-      "loading": "プロフィールを読み込んでいます…",
-      "forbidden": "このプロフィールは表示できません。",
-      "missing": "このプロフィールは利用できなくなりました。",
-      "unavailable": "プロフィールを利用できません",
-      "a11yOpen": "{{author}} の PulseSoc のプロフィールを開く",
-      "a11yOpenGeneric": "この PulseSoc のプロフィールを開く"
-    },
-    "reelCard": {
-      "eyebrow": "PULSESOC のリール",
-      "cta": "リールを見る →",
-      "loading": "リールを読み込んでいます…",
-      "forbidden": "このコンテンツは表示できません。",
-      "missing": "このリールは利用できなくなりました。",
-      "unavailable": "リールを利用できません",
-      "play": "再生",
-      "a11yOpen": "{{author}} の PulseSoc のリールを開く",
-      "a11yOpenGeneric": "この PulseSoc のリールを開く"
-    },
-    "messageActions": {
-      "openLink": "リンクを開く",
-      "copyLink": "リンクをコピー",
-      "shareLink": "リンクを共有",
-      "saveToPhotos": "写真に保存",
-      "translate": "翻訳",
-      "forward": "転送",
-      "info": "メッセージ情報",
-      "chooseLink": "どのリンク？",
-      "closeMenu": "メッセージメニューを閉じる",
-      "reactWith": "{{emoji}} でリアクション"
     }
   },
   "commerce": {
-    "discovery": {
-      "label": {
-        "recommended": "マーケットプレイスのおすすめ",
-        "trending": "PulseSocで話題",
-        "sponsored": "広告"
-      },
-      "subtitle": {
-        "matches_your_interests": "あなたの好みに基づいて",
-        "because_you_viewed": "似た商品を見たため",
-        "related_to_this_post": "表示中の投稿に関連",
-        "similar_to_this_product": "この商品と似ている商品",
-        "from_sellers_you_follow": "フォロー中の出品者から",
-        "trending": "PulseSocで今話題",
-        "new_arrival": "マーケットプレイスに新着",
-        "popular": "購入者に人気",
-        "new_to_marketplace": "マーケットプレイスの新規出品"
-      },
-      "action": {
-        "viewProduct": "商品を見る",
-        "save": "保存",
-        "saved": "保存済み",
-        "seeAll": "すべて見る"
-      },
-      "menu": {
-        "title": "おすすめの設定",
-        "hide": "これを非表示",
-        "notInterested": "興味がない",
-        "seeFewer": "これに似たものを減らす",
-        "hideSeller": "この出品者をおすすめしない",
-        "why": "これが表示される理由",
-        "snooze": "マーケットプレイスの提案を30日間非表示にする"
-      },
-      "why": {
-        "title": "これが表示される理由",
-        "loading": "確認中…",
-        "unavailable": "このおすすめの理由は現在表示できません。",
-        "factorsTitle": "判断の材料",
-        "close": "閉じる"
-      },
-      "factor": {
-        "relevance": "見ていた内容との一致度",
-        "quality": "出品の品質",
-        "predicted_interest": "これまでに関心を示したもの",
-        "conversion_probability": "同様の商品が購入される頻度",
-        "seller_reliability": "出品者の実績",
-        "freshness": "出品されてからの新しさ",
-        "exploration_bonus": "新しい出品にも機会を与えるため",
-        "diversity_bonus": "さまざまな出品者を表示するため"
-      },
-      "module": {
-        "recommended_for_you": "あなたへのおすすめ",
-        "because_you_viewed": "閲覧履歴から",
-        "similar_to_this_product": "似ている商品",
-        "you_might_also_like": "こちらもおすすめ",
-        "trending": "話題の商品",
-        "new_arrivals": "新着",
-        "from_sellers_you_follow": "フォロー中の出品者から",
-        "new_to_marketplace": "マーケットプレイスの新規出品",
-        "popular": "人気"
-      },
-      "tagging": {
-        "open": "商品をタグ付け",
-        "title": "あなたの商品",
-        "subtitle": "この投稿に関連する商品を選択",
-        "cap": "1投稿につき最大{{max}}件",
-        "selected": "{{max}}件中{{selected}}件を選択中",
-        "loading": "商品を読み込んでいます…",
-        "empty": "商品がまだありません",
-        "emptyHint": "マーケットプレイスに出品した商品がここに表示されます。",
-        "error": "商品を読み込めませんでした",
-        "errorHint": "商品がないという意味ではありません。もう一度お試しください。",
-        "retry": "再試行",
-        "wontShow": "表示されません",
-        "wontShowHint": "タグ付けはできますが、修正するまで購入者には表示されません。",
-        "done": "完了",
-        "blocked": {
-          "not_purchasable": "購入できません",
-          "no_cover_image": "カバー写真が必要です",
-          "no_resolvable_price": "価格が必要です",
-          "moderation_flagged": "審査中",
-          "listing_risk": "表示の対象外です",
-          "seller_risk": "あなたのストアは表示の対象外です",
-          "unknown_reason": "現在表示できません"
-        },
-        "cleared": "商品タグを削除しました。フィード投稿にのみ付けられます。"
-      }
-    },
     "marketplace": {
       "title": "マーケットプレイス",
       "browse": "見つける",
@@ -1317,18 +1135,15 @@
       "storeOfflineNotice": "保存済みの販売者 / ストア情報を表示しています。",
       "storeKicker": "マーケットプレイス・コマンド",
       "storefrontReadiness": "ストアの準備状況",
-      "storeHeroCopy": "出品者の承認、商品の審査、決済、支払い、発送は、すべてPulseSocが判断します。",
+      "storeHeroCopy": "出品者の承認、商品の審査、決済、支払い、信頼性、発送に関する判断はサーバー側で管理されます。",
       "loadingSellerControls": "出品者向けの操作を読み込み中",
       "sellerToolsLoadFailed": "出品者向けツールを読み込めませんでした。",
       "metricListingsLoaded": "読み込んだ出品",
-      "metricPublished": "公開中",
       "metricActiveReviewReady": "公開中 / 審査準備済み",
       "metricPendingReview": "審査中",
       "metricOrdersLoaded": "読み込んだ注文",
       "merchantApplication": "出店申請",
-      "merchantApplicationCopy": "PulseSocでの販売を申請しましょう。申請では、あなたが誰か、何を販売するか、確認する書類について順番にご案内します。回答は入力するたびに保存され、審査はすべて審査チームの担当者が行います。",
-      "openSellerApplication": "出品者申請を開く",
-      "openSellerApplicationHint": "出品者申請を開きます。回答を新しく始めることも、続きから入力することもできます",
+      "merchantApplicationCopy": "ネイティブの出品者申請を既存の出品者エンドポイントに送信します。書類の確認と管理者の審査は、申請を受け付けたあとPulseSocが行います。",
       "sellerDisplayNamePlaceholder": "出品者の表示名",
       "sellerBioPlaceholder": "何を販売し、購入者にどう役立つかを説明してください",
       "saving": "保存しています…",
@@ -1342,7 +1157,6 @@
       "sellerInventory": "出品者の在庫",
       "sellerInventoryCopy": "出品者が所有する項目を編集し、PulseSocマーケットプレイスの審査を通じて公開範囲を管理できます。マーケットプレイスでの公開には引き続き承認が必要です。",
       "emptyInventory": "商品を作成または読み込むと、出品者の在庫が表示されます。",
-      "productNotYours": "その商品はあなたのストアにありません。削除されたか、リンクが別の出品者の商品を指している可能性があります。",
       "editListingTitle": "出品 #{{id}} を編集",
       "saveAndReview": "保存して審査へ",
       "addMedia": "メディアを追加",
@@ -1350,13 +1164,13 @@
       "resuming": "再開しています…",
       "resumeReview": "審査を再開",
       "removing": "削除しています…",
-      "editorFooterNote": "編集内容はあなたのPulseSocストアに保存され、内容が変わるたびに出品はマーケットプレイスの審査に戻ります。お支払い、支払い、発送、異議申し立てはpulsesoc.comで行います。",
+      "editorFooterNote": "変更はサーバー側に保存され、内容が変わると再度マーケットプレイスの審査に入ります。お支払い、支払い、発送、異議申し立て、プロバイダーの操作は、ネイティブのプロバイダー境界内で行われます。",
       "listingUpdatedReview": "出品を更新し、審査に送りました。",
       "listingUpdateFailed": "出品を更新できませんでした。",
       "listingUpdated": "出品を更新しました。",
       "listingStatusUpdateFailed": "出品のステータスを更新できませんでした。",
       "productMediaGallery": "商品メディアのギャラリー",
-      "productMediaGalleryCopy": "項目をタップすると全画面で開きます。ビューアで再生できないものは静止画のプレビューで表示されます。",
+      "productMediaGalleryCopy": "ギャラリーはマーケットプレイスのメディアデータと共通のネイティブメディアビューアを再利用します。非対応のメディアはビューア内で安全に代替表示されます。",
       "openStoreMediaA11y": "ストアのメディア{{index}}を開く",
       "mediaFallback": "メディア",
       "openMedia": "メディアを開く",
@@ -1364,37 +1178,18 @@
       "ordersAndPayouts": "注文と支払い",
       "ordersAndPayoutsCopy": "注文、出品者手数料、Stripe Connectの登録、お支払い、支払いの実行は、プロバイダーとサーバー側で管理されます。",
       "noSellerOrders": "出品者の注文は読み込まれていません。",
-      "orderMerchandiseLine": "商品代金 {{merchandise}} · 送料クレジット {{shipping}}",
-      "orderFeeLine": "PulseSoc手数料 {{rate}} · 返金調整 {{refunds}}",
-      "orderNetEarningsLine": "受取額 {{net}} · {{state}}",
-      "orderBlockedLine": "保留中: {{reason}}。支払い前にこの問題を解決してください。",
       "checking": "確認しています…",
       "connectPayouts": "支払いを連携",
       "payoutChecked": "支払いの登録状況を確認しました。",
       "payoutUnavailable": "支払いの登録はまだご利用いただけません。",
-      "policyFixNeedsReview": "これはアプリ内では解除できないポリシー審査が必要です。商品情報を変更するか、pulsesoc.com のサポートにお問い合わせください。",
       "payoutManagedNote": "支払いの登録と実行は、PulseSocおよびその決済プロバイダーが管理します。お支払いの準備ができ次第お知らせします。",
-      "termsAcceptedLabel": "同意済み",
-      "reviewAndAccept": "確認して同意",
-      "termsAcceptedNotice": "マーケットプレイスの手数料と規約に同意しました。",
-      "termsAcceptFailed": "規約への同意を保存できませんでした。",
       "trustAndEligibility": "信頼性と利用資格",
       "verification": "認証",
-      "trustCopy": "税務書類、銀行口座の登録、異議申し立て、返金、発送、PulseSocの審査は、当面アプリ内ではなくPulseSocのウェブサイトで行います。",
+      "trustCopy": "高度な税務書類、銀行口座の登録、異議申し立て、返金、発送、管理者の審査は、ネイティブのQA基準が整うまで安全なウェブ / プロバイダーのフローで行います。",
       "storeMediaViewerTitle": "ストアのメディア",
       "statusApprovedLive": "承認済み / 公開中",
       "statusPendingReview": "審査中",
-      "statusRemoved": "削除済み",
-      "status": {
-        "live": "アクティブ",
-        "store_offline": "ストア非公開",
-        "store_name_needed": "ストア名が必要",
-        "paused": "一時停止中",
-        "draft": "下書き",
-        "rejected": "却下"
-      },
-      "dropshipping": "インポートした商品",
-      "dropshippingCopy": "サプライヤーからインポートした商品です。審査待ちのものも含まれます。"
+      "statusRemoved": "削除済み"
     },
     "orders": {
       "title": "注文",
@@ -1514,52 +1309,6 @@
       "statusInReview": "審査中",
       "pauseCampaign": "キャンペーンを停止",
       "resumeCampaign": "キャンペーンを再開"
-    },
-    "sellerAccess": {
-      "checking": "出品者ステータスを確認しています…",
-      "retry": "再試行",
-      "unreadableTitle": "出品者ステータスを確認できませんでした",
-      "unreadableBody": "ストアに問題はありません。確認ができなかっただけです。しばらくしてからもう一度お試しください。",
-      "noApplicationTitle": "PulseSoc で販売を始めましょう",
-      "noApplicationBody": "出品者アカウントを申請すると、ストアの開設、商品の出品、注文の受付ができます。",
-      "noApplicationCta": "販売を申請する",
-      "draftTitle": "出品者申請を完了してください",
-      "draftBody": "申請は下書きとして保存されています。続きから再開してください。承認され次第ストアが開きます。",
-      "draftCta": "申請を再開する",
-      "reviewTitle": "申請を審査中です",
-      "reviewBody": "内容を確認しています。結果が出次第通知します。現時点でお客様に必要な操作はありません。",
-      "reviewCta": "申請状況を見る",
-      "moreInfoTitle": "追加の情報が必要です",
-      "moreInfoBody": "審査担当者が求めた内容を送信するまで、申請は保留されます。",
-      "moreInfoCta": "要求された変更を完了する",
-      "declinedTitle": "出品者申請は承認されませんでした",
-      "declinedBody": "理由と再申請の可否を確認するには、申請を開いてください。",
-      "declinedCta": "申請状況を見る",
-      "suspendedTitle": "ストアは停止中です",
-      "suspendedBody": "ストアが停止されている間は出品も販売もできません。既存の注文の確認や、返金・異議申し立ての対応は引き続き可能です。",
-      "suspendedCta": "既存の注文を見る",
-      "suspendedSupportCta": "サポートに問い合わせる"
-    },
-    "sellerPayments": {
-      "sectionTitle": "カード決済",
-      "setupRequiredLabel": "設定が必要",
-      "setupRequiredBody": "購入者はまだカードで支払えません。カード決済を受け付けるには、受取情報を Stripe に連携してください。",
-      "setupRequiredCta": "支払いを設定する",
-      "setupInProgressLabel": "設定中",
-      "setupInProgressBody": "カード決済の設定を開始しましたが、Stripe がまだいくつかの情報を必要としています。",
-      "setupInProgressCta": "設定を続ける",
-      "actionRequiredLabel": "対応が必要",
-      "actionRequiredBody": "カード決済を受け付けるには、Stripe がお客様からの情報を必要としています。",
-      "actionRequiredCta": "設定を完了する",
-      "underReviewLabel": "審査中",
-      "underReviewBody": "Stripe が内容を審査しています。通常すぐに完了し、お客様の操作は不要です。",
-      "readyLabel": "利用可能",
-      "readyBody": "カード決済は有効です。購入者はお支払い時にカードで支払えます。",
-      "restrictedLabel": "制限あり",
-      "restrictedBody": "Stripe がアカウントのカード決済を制限しています。必要な対応を確認するには Stripe を開いてください。",
-      "restrictedCta": "Stripe を開く",
-      "unavailableLabel": "利用不可",
-      "unavailableBody": "現在 PulseSoc ではカード決済をご利用いただけません。他のお支払い方法には影響ありません。"
     },
     "business": {
       "title": "ビジネス",
@@ -2611,26 +2360,6 @@
       "upcomingBody": "準備中です。公開されるとここに表示されます。",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "Business OS のこの部分にはまだページがありません。Business OS に戻って別のセクションを選んでください。"
-    },
-    "pulsedrop": {
-      "label": {
-        "trending": "急上昇",
-        "newDrop": "新着",
-        "popular": "人気",
-        "topPick": "おすすめ",
-        "discovery": "発見"
-      },
-      "availability": {
-        "unavailable": "販売終了",
-        "notPriced": "価格未設定"
-      },
-      "cta": {
-        "viewProduct": "商品を見る"
-      },
-      "seller": {
-        "openSeller": "{{name}}のストアを開く",
-        "visitStore": "ストアを見る"
-      }
     }
   },
   "discovery": {
@@ -3094,39 +2823,7 @@
       "reportFailed": "報告を送信できませんでした。",
       "selectedForFeedComposer": "フィード作成用に{{title}}を選択しました。",
       "selectedForReel": "リール用に{{title}}を選択しました。",
-      "selectedForStatus": "ステータス用に{{title}}を選択しました。",
-      "ownerSectionTitle": "オーナー操作",
-      "ownerManage": "管理",
-      "ownerClose": "閉じる",
-      "ownerLoading": "この楽曲を確認しています…",
-      "ownerRetry": "再試行",
-      "ownerImpactTitle": "判断する前に",
-      "ownerImpactUses": "{{count}} 件のリール・投稿・ステータスで使用されています。",
-      "ownerImpactReports": "未処理の報告 {{count}} 件。",
-      "ownerCdnCaveat": "削除すると PulseSoc はファイルの配信を停止しますが、端末にキャッシュ済みのコピーは完全削除まで再生され続けます。隔離はファイル自体を消去します。",
-      "ownerLegalHold": "この楽曲は法的保全の対象です。完全削除はできません。",
-      "ownerReason": "理由",
-      "ownerNote": "メモ",
-      "ownerNotePlaceholder": "メモを追加（OTHER および完全削除では必須）",
-      "ownerActionsTitle": "操作",
-      "ownerTakedown": "取り下げ",
-      "ownerQuarantine": "隔離",
-      "ownerQuarantineHint": "再生を停止し、保存済みファイルを削除します。楽曲の記録と履歴は残ります。",
-      "ownerRestore": "復元",
-      "ownerSchedulePurge": "完全削除を予約",
-      "ownerCancelPurge": "完全削除を取り消し",
-      "ownerPurge": "完全削除",
-      "ownerPurgeExplainer": "完全削除は音声を恒久的に消去します。使用していた投稿・リール・ステータスは残り、音声だけが無音になります。",
-      "ownerStepUpTitle": "パスワード",
-      "ownerStepUpPlaceholder": "パスワードを再入力",
-      "ownerStepUpAction": "本人確認する",
-      "ownerStepUpGranted": "確認しました。完全削除は {{seconds}} 秒間有効です。",
-      "ownerPurgeConfirm": "確認のため {{id}} を入力",
-      "ownerPurgeAction": "完全に削除する",
-      "ownerAuditTitle": "履歴",
-      "ownerAuditEmpty": "この楽曲に記録された操作はありません。",
-      "ownerApplied": "{{action}} を実行しました。",
-      "ownerNoChange": "すでにその状態です — 変更はありません。"
+      "selectedForStatus": "ステータス用に{{title}}を選択しました。"
     }
   },
   "settings": {
@@ -3164,7 +2861,7 @@
       "signOut": "ログアウト",
       "signOutSubtitle": "この端末だけログアウトします。",
       "signOutConfirmTitle": "PulseSocからログアウトしますか？",
-      "signOutConfirmBody": "他の端末ではログインしたままです。この端末の未投稿の下書きとダウンロード済みメディアは削除されます。",
+      "signOutConfirmBody": "他の端末ではログインしたままです。この端末の下書きとダウンロードは保持されます。",
       "signOutEverywhere": "すべての端末からログアウト",
       "signOutEverywhereSubtitle": "この端末を含む、すべてのPulseSocのセッションを無効にします。",
       "signOutEverywhereConfirmTitle": "すべての端末からログアウトしますか？",
@@ -3223,11 +2920,6 @@
           "title": "言語と地域",
           "subtitle": "アプリの言語、翻訳、時刻の形式",
           "keywords": "言語 翻訳 ロケール 地域 タイムゾーン 時刻の形式 24時間 language region"
-        },
-        "commerce": {
-          "title": "マーケットプレイスの提案",
-          "subtitle": "商品の提案、頻度、一時停止",
-          "keywords": "マーケットプレイス 提案 おすすめ レコメンド 商品 買い物 フィード リール 頻度 一時停止 スヌーズ パーソナライズ コマース"
         },
         "storage": {
           "title": "ストレージとデータ",
@@ -3776,16 +3468,7 @@
       "copied": "コピーしました",
       "share": "シェア",
       "unavailable": "招待リンクはまだ準備中です。",
-      "fairness": "実際に知っている人を招待しましょう。数より質が大切です。",
-      "message": {
-        "default": "こんにちは！PulseSoc を使っています。こちらでつながって、これからも連絡を取り合いましょう。\n\nPulseSoc で一緒に：",
-        "casual": "やあ、PulseSoc を始めました。よかったら一緒にどうぞ。\n\nこちらから：",
-        "network": "PulseSoc でつながりを広げています。ぜひあちらでもつながりましょう。\n\nPulseSoc で一緒に：",
-        "discovery": "PulseSoc では、フォローする価値のある人や投稿に出会えます。きっと気に入ると思います。\n\n見てみてください：",
-        "short": "PulseSoc で一緒に：",
-        "handle": "向こうでは @{{username}} です。",
-        "subject": "PulseSoc で一緒に"
-      }
+      "fairness": "実際に知っている人を招待しましょう。数より質が大切です。"
     },
     "missions": {
       "heading": "ミッション",
@@ -4571,19 +4254,122 @@
         "UNKNOWN": "利用できません"
       },
       "features": {
+        "privateFacts": {
+          "label": "プライベート情報",
+          "hint": "あなたに関して記録された確認済みの情報。"
+        },
+        "capitalGraph": {
+          "label": "資産グラフ",
+          "hint": "資産・法人・債務のつながりを表示します。"
+        },
+        "privateBriefings": {
+          "label": "プライベートブリーフィング",
+          "hint": "あなた自身の記録から作成する要約です。"
+        },
         "relationshipIntelligence": {
           "label": "関係性インテリジェンス",
           "hint": "あなたの事案に関わる人物や組織。"
         },
+        "privateShield": {
+          "label": "プライベートシールド",
+          "hint": "非公開情報の流出を監視します。"
+        },
+        "breachMonitoring": {
+          "label": "漏えい監視",
+          "hint": "既知の漏えいにあなたの情報が現れた際に通知します。"
+        },
+        "documentIntelligence": {
+          "label": "ドキュメント解析",
+          "hint": "提供された書類から情報を読み取ります。"
+        },
+        "humanConcierge": {
+          "label": "ヒューマンコンシェルジュ",
+          "hint": "担当者があなたに代わって依頼を処理します。"
+        },
+        "operations": {
+          "label": "オペレーション",
+          "hint": "追跡している義務・決定・リクエスト・リスク・機会。"
+        },
         "privateMeetings": {
           "label": "プライベートミーティング",
           "hint": "待機室とホスト管理機能を備えた安全なミーティング。"
+        },
+        "privateConversations": {
+          "label": "プライベート会話",
+          "hint": "分類され、業務に紐づけられたオフィスのスレッド。"
         }
       },
       "entry": {
         "heading": "プライベートオフィス",
         "hint": "あなた専用の情報と生活運営の拠点です。",
         "lockedHint": "{{tier}}に含まれます。"
+      },
+      "facts": {
+        "subtitle": "記録された内容のみです。公開アクティビティから推測することはありません。",
+        "loading": "記録を読み込んでいます…",
+        "why": "なぜこれを知っているのですか？",
+        "source": "出典",
+        "sourceUnknown": "記録なし",
+        "verified": "確認状況",
+        "observedLabel": "記録日",
+        "observed": "{{date}}に記録",
+        "confidence": "確度",
+        "hasDocument": "出典書類が保管されています。",
+        "close": "閉じる",
+        "stale": "古い情報",
+        "empty": {
+          "title": "まだ何もありません",
+          "body": "確認済みの情報はまだ追加されていません。"
+        },
+        "notEntitled": {
+          "title": "アップグレードが必要です",
+          "body": "プライベート情報は{{tier}}に含まれます。",
+          "bodyGeneric": "プライベート情報は現在のプランに含まれていません。"
+        },
+        "disabled": {
+          "title": "一時停止中",
+          "body": "プライベート情報は現在停止しています。記録はそのまま保持されています。"
+        },
+        "notImplemented": {
+          "title": "まだ利用できません",
+          "body": "この機能はまだ作られていません。"
+        },
+        "unavailable": {
+          "title": "利用できません",
+          "body": "現在、記録を読み取れませんでした。しばらくしてからお試しください。"
+        },
+        "error": {
+          "title": "問題が発生しました",
+          "body": "記録を読み込めませんでした。"
+        },
+        "add": {
+          "open": "ファクトを追加",
+          "title": "ファクトを記録",
+          "domain": "分野",
+          "factType": "ファクトの種類",
+          "factTypeHint": "例: パスポート番号",
+          "valueType": "値の種類",
+          "value": "値",
+          "save": "保存",
+          "cancel": "キャンセル",
+          "failed": "現在保存できませんでした。"
+        }
+      },
+      "domains": {
+        "GENERAL": "一般",
+        "FINANCIAL": "財務",
+        "LEGAL": "法務",
+        "HEALTH": "健康",
+        "FAMILY": "家族",
+        "IDENTITY": "本人確認",
+        "SECURITY": "セキュリティ"
+      },
+      "verification": {
+        "VERIFIED": "確認済み",
+        "SOURCED": "出典あり",
+        "SELF_REPORTED": "本人申告",
+        "ESTIMATED": "推定",
+        "NEEDS_REVIEW": "要確認"
       },
       "security": {
         "title": "オフィスのセキュリティ",
@@ -4676,6 +4462,457 @@
           "failed": "リセットに失敗しました。パスワードを確認してもう一度お試しください。"
         }
       },
+      "operations": {
+        "title": "オペレーション",
+        "subtitle": "義務・イベント・決定・リクエスト・リスク・機会を一か所で記録し、追跡します。",
+        "loading": "記録を読み込んでいます…",
+        "cancel": "キャンセル",
+        "save": "保存",
+        "move": "変更",
+        "writeFailed": "この変更は保存されませんでした。",
+        "empty": {
+          "title": "記録はありません"
+        },
+        "views": {
+          "obligations": "義務",
+          "events": "イベント",
+          "decisions": "決定",
+          "requests": "リクエスト",
+          "risks": "リスク",
+          "opportunities": "機会"
+        },
+        "add": {
+          "obligations": "義務を記録",
+          "events": "イベントを記録",
+          "decisions": "決定を記録",
+          "requests": "リクエストを記録",
+          "risks": "リスクを記録",
+          "opportunities": "機会を記録"
+        },
+        "emptyBody": {
+          "obligations": "記録された義務はまだありません。",
+          "events": "記録されたイベントはまだありません。",
+          "decisions": "記録された決定はまだありません。",
+          "requests": "記録されたリクエストはまだありません。",
+          "risks": "記録されたリスクはまだありません。",
+          "opportunities": "記録された機会はまだありません。"
+        },
+        "notEntitled": {
+          "title": "アップグレードが必要です",
+          "body": "オペレーションは {{tier}} に含まれています。",
+          "bodyGeneric": "オペレーションは現在のプランに含まれていません。"
+        },
+        "disabled": {
+          "title": "利用できません",
+          "body": "オペレーションは現在停止しています。"
+        },
+        "notImplemented": {
+          "title": "準備中",
+          "body": "オフィスのこの部分はまだ準備中です。"
+        },
+        "unavailable": {
+          "title": "接続できません",
+          "body": "オペレーションに接続できませんでした。記録は変更されていません。"
+        },
+        "error": {
+          "title": "問題が発生しました",
+          "body": "記録を読み込めませんでした。"
+        },
+        "due": "期限 {{date}}",
+        "occurred": "発生日 {{date}}",
+        "outcome": "結果: {{outcome}}",
+        "form": {
+          "title": "タイトル",
+          "question": "質問",
+          "kind": "種類",
+          "details": "詳細",
+          "due": "期限日 (YYYY-MM-DD)"
+        },
+        "status": {
+          "OPEN": "オープン",
+          "RESOLVED": "解決済み",
+          "DISMISSED": "却下",
+          "RECORDED": "記録済み",
+          "UNDER_REVIEW": "審査中",
+          "DECIDED": "決定済み",
+          "ABANDONED": "取り下げ",
+          "IN_PROGRESS": "進行中",
+          "WAITING_ON_USER": "あなたの対応待ち",
+          "WAITING_ON_PROVIDER": "プロバイダー待ち",
+          "COMPLETED": "完了",
+          "CANCELED": "キャンセル",
+          "MONITORING": "監視中",
+          "MITIGATED": "軽減済み",
+          "ACCEPTED": "受容",
+          "NEW": "新規",
+          "REVIEWING": "検討中",
+          "INTERESTED": "関心あり",
+          "PASSED": "見送り",
+          "CLOSED": "クローズ",
+          "OVERDUE": "期限超過",
+          "DUE_SOON": "期限間近"
+        },
+        "overview": {
+          "heading": "概要",
+          "loading": "概要を読み込んでいます…",
+          "unavailable": "概要を読み込めませんでした。これはゼロではありません。",
+          "needsAttention": "対応が必要",
+          "dueToday": "本日期限",
+          "overdue": "期限超過",
+          "pendingDecisions": "保留中の決定",
+          "dueThisWeek": "今週期限",
+          "highRisks": "高いリスク",
+          "openRequests": "未完了の依頼",
+          "awaitingResponse": "あなたの返答待ち",
+          "opportunities": "機会",
+          "recentlyCompleted": "最近完了",
+          "recentWindow": "直近{{days}}日",
+          "queue": "対応キュー",
+          "queueEmpty": "対応が必要なものはありません。",
+          "truncated": "{{total}}件中{{shown}}件を表示。",
+          "notTracked": "未追跡",
+          "reason": {
+            "OVERDUE": "期限超過",
+            "HIGH_RISK": "高リスク",
+            "DUE_SOON": "期限間近",
+            "RESPONSE_REQUIRED": "返答が必要",
+            "MISSING_REQUIRED_CONTEXT": "確認が必要",
+            "DECISION_REQUIRED": "決定が未了",
+            "BLOCKED": "提供者待ち"
+          },
+          "expiringOpportunities": "期限切れが近い機会"
+        }
+      },
+      "capital": {
+        "title": "キャピタルグラフ",
+        "subtitle": "保有するもの、それを守るもの、そのつながり — 各要素の確からしさとともに。",
+        "loading": "グラフを読み込んでいます…",
+        "views": {
+          "coverage": "補償",
+          "documents": "書類",
+          "holdings": "保有資産",
+          "obligations": "債務",
+          "overview": "概要",
+          "structure": "構造",
+          "cash_flow": "支出予定",
+          "exposure": "集中度"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "これまでに {{count}}",
+        "factCount": "記録された事実 {{count}} 件",
+        "empty": {
+          "title": "記録はありません",
+          "openPortfolio": "ポートフォリオを開く"
+        },
+        "emptyBody": {
+          "holdings": "まだ保有資産が記録されていません。ポートフォリオに追加した資産はここに表示され、キャピタルグラフに自動的に接続されます。",
+          "coverage": "記録された補償はまだありません。",
+          "structure": "記録された構造はまだありません。",
+          "documents": "まだ資本関連の書類が接続されていません。"
+        },
+        "denied": {
+          "title": "非表示",
+          "body": "この質問には回答されませんでした。"
+        },
+        "notFound": {
+          "title": "見つかりません",
+          "body": "オフィスにその項目はありません。"
+        },
+        "notEntitled": {
+          "title": "アップグレードが必要です",
+          "body": "キャピタルグラフは {{tier}} に含まれています。",
+          "bodyGeneric": "キャピタルグラフは現在のプランに含まれていません。"
+        },
+        "disabled": {
+          "title": "利用できません",
+          "body": "キャピタルグラフは現在停止しています。"
+        },
+        "notImplemented": {
+          "title": "準備中",
+          "body": "オフィスのこの部分はまだ準備中です。"
+        },
+        "unavailable": {
+          "title": "接続できません",
+          "body": "グラフに接続できませんでした。記録は変更されていません。"
+        },
+        "error": {
+          "title": "問題が発生しました",
+          "body": "グラフを読み込めませんでした。"
+        },
+        "conflicts": {
+          "title": "矛盾する情報",
+          "disagree": "複数の情報源が食い違っています"
+        },
+        "stale": {
+          "title": "鮮度の期限切れ",
+          "age": "{{days}} 日経過"
+        },
+        "truth": {
+          "KNOWN": "確認済み",
+          "INFERRED": "推定(推論)",
+          "ESTIMATED": "概算",
+          "STALE": "古い",
+          "MISSING": "未記録",
+          "CONFLICTING": "矛盾",
+          "PRO_REVIEW": "要確認"
+        },
+        "nodeType": {
+          "PERSON": "人物",
+          "BUSINESS": "事業",
+          "PROPERTY": "不動産",
+          "INSURANCE_POLICY": "保険契約",
+          "CONTRACT": "契約",
+          "DOCUMENT": "書類",
+          "PROFESSIONAL": "専門家",
+          "ASSET": "資産",
+          "LIABILITY": "負債"
+        },
+        "entity": {
+          "relationships": "関係",
+          "facts": "記録された事実",
+          "updated": "更新日 {{date}}"
+        },
+        "relationshipsUnavailable": "関係を読み込めませんでした。",
+        "portfolio": {
+          "title": "ポートフォリオ",
+          "subtitle": "PulseSoc のポートフォリオがグラフに反映されます。保有資産の編集はポートフォリオで — 変更は自動的にここへ反映されます。",
+          "totalValue": "合計評価額",
+          "partial": "{{total}} 件中 {{priced}} 件の保有に価格あり",
+          "lots_one": "{{count}} 件のロット",
+          "lots_other": "{{count}} 件のロット",
+          "priceUnavailable": "価格を取得できません",
+          "manualSource": "手動 · ポートフォリオから",
+          "updatedSeconds": "価格は {{count}} 秒前に更新",
+          "updatedMinutes": "価格は {{count}} 分前に更新",
+          "updatedStale": "価格が古い可能性があります",
+          "sourceUnavailable": "ライブ価格は現在接続されていません",
+          "syncPending_one": "{{count}} 件のポートフォリオ変更を同期中…",
+          "syncPending_other": "{{count}} 件のポートフォリオ変更を同期中…",
+          "syncFailed": "直近の同期に失敗しました — 最後に成功した更新時点の内容を表示しています。",
+          "unpriced": "{{symbols}} のライブ価格がありません。合計にはその他の保有のみ含まれます。",
+          "empty": "ポートフォリオにまだ保有資産がありません。",
+          "unavailable": "ポートフォリオを読み込めませんでした。",
+          "basisUnknown": "取得コスト未登録",
+          "pricedValue": "価格判明分のポートフォリオ価値",
+          "valueUnavailable": "価格が判明している保有資産はまだありません",
+          "excludesUnpriced": "価格未取得の保有資産を除外: {{count}}",
+          "pnlLabel": "未実現損益",
+          "pnlUnavailable": "利用不可",
+          "basisLabel": "取得原価",
+          "basisPartial": "{{total}}件中{{known}}件が判明",
+          "holdingsLabel": "保有資産",
+          "allocationTitle": "配分",
+          "allocationPricedOnly": "価格判明分のみ",
+          "excludedFromTotal": "ポートフォリオ合計から除外",
+          "qualityPriced": "価格取得 {{priced}}/{{total}}",
+          "qualityBasis": "原価判明 {{known}}/{{total}}",
+          "unavailableTitle": "ポートフォリオを利用できません",
+          "fresh": {
+            "live": "ライブ",
+            "fresh": "最新",
+            "delayed": "遅延",
+            "stale": "古い",
+            "unavailable": "価格ソースなし"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "ポートフォリオのカバレッジ",
+          "pricing": "{{total}}件中{{priced}}件の保有資産に価格あり",
+          "basis": "{{total}}件中{{known}}件で取得原価が判明",
+          "factsTitle": "ファクトの検証",
+          "knownShare": "確認済みファクト: {{pct}}",
+          "documentBacked": "書類の裏付けがあるファクト: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "関係",
+          "noRelationships": "まだ関係が記録されていません。"
+        },
+        "relation": {
+          "OWNS": "所有",
+          "ADVISED_BY": "助言者",
+          "COVERED_BY": "補償元",
+          "SECURED_BY": "担保",
+          "GOVERNED_BY": "準拠",
+          "DESCRIBES": "記述"
+        },
+        "documents": {
+          "evidenceTitle": "接続された証跡"
+        },
+        "overview": {
+          "assets": "価格の付いた資産",
+          "complete": "完全",
+          "concentrationTitle": "保有額の大きい順",
+          "concentrationUnranked": "小規模な保有はここには表示されません。",
+          "coverageTitle": "カバレッジ",
+          "dimension": {
+            "pricing": "価格評価",
+            "cost_basis": "取得原価",
+            "liability_amounts": "負債の金額",
+            "evidence": "証跡"
+          },
+          "dimensionCount": "{{total}} 件中 {{known}} 件",
+          "disclaimerBody": "価格の付いた資産と金額の確定した負債を比較しています。価格や金額が確定できなかったものは含まれていません。",
+          "disclaimerTitle": "純資産の数値ではありません",
+          "excludedForeignCurrency": "他通貨建ての負債",
+          "excludedTitle": "この数値に含まれないもの",
+          "excludedUnpricedAssets": "価格のない資産",
+          "excludedUnquantifiedLiabilities": "金額のない負債",
+          "excludedUnspecifiedCurrency": "通貨が不明な負債",
+          "liabilities": "金額の確定した負債",
+          "liabilityConcentrationTitle": "負債額の大きい順",
+          "noLiabilities": "負債は記録されていません。負債がないという意味ではありません。",
+          "notSummable": "通貨が一つに定まらないため、合計は表示しません。",
+          "otherCurrencies": "その他の通貨",
+          "partial": "一部",
+          "quantifiedOf": "金額あり {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "価格を取得できない資産があります。",
+            "incomplete_portfolio": "ポートフォリオの合計自体が不完全です。",
+            "unquantified_liabilities": "金額が記録されていない負債があります。",
+            "uncomparable_currency": "比較できない通貨建ての負債があります。",
+            "liabilities_truncated": "読み取った件数より多くの負債があります。",
+            "no_liabilities_recorded": "負債は一件も記録されていません。"
+          },
+          "reviewMore": "ほかの項目はここには表示していません。",
+          "reviewTitle": "要確認",
+          "shareUnknown": "構成比は不明",
+          "title": "純ポジション",
+          "unscoreable": "評価対象なし",
+          "withheld": "記載なし"
+        },
+        "obligations": {
+          "amountMissing": "金額の記録なし",
+          "complete": "すべての金額が記録されています",
+          "currenciesTitle": "通貨別",
+          "disclaimerBody": "これは記録された債務の合計であり、支払うべきすべてではありません。",
+          "disclaimerTitle": "この合計の意味",
+          "dueLabel": "期日",
+          "dueMissing": "支払期日の記録なし",
+          "evidenceLabel": "裏づけとなる事実",
+          "evidenceMissing": "裏づけとなる事実の記録なし",
+          "none": "債務は記録されていません。何も負っていないという意味ではありません。",
+          "notProjected": "この一覧は記録元から再構築されていません。",
+          "notSummable": "通貨が一つに定まらないため、合計は表示しません。",
+          "partial": "一部の金額が記録されていません",
+          "projectedLabel": "記録から再構成",
+          "quantifiedLabel": "金額の記録あり",
+          "recordedLabel": "記録された債務",
+          "retiredLabel": "終了",
+          "skippedLabel": "対象外",
+          "staleTitle": "最近更新されていません",
+          "syncTitle": "投影",
+          "title": "金額が判明している合計",
+          "truncated": "ここに表示している以上の債務があります。",
+          "unquantifiedLabel": "金額の記録なし",
+          "unspecifiedCurrency": "通貨のない金額の記録",
+          "withheld": "記載なし"
+        },
+        "cashFlow": {
+          "title": "支出予定",
+          "complete": "記録されたものはすべて予定に入っています",
+          "partial": "一部の債務が除かれています",
+          "withheld": "記載なし",
+          "notSummable": "通貨が一つに定まらないため、合計は表示しません。",
+          "outflowsTitle": "この予定表の意味",
+          "notProjected": "この予定表は記録元から再構築されていません。",
+          "scheduledLabel": "予定済み",
+          "seenLabel": "確認した債務",
+          "excludedLabel": "除外",
+          "noneScheduled": "記録されたもののうち、期日が判明しているものはありません。債務がないという意味ではありません。",
+          "truncated": "ここに表示している以上の債務があります。",
+          "mixedCurrency": "この合計が示さない通貨のものが{{count}}件あり、合計から除いています。",
+          "bucketsTitle": "期日別",
+          "bucketCountLabel": "債務",
+          "bucketMissing": "報告なし",
+          "bucketUndeclared": "期間の説明なし",
+          "bucketBefore": "{{to}}日以内",
+          "bucketDueNow": "支払期限が到来済み",
+          "bucketAfter": "{{from}}日を超える",
+          "bucketBetween": "{{from}}〜{{to}}日",
+          "excludedTitle": "どの期間にも入らないもの",
+          "excludedBody": "これらの債務は実在します。位置づけに必要な情報が記録されていないため、上のどの期間にも入っていません。",
+          "undated": "支払期日の記録なし",
+          "unquantified": "金額の記録なし",
+          "undatedAndUnquantified": "期日も金額も記録なし",
+          "amountMissing": "金額の記録なし",
+          "unspecifiedCurrency": "通貨のない金額の記録",
+          "dueLabel": "期日",
+          "dueMissing": "支払期日の記録なし",
+          "overdue": "期日超過",
+          "evidenceLabel": "裏づけとなる事実",
+          "evidenceMissing": "裏づけとなる事実の記録なし",
+          "syncTitle": "投影",
+          "projectedLabel": "記録から再構成",
+          "skippedLabel": "対象外"
+        },
+        "exposure": {
+          "basisTitle": "順位付けの基準",
+          "complete": "完全",
+          "partial": "部分的",
+          "withheld": "記載なし",
+          "noBasis": "順位付けの分母となる合計がありません",
+          "basis": {
+            "priced_asset_value": "価格の付いた資産の評価額",
+            "quantified_liability_amount": "金額が判明している負債の合計"
+          },
+          "pricedOf": "{{total}}件中{{priced}}件に価格あり",
+          "pricingCoverage": "価格の網羅率",
+          "dimensionCount": "{{total}}件中{{known}}件",
+          "pricingUnknown": "価格の網羅率は算出できません",
+          "blindSpotTitle": "この順位に含まれないもの",
+          "blindSpotBody": "これらの保有には価格がないため、最下位ではなく順位そのものから外れています。いずれも先頭の行より大きい可能性があります。",
+          "unpricedUnnamed": "価格も名称もないもの",
+          "pricesUnavailable": "リアルタイム価格を取得できなかったため、この順位は最新ではありません。",
+          "readAt": "取得時刻",
+          "assetsTitle": "価格の付いた資金の所在",
+          "shareUnknown": "比率の記載なし",
+          "sharesOfPriced": "比率は上記の「価格の付いた合計」に対するもので、記録されたすべてに対するものではありません。",
+          "unrankedTail": "価格はあるが順位に含まれないもの",
+          "basisMismatch": "順位付け済みと未順位の件数の合計が、価格の付いた保有件数と一致しません。この順位は上に示した合計に対するものではない可能性があります。",
+          "rankedMismatch": "サーバーの順位件数が、送信された行数と一致しません。",
+          "noHoldings": "保有の記録がないため順位付けできません。これは「何も所有していない」とは異なります。",
+          "nonePriced": "保有は記録されていますが、いずれにも価格がないため順位付けできません。",
+          "pricedButUnrankable": "価格の付いた保有を合計しても、順位付けの分母になりません。",
+          "liabilitiesTitle": "金額が判明している負債の所在",
+          "liabilitiesGrouped": "債権者別ではなく、債務の種類別にまとめています。",
+          "noLiabilities": "債務の記録はありません。これは「何も負っていない」とは異なります。",
+          "noneQuantified": "金額が記録された債務がないため、順位付けできません。",
+          "quantifiedOf": "{{total}}件中{{done}}件の債務に金額あり",
+          "excludedTitle": "この順位から除外されたもの",
+          "excludedUnquantified": "金額の記録なし",
+          "excludedForeignCurrency": "別の通貨",
+          "excludedUnspecifiedCurrency": "通貨の記載なし",
+          "otherCurrencies": "通貨別に除外した分",
+          "liabilitiesTruncated": "債務の一覧は打ち切られているため、順位付けされた以上に存在する可能性があります。",
+          "unmeasuredTitle": "このタブが測っていないもの",
+          "unmeasuredBody": "記録に存在しないため、ここでは「問題なし」ではなく「不明」です。この沈黙は安全の保証ではありません。",
+          "unmeasured": {
+            "counterparty": "取引相手ごとの集中",
+            "custodian": "保管先・取引場所ごとの集中",
+            "geography": "地域的な集中",
+            "sector": "業種の集中",
+            "assetCurrency": "資産そのものの通貨"
+          }
+        }
+      },
+      "attention": {
+        "title": "要対応",
+        "none": "現在、対応が必要なものはありません。",
+        "unavailable": "対応が必要な項目を現在確認できませんでした。"
+      },
+      "quick": {
+        "title": "クイック操作",
+        "record": "記録する",
+        "addFact": "ファクトを追加"
+      },
+      "valueTypes": {
+        "STRING": "テキスト",
+        "NUMBER": "数値",
+        "MONEY": "金額",
+        "PERCENT": "割合",
+        "DATE": "日付",
+        "BOOLEAN": "はい・いいえ"
+      },
       "feature": {
         "loading": "この機能を確認しています…",
         "retry": "再試行",
@@ -4701,6 +4938,35 @@
           "body": "読み込めませんでした。"
         }
       },
+      "documents": {
+        "subtitle": "提供されたドキュメントから事実を読み取ります。確認なしに記録されることはありません。",
+        "upload": "ドキュメントをアップロード",
+        "uploading": "アップロード中…",
+        "duplicate": {
+          "title": "すでに登録済み",
+          "body": "この同じファイルは以前にアップロード済みです。既存のコピーが保持されます。"
+        },
+        "uploadFailed": "アップロードに失敗しました",
+        "reviewFailed": "レビューに失敗しました",
+        "empty": {
+          "title": "ドキュメントはまだありません",
+          "body": "アップロードしたドキュメントは、読み取られた内容とともにここに表示されます。"
+        },
+        "states": {
+          "EXTRACTED": "読み取り済み",
+          "NO_CLAIMS": "抽出できる内容なし",
+          "PROVIDER_REQUIRED": "プロバイダー待ち",
+          "FAILED": "読み取れませんでした"
+        },
+        "claims": {
+          "title": "提案された事実",
+          "none": "このドキュメントから提案された事実はありません。",
+          "accept": "承認",
+          "reject": "却下",
+          "ACCEPTED": "承認済み",
+          "REJECTED": "却下済み"
+        }
+      },
       "people": {
         "subtitle": "あなた自身のオフィスに記録された人々です。誰かについて外部で調べることはありません。",
         "add": "人物を追加",
@@ -4724,6 +4990,115 @@
           "nothing": "この人物についてはまだ何も記録されていません。"
         }
       },
+      "briefings": {
+        "subtitle": "あなた自身の記録から組み立てられたブリーフィングです。外部からは何も追加されません。",
+        "generate": "ブリーフィングを準備",
+        "generating": "準備中…",
+        "generateFailed": "ブリーフィングを準備できませんでした",
+        "itemCount_one": "{{count}}項目",
+        "itemCount_other": "{{count}}項目",
+        "noItems": "このブリーフィングは空です — 記録に報告すべき内容がありませんでした。",
+        "empty": {
+          "title": "ブリーフィングはまだありません",
+          "body": "準備すると、その時点の記録から組み立てられます。"
+        },
+        "sections": {
+          "PEOPLE": "人物",
+          "OBLIGATIONS": "義務",
+          "EVENTS": "イベント",
+          "DECISIONS": "決定",
+          "REQUESTS": "リクエスト",
+          "RISKS": "リスク",
+          "OPPORTUNITIES": "機会"
+        }
+      },
+      "shield": {
+        "subtitle": "あなた自身の記録の露出を確認します。下に挙げた項目だけを見ます。",
+        "openFindings_one": "未解決の検出{{count}}件",
+        "openFindings_other": "未解決の検出{{count}}件",
+        "severity": {
+          "HIGH": "高",
+          "MEDIUM": "中",
+          "LOW": "低"
+        },
+        "scan": "チェックを実行",
+        "scanning": "チェック中…",
+        "scanFailed": "チェックを実行できませんでした",
+        "checksTitle": "チェック対象",
+        "checksHint": "「検出なし」は、ここに挙げたチェックの範囲で何もなかったという意味です — それ以上ではありません。",
+        "externalTitle": "外部ではチェックされていません",
+        "externalMonitored": "外部プロバイダーが監視中",
+        "externalNotMonitored": "外部プロバイダーによる監視はありません",
+        "empty": {
+          "title": "未解決の検出はありません",
+          "body": "上に挙げたチェックの範囲では何も見つかりませんでした。この意味はそれ以上でも以下でもありません。"
+        },
+        "status": {
+          "OPEN": "未解決",
+          "ACKNOWLEDGED": "確認済み",
+          "RESOLVED": "解決済み",
+          "DISMISSED": "却下済み"
+        },
+        "acknowledge": "確認",
+        "resolve": "解決済みにする",
+        "dismiss": "却下",
+        "updateFailed": "更新できませんでした"
+      },
+      "concierge": {
+        "subtitle": "人が対応するリクエスト窓口です。ここの返信はすべて人間が書いたものです。",
+        "newRequest": "新しいリクエスト",
+        "submitFailed": "送信できませんでした",
+        "sendFailed": "送信できませんでした",
+        "cancelFailed": "キャンセルできませんでした",
+        "cancelRequest": "このリクエストをキャンセル",
+        "empty": {
+          "title": "リクエストはまだありません",
+          "body": "送信したリクエストは、履歴とともにここに表示されます。"
+        },
+        "desk": {
+          "staffed_one": "対応中のオペレーター{{count}}名",
+          "staffed_other": "対応中のオペレーター{{count}}名",
+          "unstaffed": "現在対応中のオペレーターはいません"
+        },
+        "form": {
+          "title": "何が必要ですか？",
+          "description": "詳細（任意）",
+          "category": "カテゴリ",
+          "priority": "優先度",
+          "submit": "送信",
+          "cancel": "キャンセル"
+        },
+        "categories": {
+          "GENERAL": "一般",
+          "TRAVEL": "旅行",
+          "LEGAL": "法務",
+          "FINANCIAL": "財務",
+          "PERSONAL": "個人",
+          "RESEARCH": "リサーチ",
+          "ADMIN": "事務"
+        },
+        "priorities": {
+          "LOW": "低",
+          "NORMAL": "通常",
+          "HIGH": "高",
+          "URGENT": "緊急"
+        },
+        "statusWords": {
+          "OPEN": "受付済み",
+          "IN_PROGRESS": "対応中",
+          "WAITING_ON_USER": "あなたの返答待ち",
+          "WAITING_ON_PROVIDER": "プロバイダー待ち",
+          "COMPLETED": "完了",
+          "CANCELED": "キャンセル済み"
+        },
+        "thread": {
+          "none": "メッセージはまだありません。",
+          "operator": "オペレーター",
+          "you": "あなた",
+          "placeholder": "メッセージを書く…",
+          "send": "送信"
+        }
+      },
       "meetings": {
         "subtitle": "プライベート回線での安全なミーティング。待機室とホスト管理は画面ではなくサーバーが実施します。",
         "instant": "今すぐミーティングを開始",
@@ -4739,38 +5114,17 @@
         "scheduleFailed": "予約できませんでした",
         "startFailed": "開始できませんでした",
         "cancelFailed": "キャンセルできませんでした",
-        "rescheduleFailed": "再スケジュールできませんでした",
         "start": "開始",
         "cancel": "キャンセル",
-        "reschedule": "再スケジュール",
-        "saveChanges": "変更を保存",
         "untitled": "ミーティング",
         "details": "{{title}} の詳細",
         "liveNow": "開催中",
         "durationMinutes_one": "{{count}}分",
         "durationMinutes_other": "{{count}}分",
-        "confirmed": {
-          "title": "会議を予定しました",
-          "when": "日時",
-          "duration": "所要時間",
-          "guests": "招待済み",
-          "guestsNone": "まだ誰も招待していません。会議の中からいつでも招待できます。",
-          "memberFallback": "メンバー {{id}}",
-          "someone": "ゲストのお一人",
-          "reminders": "リマインダー",
-          "remindersNone": "この会議にリマインダーは設定されていません。",
-          "reminderSkipped": "開催が近すぎるため送信されません",
-          "meetingId": "会議 ID",
-          "meetingCode": "招待コード",
-          "done": "完了",
-          "skipped": {
-            "emailRequired": "未招待 — メールアドレスがありません",
-            "emailInvalid": "未招待 — このアドレスは使用できません",
-            "tooMany": "未招待 — この会議にはゲストが多すぎます",
-            "isHost": "すでに参加中 — あなたが主催者です",
-            "alreadyIn": "すでにこの会議にいます",
-            "unavailable": "招待できませんでした"
-          }
+        "presets": {
+          "in15m": "{{minutes}}分後",
+          "in1h": "{{hours}}時間後",
+          "tomorrowMorning": "明日 {{time}}"
         },
         "buckets": {
           "live": "開催中",
@@ -4879,52 +5233,82 @@
             "feature_disabled": "接続中にミーティング機能がオフになりました。",
             "generic": "ミーティングは終了しました。"
           }
+        }
+      },
+      "conversations": {
+        "title": "プライベート会話",
+        "subtitle": "分類され、関係する業務に紐づけられたオフィスのスレッド。",
+        "unread": "未読",
+        "archived": "アーカイブ済み",
+        "filters": {
+          "all": "すべて"
         },
-        "calendar": {
-          "browse": "カレンダーを見る",
-          "previousMonth": "前の月",
-          "nextMonth": "次の月",
-          "pickMonth": "月を選択",
-          "pickYear": "年を選択",
-          "jumpToYear": "年を指定して移動",
-          "today": "今日",
-          "close": "閉じる",
-          "loadFailed": "この月を読み込めませんでした。もう一度試すか、別の月に移動してください。",
-          "noneOnDay": "この日の予定はありません。",
-          "dayWithMeetings_other": "{{day}}、{{count}}件のミーティング"
+        "scopes": {
+          "DIRECT": "ダイレクト",
+          "GROUP": "グループ",
+          "ORGANIZATION_ROOM": "組織ルーム",
+          "PROJECT_ROOM": "プロジェクトルーム"
         },
-        "wizard": {
-          "steps": {
-            "date": "日付を選ぶ",
-            "time": "時刻を選ぶ",
-            "zone": "タイムゾーンを確認",
-            "duration": "所要時間は？",
-            "details": "タイトルと議題",
-            "guests": "参加するのは誰ですか？",
-            "review": "確認"
-          },
-          "timeHint": "ミーティングが行われる場所での表示時刻です。",
-          "zoneHint": "全員が同じ一瞬に招待されます。その一瞬を決めるのがタイムゾーンです。",
-          "zoneUnknown": "この端末はタイムゾーンを報告しなかったため、ミーティングは UTC として扱われます。",
-          "looksPast": "この端末の時計では既に過ぎています。最終判断はサーバーが行います。",
-          "customDuration": "任意の長さ（分）",
-          "durationRange": "{{min}} 分から {{max}} 分の間で選んでください。",
-          "agendaField": "議題（任意）",
-          "inviteLater": "ミーティングを作成した後に招待できます。",
-          "guestsHint": "ここに追加した全員に招待とリマインダーが届きます。PulseSoc のアカウントは不要です。",
-          "guestsNone": "ゲストはまだいません。今すぐ追加することも、後から招待することもできます。",
-          "guestsNoneShort": "まだ誰もいません",
-          "guestName": "氏名（任意）",
-          "guestEmail": "メールアドレス",
-          "addGuest": "ゲストを追加",
-          "updateGuest": "ゲストを更新",
-          "editGuest": "{{name}} を編集",
-          "removeGuest": "{{name}} を削除",
-          "remove": "削除",
-          "guestEmailInvalid": "招待を送れるようにメールアドレスを入力してください。",
-          "guestDuplicate": "そのアドレスはすでにリストにあります。",
-          "back": "戻る",
-          "next": "次へ"
+        "empty": {
+          "title": "プライベート会話はまだありません",
+          "body": "オフィス会話として分類されたスレッドが、範囲とリンクとともにここに表示されます。"
+        },
+        "create": {
+          "open": "新しい会話",
+          "failed": "会話を作成できませんでした",
+          "boundScopeNote": "組織ルームとプロジェクトルームは、所属する組織ノードまたはプロジェクトから作成します。"
+        },
+        "sensitivity": {
+          "title": "機密度",
+          "note": "このスレッドの取り扱いと共有できる相手を決めます。メッセージの送信方法は変わりません。",
+          "failed": "機密度を変更できませんでした",
+          "unknownLabel": "保存されている機密度",
+          "PUBLIC": "公開",
+          "INTERNAL": "社内",
+          "CONFIDENTIAL": "機密",
+          "HIGHLY_SENSITIVE": "最高機密",
+          "RESTRICTED": "制限付き"
+        },
+        "links": {
+          "title": "リンク",
+          "note": "リンクは参照です。外しても、参照先のドキュメント・記録・ファクト・ミーティングは削除されません。",
+          "empty": "この会話にはまだ何もリンクされていません。",
+          "remove": "リンクを外す",
+          "failed": "リンクを変更できませんでした"
+        },
+        "linkTypes": {
+          "DOCUMENT": "ドキュメント",
+          "RECORD": "記録",
+          "FACT": "ファクト",
+          "MEETING": "ミーティング",
+          "ORGANIZATION_NODE": "組織",
+          "PROJECT": "プロジェクト"
+        },
+        "security": {
+          "title": "セキュリティ",
+          "notEncrypted": "メッセージは通信経路とサーバー上のアクセス制御によって保護されています。エンドツーエンド暗号化ではないため、サーバーは内容を読み取れます。",
+          "encrypted": "この会話のメッセージはエンドツーエンドで暗号化されています。",
+          "ledger": "メッセージの保存先",
+          "rtc": "通話"
+        },
+        "info": {
+          "title": "会話の詳細",
+          "subtitle": "このスレッドのオフィス分類です。メッセージ自体は通常の会話にあります。",
+          "open": "会話の詳細",
+          "openThread": "会話を開く",
+          "classification": "分類",
+          "scope": "範囲",
+          "archivedYes": "はい",
+          "notFound": {
+            "title": "オフィス会話ではありません",
+            "body": "このスレッドにはプライベートオフィスの分類がありません。メッセージからは引き続き利用できます。"
+          }
+        },
+        "untitled": "無題の会話",
+        "linked": {
+          "title": "話題になった会話",
+          "unavailable": "リンクされた会話を確認できませんでした。",
+          "none": "参加している会話では触れられていません。"
         }
       }
     },
@@ -5034,45 +5418,6 @@
       "dominance": "BTCドミナンス",
       "gainers": "上昇率上位",
       "losers": "下落率上位"
-    }
-  },
-  "translation": {
-    "eyebrow": "翻訳",
-    "translate": "翻訳",
-    "translating": "翻訳中…",
-    "translateNow": "今すぐ翻訳",
-    "translateNowHint": "このメッセージを{{language}}に翻訳します。",
-    "viewOriginal": "原文を表示",
-    "showOriginalHint": "元のメッセージに戻ります。",
-    "translatedFrom": "{{language}}から翻訳",
-    "translatedLabel": "翻訳済み",
-    "always": "常に",
-    "never": "しない",
-    "alwaysTranslate": "常に翻訳",
-    "alwaysTranslateHint": "PulseSocがこの言語を検出したときに自動的に翻訳します。",
-    "neverTranslate": "翻訳しない",
-    "neverTranslateHint": "この言語は原文のまま表示します。",
-    "optionsTitle": "メッセージの言語オプション",
-    "downloadLanguage": "言語をダウンロード",
-    "downloadExplainer": "PulseSocはAppleのプライベートなオンデバイス翻訳を使用します。Appleが必要な言語をこのiPhoneにダウンロードすることがあります。",
-    "tryAgain": "再試行",
-    "failure": {
-      "unavailable": "翻訳を利用できません",
-      "unsupportedLanguage": "この言語はこのデバイスでは翻訳できません。",
-      "downloadFailed": "言語のダウンロードが完了しませんでした。",
-      "offline": "この言語をダウンロードするにはインターネットに接続してください。",
-      "preferenceNotSaved": "翻訳の設定を保存できませんでした。"
-    },
-    "a11y": {
-      "controls": "翻訳コントロール。翻訳先の言語: {{language}}。",
-      "translateTo": "{{language}}に翻訳",
-      "showOriginal": "原文を表示",
-      "options": "翻訳オプション。翻訳されたテキストを表示中。",
-      "alwaysTo": "常に{{language}}に翻訳",
-      "neverTo": "{{language}}に翻訳しない",
-      "closeOptions": "翻訳オプションを閉じる",
-      "retry": "翻訳を再試行",
-      "download": "{{language}}の言語をこのデバイスにダウンロード"
     }
   }
 }

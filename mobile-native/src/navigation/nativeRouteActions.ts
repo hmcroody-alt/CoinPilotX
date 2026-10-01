@@ -71,33 +71,6 @@ function activityRouteCategory(value: string | null): ActivityRouteCategory | un
   return ACTIVITY_ROUTE_CATEGORIES.find((category) => category === normalized);
 }
 
-/**
- * Segments after `/pulse/merchant/` that are screens, not store ids.
- *
- * A mirror of `reserved_ids` on the `store` descriptor in
- * `services/app_links.py`, which is the authority: it is what stops the server
- * ever minting a store link that collides with one of these. Each also has its
- * own entry in `linking.ts`, listed *above* `MerchantProfile` so the cold-start
- * resolver prefers the screen.
- *
- * This list exists because a store id is a slug — `ID_KIND_SLUG` — so
- * `([^/]+)` is the only honest capture, and it matches these three as happily
- * as it matches a real store. The failure that produces is the bad kind: not a
- * dead link but a *wrong screen*, an empty storefront for a seller named
- * "payouts", with nothing raised. Stripe Connect's return_url is
- * `/pulse/merchant/payouts`, so that particular collision would have stranded
- * every seller finishing onboarding.
- *
- * Kept as data rather than inlined into the pattern so that the next reserved
- * word is one line here and one line in `app_links.py`, and so a test can
- * assert the two lists agree.
- */
-export const MERCHANT_RESERVED_SEGMENTS = ["apply", "dashboard", "payouts"] as const;
-
-const STORE_PATH = new RegExp(
-  `^/pulse/(?:stores?|business(?:es)?|merchants?)/(?!(?:${MERCHANT_RESERVED_SEGMENTS.join("|")})/?$)([^/]+)/?$`
-);
-
 export type NativeObjectDestination = {
   screen: string;
   params?: Record<string, unknown>;
@@ -115,20 +88,7 @@ export function nativeObjectDestination(routePath: string): NativeObjectDestinat
   const notificationMatch = path.match(/^\/pulse\/notifications\/([1-9]\d*)\/?$/);
   const briefingMatch = path.match(/^\/pulse\/briefings\/([1-9]\d*)\/?$/);
   const eventMatch = path.match(/^\/pulse\/events\/([1-9]\d*)\/?$/);
-  // `merchant` belongs here because it is the *canonical* spelling, not an alias:
-  // `services/app_links.py` emits `/pulse/merchant/{id}` for every store link the
-  // server produces — share sheets, emails, notifications and the PulseDrop
-  // commerce overlay's seller route all use it. `linking.ts` already maps
-  // `pulse/merchant/:sellerId` to MerchantProfile, so a cold-start universal link
-  // opened the store while an in-app tap on the identical path resolved to null
-  // and did nothing. Two resolvers for one path disagreeing is exactly what the
-  // crypto matcher below is commented against.
-  //
-  // A store id is a slug, not a number (`app_links.py` marks it `ID_KIND_SLUG`),
-  // so the capture cannot be narrowed to digits and the reserved segments have
-  // to be named. See `MERCHANT_RESERVED_SEGMENTS` for which, and why that list
-  // is not written out here.
-  const storeMatch = path.match(STORE_PATH);
+  const storeMatch = path.match(/^\/pulse\/(?:stores?|business(?:es)?)\/([^/]+)\/?$/);
   const adMatch = path.match(/^\/pulse\/(?:ads?|advertisements?)\/([1-9]\d*)\/?$/);
   const undxTaskMatch = path.match(/^\/pulse\/(?:undx|ai)\/tasks\/([^/]+)\/?$/);
   const callMatch = path.match(/^\/pulse\/calls\/([^/]+)\/?$/);
@@ -146,27 +106,7 @@ export function nativeObjectDestination(routePath: string): NativeObjectDestinat
   if (reelMatch) return { screen: "ReelDetail", params: { reelId: positiveId(reelMatch[1]), title: "Reel" } };
   if (statusMatch) return { screen: "StatusDetail", params: { statusId: positiveId(statusMatch[1]), title: "Status" } };
   if (liveMatch) return { screen: "LiveDetail", params: { liveId: positiveId(liveMatch[1]), title: "Live" } };
-  // `MarketplaceProduct`, not `MarketplaceDetail`. `MarketplaceDetail` renders
-  // `MarketplaceScreen` -- the browse grid -- which opened the product only when
-  // the id happened to appear in the page of rows its own search had just
-  // returned, and silently stayed on the grid otherwise. So a link to a real
-  // listing landed on the catalogue, which is the "wrong product" outcome a
-  // shared product URL exists to prevent. `MarketplaceProduct` resolves the id
-  // against the listing read endpoint and can therefore open any listing.
-  if (listingMatch) return { screen: "MarketplaceProduct", params: { listingId: positiveId(listingMatch[1]), title: "Marketplace" } };
-  // The cart carries no id and still belongs here, because what this function
-  // really answers is "which screen does this URL name" -- and every resolver in
-  // the app has to give the same answer. The cart is the case that proves it: the
-  // screen existed, `app_links.py` declared it, and each of the three resolvers
-  // independently failed to reach it, one of them by rewriting the request into
-  // the Activity Inbox. Declaring it once here is what makes cold start, an
-  // in-app tap and a push tap agree.
-  //
-  // `marketplace_cart_items` is keyed on the buyer and lives on the server, so
-  // the URL needs no cart identity and must never carry one: the screen asks who
-  // is signed in. That is also why an anonymous arrival is safe -- there is
-  // nothing in the link to leak or replay.
-  if (path === "/pulse/cart") return { screen: "MarketplaceCart" };
+  if (listingMatch) return { screen: "MarketplaceDetail", params: { listingId: positiveId(listingMatch[1]), title: "Marketplace" } };
   if (messageMatch) return { screen: "Chat", params: { conversationId: positiveId(messageMatch[1]), title: "Conversation" } };
   if (notificationMatch) return { screen: "NotificationCenter", params: { notificationId: positiveId(notificationMatch[1]) } };
   if (briefingMatch) return { screen: "BriefingDetail", params: { briefingId: positiveId(briefingMatch[1]) } };

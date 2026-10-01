@@ -29,18 +29,12 @@ import { PulseApiError } from "../pulseApi";
 import {
   changeOfficePasscode,
   getOfficeSecurityStatus,
+  getPrivateFacts,
   lockOffice,
   resetOfficePasscode,
   setupOfficePasscode,
   unlockOffice
 } from "../privateOffice";
-// The lock is only observable through a read it guards, so this suite needs one
-// as a subject. It used to be `getPrivateFacts`; Private Facts was withdrawn,
-// and the claims below are about the lock rather than about facts, so they move
-// to `getPrivatePeople` — a Relationship Intelligence read behind the same
-// `officeRequestHeaders()` and the same refusal translation — instead of
-// leaving with the feature that happened to be carrying them.
-import { getPrivatePeople } from "../privateFeatures";
 import {
   OFFICE_DEVICE_HEADER,
   OFFICE_GRANT_HEADER,
@@ -70,39 +64,39 @@ beforeEach(() => {
   __resetOfficeLockForTests();
 });
 
-describe("a gated Office read and the second lock", () => {
+describe("getPrivateFacts and the second lock", () => {
   it("maps a 423 to LOCKED before any entitlement word gets a say", async () => {
     // A body that ALSO claims NOT_ENTITLED must still land on LOCKED: the 423
     // carries the one instruction that matters — unlock, or set up.
     mockPulseApi.mockRejectedValueOnce(
       apiError(423, { state: "NOT_ENTITLED", minimum_tier: "gold", setup_required: false })
     );
-    expect(await getPrivatePeople()).toEqual({ state: "LOCKED", setupRequired: false });
+    expect(await getPrivateFacts("finance")).toEqual({ state: "LOCKED", setupRequired: false });
   });
 
   it("recognises the lock by state word alone, and carries setup_required", async () => {
     mockPulseApi.mockRejectedValueOnce(
       apiError(403, { state: "PRIVATE_OFFICE_LOCKED", setup_required: true })
     );
-    expect(await getPrivatePeople()).toEqual({ state: "LOCKED", setupRequired: true });
+    expect(await getPrivateFacts()).toEqual({ state: "LOCKED", setupRequired: true });
   });
 
   it("still names the other refusals when no lock is involved", async () => {
     mockPulseApi.mockRejectedValueOnce(
       apiError(403, { state: "NOT_ENTITLED", minimum_tier: "gold" })
     );
-    expect(await getPrivatePeople()).toEqual({ state: "NOT_ENTITLED", minimumTier: "gold" });
+    expect(await getPrivateFacts()).toEqual({ state: "NOT_ENTITLED", minimumTier: "gold" });
 
     mockPulseApi.mockRejectedValueOnce(apiError(503, {}));
-    expect(await getPrivatePeople()).toEqual({ state: "UNAVAILABLE" });
+    expect(await getPrivateFacts()).toEqual({ state: "UNAVAILABLE" });
 
     mockPulseApi.mockRejectedValueOnce(new TypeError("network down"));
-    expect(await getPrivatePeople()).toEqual({ state: "ERROR", message: "" });
+    expect(await getPrivateFacts()).toEqual({ state: "ERROR", message: "" });
   });
 
   it("sends the device header on every read, and the grant only once unlocked", async () => {
-    mockPulseApi.mockResolvedValue({ people: [] });
-    await getPrivatePeople();
+    mockPulseApi.mockResolvedValue({ facts: [], domain: "finance" });
+    await getPrivateFacts("finance");
     const locked = lastRequest().options.headers as Record<string, string>;
     expect(locked[OFFICE_DEVICE_HEADER]).toBeTruthy();
     expect(locked[OFFICE_GRANT_HEADER]).toBeUndefined();
@@ -113,7 +107,7 @@ describe("a gated Office read and the second lock", () => {
     });
     await unlockOffice("824913", USER);
 
-    await getPrivatePeople();
+    await getPrivateFacts("finance");
     const unlocked = lastRequest().options.headers as Record<string, string>;
     expect(unlocked[OFFICE_GRANT_HEADER]).toBe(TOKEN);
   });
@@ -223,9 +217,7 @@ describe("getOfficeSecurityStatus", () => {
       setupRequired: false,
       cooldownSeconds: 30,
       biometricPreference: "enabled",
-      unlocked: true,
-      // A 200 is not a refusal, so there is no tier to name.
-      upgradeTier: null
+      unlocked: true
     });
   });
 
@@ -237,9 +229,7 @@ describe("getOfficeSecurityStatus", () => {
       setupRequired: false,
       cooldownSeconds: 0,
       biometricPreference: "unset",
-      unlocked: false,
-      // "We could not look" is the one answer that must never carry a price.
-      upgradeTier: null
+      unlocked: false
     });
   });
 
@@ -256,44 +246,8 @@ describe("getOfficeSecurityStatus", () => {
       setupRequired: false,
       cooldownSeconds: 0,
       biometricPreference: "unset",
-      unlocked: false,
-      // This body named no tier, and none is invented. `_gate` refuses an
-      // unrecognised verdict generically rather than guessing precisely so it
-      // never asks for money without naming a price; substituting a plausible
-      // rung here would undo that on the client.
-      upgradeTier: null
+      unlocked: false
     });
-  });
-
-  /**
-   * The tier the refusal names, carried rather than dropped.
-   *
-   * `_gate` has always sent `minimum_tier` alongside "Your plan does not
-   * include this" — the sentence and the rung that would satisfy it travel
-   * together — and this client used to keep the status code and discard the
-   * body. That left one door covering two different people: a member whose
-   * membership lapsed, and a member whose membership is perfectly active but
-   * whose tier does not reach this far up the ladder. Both get an identical
-   * 403, so without the rung there is nothing to tell them apart, and the
-   * second person was told to renew a membership that had not lapsed.
-   */
-  it("carries the tier a 403 names, so the door can tell 'lapsed' from 'higher rung'", async () => {
-    mockPulseApi.mockRejectedValueOnce(
-      apiError(403, { state: "NOT_ENTITLED", minimum_tier: "PRIVATE" })
-    );
-    const status = await getOfficeSecurityStatus();
-    expect(status.state).toBe("UPGRADE_REQUIRED");
-    expect(status.upgradeTier).toBe("PRIVATE");
-  });
-
-  it("does not attach a tier to an outage", async () => {
-    // Belt and braces for the asymmetry above: a 503 carrying a stray
-    // `minimum_tier` must still name no price. Reading the field off anything
-    // but a 403 would let a degraded resolve bill someone for downtime.
-    mockPulseApi.mockRejectedValueOnce(apiError(503, { minimum_tier: "PRIVATE" }));
-    const status = await getOfficeSecurityStatus();
-    expect(status.state).toBe("UNAVAILABLE");
-    expect(status.upgradeTier).toBeNull();
   });
 
   it("leaves the server's other refusals on the UNAVAILABLE path", async () => {
@@ -346,8 +300,7 @@ describe("the owner's path through the door", () => {
       setupRequired: true,
       cooldownSeconds: 0,
       biometricPreference: "unset",
-      unlocked: false,
-      upgradeTier: null
+      unlocked: false
     });
     // The assertion that names the bug: no renew path is reachable from here.
     expect(status.state).not.toBe("UPGRADE_REQUIRED");
@@ -366,7 +319,7 @@ describe("the owner's path through the door", () => {
           setup_required: setupRequired
         })
       );
-      expect(await getPrivatePeople()).toEqual({ state: "LOCKED", setupRequired });
+      expect(await getPrivateFacts()).toEqual({ state: "LOCKED", setupRequired });
     }
   });
 });

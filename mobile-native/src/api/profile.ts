@@ -2,7 +2,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { absoluteApiUrl, PULSE_API_BASE_URL } from "./config";
 import { FeedResponse, listFeed, normalizePosts, PulsePost } from "./feed";
 import { PulseApiError, pulseApi } from "./pulseApi";
-import { readJsonCacheEntry, writeJsonCache } from "../core/cache";
 import {
   NativeProfileTarget,
   ProfileTargetInput,
@@ -66,34 +65,6 @@ export type PulseProfile = {
   system_account_label?: string;
   automation_disclosure?: string;
   transparency_disclosure?: string;
-  /**
-   * How to lay out a first-party brand cover, and the true shape of the file.
-   *
-   * Only official accounts whose cover is a *designed banner* send these. The
-   * banner carries a centred wordmark, so filling the hero with it crops the
-   * wordmark; `"contain"` asks for the whole image inside a box of
-   * `brand_cover_aspect_ratio`. Absent — which is every human profile — the
-   * cover is a photograph and fills the hero as before.
-   *
-   * Server-authored on purpose. This used to be a filename match plus a
-   * hard-coded ratio in a stylesheet, which meant redating the artwork silently
-   * disabled the treatment and a second official account could not have it
-   * without an app release.
-   */
-  brand_cover_fit?: "contain" | string;
-  brand_cover_aspect_ratio?: number;
-  /**
-   * Whether follower/following counts mean anything for this account.
-   *
-   * `false` only for an account that cannot be followed at all — PulseSoc
-   * Insight lives at `user_id=0`, so no follow row can point at it and its
-   * count is undefined rather than zero. Defaulted to `true` by
-   * `normalizeProfile`, so an older server that omits it is read as an ordinary
-   * account, which every human profile is.
-   *
-   * Not a synonym for `automated`: @pulsedrop is automated *and* followable.
-   */
-  has_social_graph?: boolean;
   /**
    * Server-authored answer to what this viewer may see about this profile
    * owner, keyed snake_case as the API returns it. Profile OS destinations gate
@@ -308,27 +279,20 @@ export async function listPublicProfilePosts(input: ProfileTargetInput | NativeP
   }
 }
 
-/**
- * A cached profile together with what is known about its age.
- *
- * Profiles are the one cache that is also *written* by local edits — six
- * `update*` helpers above read the cache, merge a field and write it back — so
- * `storedAt` here means "when this client last had a complete picture", which
- * is exactly what a header needs before it tells someone their own follower
- * count is current.
- */
-export async function loadCachedProfileEntry(cacheKey: string | NativeProfileTarget = "me") {
-  const resolvedCacheKey = typeof cacheKey === "string" ? cacheKey : profileCacheKey(cacheKey);
-  return readJsonCacheEntry<PulseProfile>(`${PROFILE_CACHE_PREFIX}${resolvedCacheKey}`, normalizeProfile);
-}
-
 export async function loadCachedProfile(cacheKey: string | NativeProfileTarget = "me") {
-  const entry = await loadCachedProfileEntry(cacheKey);
-  return entry ? entry.value : null;
+  const resolvedCacheKey = typeof cacheKey === "string" ? cacheKey : profileCacheKey(cacheKey);
+  try {
+    const cached = await AsyncStorage.getItem(`${PROFILE_CACHE_PREFIX}${resolvedCacheKey}`);
+    if (!cached) return null;
+    return normalizeProfile(JSON.parse(cached) as PulseProfile);
+  } catch {
+    await AsyncStorage.removeItem(`${PROFILE_CACHE_PREFIX}${resolvedCacheKey}`).catch(() => undefined);
+    return null;
+  }
 }
 
 export async function cacheProfile(cacheKey: string, profile: PulseProfile) {
-  await writeJsonCache(`${PROFILE_CACHE_PREFIX}${cacheKey}`, profile);
+  await AsyncStorage.setItem(`${PROFILE_CACHE_PREFIX}${cacheKey}`, JSON.stringify(profile));
 }
 
 export async function cacheProfileAliases(target: NativeProfileTarget, profile: PulseProfile) {
@@ -367,26 +331,12 @@ export function normalizeProfile(input: Partial<PulseProfile>): PulseProfile {
     badges: profile.badges || [],
     theme: normalizeTheme(profile.theme || {}),
     viewer_follows: Boolean(profile.viewer_follows),
-    is_self: Boolean(profile.is_self),
-    // Absent means "an ordinary account", because that is what every human
-    // profile and every older server sends. Only an explicit `false` — which
-    // one account in the product sends — removes the follower counts.
-    has_social_graph: profile.has_social_graph !== false,
-    // A ratio is only usable if it is a positive finite number; anything else
-    // would reserve a box of height 0 or Infinity and lose the cover entirely.
-    // Dropping it here means the header falls back to filling the hero, which
-    // is the treatment every other profile gets.
-    brand_cover_aspect_ratio: positiveRatio(profile.brand_cover_aspect_ratio)
+    is_self: Boolean(profile.is_self)
   };
   // Public profile payloads are defense-in-depth sanitized even if an older
   // server accidentally includes an internal identifier.
   delete (normalized as Record<string, unknown>).pulse_id;
   return normalized;
-}
-
-function positiveRatio(value: unknown): number | undefined {
-  const ratio = Number(value);
-  return Number.isFinite(ratio) && ratio > 0 ? ratio : undefined;
 }
 
 function normalizeTheme(theme: PulseProfileTheme): PulseProfileTheme {

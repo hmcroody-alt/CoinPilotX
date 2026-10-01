@@ -28,7 +28,6 @@ os.close(_HANDLE)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
 
 import bot  # noqa: E402
-from services import db as db_service  # noqa: E402
 
 
 def _use_module_database():
@@ -161,36 +160,18 @@ class SellerListingEditTest(unittest.TestCase):
     # fixtures
     # ------------------------------------------------------------------
     def _make_seller(self, role):
-        """Created once per address and reused thereafter.
-
-        ``_use_module_database`` re-runs ``init_db`` per test but never empties the
-        tables, so this used to mint a *second* account at
-        ``mkedit_owner@example.com`` on every test after the first -- the
-        duplicate-account state ``ux_users_email_identity`` now forbids, produced
-        by a fixture rather than by the product. ``marketplace_sellers.user_id``
-        has always been unique and only survived because each duplicate account
-        came with a fresh id. Nothing here needs a fresh row, only a seller.
-        """
-        username = f"mkedit_{role}"
-        email = f"{username}@example.com"
         conn = bot.db()
         cur = conn.cursor()
-        cur.execute("SELECT user_id FROM users WHERE email = ? LIMIT 1", (email,))
-        existing = cur.fetchone()
-        if existing is not None:
-            user_id = int(db_service.row_values(existing)[0])
-        else:
-            cur.execute(
-                "INSERT INTO users (username, display_name, email, account_status, created_at) VALUES (?,?,?,?,?)",
-                (username, f"Edit {role}", email, "active", self.now),
-            )
-            user_id = int(cur.lastrowid)
-        cur.execute("SELECT 1 FROM marketplace_sellers WHERE user_id = ? LIMIT 1", (user_id,))
-        if cur.fetchone() is None:
-            cur.execute(
-                "INSERT INTO marketplace_sellers (user_id, business_name, display_name, status, created_at, updated_at) VALUES (?,?,?,?,?,?)",
-                (user_id, f"{role} store", f"{role} store", "approved", self.now, self.now),
-            )
+        username = f"mkedit_{role}"
+        cur.execute(
+            "INSERT INTO users (username, display_name, email, account_status, created_at) VALUES (?,?,?,?,?)",
+            (username, f"Edit {role}", f"{username}@example.com", "active", self.now),
+        )
+        user_id = int(cur.lastrowid)
+        cur.execute(
+            "INSERT INTO marketplace_sellers (user_id, business_name, display_name, status, created_at, updated_at) VALUES (?,?,?,?,?,?)",
+            (user_id, f"{role} store", f"{role} store", "approved", self.now, self.now),
+        )
         conn.commit()
         conn.close()
         return {"user_id": user_id, "username": username}
@@ -339,99 +320,6 @@ class SellerListingEditTest(unittest.TestCase):
         resp = self.patch_listing(self.owner, {"quantity": -3})
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(self.stored()["quantity"], 0, "a rejected edit must not write anything")
-
-    # ------------------------------------------------------------------
-    # an inventory nobody has counted
-    #
-    # Every inventory test above hands the route a number. None of them ever
-    # asked what happens to a listing whose stock is NULL -- which is what an
-    # import creates, because an import has not counted anything -- and that is
-    # precisely where the route was wrong.
-    # ------------------------------------------------------------------
-    def test_an_unrelated_edit_does_not_invent_a_stock_count(self):
-        """Fixing a typo must not mark a listing sold out.
-
-        The route carried an unsent quantity across with
-        ``safe_int(existing.get("quantity"), 0)``. That reads like a cast and
-        behaves like an assignment: ``safe_int(None, 0)`` is 0, and the UPDATE
-        writes ``quantity=?`` on every save. So the first edit of any kind to an
-        uncounted listing -- the title, the description, anything -- wrote a
-        stock count of zero under the seller's name, and their store then told
-        them to restock a product nobody had ever counted.
-
-        The price branch one field up already guards against exactly this. This
-        is the same test, for the field that did not have one.
-        """
-        listing_id = self._make_listing(self.owner, quantity=None)
-        self.assertIsNone(self.stored(listing_id)["quantity"], "fixture must start uncounted")
-
-        response = self.patch_listing(self.owner, {"title": "Handmade lamp mk2"}, listing_id)
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        row = self.stored(listing_id)
-        self.assertEqual(row["title"], "Handmade lamp mk2", "the edit the seller asked for must land")
-        self.assertIsNone(
-            row["quantity"],
-            "an edit that never mentioned inventory turned 'uncounted' into 'zero'",
-        )
-
-    def test_uncounted_and_sold_out_stay_different_answers_after_an_edit(self):
-        """Zero is a count. NULL is the absence of one. The route must keep both.
-
-        Asserted as a pair on purpose: a fix that collapsed everything to NULL
-        would pass the test above and be just as wrong in the other direction.
-        """
-        uncounted = self._make_listing(self.owner, quantity=None)
-        sold_out = self._make_listing(self.owner, quantity=0)
-
-        for listing_id in (uncounted, sold_out):
-            self.assertEqual(
-                self.patch_listing(self.owner, {"short_description": "Same edit"}, listing_id).status_code,
-                200,
-            )
-
-        self.assertIsNone(self.stored(uncounted)["quantity"])
-        self.assertEqual(self.stored(sold_out)["quantity"], 0)
-
-    def test_an_uncounted_listing_reads_as_uncounted_rather_than_empty(self):
-        """What the seller is actually told, end to end.
-
-        The two assertions above are about a column. This one is about the
-        sentence the store row shows, which is the thing that was wrong in
-        production: ``OUT_OF_STOCK`` renders as "Out of stock -- hidden /
-        Restock", an instruction to reorder from a supplier. A listing nobody
-        counted needs a count, not a purchase order.
-
-        Both verdicts agree that checkout must refuse -- that is not the
-        difference, and the difference is not cosmetic either.
-        """
-        from services.business_os.marketplace import listing_readiness
-
-        uncounted = listing_readiness.evaluate(self.stored(self._make_listing(self.owner, quantity=None)))
-        sold_out = listing_readiness.evaluate(self.stored(self._make_listing(self.owner, quantity=0)))
-
-        self.assertIn("UNKNOWN_INVENTORY", uncounted["warnings"])
-        self.assertNotIn("OUT_OF_STOCK", uncounted["warnings"])
-        self.assertIn("OUT_OF_STOCK", sold_out["warnings"])
-        self.assertNotIn("UNKNOWN_INVENTORY", sold_out["warnings"])
-        self.assertFalse(uncounted["checkout_ready"])
-        self.assertFalse(sold_out["checkout_ready"])
-
-    def test_a_seller_can_still_count_an_uncounted_listing(self):
-        """Preserving NULL must not make the field unwritable."""
-        listing_id = self._make_listing(self.owner, quantity=None)
-        self.assertEqual(self.patch_listing(self.owner, {"quantity": 4}, listing_id).status_code, 200)
-        self.assertEqual(self.stored(listing_id)["quantity"], 4)
-
-    def test_counting_an_uncounted_listing_as_zero_is_allowed(self):
-        """A seller who genuinely has none may say so, and it must stick.
-
-        This is the one path that should produce a stored 0 on a listing that
-        began as NULL: the seller typed it.
-        """
-        listing_id = self._make_listing(self.owner, quantity=None)
-        self.assertEqual(self.patch_listing(self.owner, {"quantity": 0}, listing_id).status_code, 200)
-        self.assertEqual(self.stored(listing_id)["quantity"], 0)
 
     def test_inventory_cannot_drop_below_units_held_in_checkout(self):
         conn = bot.db()
@@ -673,14 +561,12 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
     seller deliberately set to nothing. The category and safety pills still
     render, so the card never collapses.
 
-    These render the real routes rather than inspecting source text, and that has
-    outlived its original reason. It was there because the card's JavaScript twin
-    built its HTML inside a ``%``-formatted script block, so a mistake threaded
-    into it was a 500 on the whole page rather than a wrong word, and removing the
-    fallback changed that block's argument count -- exactly such a mistake. The
-    twin and the script block are both gone. Rendering is still how these assert,
-    because a phrase invented downstream of a correct helper is the bug family
-    this whole file is about, and only the served bytes can show it.
+    These render the real routes rather than inspecting source text. That is
+    deliberate: the JS card builds its own HTML inside a ``%``-formatted script
+    block, so anything threaded into it travels by string interpolation, and a
+    mistake there is a 500 on the whole marketplace page rather than a wrong
+    word. Only rendering catches that -- and removing the fallback changed that
+    block's argument count, which is exactly such a mistake.
     """
 
     # Asserted as literals rather than through a constant. The constant these
@@ -725,28 +611,19 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
         bot.pulse_emit_event = self._real_emit
 
     def _make_seller(self):
-        """Created once and reused thereafter -- see the note on the class above."""
         conn = bot.db()
         cur = conn.cursor()
-        cur.execute("SELECT user_id FROM users WHERE email = ? LIMIT 1",
-                    ("mkweb_owner@example.com",))
-        existing = cur.fetchone()
-        if existing is not None:
-            user_id = int(db_service.row_values(existing)[0])
-        else:
-            cur.execute(
-                "INSERT INTO users (username, display_name, email, account_status, created_at) "
-                "VALUES (?,?,?,?,?)",
-                ("mkweb_owner", "Web owner", "mkweb_owner@example.com", "active", self.now),
-            )
-            user_id = int(cur.lastrowid)
-        cur.execute("SELECT 1 FROM marketplace_sellers WHERE user_id = ? LIMIT 1", (user_id,))
-        if cur.fetchone() is None:
-            cur.execute(
-                "INSERT INTO marketplace_sellers (user_id, business_name, display_name, status, "
-                "created_at, updated_at) VALUES (?,?,?,?,?,?)",
-                (user_id, "Web store", "Web store", "approved", self.now, self.now),
-            )
+        cur.execute(
+            "INSERT INTO users (username, display_name, email, account_status, created_at) "
+            "VALUES (?,?,?,?,?)",
+            ("mkweb_owner", "Web owner", "mkweb_owner@example.com", "active", self.now),
+        )
+        user_id = int(cur.lastrowid)
+        cur.execute(
+            "INSERT INTO marketplace_sellers (user_id, business_name, display_name, status, "
+            "created_at, updated_at) VALUES (?,?,?,?,?,?)",
+            (user_id, "Web store", "Web store", "approved", self.now, self.now),
+        )
         conn.commit()
         conn.close()
         return {"user_id": user_id, "username": "mkweb_owner"}
@@ -807,56 +684,32 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
         listing_id = self.unpriced_listing()
         with self.acting_as(self.owner):
             response = self.client.get("/pulse/marketplace")
-        # Checked before the body, because the grid swallows a catalogue-load
-        # failure into an error state and serves 503 rather than raising. A status
-        # assertion is how "the page could not read the catalogue" stays separable
-        # from "the page read it and printed the wrong thing".
+        # A 500 here means the %-format broke when the fallback was threaded
+        # into the inline script -- the failure mode this test exists for.
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:400])
         html = response.get_data(as_text=True)
         self.assertIn("Unpriced web lamp", html, "the unpriced listing never rendered")
         self.assertInventsNoPrice(html, "the marketplace grid")
-        # The card must still be a card. Dropping the price must not take the
-        # row's other fields with it, or "no invented price" would be satisfied
-        # by rendering nothing at all.
-        #
-        # Anchored on the seller's store name. It used to be the word "Safety",
-        # from a pill printing `marketplace_listings.safety_score` -- and that
-        # pill is deliberately gone now, because the column holds the reviewer's
-        # *risk* number, so the worst listing the engine can score read
-        # "Safety 100" to a buyer. Keeping the old anchor would have left this
-        # file demanding a signal that
-        # tests/web_parity/test_marketplace_reviewer_signal_not_buyer_facing.py
-        # exists to forbid. The store name does the same job and is a field the
-        # seller actually set.
-        self.assertIn("Web store", html, "the card rendered no seller either")
+        # The card must still be a card. Dropping the price pill must not take
+        # the row's other pills with it, or "no invented price" would be
+        # satisfied by rendering nothing at all.
+        self.assertIn("Safety", html)
         del listing_id
 
-    def test_the_search_results_invent_no_price_either(self):
-        """Same page, second path to a card: the one a buyer reaches by typing.
+    def test_the_inline_card_script_invents_no_price_either(self):
+        """Same page, second renderer. Search results are drawn in JS.
 
-        This was two renderers in two languages -- the grid server-rendered on
-        load, then re-rendered client-side from `/api/pulse/marketplace/search`
-        by an inline `marketplaceListingHtml` twin -- and the point was that
-        fixing only the Python half would leave a buyer who used the search box
-        looking at the old phrase.
-
-        Search is now server-rendered from `?q=` by the same function as the grid,
-        so there is no second copy for the phrase to survive in. The path is still
-        worth asserting, because the query can narrow to nothing and a page with
-        no cards invents no prices. Hence the vacuity guard below, which is the
-        load-bearing line of this test now.
+        The grid is server-rendered on load and re-rendered client-side after a
+        search, so the identical card exists twice in two languages. Fixing only
+        the Python half would leave a buyer who typed in the search box looking
+        at the old phrase.
         """
-        listing_id = self.unpriced_listing()
         with self.acting_as(self.owner):
-            response = self.client.get("/pulse/marketplace?q=Unpriced+web+lamp")
-        self.assertEqual(response.status_code, 200,
-                         response.get_data(as_text=True)[:400])
-        html = response.get_data(as_text=True)
-        self.assertIn("Unpriced web lamp", html,
-                      "searching for the listing did not return it, so this is "
-                      "asserting about an empty result set")
-        self.assertInventsNoPrice(html, "the marketplace search results")
-        del listing_id
+            html = self.client.get("/pulse/marketplace").get_data(as_text=True)
+        self.assertIn("function marketplaceListingHtml", html)
+        script = html[html.index("function marketplaceListingHtml"):]
+        script = script[:script.index("</script>")] if "</script>" in script else script
+        self.assertInventsNoPrice(script, "the inline JS card")
 
     def test_the_product_page_renders_and_never_says_request_access(self):
         listing_id = self.unpriced_listing()

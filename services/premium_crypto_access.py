@@ -81,10 +81,7 @@ def load_user_row(user_id: Any) -> dict:
         return {}
     if row is None:
         return {}
-    # Not ``tuple(row)``: on Postgres that yields the column NAMES, so this
-    # returned {"lifetime_premium": "lifetime_premium", ...} and the legacy gate
-    # raised on it and answered False for everyone. See db.row_values.
-    return dict(zip(_USER_COLUMNS, db.row_values(row)))
+    return dict(zip(_USER_COLUMNS, tuple(row)))
 
 
 def _legacy_allowed(user_row: dict) -> bool:

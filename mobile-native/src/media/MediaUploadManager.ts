@@ -1,10 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File } from "expo-file-system";
-import { pulseApi } from "../api/pulseApi";
+import { pulseApi, PulseApiError } from "../api/pulseApi";
 import type { NativeMediaAsset, NativeMediaUploadOptions, NativeMediaUploadResult, UploadProgress } from "./nativeMediaUpload";
-import { MAX_RETRIES, PARALLEL_PARTS, nativeBlobFromUri, openPartSource, uploadBlob, withRetry } from "./resumableUploadTransport";
 
 const STORAGE_PREFIX = "pulsesoc.media-upload.v2.";
+const PARALLEL_PARTS = 4;
+const MAX_RETRIES = 5;
 
 type UploadSession = {
   upload_id: string;
@@ -16,9 +17,6 @@ type UploadSession = {
   completed_parts: Array<{ part_number: number; etag: string }>;
   status: string;
   trace_id?: string;
-  // How many part signatures the server will mint in one call. Optional because a
-  // session persisted before this field existed is resumed as-is.
-  max_parts_per_request?: number;
 };
 
 type PersistedUpload = {
@@ -37,6 +35,24 @@ type ManagedTask = {
 const activeTasks = new Map<string, ManagedTask>();
 
 function keyFor(uploadId: string) { return `${STORAGE_PREFIX}${uploadId}`; }
+function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+// Normalize a local media URI for `fetch()` without double-encoding or stripping an
+// existing scheme. AVFoundation/expo emit `file://…` already; a bare `/var/…` path gets a
+// `file://` prefix. `content://`, `ph://`, `http(s)://` are passed through untouched.
+function toFetchableUri(uri: string) {
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(uri) || uri.startsWith("content://") || uri.startsWith("ph://")) return uri;
+  return `file://${uri.startsWith("/") ? "" : "/"}${uri}`;
+}
+
+// Obtain a React Native native-backed Blob that streams from the filesystem. The blob is a
+// descriptor (blobId + offset + size) — the bytes stay in native memory and never enter JS,
+// so there is no ArrayBuffer/Uint8Array round-trip. `blob.slice()` returns a zero-copy view
+// over the same native data, which is what makes multipart part uploads memory-safe.
+async function nativeBlobFromUri(uri: string): Promise<Blob> {
+  const response = await fetch(toFetchableUri(uri));
+  return response.blob();
+}
 
 async function persist(state: PersistedUpload) {
   await AsyncStorage.setItem(keyFor(state.session.upload_id), JSON.stringify(state));
@@ -44,6 +60,52 @@ async function persist(state: PersistedUpload) {
 
 async function removePersisted(uploadId: string) {
   await AsyncStorage.removeItem(keyFor(uploadId)).catch(() => undefined);
+}
+
+function transientStatus(status: number) {
+  return status === 0 || status === 408 || status === 429 || status >= 500;
+}
+
+async function withRetry<T>(operation: () => Promise<T>, onRetry: (attempt: number) => void, isCancelled: () => boolean) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    if (isCancelled()) throw new Error("Upload cancelled.");
+    try { return await operation(); } catch (error) {
+      lastError = error;
+      const status = error instanceof PulseApiError ? error.status : Number((error as { status?: number })?.status || 0);
+      if (attempt >= MAX_RETRIES || !transientStatus(status)) throw error;
+      onRetry(attempt + 1);
+      const jitter = Math.floor(Math.random() * 350);
+      await sleep(Math.min(8000, 500 * (2 ** attempt)) + jitter);
+    }
+  }
+  throw lastError;
+}
+
+function uploadBlob(
+  url: string,
+  blob: Blob,
+  mimeType: string,
+  onBytes: (loaded: number) => void,
+  register: (xhr: XMLHttpRequest | null) => void
+): Promise<{ etag: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest(); register(xhr);
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("Content-Type", mimeType);
+    xhr.upload.onprogress = (event) => onBytes(event.loaded);
+    xhr.onerror = () => reject(Object.assign(new Error("Upload transport was interrupted."), { status: 0, category: "network" }));
+    xhr.onabort = () => reject(new Error("Upload cancelled."));
+    xhr.onload = () => {
+      register(null);
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(Object.assign(new Error(`Storage rejected upload (${xhr.status}).`), { status: xhr.status, category: "storage" }));
+        return;
+      }
+      resolve({ etag: String(xhr.getResponseHeader("ETag") || xhr.getResponseHeader("etag") || "").replace(/^W\//, "") });
+    };
+    xhr.send(blob);
+  });
 }
 
 export class MediaUploadManager {
@@ -87,18 +149,6 @@ export class MediaUploadManager {
     const resumable = (await this.resumableUploads()).find((candidate) =>
       candidate.asset.uri === asset.uri && candidate.asset.size === actualSize && candidate.options.contextType === options.contextType
     );
-    // One body for both call sites. `duration_ms` is the picker's own unit,
-    // forwarded unconverted so the server can refuse an over-long video before it
-    // issues a signed URL -- the alternative is discovering the limit after an
-    // hour of cellular upload.
-    const createBody = JSON.stringify({
-      filename: asset.name,
-      mime_type: asset.mimeType,
-      file_size_bytes: actualSize,
-      context_type: options.contextType,
-      context_id: options.contextId || "native-draft",
-      duration_ms: Math.round(Number(asset.duration || 0))
-    });
     let session: UploadSession;
     if (resumable) {
       try {
@@ -107,10 +157,10 @@ export class MediaUploadManager {
         onProgress?.({ stage: "resuming", percent: 2, message: "Resuming upload." });
       } catch {
         await removePersisted(resumable.session.upload_id);
-        session = await pulseApi<UploadSession & { ok: boolean }>("/api/pulse/media/uploads", { method: "POST", body: createBody });
+        session = await pulseApi<UploadSession & { ok: boolean }>("/api/pulse/media/uploads", { method: "POST", body: JSON.stringify({ filename: asset.name, mime_type: asset.mimeType, file_size_bytes: actualSize, context_type: options.contextType, context_id: options.contextId || "native-draft" }) });
       }
     } else {
-      session = await pulseApi<UploadSession & { ok: boolean }>("/api/pulse/media/uploads", { method: "POST", body: createBody });
+      session = await pulseApi<UploadSession & { ok: boolean }>("/api/pulse/media/uploads", { method: "POST", body: JSON.stringify({ filename: asset.name, mime_type: asset.mimeType, file_size_bytes: actualSize, context_type: options.contextType, context_id: options.contextId || "native-draft" }) });
     }
     onSession(session.upload_id);
     const state: PersistedUpload = { session, asset: { ...asset, size: actualSize }, options, retryCount: resumable?.retryCount || 0, updatedAt: Date.now() };
@@ -127,11 +177,10 @@ export class MediaUploadManager {
       onProgress?.({ stage: "resuming", percent: Math.max(2, Math.round(([...uploadedByPart.values()].reduce((a, b) => a + b, 0) / actualSize) * 94)), message: `Upload interrupted. Retrying (${attempt}/${MAX_RETRIES})…` });
     };
     onProgress?.({ stage: "uploading", percent: 2, message: "Uploading media 0%." });
-    // Single-part uploads are bounded by the server's multipart threshold (16 MB), so
-    // reading the whole file as one native-backed Blob is safe here and nowhere else --
-    // see `nativeBlobFromUri`, which costs the full file size in dirty native memory.
-    // Multipart opens a ranged reader below instead. Only read when bytes still need to go.
-    const uploadBody = session.status !== "completed" && session.strategy === "single" ? await nativeBlobFromUri(asset.uri) : null;
+    // Stream the finished (already-on-disk) media as a native-backed RN Blob. Created once
+    // and reused across retries and every multipart part, so the mix file is never re-read
+    // into JS memory. Only fetched when bytes still need to be sent.
+    const uploadBody = session.status !== "completed" ? await nativeBlobFromUri(asset.uri) : null;
     if (session.status !== "completed" && session.strategy === "single") {
       await withRetry(async () => {
         let uploadUrl = state.session.upload_url;
@@ -151,67 +200,23 @@ export class MediaUploadManager {
       const completed = new Map((session.completed_parts || []).map((part) => [part.part_number, part.etag]));
       completed.forEach((_etag, number) => uploadedByPart.set(number, Math.min(session.part_size_bytes, actualSize - ((number - 1) * session.part_size_bytes))));
       const pending = Array.from({ length: totalParts }, (_, index) => index + 1).filter((number) => !completed.has(number));
-      // Signatures come back a batch per round trip. Signing one part at a time cost a
-      // request before every single part: a 350 MB status video at 8 MB parts spent 44
-      // extra sequential round trips that moved no bytes. The cap is whatever the server
-      // advertises -- `sign_parts` silently drops the overflow, and a dropped part would
-      // not surface until `complete` rejected the part list. An older server (or a session
-      // persisted before this shipped) omits the field, so fall back to the previous
-      // one-at-a-time behaviour rather than guessing a cap.
-      const perRequest = Math.max(1, Number(session.max_parts_per_request || 0) || 1);
-      // One part at a time off disk. Reading the whole file first, which is what this used
-      // to do, put the entire video in dirty native memory before any byte was uploaded --
-      // survivable for a 30-second clip, an immediate jetsam for the 90-minute one.
-      const partSource = await openPartSource(asset.uri, asset.mimeType);
-      const signedUrls = new Map<number, string>();
-      const signParts = (numbers: number[]) =>
-        withRetry(async () => {
-          const signed = await pulseApi<{ parts?: Array<{ part_number: number; upload_url: string }> }>(`/api/pulse/media/uploads/${session.upload_id}/parts/sign`, { method: "POST", body: JSON.stringify({ part_numbers: numbers }) });
-          for (const part of signed.parts || []) signedUrls.set(Number(part.part_number), String(part.upload_url || ""));
-        }, retry, isCancelled);
       let cursor = 0;
       const worker = async () => {
         while (cursor < pending.length) {
-          const batch = pending.slice(cursor, cursor + perRequest);
-          cursor += batch.length;
-          await signParts(batch);
-          for (const number of batch) {
-            const start = (number - 1) * session.part_size_bytes;
-            const end = Math.min(actualSize, start + session.part_size_bytes);
-            await withRetry(async () => {
-              const send = async () => {
-                if (!signedUrls.get(number)) await signParts([number]);
-                const url = signedUrls.get(number);
-                if (!url) throw Object.assign(new Error("Upload authorization expired."), { status: 410 });
-                return uploadBlob(url, partSource.read(start, end), asset.mimeType, (loaded) => { uploadedByPart.set(number, loaded); report("uploading", "Uploading media"); }, register);
-              };
-              let result;
-              try {
-                result = await send();
-              } catch (error) {
-                // A batched signature is minted before the whole batch is sent, so the
-                // last part of a batch can outlive its URL on a slow link. That reads as
-                // 401/403/410, which `transientStatus` deliberately does not retry, so
-                // re-sign this one part and send it once more. Only a second rejection is
-                // a genuine failure.
-                if (![401, 403, 410].includes(Number((error as { status?: number })?.status || 0))) throw error;
-                signedUrls.delete(number);
-                result = await send();
-              }
-              if (!result.etag) throw Object.assign(new Error("Storage did not return part integrity metadata."), { status: 502 });
-              completed.set(number, result.etag); uploadedByPart.set(number, end - start); signedUrls.delete(number);
-              state.session.completed_parts = [...completed].map(([part_number, etag]) => ({ part_number, etag })); state.updatedAt = Date.now(); await persist(state);
-            }, retry, isCancelled);
-          }
+          const number = pending[cursor++];
+          const start = (number - 1) * session.part_size_bytes;
+          const end = Math.min(actualSize, start + session.part_size_bytes);
+          await withRetry(async () => {
+            const signed = await pulseApi<{ parts: Array<{ part_number: number; upload_url: string }> }>(`/api/pulse/media/uploads/${session.upload_id}/parts/sign`, { method: "POST", body: JSON.stringify({ part_numbers: [number] }) });
+            const part = signed.parts[0];
+            const result = await uploadBlob(part.upload_url, (uploadBody as Blob).slice(start, end, asset.mimeType), asset.mimeType, (loaded) => { uploadedByPart.set(number, loaded); report("uploading", "Uploading media"); }, register);
+            if (!result.etag) throw Object.assign(new Error("Storage did not return part integrity metadata."), { status: 502 });
+            completed.set(number, result.etag); uploadedByPart.set(number, end - start);
+            state.session.completed_parts = [...completed].map(([part_number, etag]) => ({ part_number, etag })); state.updatedAt = Date.now(); await persist(state);
+          }, retry, isCancelled);
         }
       };
-      try {
-        await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, pending.length) }, worker));
-      } finally {
-        // A cancel or a failed part must not leave the file handle open -- this upload is
-        // resumable, so the same file is very likely opened again in a moment.
-        partSource.close();
-      }
+      await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, pending.length) }, worker));
       await pulseApi(`/api/pulse/media/uploads/${session.upload_id}/complete`, { method: "POST", body: JSON.stringify({ parts: [...completed].map(([part_number, etag]) => ({ part_number, etag })).sort((a, b) => a.part_number - b.part_number) }) });
     }
     if (session.status !== "completed" && session.strategy === "single") await pulseApi(`/api/pulse/media/uploads/${session.upload_id}/complete`, { method: "POST", body: "{}" });

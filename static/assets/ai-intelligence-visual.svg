@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" role="img" aria-labelledby="title desc">
+  <title id="title">CoinPilotX AI intelligence visual</title>
+  <desc id="desc">Original abstract dashboard visual for AI crypto intelligence.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#101b31"/><stop offset="1" stop-color="#07101d"/></linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#36e58f"/><stop offset="1" stop-color="#6edff6"/></linearGradient>
+    <filter id="soft"><feGaussianBlur stdDeviation="12"/></filter>
+  </defs>
+  <rect width="640" height="420" rx="34" fill="url(#bg)"/>
+  <path d="M70 304c86-76 142-30 210-88 74-64 128-92 292-22" fill="none" stroke="#6edff6" stroke-width="3" opacity=".55"/>
+  <path d="M70 338c94-54 159-28 240-68 82-41 132-52 260-18" fill="none" stroke="#36e58f" stroke-width="3" opacity=".5"/>
+  <circle cx="508" cy="104" r="70" fill="#36e58f" opacity=".13" filter="url(#soft)"/>
+  <circle cx="132" cy="110" r="66" fill="#6edff6" opacity=".11" filter="url(#soft)"/>
+  <rect x="76" y="70" width="226" height="128" rx="22" fill="#0d1627" stroke="#6edff6" opacity=".96"/>
+  <rect x="338" y="70" width="226" height="128" rx="22" fill="#0d1627" stroke="#36e58f" opacity=".96"/>
+  <rect x="76" y="234" width="488" height="94" rx="22" fill="#0d1627" stroke="#ffffff" opacity=".9"/>
+  <path d="M118 132h70m0 0 28-34 32 68 36-48" fill="none" stroke="url(#glow)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="118" y="279" fill="#f5f8ff" font-family="Arial, sans-serif" font-size="24" font-weight="700">AI Market Context</text>
+  <text x="118" y="309" fill="#9daac0" font-family="Arial, sans-serif" font-size="18">trend • volatility • risk</text>
+  <circle cx="394" cy="134" r="20" fill="url(#glow)"/>
+  <circle cx="450" cy="134" r="20" fill="#ffd166"/>
+  <circle cx="506" cy="134" r="20" fill="#ff6b7a"/>
+</svg>

@@ -21,7 +21,7 @@ from urllib.parse import urlparse, urlunparse
 from typing import Any
 
 from pulse_communications_v2 import service as comm_service
-from services import live_participants, pulsesoc_notification_system, pulsesoc_voip_push, schema_guard
+from services import live_participants, pulsesoc_notification_system, schema_guard
 
 
 CALL_TABLES = (
@@ -271,96 +271,6 @@ ERROR_CATALOG = {
         "PulseSoc hit an unexpected backend error while handling the call.",
         "Open Calls Command Center and search the correlation ID in logs.",
     ),
-    # Every `_err` code below reached `_error_details` with no entry here and came
-    # back as UNKNOWN_ERROR — nine distinct faults collapsed onto one code, in the
-    # logs and in the client alike. `not_callee` is how that surfaced: a 403 on
-    # every outgoing call logged as UNKNOWN_ERROR, which is unsearchable and
-    # indistinguishable from a genuine backend fault.
-    "not_callee": (
-        "CALL_RECIPIENT_REQUIRED",
-        "Only the recipient can acknowledge ringing",
-        "This account is the caller on that call, not a recipient.",
-        "Acknowledge ringing only from the device that is being called.",
-    ),
-    "invalid_call_type": (
-        "CALL_TYPE_UNSUPPORTED",
-        "Unsupported call type",
-        "PulseSoc supports audio and video calls only.",
-        "Retry with an audio or video call.",
-    ),
-    "invalid_transition": (
-        "CALL_TRANSITION_INVALID",
-        "Call state change not allowed",
-        "The call is not in a state that permits this change.",
-        "Refresh the call and retry from its current state.",
-    ),
-    "transition_conflict": (
-        "CALL_TRANSITION_CONFLICT",
-        "Call already changed",
-        "Another device changed this call first; the compare-and-set was refused.",
-        "Refresh the call — first valid answer wins, and this one lost the race.",
-    ),
-    "unsupported_control": (
-        "CALL_CONTROL_UNSUPPORTED",
-        "Unsupported call control",
-        "PulseSoc does not recognise that in-call control.",
-        "Update the app, then retry the control.",
-    ),
-    "missing_device_id": (
-        "CALL_DEVICE_ID_REQUIRED",
-        "Device id required",
-        "This request must name the device it is registering or releasing.",
-        "Retry from the app; the device id is issued at install.",
-    ),
-    "missing_token": (
-        "CALL_PUSH_TOKEN_REQUIRED",
-        "Push token required",
-        "This request must carry a VoIP token or a device id.",
-        "Retry after the app has registered for PushKit.",
-    ),
-    "invalid_live_role": (
-        "CALL_LIVE_ROLE_INVALID",
-        "Unsupported live role",
-        "PulseSoc could not issue an Agora token for that role.",
-        "Retry as host or audience.",
-    ),
-    "agora_token_builder_missing": (
-        "CALL_RTC_TOKEN_UNAVAILABLE",
-        "Call media credentials unavailable",
-        "PulseSoc could not mint an Agora token for this call.",
-        "Check the Agora app id and certificate, then retry.",
-    ),
-    # The four below are not written literally at any `_err` call site — they
-    # arrive as a variable, which is why the literal audit missed them and why
-    # they outlived the nine above. `missing` and `denied` come straight from
-    # `comm_service._conversation_access`, so they cover *every* call route that
-    # resolves a conversation first: the most-travelled failure on the whole
-    # surface was answering UNKNOWN_ERROR. `unauthenticated` and `invalid` are
-    # `register_voip_token`'s own statuses forwarded verbatim.
-    "missing": (
-        "CONVERSATION_NOT_FOUND",
-        "Conversation not found",
-        "PulseSoc could not find the conversation this call refers to.",
-        "Reopen the conversation from the chat list and try again.",
-    ),
-    "denied": (
-        "CONVERSATION_ACCESS_DENIED",
-        "You do not have access to this conversation",
-        "This account is not a participant in the conversation this call refers to.",
-        "Ask a participant to add you, then try again.",
-    ),
-    "unauthenticated": (
-        "VOIP_SIGN_IN_REQUIRED",
-        "Sign-in required",
-        "A signed-in member is required to register a VoIP token.",
-        "Sign in, then reopen the app so PushKit can register again.",
-    ),
-    "invalid": (
-        "VOIP_REGISTRATION_INVALID",
-        "VoIP registration was incomplete",
-        "The registration did not carry both a device id and a VoIP token.",
-        "Reopen the app so PushKit can register again.",
-    ),
 }
 
 
@@ -422,11 +332,6 @@ def _base64url(data: bytes) -> str:
 def _open_db():
     conn, cur = comm_service._open_db()
     _ensure_call_schema(cur, conn)
-    # `ring_devices` reads `voip_push_tokens` on every outgoing call, so its DDL
-    # gets the same once-per-worker treatment as the call tables above. Each
-    # module owns its own guard and its own commit; the second commit costs one
-    # round trip on first use per worker and nothing afterwards.
-    pulsesoc_voip_push.ensure_schema_committed(cur, conn)
     return conn, cur
 
 
@@ -805,18 +710,6 @@ def _serialize_call(cur: Any, call: dict[str, Any], user_id: int = 0, include_to
     payload = {
         "call_id": call_id,
         "public_id": call.get("public_id"),
-        # ONE CALL IDENTITY, ISSUED BY THE SERVER.
-        #
-        # CallKit identifies a call by UUID. The client used to invent one
-        # locally, which meant the UUID in CallKit did not match anything the
-        # backend or the VoIP payload knew about — so a call answered from the
-        # lock screen could not be correlated to the call the server had, and a
-        # redelivered push became a second CallKit call for one real call.
-        #
-        # This is the same value `pulsesoc_voip_push` puts in the push payload,
-        # because both derive it from `public_id` by UUIDv5. Whichever arrives
-        # first — push or REST — names the same call.
-        "call_uuid": pulsesoc_voip_push.call_uuid_for(str(call.get("public_id") or call.get("id") or "")),
         "conversation_id": int(call.get("conversation_id") or 0),
         "room_name": call.get("room_name") or "",
         "provider": "agora",
@@ -833,6 +726,7 @@ def _serialize_call(cur: Any, call: dict[str, Any], user_id: int = 0, include_to
         "end_reason": call.get("end_reason") or "",
         "participants": participants,
         "participant": me,
+        "agora": agora_config_status(),
         "agora": agora_config_status(),
     }
     if include_token and user_id:
@@ -1008,15 +902,7 @@ def _recipient_online_state(cur: Any, user_id: int) -> dict[str, Any]:
     return {"tracked": False, "online": False, "status": "unknown", "last_seen_at": "", "source": ""}
 
 
-def _transition(
-    cur: Any,
-    call: dict[str, Any],
-    new_status: str,
-    user_id: int = 0,
-    reason: str = "",
-    *,
-    voip_exclude_device_ids: Any = None,
-) -> dict[str, Any]:
+def _transition(cur: Any, call: dict[str, Any], new_status: str, user_id: int = 0, reason: str = "") -> dict[str, Any]:
     current = str(call.get("status") or "created")
     new_status = str(new_status or "").strip().lower()
     if current in FINAL_STATUSES and new_status != current:
@@ -1042,119 +928,9 @@ def _transition(
         except Exception:
             pass
     values.append(int(call["id"]))
-    values.append(current)
-    # Compare-and-set on the status we validated against. `call` is an in-memory
-    # snapshot taken by an earlier SELECT, so between that read and this write
-    # another device's accept, the caller's cancel or the stale-call sweeper can
-    # have moved the row on. A bare `WHERE id=?` overwrote them regardless, which
-    # let a second answer re-drive an already-connecting call back to 'accepted'
-    # and let the sweeper stomp a call that was answered mid-batch. Re-checking
-    # the status in the UPDATE makes the loser touch zero rows: on Postgres the
-    # blocked statement re-evaluates this predicate against the committed row
-    # version, so the losing write is rejected rather than queued behind it.
-    cur.execute(
-        f"UPDATE communication_calls SET {', '.join(updates)} WHERE id=? AND COALESCE(status,'created')=?",
-        values,
-    )
-    if getattr(cur, "rowcount", -1) == 0:
-        return _err(
-            "This call has already moved on.",
-            409,
-            "transition_conflict",
-            from_status=current,
-            to_status=new_status,
-        )
+    cur.execute(f"UPDATE communication_calls SET {', '.join(updates)} WHERE id=?", values)
     _event(cur, int(call["id"]), int(user_id or 0), new_status, {"from": current, "to": new_status, "reason": reason})
-    if current == "ringing" and new_status != current:
-        _voip_stop_ringing(cur, call, int(user_id or 0), new_status, reason, voip_exclude_device_ids)
     return {"ok": True, "status": new_status}
-
-
-def _answering_device_ids(payload: dict[str, Any] | None) -> list[str]:
-    """The installation id of the device answering this call, if it said so.
-
-    Accepts the id at the top level or inside `device_info`, because the native
-    call store and the CallKit answer handler build their accept bodies
-    separately and only one of them nests it.
-    """
-    payload = payload or {}
-    device_info = payload.get("device_info") if isinstance(payload.get("device_info"), dict) else {}
-    candidates = (
-        payload.get("device_id"),
-        payload.get("installation_id"),
-        device_info.get("device_id"),
-        device_info.get("installation_id"),
-    )
-    return [str(value).strip() for value in candidates if str(value or "").strip()]
-
-
-def _voip_stop_ringing(
-    cur: Any,
-    call: dict[str, Any],
-    actor_id: int,
-    new_status: str,
-    reason: str = "",
-    exclude_device_ids: Any = None,
-) -> None:
-    """Tear down the CallKit ring on every device still showing it.
-
-    Hooked to the single `ringing -> anything` edge rather than to decline/end/
-    cancel/timeout individually, so no exit from the ringing state can forget it.
-    That matters more than it sounds: a missed CallKit cancel leaves a full-screen
-    system call UI for a call that no longer exists, and the user's only way out is
-    to answer a dead call.
-
-    Scoped to `current == "ringing"` for two reasons. It is the only state in which
-    a CallKit ring exists, and it keeps this blocking APNs round trip out of the
-    hot path for every other transition (mute, connected, quality, screen share).
-
-    Failures are swallowed. The call state change is authoritative and already
-    committed by the caller; a cancel push that did not land must not roll it back.
-    """
-    if not pulsesoc_voip_push.is_configured():
-        return
-    try:
-        cur.execute(
-            "SELECT user_id FROM communication_call_participants WHERE call_id=? AND status='ringing'",
-            (int(call["id"]),),
-        )
-        recipients = {int(_row(row).get("user_id") or 0) for row in (cur.fetchall() or [])}
-    except Exception:
-        logging.debug("PULSESOC_VOIP_RINGING_LOOKUP_FAILED call_id=%s", call.get("id"), exc_info=True)
-        return
-
-    answered = new_status in {"accepted", "connected"}
-    if answered and actor_id:
-        # The answering user's participant row is already 'joined' by the time we
-        # get here, so the query above cannot see them — but their *other* devices
-        # are still ringing. A participant row is per user, not per device, so
-        # answered-elsewhere has to be driven from the actor, with the device that
-        # actually answered excluded below.
-        recipients.add(int(actor_id))
-    recipients.discard(0)
-    if not recipients:
-        return
-
-    excluded = {str(value) for value in (exclude_device_ids or []) if str(value or "").strip()}
-    # "answered_elsewhere" is a different CallKit end reason from a caller hangup:
-    # it must not show up as a missed call on the user's other devices.
-    cancel_reason = "answered_elsewhere" if answered else (reason or new_status or "cancelled")
-
-    for recipient_id in sorted(recipients):
-        # Only the answering user excludes a device; everyone else's devices
-        # should all stop ringing.
-        skip = excluded if (answered and int(recipient_id) == int(actor_id)) else set()
-        try:
-            result = pulsesoc_voip_push.cancel_devices(
-                cur, call, int(recipient_id), cancel_reason, exclude_device_ids=skip
-            )
-            if result.get("claimed_device_ids"):
-                _event(cur, int(call["id"]), int(recipient_id), "voip_cancel_sent", {"reason": cancel_reason, "devices": result.get("claimed_device_ids")})
-        except Exception as exc:
-            logging.warning(
-                "PULSESOC_VOIP_CANCEL_FAILED call_id=%s recipient=%s error=%s",
-                call.get("id"), recipient_id, exc.__class__.__name__,
-            )
 
 
 def _safe_transition(cur: Any, call: dict[str, Any], new_status: str, user_id: int = 0, reason: str = "") -> dict[str, Any]:
@@ -1238,14 +1014,7 @@ def _mark_missed_stale_calls_cur(cur: Any, timeout_seconds: int = 45) -> int:
             (int(call["id"]),),
         )
         recipients = [int(item["user_id"]) for item in cur.fetchall()]
-        # Every row here came from one SELECT taken before the loop, and the loop
-        # body does real work (notifications, sync events) per call. A call that
-        # is answered while an earlier row is being written off must not then be
-        # marked missed: the compare-and-set rejects the write, and the missed
-        # notification and sync event have to be skipped with it, or the two
-        # people already talking get told they missed each other.
-        if not _transition(cur, call, "missed", int(call.get("created_by_user_id") or 0), "ring_timeout").get("ok"):
-            continue
+        _transition(cur, call, "missed", int(call.get("created_by_user_id") or 0), "ring_timeout")
         cur.execute(
             "UPDATE communication_call_participants SET status='missed', left_at=?, updated_at=? WHERE call_id=? AND role='callee' AND status='ringing'",
             (_now(), _now(), int(call["id"])),
@@ -1319,12 +1088,7 @@ def _expire_stale_active_calls_cur(cur: Any) -> int:
             activity_ts = 0
         if activity_ts and now_ts - activity_ts <= max(30, int(timeouts.get(status) or 120)):
             continue
-        # Same batch-snapshot hazard as the missed sweeper above: a call that
-        # advances while an earlier row in this batch is being expired must keep
-        # its new state, and must not have its participants dropped or a
-        # `call_expired` teardown emitted at people who are still talking.
-        if not _transition(cur, call, "expired", 0, f"stale_{status}_timeout").get("ok"):
-            continue
+        _transition(cur, call, "expired", 0, f"stale_{status}_timeout")
         cur.execute(
             """
             UPDATE communication_call_participants
@@ -1402,53 +1166,6 @@ def _notify_incoming_call(cur: Any, call: dict[str, Any], actor_id: int, recipie
                 _event(cur, int(call["id"]), int(recipient_id), "incoming_call_notification_skipped", policy)
                 continue
             channels = ["in_app", "call"] if policy.get("suppress_push") else ["in_app", "push", "call"]
-
-            # VoIP push is the *primary* delivery path for iOS. It runs before
-            # intake_event and not as one of its channels, because it is a
-            # different credential to a different APNs topic and because it must
-            # not inherit the alert pipeline's batching or quiet-hours handling:
-            # a ringing phone is not a notification.
-            #
-            # Every device APNs accepts here is then withheld from the alert push
-            # for this same call, so one handset cannot ring through CallKit and
-            # banner at the same time. Devices that are not eligible — Android,
-            # web, older iOS builds with no VoIP token, or a VoIP send APNs
-            # refused — are untouched and still get the alert push. Fallback is
-            # the default; suppression is the exception, and it is per device,
-            # never per user.
-            voip_claimed: list[str] = []
-            try:
-                if not policy.get("suppress_push"):
-                    voip = pulsesoc_voip_push.ring_devices(
-                        cur,
-                        call,
-                        int(recipient_id),
-                        int(actor_id),
-                        actor_name or "",
-                    )
-                    voip_claimed = list(voip.get("claimed_device_ids") or [])
-                    _event(
-                        cur,
-                        int(call["id"]),
-                        int(recipient_id),
-                        "voip_push_attempt",
-                        {
-                            "status": voip.get("status"),
-                            "claimed_device_ids": voip_claimed,
-                            "results": voip.get("results") or [],
-                        },
-                    )
-            except Exception as voip_exc:
-                # A VoIP failure must never cost the recipient the alert push. An
-                # empty `voip_claimed` means nothing is suppressed, which is the
-                # pre-existing behaviour.
-                logging.warning(
-                    "PULSESOC_VOIP_RING_FAILED call_id=%s recipient=%s error=%s",
-                    call.get("id"), recipient_id, voip_exc.__class__.__name__,
-                )
-                _event(cur, int(call["id"]), int(recipient_id), "voip_push_failed", {"error": voip_exc.__class__.__name__})
-                voip_claimed = []
-
             result = pulsesoc_notification_system.intake_event(
                 event_type="incoming_call",
                 recipient_user_id=int(recipient_id),
@@ -1467,11 +1184,6 @@ def _notify_incoming_call(cur: Any, call: dict[str, Any], actor_id: int, recipie
                     "source_id": str(call.get("public_id") or call.get("id") or ""),
                     "sound_key": "call",
                     "vibration": [120, 80, 120, 80, 240],
-                    # The one stable CallKit identity for this call, derived from
-                    # the public id rather than generated, so backend, PushKit,
-                    # CallKit and Agora all name the same call.
-                    "call_uuid": pulsesoc_voip_push.call_uuid_for(str(call.get("public_id") or call.get("id") or "")),
-                    pulsesoc_voip_push.claimed_metadata_key(): voip_claimed,
                 },
                 category="calls",
                 priority="urgent",
@@ -1715,30 +1427,11 @@ def accept_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | Non
         # failure on a call that was in fact connecting normally. Re-issue the
         # media token against the existing state instead of re-transitioning.
         if str(call.get("status") or "") in {"created", "ringing"}:
-            # The device answering must not receive its own answered-elsewhere
-            # cancel: that push carries this call's UUID, so CallKit would end the
-            # call the user just picked up. A client that does not report a device
-            # id simply gets no exclusion, which is the pre-VoIP behaviour.
-            transition = _transition(
-                cur, call, "accepted", int(user_id), "accepted",
-                voip_exclude_device_ids=_answering_device_ids(payload),
-            )
+            transition = _transition(cur, call, "accepted", int(user_id), "accepted")
             if not transition.get("ok"):
-                # Losing the compare-and-set means the call was already answered
-                # (the other device, or this device's other accept path) or was
-                # already torn down. Answering twice stays idempotent, so the
-                # loser still gets a token off the current state -- but it must
-                # not re-announce the acceptance: a second `call_accepted` and a
-                # second answered-elsewhere fan-out would cancel the device that
-                # actually won. A call that moved to a terminal status instead
-                # has nothing to join.
-                if transition.get("status") != "transition_conflict":
-                    return transition
-                if str(_get_call(cur, call_ref).get("status") or "") in FINAL_STATUSES:
-                    return _err("This call has ended.", 409, "call_final")
-            else:
-                _event(cur, int(call["id"]), int(user_id), "accepted", {})
-                _emit_call_sync_event(cur, _get_call(cur, call_ref), "call_accepted", int(user_id), status="accepted")
+                return transition
+            _event(cur, int(call["id"]), int(user_id), "accepted", {})
+            _emit_call_sync_event(cur, _get_call(cur, call_ref), "call_accepted", int(user_id), status="accepted")
         refreshed = _get_call(cur, call_ref)
         token = _generate_rtc_token(
             "agora",
@@ -2400,11 +2093,6 @@ def admin_force_end_call(call_ref: str | int, admin_user_id: int = 0, reason: st
             return _ok({"message": "Call was already final.", "call": _serialize_admin_call(cur, call)})
         updated = _transition(cur, call, "ended", int(admin_user_id or 0), reason or "admin_force_end")
         if not updated.get("ok"):
-            # Losing the compare-and-set means the call reached a terminal state
-            # between the read above and this write, which is the same outcome
-            # the already-final branch reports rather than an admin-visible error.
-            if updated.get("status") == "transition_conflict":
-                return _ok({"message": "Call was already final.", "call": _serialize_admin_call(cur, _get_call(cur, call_ref))})
             return updated
         now = _now()
         cur.execute(
@@ -2635,98 +2323,6 @@ def mark_missed_stale_calls(timeout_seconds: int = 45) -> dict[str, Any]:
         updated = _mark_missed_stale_calls_cur(cur, timeout_seconds)
         conn.commit()
         return _ok({"missed_calls": updated})
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-
-# ---------------------------------------------------------------------------
-# PushKit VoIP token lifecycle
-# ---------------------------------------------------------------------------
-#
-# A VoIP token is a second, separate APNs credential for the same device: it
-# addresses the `<bundle>.voip` topic and is issued by PKPushRegistry, not by
-# UNUserNotificationCenter. It is stored apart from `notification_device_tokens`
-# on purpose — see the note in `services/pulsesoc_voip_push.register_token`.
-#
-# `device_id` here must be the *same* installation id the alert registration
-# uses (`/api/push/subscribe`), because that id is the key the alert-push
-# suppression joins on. A VoIP token filed under a different device id would
-# ring the phone through CallKit *and* deliver the normal alert push to the
-# same handset.
-
-
-def register_voip_token(user_id: int, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    payload = payload or {}
-    token = str(payload.get("token") or payload.get("voip_token") or "").strip()
-    device_id = str(
-        payload.get("device_id")
-        or payload.get("installation_id")
-        or payload.get("deviceId")
-        or ""
-    ).strip()
-    if not token:
-        return _err("A VoIP token is required.", 400, "missing_token")
-    if not device_id:
-        return _err("A device id is required.", 400, "missing_device_id")
-
-    conn, cur = _open_db()
-    try:
-        result = pulsesoc_voip_push.register_token(
-            cur,
-            int(user_id),
-            device_id,
-            token,
-            environment=str(payload.get("environment") or ""),
-            app_bundle=str(payload.get("app_bundle") or payload.get("bundle_id") or "")[:120],
-            app_version=str(payload.get("app_version") or payload.get("version") or "")[:40],
-        )
-        conn.commit()
-        if not result.get("ok"):
-            return _err(
-                str(result.get("message") or "VoIP token could not be registered."),
-                400,
-                str(result.get("status") or "invalid"),
-            )
-        # `voip_ready` tells the client whether this registration will actually
-        # produce a ring. A token stored while APNs VoIP is unconfigured is not a
-        # failure — it will start working the moment the key is provisioned — but
-        # the client must not disable its alert-push fallback on the strength of a
-        # bare 200.
-        return _ok({
-            "status": result.get("status"),
-            "environment": result.get("environment"),
-            "voip_ready": pulsesoc_voip_push.is_configured(),
-        })
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-
-def revoke_voip_token(user_id: int, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    payload = payload or {}
-    token = str(payload.get("token") or payload.get("voip_token") or "").strip()
-    device_id = str(payload.get("device_id") or payload.get("installation_id") or "").strip()
-    if not token and not device_id:
-        return _err("A VoIP token or device id is required.", 400, "missing_token")
-
-    conn, cur = _open_db()
-    try:
-        # Scoped to `user_id` by the caller's session, so one account can never
-        # silence another account's phone by guessing a token.
-        result = pulsesoc_voip_push.revoke_token(
-            cur,
-            user_id=int(user_id),
-            token=token,
-            device_id=device_id,
-            reason=str(payload.get("reason") or "client_revoke")[:80],
-        )
-        conn.commit()
-        return _ok({"status": "revoked", "revoked": int(result.get("revoked") or 0)})
     except Exception:
         conn.rollback()
         raise

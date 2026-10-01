@@ -1,5 +1,5 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -30,18 +30,14 @@ import { describeDeleteError } from "../api/deleteErrors";
 import { profileTargetFromPost } from "../api/profile";
 import { profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
 import { PostCard } from "../components/PostCard";
-import { CommerceFeedCard } from "../commerce/CommerceFeedCard";
-import { usePostDetailCommerce } from "../commerce/usePostDetailCommerce";
 import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
-import { useCommerceOverlayNavigation } from "../commerce/useCommerceOverlayNavigation";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { sharePulseObject } from "../sharing/nativeShare";
-import { buildPostShareMetadata } from "../sharing/postShare";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { CommentThread, commentAuthorLabel } from "../social/CommentThread";
 import { buildCommentTree, countCommentTree, flattenCommentTree, mergeFlatComments, toggleSetValue } from "../social/commentTree";
@@ -52,7 +48,6 @@ type Props = NativeStackScreenProps<RootStackParamList, "PostDetail">;
 
 export function PostDetailScreen({ route, navigation }: Props) {
   const postId = route.params.postId;
-  const commerceNavigation = useCommerceOverlayNavigation(navigation);
   const { authState } = useAuth();
   const currentUserId = Number(authState.user?.user_id || 0);
   const [post, setPost] = useState<PulsePost | null>(null);
@@ -83,47 +78,6 @@ export function PostDetailScreen({ route, navigation }: Props) {
 
   const comments = useMemo(() => buildCommentTree(flatComments), [flatComments]);
   const loadedCommentCount = flatComments.length;
-
-  /**
-   * The at-most-one product card, and whether it is actually on screen.
-   *
-   * `onViewableItemsChanged` does not report list *headers*, and the card is a
-   * header child, so visibility is measured here — the same approach
-   * `MessengerScreen` takes for its strip.
-   *
-   * It cannot reuse Messenger's comparison though. There the strip sits near the
-   * top, so "visible" is `offset <= halfway` — an upper bound, on the assumption
-   * that the slot starts on screen and only ever scrolls *away*. Here the card
-   * sits under a post that may be a full-bleed photo taller than the viewport, so
-   * it commonly starts below the fold and scrolls *into* view. An upper bound
-   * would report it visible before it had ever been seen, which is the
-   * over-counting direction, and an impression is the one number in this system
-   * that must not be generous.
-   *
-   * So this is a real intersection against both edges of the viewport. The
-   * viewport height comes from the scroll event's own `layoutMeasurement` when
-   * one has arrived and from the list's `onLayout` before that, which is what
-   * makes the short-post case work: a post that fits on screen produces no scroll
-   * event at all, and a card whose impression depended on scrolling would never
-   * report one.
-   */
-  const commerce = usePostDetailCommerce({ post, enabled: !loading, refreshToken: refreshing ? 1 : 0 });
-  const commerceHalfwayY = useRef(0);
-  const commerceViewportHeight = useRef(0);
-  const commerceScrollY = useRef(0);
-  const [commerceInView, setCommerceInView] = useState(false);
-  const recomputeCommerceInView = useCallback(() => {
-    const halfway = commerceHalfwayY.current;
-    const viewport = commerceViewportHeight.current;
-    // Nothing measured yet: not visible. Defaulting to true would fire an
-    // impression for a card whose position is still unknown.
-    if (halfway <= 0 || viewport <= 0) {
-      setCommerceInView(false);
-      return;
-    }
-    const top = commerceScrollY.current;
-    setCommerceInView(halfway >= top && halfway <= top + viewport);
-  }, []);
 
   async function load(mode: "initial" | "refresh" = "initial") {
     setError("");
@@ -372,20 +326,6 @@ export function PostDetailScreen({ route, navigation }: Props) {
         style={styles.list}
         contentContainerStyle={styles.content}
         data={comments}
-        onLayout={(event) => {
-          commerceViewportHeight.current = event.nativeEvent.layout.height;
-          recomputeCommerceInView();
-        }}
-        onScroll={(event) => {
-          commerceScrollY.current = Math.max(0, event.nativeEvent.contentOffset?.y || 0);
-          // Preferred over the `onLayout` height once a scroll has happened: the
-          // keyboard opening resizes the visible area without re-laying out the
-          // list, and this screen has a text input in its header.
-          const measured = event.nativeEvent.layoutMeasurement?.height;
-          if (measured) commerceViewportHeight.current = measured;
-          recomputeCommerceInView();
-        }}
-        scrollEventThrottle={16}
         keyExtractor={(item, index) => `${item.id}-${index}`}
         refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load("refresh").catch(() => undefined)} />}
         ListHeaderComponent={
@@ -394,43 +334,26 @@ export function PostDetailScreen({ route, navigation }: Props) {
             {error ? <Text style={styles.error}>{error}</Text> : null}
             <PostCard
               post={post}
-              onOpenCommerceProduct={commerceNavigation.onOpenCommerceProduct}
-              onOpenCommerceSeller={commerceNavigation.onOpenCommerceSeller}
               detail
               busy={busy}
               onReact={handleReact}
               onSave={handleSave}
               onRepost={handleRepost}
               onPromote={(item) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: item.id, title: "Promote Post" })}
-              onShare={(item) => sharePulseObject(buildPostShareMetadata(item)).catch(() => undefined)}
+              onShare={(item) => sharePulseObject({
+                kind: "post",
+                url: pulsePostUrl(item.id),
+                title: item.title || "PulseSoc post",
+                description: item.body || item.text || item.content,
+                author: item.author?.display_name || item.author?.name || item.author?.username || item.author_name,
+                previewImageUrl: item.thumbnail_url || item.image_url
+              }).catch(() => undefined)}
               onDelete={isContentOwner(post, currentUserId) ? handleDelete : undefined}
               onAuthorPress={(item) => {
                 const params = profileNavigationParams(profileTargetFromPost(item), item.author?.display_name || "Profile");
                 if (params) navigation.navigate("ProfileDetail", params);
               }}
             />
-            {commerce.placement ? (
-              <View
-                testID="post-detail-commerce-slot"
-                onLayout={(event) => {
-                  // Measured inside the header stack, so it omits the list's own
-                  // `paddingTop`. That shifts the real halfway point slightly
-                  // later than this one, which starts the impression clock a
-                  // little late — the under-counting direction.
-                  const { y, height } = event.nativeEvent.layout;
-                  commerceHalfwayY.current = y + height / 2;
-                  recomputeCommerceInView();
-                }}
-              >
-                <CommerceFeedCard
-                  placements={[commerce.placement]}
-                  isViewable={commerceInView}
-                  visibleDwellMs={commerce.visibleDwellMs}
-                  navigation={navigation}
-                  onFeedback={commerce.onFeedback}
-                />
-              </View>
-            ) : null}
             <View style={styles.commentComposer}>
               {replyTo ? (
                 <View style={styles.replyBanner}>

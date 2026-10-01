@@ -21,12 +21,6 @@ jest.mock("expo-sharing", () => ({
   isAvailableAsync: jest.fn(),
   shareAsync: jest.fn()
 }));
-jest.mock("expo-file-system/legacy", () => ({
-  cacheDirectory: "file:///cache/",
-  makeDirectoryAsync: jest.fn(async () => undefined),
-  copyAsync: jest.fn(async () => undefined),
-  deleteAsync: jest.fn(async () => undefined)
-}));
 jest.mock("../../sharing/nativeShare", () => ({ sharePulseObject: jest.fn() }));
 jest.mock("../mediaDownloader", () => {
   // `MediaDownloadError` must keep its real identity: `saveMediaToGallery`
@@ -39,8 +33,7 @@ import { MediaDownloadError, downloadMedia } from "../mediaDownloader";
 import { sharePulseObject } from "../../sharing/nativeShare";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
-import * as FileSystem from "expo-file-system/legacy";
-import { MEDIA_ACTION_ORDER, openDocument, saveMediaToGallery, shareMedia } from "../mediaActions";
+import { MEDIA_ACTION_ORDER, saveMediaToGallery, shareMedia } from "../mediaActions";
 
 const mockDownloadMedia = downloadMedia as jest.MockedFunction<typeof downloadMedia>;
 const mockSharePulseObject = sharePulseObject as jest.MockedFunction<typeof sharePulseObject>;
@@ -50,11 +43,6 @@ const mockMediaLibrary = MediaLibrary as unknown as {
   saveToLibraryAsync: jest.Mock;
 };
 const mockSharing = Sharing as unknown as { isAvailableAsync: jest.Mock; shareAsync: jest.Mock };
-const mockFileSystem = FileSystem as unknown as {
-  makeDirectoryAsync: jest.Mock;
-  copyAsync: jest.Mock;
-  deleteAsync: jest.Mock;
-};
 
 const PHOTO = { url: "https://cdn.pulsesoc.com/m/7.jpg", mediaId: 7, kind: "image" as const, surface: "messenger" };
 
@@ -111,64 +99,6 @@ describe("saveMediaToGallery", () => {
     expect((result as { message: string }).message).toMatch(/Settings/);
   });
 
-  /**
-   * Photos decides image-versus-movie from the file name and rejects a file with
-   * no extension at all — even a valid JPEG. The download engine names its files
-   * now, but entries cached before that fix are still sitting on disk unnamed,
-   * and a user whose photo will not save does not care which release wrote it.
-   */
-  describe("an extensionless cached file", () => {
-    const UNNAMED = "file:///cache/pulsesoc-media/anon/cm58uqq";
-
-    beforeEach(() => {
-      mockDownloadMedia.mockResolvedValue({
-        key: "id:87",
-        fileUri: UNNAMED,
-        bytes: 803426,
-        mimeType: "image/jpeg",
-        createdAt: Date.now(),
-        lastAccessAt: Date.now()
-      });
-    });
-
-    it("is copied to a name Photos accepts before the write", async () => {
-      await expect(saveMediaToGallery({ ...PHOTO, mimeType: "image/jpeg" })).resolves.toEqual({
-        status: "saved",
-        limited: false
-      });
-      expect(mockFileSystem.copyAsync).toHaveBeenCalledWith({ from: UNNAMED, to: expect.stringMatching(/\.jpg$/) });
-      expect(mockMediaLibrary.saveToLibraryAsync).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/));
-    });
-
-    it("falls back to the kind when the MIME type is missing too", async () => {
-      await expect(saveMediaToGallery({ ...PHOTO, kind: "video", mimeType: undefined })).resolves.toMatchObject({
-        status: "saved"
-      });
-      expect(mockMediaLibrary.saveToLibraryAsync).toHaveBeenCalledWith(expect.stringMatching(/\.mp4$/));
-    });
-
-    it("deletes the copy afterwards — the cache still owns the real bytes", async () => {
-      await saveMediaToGallery({ ...PHOTO, mimeType: "image/jpeg" });
-      expect(mockFileSystem.deleteAsync).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/), { idempotent: true });
-    });
-
-    it("deletes the copy even when the write fails", async () => {
-      // Otherwise every failed save leaks a full-size duplicate into the cache,
-      // and the failure users hit most is the one that fills their disk.
-      mockFileSystem.deleteAsync.mockClear();
-      mockMediaLibrary.saveToLibraryAsync.mockRejectedValue(new Error("write failed"));
-      await expect(saveMediaToGallery({ ...PHOTO, mimeType: "image/jpeg" })).resolves.toMatchObject({
-        status: "failed"
-      });
-      expect(mockFileSystem.deleteAsync).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/), { idempotent: true });
-    });
-  });
-
-  it("copies nothing when the cached file already has an extension", async () => {
-    await saveMediaToGallery(PHOTO);
-    expect(mockFileSystem.copyAsync).not.toHaveBeenCalled();
-  });
-
   it("does not report saved when the library write itself throws", async () => {
     mockMediaLibrary.saveToLibraryAsync.mockRejectedValue(new Error("disk full"));
     const result = await saveMediaToGallery(PHOTO);
@@ -215,189 +145,10 @@ describe("shareMedia", () => {
     mockSharing.isAvailableAsync.mockResolvedValue(false);
     await expect(shareMedia(PHOTO)).resolves.toEqual({ status: "shared", mode: "link" });
   });
-
-  it("can re-mint an expired access URL, exactly as Save can", async () => {
-    // Share is reached whenever the user taps, which can be long after the
-    // fifteen-minute grant that painted the picture. Without the hook, sharing a
-    // photo that is on screen degrades to sharing a link the recipient cannot
-    // open — a silent downgrade that looks like it worked.
-    const refreshUrl = jest.fn(async () => "https://pulsesoc.com/api/messages/media/601/download?mt=fresh");
-    await shareMedia({ ...PHOTO, refreshUrl });
-    expect(mockDownloadMedia).toHaveBeenCalledWith(expect.objectContaining({ refreshUrl }));
-  });
-
-  describe("an extensionless cached file", () => {
-    const UNNAMED = "file:///cache/pulsesoc-media/anon/cm58uqq";
-
-    beforeEach(() => {
-      mockDownloadMedia.mockResolvedValue({
-        key: "id:87",
-        fileUri: UNNAMED,
-        bytes: 803426,
-        mimeType: "image/jpeg",
-        createdAt: Date.now(),
-        lastAccessAt: Date.now()
-      });
-    });
-
-    it("is shared under a name the recipient can open", async () => {
-      // Observed on device: the sheet showed "cm58uqq — File · 803 KB" and
-      // offered only Copy/Print/Save to Files. Declaring `mimeType` and `UTI`
-      // does not rescue it; iOS types a file URL by its extension.
-      await expect(shareMedia(PHOTO)).resolves.toEqual({ status: "shared", mode: "file" });
-      expect(mockSharing.shareAsync).toHaveBeenCalledWith(
-        expect.stringMatching(/\.jpg$/),
-        expect.objectContaining({ mimeType: "image/jpeg" })
-      );
-    });
-
-    it("deletes the shared copy once the sheet closes", async () => {
-      await shareMedia(PHOTO);
-      expect(mockFileSystem.deleteAsync).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/), { idempotent: true });
-    });
-
-    it("deletes it even when the share is dismissed or fails", async () => {
-      mockSharing.shareAsync.mockRejectedValue(new Error("dismissed"));
-      await shareMedia({ ...PHOTO, sourceUrl: "https://pulsesoc.com/p/9" });
-      expect(mockFileSystem.deleteAsync).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/), { idempotent: true });
-    });
-  });
-
-  it("copies nothing when the cached file already has an extension", async () => {
-    await shareMedia(PHOTO);
-    expect(mockFileSystem.copyAsync).not.toHaveBeenCalled();
-    expect(mockSharing.shareAsync).toHaveBeenCalledWith(
-      "file:///cache/pulsesoc-media/u1/abc.jpg",
-      expect.anything()
-    );
-  });
-});
-
-describe("openDocument", () => {
-  const PDF = {
-    url: "https://pulsesoc.com/api/messages/media/44/download",
-    mediaId: 44,
-    mimeType: "application/pdf",
-    surface: "messenger",
-    title: "contract.pdf"
-  };
-
-  beforeEach(() => {
-    mockDownloadMedia.mockResolvedValue({
-      key: "id:44",
-      fileUri: "file:///cache/pulsesoc-media/u1/contract.pdf",
-      bytes: 91_233,
-      mimeType: "application/pdf",
-      createdAt: Date.now(),
-      lastAccessAt: Date.now()
-    });
-  });
-
-  it("opens the downloaded file, which is the whole point of the tap", async () => {
-    await expect(openDocument(PDF)).resolves.toEqual({ status: "opened" });
-    expect(mockSharing.shareAsync).toHaveBeenCalledWith(
-      "file:///cache/pulsesoc-media/u1/contract.pdf",
-      expect.objectContaining({ mimeType: "application/pdf" })
-    );
-  });
-
-  it("asks for the document's exact UTI, because public.data opens nothing on iOS", async () => {
-    await openDocument(PDF);
-    expect(mockSharing.shareAsync).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ UTI: "com.adobe.pdf" }));
-  });
-
-  it("knows the Office types too, not just PDF", async () => {
-    const docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    mockDownloadMedia.mockResolvedValue({
-      key: "id:45",
-      fileUri: "file:///cache/pulsesoc-media/u1/brief.docx",
-      bytes: 2048,
-      mimeType: docx,
-      createdAt: Date.now(),
-      lastAccessAt: Date.now()
-    });
-    await openDocument({ ...PDF, mediaId: 45, mimeType: docx });
-    expect(mockSharing.shareAsync).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ UTI: "org.openxmlformats.wordprocessingml.document" })
-    );
-  });
-
-  it("tolerates a charset on the declared type", async () => {
-    mockDownloadMedia.mockResolvedValue({
-      key: "id:46",
-      fileUri: "file:///cache/pulsesoc-media/u1/notes.txt",
-      bytes: 12,
-      mimeType: "text/plain; charset=utf-8",
-      createdAt: Date.now(),
-      lastAccessAt: Date.now()
-    });
-    await openDocument({ ...PDF, mediaId: 46, mimeType: "text/plain; charset=utf-8" });
-    expect(mockSharing.shareAsync).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ UTI: "public.plain-text" }));
-  });
-
-  it("reports a real failure instead of substituting a share sheet for a link", async () => {
-    // The user asked to read this file. Handing them a URL their recipient would
-    // hit a login wall on is a silent substitution, not a fallback.
-    mockDownloadMedia.mockRejectedValue(new MediaDownloadError("network", "offline"));
-    const result = await openDocument({ ...PDF, sourceUrl: "https://pulsesoc.com/p/9" } as never);
-    expect(result).toMatchObject({ status: "failed", reason: "network" });
-    expect(mockSharePulseObject).not.toHaveBeenCalled();
-    expect(mockSharing.shareAsync).not.toHaveBeenCalled();
-  });
-
-  it("says so when the device has no viewer at all, rather than failing silently", async () => {
-    mockSharing.isAvailableAsync.mockResolvedValue(false);
-    const result = await openDocument(PDF);
-    expect(result.status).toBe("unsupported");
-    expect(mockDownloadMedia).not.toHaveBeenCalled();
-  });
-
-  it("never puts a URL in a user-facing message", async () => {
-    mockDownloadMedia.mockRejectedValue(new MediaDownloadError("forbidden", PDF.url));
-    const result = (await openDocument(PDF)) as { message: string };
-    expect(result.message).not.toContain("http");
-  });
-
-  it("downloads through the shared cache, so opening twice costs one transfer", async () => {
-    await openDocument(PDF);
-    expect(mockDownloadMedia).toHaveBeenCalledWith(
-      expect.objectContaining({ mediaId: 44, kind: "file", surface: "messenger" })
-    );
-  });
 });
 
 describe("action order (Stage 39)", () => {
   it("is fixed as data so a new surface inherits it instead of re-deciding it", () => {
     expect([...MEDIA_ACTION_ORDER]).toEqual(["react", "reply", "forward", "share", "save"]);
-  });
-});
-
-/**
- * Progress has to reach the caller, or the surface has nothing honest to render.
- *
- * The downloader has emitted progress to a listener set since it was written, and
- * every one of these actions simply never passed a listener through — so on
- * device an 8.6 MB save showed the word "Saving" and nothing else for minutes,
- * which is indistinguishable from a hang and was in fact mistaken for one. The
- * gap was wiring, not mechanism, so what is pinned here is the wiring.
- */
-describe("transfer progress reaches the caller", () => {
-  const onProgress = jest.fn();
-
-  it("forwards a progress listener when saving to the library", async () => {
-    mockDownloadMedia.mockResolvedValue({
-      key: "id:9", fileUri: "file:///cache/9.mp4", bytes: 10, mimeType: "video/mp4", createdAt: 0, lastAccessAt: 0
-    } as never);
-    await saveMediaToGallery({ url: "https://cdn.pulsesoc.com/m/9.mp4", mediaId: 9, kind: "video" }, { onProgress });
-    expect(mockDownloadMedia).toHaveBeenCalledWith(expect.objectContaining({ onProgress }));
-  });
-
-  it("forwards a progress listener when opening a document", async () => {
-    mockDownloadMedia.mockResolvedValue({
-      key: "id:44", fileUri: "file:///cache/44.pdf", bytes: 10, mimeType: "application/pdf", createdAt: 0, lastAccessAt: 0
-    } as never);
-    await openDocument({ url: "https://cdn.pulsesoc.com/m/44.pdf", mediaId: 44, kind: "file" }, { onProgress });
-    expect(mockDownloadMedia).toHaveBeenCalledWith(expect.objectContaining({ onProgress }));
   });
 });

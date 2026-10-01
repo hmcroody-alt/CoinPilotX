@@ -106,28 +106,12 @@
     heif: "image/heif",
     mp4: "video/mp4",
     m4v: "video/mp4",
-    mov: "video/quicktime",
-    qt: "video/quicktime",
     webm: "video/webm",
     mp3: "audio/mpeg",
     m4a: "audio/mp4",
     wav: "audio/wav",
     ogg: "audio/ogg",
     oga: "audio/ogg",
-    // Documents. These mirror services/messenger_media_foundation.ALLOWED_MIME_TYPES;
-    // the composer refused every one of them while the backend accepted them, so
-    // a web user could not send the PDF a phone user could.
-    pdf: "application/pdf",
-    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    doc: "application/msword",
-    xls: "application/vnd.ms-excel",
-    ppt: "application/vnd.ms-powerpoint",
-    txt: "text/plain",
-    log: "text/plain",
-    md: "text/plain",
-    csv: "text/csv",
   };
   const MEDIA_FOUNDATION_MIMES = new Set(Object.values(MEDIA_FOUNDATION_MIME_BY_EXT));
   const CONTROL_THEME_OPTIONS = [
@@ -143,9 +127,6 @@
     ["creator_gold", "Creator Gold"],
   ];
   const CONTROL_WALLPAPER_OPTIONS = [
-    // PulseSoc Cosmic first: it is the wallpaper a conversation already has
-    // when nobody has picked one. The rest keep their order and their ids.
-    ["pulsesoc_cosmic", "PulseSoc Cosmic"],
     ["deep_space", "Deep Space"],
     ["neon_planet", "Neon Planet"],
     ["galaxy_grid", "Galaxy Grid"],
@@ -1479,8 +1460,8 @@
     const text = String(value || "").trim().toLowerCase();
     if (kind === "theme") return CONTROL_THEME_OPTIONS.some(([id]) => id === text) ? text : "dark_galaxy";
     if (kind === "wallpaper") {
-      if (text === "default") return "pulsesoc_cosmic";
-      return CONTROL_WALLPAPER_OPTIONS.some(([id]) => id === text) ? text : "pulsesoc_cosmic";
+      if (text === "default") return "deep_space";
+      return CONTROL_WALLPAPER_OPTIONS.some(([id]) => id === text) ? text : "deep_space";
     }
     if (kind === "bubble") return CONTROL_BUBBLE_OPTIONS.some(([id]) => id === text) ? text : "cyan";
     return text;
@@ -1494,7 +1475,7 @@
     const accessibility = settings.accessibility || {};
     if (!root) return;
     root.dataset.controlTheme = normalizeAppearanceValue("theme", appearance.theme || "dark_galaxy");
-    root.dataset.controlWallpaper = normalizeAppearanceValue("wallpaper", appearance.wallpaper || "pulsesoc_cosmic");
+    root.dataset.controlWallpaper = normalizeAppearanceValue("wallpaper", appearance.wallpaper || "deep_space");
     root.dataset.controlBubble = normalizeAppearanceValue("bubble", appearance.bubble_color || "cyan");
     root.dataset.controlDensity = appearance.density || "balanced";
     root.dataset.controlFont = accessibility.large_text ? "large" : (appearance.font_size || "medium");
@@ -2058,28 +2039,6 @@
     `;
   }
 
-  /**
-   * The text of a bubble, which for an attachment nobody captioned is nothing.
-   *
-   * There is no caption field on the attach flow, so the picked file's name
-   * arrives as the message body: a photo bubble printed `IMG_5024.jpg` and a
-   * voice note printed `pulsesoc-voice-1784432743856.m4a` above its own player,
-   * as if someone had typed them. A voice note drops its body outright -- the
-   * player says everything the message means, and the recorder's filename is an
-   * implementation detail that is never shown. Other attachments drop only a
-   * body that reads as a filename, so a real caption survives.
-   */
-  function bubbleBodyText(item) {
-    const body = String(item?.body || "").trim();
-    if (!body) return "";
-    const type = String(item?.message_type || item?.type || "text").toLowerCase();
-    if (["voice", "audio", "voice_message", "voice_note", "audio_message"].includes(type)) return "";
-    if (["image", "photo", "gif", "video", "file", "document"].includes(type)) {
-      return /^[^\s/\\]+\.[A-Za-z0-9]{2,5}$/.test(body) ? "" : body;
-    }
-    return body;
-  }
-
   function messageHtml(item) {
     const mine = Number(item.sender_user_id || 0) === currentUserId || item.is_mine;
     const aiMessage = Boolean(item.is_ai || Number(item.sender_user_id || 0) === PULSE_AI_USER_ID);
@@ -2101,7 +2060,7 @@
         ${!mine ? `<strong>${escapeHtml(item.sender?.display_name || "PulseSoc member")}</strong>` : ""}
         ${reply}
         ${shield.risky || item?.pulse_shield?.flagged ? `<div class="pulse-shield-warning" data-shield-score="${Number(item?.pulse_shield?.score || shield.score || 0)}"><strong>Pulse Shield</strong><span>Suspicious link pattern detected. Review before opening.</span></div>` : ""}
-        ${bubbleBodyText(item) ? `<p>${linkifiedMessageHtml(bubbleBodyText(item))}</p>` : ""}
+        ${item.body ? `<p>${linkifiedMessageHtml(item.body)}</p>` : ""}
         ${attachments ? `<div class="attachments">${attachments}</div>` : ""}
         ${reactionSummary ? `<div class="reaction-summary">${reactionSummary}</div>` : ""}
         <small class="message-meta"><time>${escapeHtml(shortTime(item.created_at))}</time>${item.is_edited ? " / Edited" : ""}${mine ? ` <span class="delivery-state" data-state="${escapeAttr(messageDeliveryLabel(item).toLowerCase())}">${deliveryGlyph(messageDeliveryLabel(item))} ${escapeHtml(messageDeliveryLabel(item))}</span>` : ""}</small>
@@ -2789,53 +2748,21 @@
     syncComposerState();
   }
 
-  /**
-   * The composer's emoji affordance. This used to show a strip of eight
-   * hardcoded glyphs baked into templates/pulse_messages_v2.html; it now opens
-   * `window.PulseEmoji`, the one picker the whole website shares with the app
-   * (same 1,914-emoji dataset, same search ranking, same recents key).
-   *
-   * `state.emojiOpen` survives the swap deliberately. Eight call sites close
-   * this panel when something else takes the composer (attachment sheet,
-   * thread switch, send, reply cancel, ...) and `composerMode()` reports
-   * "emoji_open" to analytics. Replacing the panel's markup must not quietly
-   * retire that state, so the flag still tracks the picker -- including when
-   * the picker closes itself via Escape or an outside click, which is what
-   * the onClose callback is for.
-   */
   function toggleEmojiPanel(force) {
-    const picker = window.PulseEmoji;
-    const next = typeof force === "boolean" ? force : !state.emojiOpen;
-    if (!picker) {
-      state.emojiOpen = false;
-      syncComposerState();
-      return;
-    }
-    if (!next) {
-      state.emojiOpen = false;
-      picker.close();
-      syncComposerState();
-      return;
-    }
-    state.emojiOpen = true;
-    state.attachmentSheetOpen = false;
-    const attachmentSheet = el("[data-attachment-sheet]");
-    if (attachmentSheet) {
-      attachmentSheet.hidden = true;
-      attachmentSheet.classList.remove("is-open");
-    }
-    const input = el("[data-message-input]");
-    picker.open({
-      anchor: el("[data-toggle-emoji]"),
-      returnFocusTo: input,
-      stayOpenOnSelect: true,
-      label: "Add emoji to your message",
-      onSelect: insertEmoji,
-      onClose: () => {
-        state.emojiOpen = false;
-        syncComposerState();
+    const panel = el("[data-emoji-panel]");
+    state.emojiOpen = typeof force === "boolean" ? force : !state.emojiOpen;
+    if (state.emojiOpen) {
+      state.attachmentSheetOpen = false;
+      const attachmentSheet = el("[data-attachment-sheet]");
+      if (attachmentSheet) {
+        attachmentSheet.hidden = true;
+        attachmentSheet.classList.remove("is-open");
       }
-    });
+    }
+    if (panel) {
+      panel.hidden = !state.emojiOpen;
+      panel.classList.toggle("is-open", state.emojiOpen);
+    }
     syncComposerState();
   }
 
@@ -2846,6 +2773,7 @@
     const end = Number.isFinite(input.selectionEnd) ? input.selectionEnd : input.value.length;
     input.setRangeText(value, start, end, "end");
     input.dispatchEvent(new Event("input", { bubbles: true }));
+    toggleEmojiPanel(false);
     input.focus();
   }
 
@@ -3513,6 +3441,8 @@
         if (createRoomButton) return await runAction(createRoomButton, "Creating room...", createRoom);
         if (target.closest("[data-toggle-attachments]")) return toggleAttachmentSheet();
         if (target.closest("[data-toggle-emoji]")) return toggleEmojiPanel();
+        const emoji = target.closest("[data-emoji-value]");
+        if (emoji) return insertEmoji(emoji.dataset.emojiValue || "");
         const attachmentOption = target.closest("[data-attachment-option]");
         if (attachmentOption) return openAttachmentOption(attachmentOption.dataset.attachmentOption || "file");
         const removeAttachmentButton = target.closest("[data-attachment-remove]");
@@ -4361,13 +4291,7 @@
       sender_avatar: "",
       is_mine: true,
       message_type: messageTypeForSend(hasVoice, state.attachmentQueue.length ? [1] : []),
-      // No stand-in label. What is sent to the server for an uncaptioned
-      // attachment is an empty body, so filling one in here made the optimistic
-      // bubble say "Voice message" or "Attachment" above its own player and then
-      // silently lose the line on the next load -- the same message, rendered
-      // two different ways either side of a refresh. The player and the
-      // attachment card already say what the message is.
-      body: body.trim(),
+      body: body.trim() || (hasVoice ? "Voice message" : "Attachment"),
       reply_to_message_id: state.replyTo?.id || 0,
       delivery_status: "sending",
       delivery_state: "sending",
@@ -4440,8 +4364,8 @@
     const failed = state.messages.find((item) => Number(item.id) === Number(messageId) && item._failed);
     if (!failed || state.composerSending) return;
     const input = el("[data-message-input]");
-    if (input && !input.value.trim() && bubbleBodyText(failed)) {
-      input.value = bubbleBodyText(failed);
+    if (input && !input.value.trim() && failed.body && !["Attachment", "Voice message"].includes(failed.body)) {
+      input.value = failed.body;
       input.dispatchEvent(new Event("input", { bubbles: true }));
     }
     state.messages = state.messages.filter((item) => Number(item.id) !== Number(messageId));

@@ -60,11 +60,10 @@ os.environ["BUSINESS_OS_SUPPLIERS_CJ"] = "1"
 os.environ["CJ_ENVIRONMENT_MODE"] = "SANDBOX"
 
 from services import db  # noqa: E402
-from services import marketplace_listing_lifecycle as lifecycle  # noqa: E402
 from services import marketplace_supplier_schema as supplier_schema  # noqa: E402
 from services import marketplace_variants as variants  # noqa: E402
 from services.business_os.suppliers import (  # noqa: E402
-    audit, drafts, gateway, import_cart, importer, normalize, pricing, store_policy)
+    drafts, gateway, import_cart, importer, normalize, pricing)
 from services.business_os.suppliers import schema as connection_schema  # noqa: E402
 from services.business_os.suppliers.errors import SupplierError  # noqa: E402
 from tests.marketplace_production_listings import seed_production_listings  # noqa: E402
@@ -74,27 +73,6 @@ OTHER_OWNER_ID = "4002"
 BUSINESS, STORE, CONNECTION = "biz-a", "store-a", "conn-a"
 OTHER_BUSINESS, OTHER_STORE, OTHER_CONNECTION = "biz-b", "store-b", "conn-b"
 CONTEXT = {"account_status": "active", "access_enabled": True}
-
-
-def assert_released_not_published(status):
-    """The landing state of an import the publish gate refused.
-
-    Every site that calls this used to read ``assert status == "draft"``, and
-    ``draft`` was doing two jobs at once: it was the spelling of "no buyer can
-    reach this", which is the property the test cares about, and it was also a
-    claim on the *merchant's* axis that they had not released the product --
-    which was false, because they had just tapped Import & publish, and which
-    kept 67 production listings out of the moderation queue.
-
-    So this asserts the two separately. The first line is the new behaviour and
-    would fail if the release were dropped; the second is the invariant that was
-    always the point, and it is written against
-    :data:`lifecycle.PUBLIC_STATUSES` rather than against the literal
-    ``"published"`` so that a future status added to that set cannot become
-    buyer-visible here without turning this red.
-    """
-    assert status == lifecycle.REVIEW_READY, status
-    assert status not in lifecycle.PUBLIC_STATUSES, status
 
 
 # ---------------------------------------------------------------------------
@@ -264,17 +242,6 @@ def run_import(*, item_ids=None, rule=None, business=BUSINESS, store=STORE,
                                     item_ids=item_ids, pricing_rule=rule, context=CONTEXT)
 
 
-def set_store_policy(business=BUSINESS, store=STORE, **fields):
-    """Write one store's import policy, the way the settings screen does."""
-    conn = db.connect()
-    try:
-        result = store_policy.set_policy(conn, business, store, **fields)
-        conn.commit()
-        return result
-    finally:
-        conn.close()
-
-
 # ---------------------------------------------------------------------------
 # Import Cart
 # ---------------------------------------------------------------------------
@@ -334,54 +301,29 @@ def test_cart_cache_is_display_only(provider):
 
 
 # ---------------------------------------------------------------------------
-# Import creates the listing. Whether it publishes is the gate's answer.
+# Import creates a draft, never a published listing
 # ---------------------------------------------------------------------------
 
-def test_import_creates_the_listing_in_the_merchants_store(provider):
-    # `cj_product`'s default is two in-stock variants at different costs, which is
-    # a real question about which one a buyer receives. Nothing here can answer it,
-    # so this product needs attention -- and the listing exists regardless, with
-    # the provider's facts on it. See `test_dropship_autopublish.py` for the
-    # ordinary product that goes all the way.
+def test_import_creates_a_draft_listing(provider):
     provider.add(cj_product("PID-1"))
     add_to_cart("PID-1")
     result = run_import()
 
     assert result["imported"] == 1
-    assert result["results"][0]["outcome"] == importer.NEEDS_ATTENTION
-    assert drafts.SUPPLIER_VARIANT_UNBOUND in result["results"][0]["problems"]
-    # Not a published batch. One needs-attention item is enough to make the
-    # summary false, and the merchant is the one who would go looking.
     assert result["published"] is False
+    assert result["results"][0]["outcome"] == importer.IMPORTED
 
     listing = rows("SELECT * FROM marketplace_listings")[0]
-    # Not a draft: the merchant asked for this, the gate declined to finish it,
-    # and those are answers to two different questions. See the helper.
-    assert_released_not_published(listing["status"])
+    assert listing["status"] == "draft"
     assert listing["approval_status"] == "pending_review"
-    # And now that both columns say it, a moderator can actually see it. This is
-    # the half the old `draft` silently withheld -- `awaiting_moderation` is a
-    # conjunction, so the seeded `pending_review` above counted for nothing.
-    assert lifecycle.awaiting_moderation(listing) is True
     assert listing["title"] == "Cotton Tee"
     assert listing["seller_user_id"] in (int(OWNER_ID), OWNER_ID)
 
 
-def test_the_insert_itself_never_produces_a_public_listing(provider):
-    """`_create_draft_listing` writes a draft. That did not change. §33.
-
-    Auto-publish off, so the only thing that runs here is the insert. Publication
-    is now something the importer *asks for* -- from `drafts.autopublish`, which
-    runs the same gate the merchant's own Publish button does -- and this asserts
-    the asking is the only way to get it. If the literal in the INSERT ever became
-    a parameter, this test is what notices.
-    """
-    set_store_policy(auto_publish=False)
+def test_import_never_produces_a_public_listing(provider):
     provider.add(cj_product("PID-1"))
     add_to_cart("PID-1")
-    result = run_import()
-
-    assert result["results"][0]["outcome"] == importer.IMPORTED
+    run_import()
     statuses = {r["status"] for r in rows("SELECT status FROM marketplace_listings")}
     assert statuses == {"draft"}
     assert not (statuses & {"published", "live", "active"})
@@ -396,41 +338,6 @@ def test_import_does_not_seed_the_public_price_label_with_supplier_cost(provider
     label = rows("SELECT price_label FROM marketplace_listings")[0]["price_label"]
     assert not label
     assert "8.20" not in str(label)
-
-
-def test_import_does_not_seed_a_stock_count_either(provider):
-    # The same rule as the price above, for the field that did not follow it.
-    # `quantity` was a literal 0 in the insert, and 0 is not "unknown" -- it is
-    # the merchant's own count, asserting an empty shelf. An import has counted
-    # nothing, and on a dropship listing the merchant never counts anything:
-    # the units are in the supplier's warehouse and arrive at publish time via
-    # `_sellable_units`.
-    #
-    # Measured in production before this was fixed: all seven physical drafts
-    # carried quantity=0, so every one of them told its seller "Out of stock --
-    # hidden / Restock". Restock what? Nobody had counted them.
-    provider.add(cj_product("PID-1"))
-    add_to_cart("PID-1")
-    run_import()
-    listing = rows("SELECT quantity FROM marketplace_listings")[0]
-    assert listing["quantity"] is None, "an uncounted import claimed a count of zero"
-
-
-def test_an_uncounted_import_reads_as_uncounted_not_sold_out(provider):
-    # The column is the mechanism; this is the sentence the seller is shown.
-    # Both verdicts stop checkout -- that part was never in question. The
-    # difference is whether the seller is asked for a number or sent to a
-    # supplier.
-    from services.business_os.marketplace import listing_readiness
-
-    provider.add(cj_product("PID-1"))
-    add_to_cart("PID-1")
-    run_import()
-    verdict = listing_readiness.evaluate(rows("SELECT * FROM marketplace_listings")[0])
-
-    assert "UNKNOWN_INVENTORY" in verdict["warnings"]
-    assert "OUT_OF_STOCK" not in verdict["warnings"]
-    assert verdict["checkout_ready"] is False
 
 
 def test_import_persists_the_cover_image_on_the_listing_row(provider):
@@ -574,16 +481,7 @@ def test_import_selected_accepts_no_economic_input_from_the_caller():
     accepted = set(inspect.signature(importer.import_selected).parameters)
     forbidden = {"cost_cents", "cost", "price_cents", "price", "retail_cents",
                  "title", "description", "stock", "stock_quantity", "inventory",
-                 "variants", "product", "products", "media", "supplier_cost_cents",
-                 # Freight belongs on this list, and it is here because the rule
-                 # was learned the hard way: a `shipping_allowance_cents` override
-                 # was written onto this function and this test failed before it
-                 # could reach a price. `pricing_rule` is a *strategy* whose every
-                 # input is server-read; an allowance is a *cost*, and this
-                 # boundary is about costs. It is declared on the store-policy
-                 # PATCH, authenticated and attributable, and read from there.
-                 "shipping_cents", "shipping_allowance_cents", "shipping",
-                 "landed_cost_cents", "freight_cents"}
+                 "variants", "product", "products", "media", "supplier_cost_cents"}
     assert not (accepted & forbidden), sorted(accepted & forbidden)
     assert accepted == {"business_id", "store_id", "actor_user_id", "connection_id",
                         "item_ids", "pricing_rule", "context", "adapter"}
@@ -664,7 +562,7 @@ def test_importing_the_same_supplier_product_twice_reopens_one_listing(provider)
     add_to_cart("PID-1")
     second = run_import()
 
-    assert first["results"][0]["outcome"] in importer.CREATED_LISTING
+    assert first["results"][0]["outcome"] == importer.IMPORTED
     assert second["results"][0]["outcome"] == importer.ALREADY_EXISTS
     assert second["results"][0]["listing_id"] == first["results"][0]["listing_id"]
     assert len(rows("SELECT id FROM marketplace_listings")) == 1
@@ -692,7 +590,7 @@ def test_two_tenants_may_import_the_same_supplier_product(provider):
                 connection=OTHER_CONNECTION, actor=OTHER_OWNER_ID)
     result = run_import(business=OTHER_BUSINESS, store=OTHER_STORE,
                         connection=OTHER_CONNECTION, actor=OTHER_OWNER_ID)
-    assert result["results"][0]["outcome"] in importer.CREATED_LISTING
+    assert result["results"][0]["outcome"] == importer.IMPORTED
     assert len(rows("SELECT id FROM marketplace_listings")) == 2
 
 
@@ -709,12 +607,9 @@ def test_one_provider_failure_does_not_discard_its_neighbours(provider):
     result = run_import()
 
     outcomes = {r["external_product_id"]: r["outcome"] for r in result["results"]}
-    assert outcomes["PID-1"] in importer.CREATED_LISTING
+    assert outcomes["PID-1"] == importer.IMPORTED
     assert outcomes["PID-2"] == importer.PROVIDER_UNAVAILABLE
-    assert outcomes["PID-3"] in importer.CREATED_LISTING
-    # `imported` counts every item that produced a listing, not only the ones that
-    # stopped at a draft -- otherwise a merchant whose products all published would
-    # be told nothing imported.
+    assert outcomes["PID-3"] == importer.IMPORTED
     assert result["imported"] == 2
     # The neighbours survived the failure's rollback. A shared transaction here
     # would leave zero listings and still report two imports.
@@ -775,131 +670,6 @@ def test_an_empty_cart_is_a_refusal_not_a_silent_success(provider):
 
 
 # ---------------------------------------------------------------------------
-# A cart bigger than one run
-#
-# The reported production failure. `import_cart.MAX_ITEMS` is 100 and one run
-# imports `importer.MAX_BATCH`, so a legal cart can exceed a legal run -- a
-# seller with 58 products in the cart selected all of them and the route
-# answered `batch_too_large` with an HTTP 400, before the per-item loop, which
-# discarded all 58. The mobile client has no copy for that code, so the seller
-# was told only "That import didn't run."
-#
-# The cap itself is real and stays: `_authoritative` makes 1-3 provider reads
-# per item and the inventory lease retries with a 2s pause, so 58 items in one
-# synchronous request risks an edge timeout. What changed is that exceeding it
-# is now a per-item DEFERRED outcome inside the partial-success architecture
-# this file already defends, not a whole-request refusal.
-# ---------------------------------------------------------------------------
-
-def _fill_cart(provider, count):
-    """Cart `count` importable products, returning their item ids in cart order."""
-    item_ids = []
-    for index in range(count):
-        pid = f"BULK-{index:03d}"
-        provider.add(cj_product(pid, title=f"Bulk Tee {index}"))
-        item_ids.append(add_to_cart(pid, selected=[f"{pid}-V1"])["item_id"])
-    return item_ids
-
-
-def test_selecting_more_than_one_run_can_take_imports_instead_of_refusing(provider):
-    # The incident, at the smallest size that reproduces it. Before the fix this
-    # raised `batch_too_large` and nothing at all was imported.
-    item_ids = _fill_cart(provider, importer.MAX_BATCH + 5)
-    run_import(item_ids=item_ids)
-    assert len(rows("SELECT id FROM marketplace_listings")) == importer.MAX_BATCH
-
-
-def test_the_rows_one_run_could_not_reach_are_reported_not_hidden(provider):
-    item_ids = _fill_cart(provider, importer.MAX_BATCH + 5)
-    result = run_import(item_ids=item_ids)
-    # `requested` counts what the seller asked for, not what the run could take.
-    # Reporting the truncated number is how 33 unread products used to vanish
-    # without a single field saying so.
-    assert result["requested"] == importer.MAX_BATCH + 5
-    assert result["deferred"] == 5
-    assert result["max_per_import"] == importer.MAX_BATCH
-    assert len(result["results"]) == importer.MAX_BATCH + 5
-    assert result["counts"].get(importer.DEFERRED) == 5
-
-
-def test_a_deferred_row_stays_in_the_cart(provider):
-    item_ids = _fill_cart(provider, importer.MAX_BATCH + 5)
-    result = run_import(item_ids=item_ids)
-    deferred = [r["item_id"] for r in result["results"] if r["outcome"] == importer.DEFERRED]
-    remaining = import_cart.get_cart(BUSINESS, STORE, OWNER_ID, CONNECTION, context=CONTEXT)
-    assert sorted(i["item_id"] for i in remaining["items"]) == sorted(deferred)
-    assert len(deferred) == 5
-
-
-def test_importing_again_picks_up_the_deferred_rows(provider):
-    # The instruction the screen gives the seller has to actually work, and it
-    # has to not duplicate the listings the first run made.
-    item_ids = _fill_cart(provider, importer.MAX_BATCH + 5)
-    run_import(item_ids=item_ids)
-    second = run_import()
-    assert second["deferred"] == 0
-    assert second["requested"] == 5
-    assert len(rows("SELECT id FROM marketplace_listings")) == importer.MAX_BATCH + 5
-
-
-def test_a_deferred_row_is_never_read_from_the_provider(provider):
-    # Nothing was attempted for these, so nothing may be spent on them either --
-    # a deferred row that still costs a provider quota call would make the
-    # retry path progressively more expensive than the first attempt.
-    item_ids = _fill_cart(provider, importer.MAX_BATCH + 5)
-    provider.calls.clear()
-    result = run_import(item_ids=item_ids)
-    deferred_pids = {r["external_product_id"] for r in result["results"]
-                     if r["outcome"] == importer.DEFERRED}
-    assert deferred_pids and not (deferred_pids & {pid for _, pid in provider.calls})
-
-
-def test_a_deferred_row_writes_no_audit_entry(provider):
-    item_ids = _fill_cart(provider, importer.MAX_BATCH + 5)
-    run_import(item_ids=item_ids)
-    actions = [r["action"] for r in rows("SELECT action FROM business_os_store_audit")]
-    assert actions and audit.ACTION_PREFIX + "deferred" not in actions
-
-
-def test_a_run_with_deferred_rows_does_not_claim_the_import_is_done(provider):
-    # `published` is what the client reads to decide whether to say "live and
-    # ready to sell". A run that left rows in the cart has not finished, even if
-    # every row it did attempt published.
-    item_ids = _fill_cart(provider, importer.MAX_BATCH + 5)
-    assert run_import(item_ids=item_ids)["published"] is False
-
-
-def test_the_whole_cart_path_also_reports_what_it_did_not_read(provider):
-    # Same defect by a different door: with no item ids the importer reads the
-    # whole cart and used to slice it to MAX_BATCH silently, then report
-    # `requested: MAX_BATCH` -- a run that looked complete and wasn't.
-    _fill_cart(provider, importer.MAX_BATCH + 5)
-    result = run_import()
-    assert result["requested"] == importer.MAX_BATCH + 5
-    assert result["deferred"] == 5
-
-
-def test_a_selection_beyond_the_carts_own_ceiling_is_still_refused(provider):
-    # The cap that moved is the run's, not the cart's. A request naming more ids
-    # than a cart can legally hold is not a big import, it is a malformed one,
-    # and answering it with per-item work would mean unbounded loops.
-    provider.add(cj_product("PID-1"))
-    add_to_cart("PID-1")
-    with pytest.raises(SupplierError) as exc:
-        run_import(item_ids=[f"missing-{n}" for n in range(import_cart.MAX_ITEMS + 1)])
-    assert exc.value.code == "batch_too_large"
-    assert exc.value.http_status == 400
-
-
-def test_deferred_is_a_named_outcome_the_client_can_switch_on(provider):
-    assert importer.DEFERRED in importer.OUTCOMES
-    # Not a way of creating a listing. The client's success counting adds up the
-    # created-listing outcomes, and a DEFERRED row that leaked into that set
-    # would be counted as a product the seller can sell.
-    assert importer.DEFERRED not in importer.CREATED_LISTING
-
-
-# ---------------------------------------------------------------------------
 # Pricing at import
 # ---------------------------------------------------------------------------
 
@@ -912,68 +682,12 @@ def test_a_pricing_rule_proposes_retail_but_cost_is_still_recorded(provider):
     assert variant["price_cents"] == 1640
 
 
-def test_no_pricing_rule_falls_to_the_platform_default_not_to_no_price(provider):
-    """§8's third tier. The bug this whole change is about, as one assertion.
-
-    An absent ``pricing_rule`` used to mean :data:`pricing.MANUAL_PRICE`, which
-    proposes nothing, so every variant of every import was written
-    ``price_cents = None`` and the draft was then correctly reported
-    ``MISSING_PRICE`` -- for a product nobody had declined to price. The merchant's
-    next action was always to open an editor and type a number the store could have
-    supplied. Silence is not a refusal.
-    """
+def test_no_pricing_rule_leaves_variants_unpriced(provider):
     provider.add(cj_product("PID-1"))
     add_to_cart("PID-1")
-    result = run_import()
-
-    assert result["pricing_source"] == store_policy.SOURCE_PLATFORM
-    prices = [v["price_cents"] for v in
-              rows("SELECT price_cents FROM marketplace_listing_variants ORDER BY id")]
-    assert all(p is not None for p in prices)
-    # 820 and 860 at a 45% target margin.
-    assert prices == [1491, 1564]
-
-
-def test_a_store_policy_outranks_the_platform_default(provider):
-    set_store_policy(pricing_rule={"type": pricing.MULTIPLIER, "value": 3})
-    provider.add(cj_product("PID-1"))
-    add_to_cart("PID-1")
-    result = run_import()
-
-    assert result["pricing_source"] == store_policy.SOURCE_STORE
-    assert rows("SELECT price_cents FROM marketplace_listing_variants "
-                "ORDER BY id")[0]["price_cents"] == 2460
-
-
-def test_an_explicit_request_outranks_the_store_policy(provider):
-    set_store_policy(pricing_rule={"type": pricing.MULTIPLIER, "value": 3})
-    provider.add(cj_product("PID-1"))
-    add_to_cart("PID-1")
-    result = run_import(rule={"type": pricing.MULTIPLIER, "value": 2})
-
-    assert result["pricing_source"] == store_policy.SOURCE_REQUEST
-    assert rows("SELECT price_cents FROM marketplace_listing_variants "
-                "ORDER BY id")[0]["price_cents"] == 1640
-
-
-def test_a_merchant_who_asked_to_price_it_themselves_still_gets_no_price(provider):
-    """§44. An explicit MANUAL_PRICE is a decision, not an absence.
-
-    The store default must not quietly overrule a merchant who just picked "I'll
-    price these myself" in the cart. That import lands unpriced and stops at
-    needs-attention, which is the correct outcome for someone who asked to set the
-    prices -- and is the one case where the old behaviour was right.
-    """
-    set_store_policy(pricing_rule={"type": pricing.MULTIPLIER, "value": 3})
-    provider.add(cj_product("PID-1"))
-    add_to_cart("PID-1")
-    result = run_import(rule={"type": pricing.MANUAL_PRICE})
-
-    assert result["pricing_source"] == store_policy.SOURCE_REQUEST
+    run_import()
     assert all(v["price_cents"] is None
                for v in rows("SELECT price_cents FROM marketplace_listing_variants"))
-    assert result["results"][0]["outcome"] == importer.NEEDS_ATTENTION
-    assert drafts.MISSING_PRICE in result["results"][0]["problems"]
 
 
 def test_a_rule_cannot_price_a_variant_whose_cost_is_unknown(provider):

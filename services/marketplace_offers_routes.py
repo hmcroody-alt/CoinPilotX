@@ -47,7 +47,6 @@ from services.marketplace_cart_routes import (
 )
 from services import marketplace_reservation_policy as reservation_policy
 from services import marketplace_fulfillment
-from services import marketplace_order_fulfillment
 from services.marketplace_payment_errors import (
     below_minimum_charge_error,
     classify_provider_exception,
@@ -56,7 +55,6 @@ from services.marketplace_payment_errors import (
 from services import marketplace_quote_service
 from services import marketplace_goods_policy
 from services import marketplace_payment_pause
-from services import marketplace_supplier_checkout as supplier_checkout
 
 LOGGER = logging.getLogger(__name__)
 
@@ -531,20 +529,6 @@ def offer_checkout(offer_id: int):
         approved = bot.approved_marketplace_seller_for_user(cur, seller_id)
         if not approved:
             return _error("Seller is not approved for payments.", 403)
-        # The global flag says the card rail exists; this says this seller may
-        # use it. Both have to pass. Asked on the open cursor so the state
-        # consulted is the state this checkout is about to charge against.
-        if payment_mode == "card":
-            from services import marketplace_card_capability
-            card_decision = marketplace_card_capability.evaluate(cur, seller_user_id=seller_id)
-            if not card_decision["card_payments_available"]:
-                buyer_decision = marketplace_card_capability.buyer_view(card_decision)
-                return _error(
-                    buyer_decision["message"], 503,
-                    error_code=buyer_decision["reason_code"],
-                    error=buyer_decision["reason_code"],
-                    **marketplace_payment_pause.card_unavailable_payload(),
-                )
         payout = bot.seller_payout_account(cur, seller_id, "merchant")
         fee_bps = marketplace_payment_pause.platform_fee_bps_for_marketplace_payment(
             bot.seller_fee_bps(cur, "merchant"),
@@ -593,17 +577,6 @@ def offer_checkout(offer_id: int):
         fulfillment_snapshot = marketplace_fulfillment.snapshot(fulfillment_kind, details)
         stripe_shipping_object = marketplace_fulfillment.stripe_shipping(details)
         now = _now()
-
-        # §22, same authority and same seam as the cart and buy-now lanes: after
-        # the commercial guards, before the first `seller_transactions` row. An
-        # accepted offer is the lane most exposed to this, because the buyer may
-        # have accepted hours ago and nothing re-checked the supplier since.
-        screened = supplier_checkout.screen(cur, [listing_id], now=now)
-        if screened["refusal"]:
-            refusal = screened["refusal"]
-            return _error(refusal["message"], 409,
-                          code=supplier_checkout.refusal_code(refusal))
-
         initial_status = "cash_pending" if cash_payment else "created"
         payout_state = "cash_collect_in_person" if cash_payment else "pending_checkout"
         cur.execute(
@@ -618,20 +591,12 @@ def offer_checkout(offer_id: int):
              marketplace_quote_service.transaction_metadata(
                  {"title": listing.get("title") or "Marketplace item",
                   "offer_id": offer_id, "qty": qty, "payment_method": payment_mode,
-                  **supplier_checkout.audit_for(screened, listing_id),
                   **({"fulfillment": fulfillment_snapshot} if fulfillment_snapshot else {})},
                  commercial_quote,
                  payout_state=payout_state),
              now, now),
         )
         tx_id = int(cur.lastrowid)
-        if cash_payment:
-            # Cash owes the buyer goods from this moment. A *card* order is still
-            # `created` and most abandoned Stripe sheets never become anything
-            # else, so its record opens when the payment lands.
-            marketplace_order_fulfillment.open_fulfillment(
-                cur, seller_transaction_id=tx_id, seller_id=seller_id,
-                buyer_user_id=buyer_id, fulfillment_kind=fulfillment_kind)
 
         if not cash_payment and not bot.STRIPE_SECRET_KEY:
             cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
@@ -679,18 +644,19 @@ def offer_checkout(offer_id: int):
             # rather than re-requested from them a screen later.
             if stripe_shipping_object:
                 payment_intent_data["shipping"] = stripe_shipping_object
-            # Separate charges and transfers: the buyer pays PulseSoc, and the
-            # seller's cut leaves later as an explicit Transfer once the
-            # settlement clears its protection window. The transfer group is
-            # what ties that Transfer back to this charge.
-            payment_intent_data["transfer_group"] = f"marketplace_order:{tx_id}"
-            payment_intent_data["metadata"]["platform_fee_cents"] = str(int(platform_fee))
-            # The capability check no longer routes the charge; it only reports
-            # whether Stripe would accept a transfer to this seller yet, which
-            # is what decides payout readiness. An unfinished seller onboarding
-            # was never a buyer checkout prerequisite and still is not.
+            # The old gate here read the raw account id, which exists from the
+            # moment onboarding *starts*. Stripe then rejects the transfer to an
+            # account that cannot yet accept charges, and the buyer sees
+            # "Checkout could not be created." The shared capability check routes
+            # to Connect only when charges and payouts are both enabled, and
+            # otherwise settles on the platform with the seller's share recorded
+            # in seller_transactions — an unfinished seller onboarding is not a
+            # buyer checkout prerequisite.
             connected_account_id = bot.seller_destination_account_id(payout)
-            payout_state = "transfer_eligible" if connected_account_id else "ledger_pending_onboarding"
+            if connected_account_id:
+                payment_intent_data.update({"application_fee_amount": platform_fee,
+                                            "transfer_data": {"destination": connected_account_id}})
+            payout_state = "connect_routed" if connected_account_id else "ledger_pending_onboarding"
             if native_sheet:
                 # Server-authoritative amount: the accepted offer price times qty,
                 # the same number the review screen was given. The sheet renders

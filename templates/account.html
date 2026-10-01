@@ -13,16 +13,16 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="application-name" content="PulseSoc" />
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-favicon-32-20260913.png') }}" />
-  <link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260913.png" />
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='brand/pulsesoc-logo-20260813.png') }}" />
+  <link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260813.png" />
   <link rel="manifest" href="/manifest.json" />
-  <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=cache-sweep-20260930a" />
-  <link rel="stylesheet" href="/static/css/pulse_design_system.css?v=cache-sweep-20260930a" />
-  <link rel="stylesheet" href="/static/css/pulse_mobile_system.css?v=bare-asset-tokens-20260930a" />
+  <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a" />
+  <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
+  <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
   <style>
     :root {
-      --bg: var(--surface-primary, #050910);
-      --panel: var(--surface-overlay, rgba(48, 56, 67, 0.82));
+      --bg: var(--surface-primary, #070b14);
+      --panel: var(--surface-overlay, rgba(13, 22, 39, 0.88));
       --line: var(--border-subtle, rgba(110, 223, 246, 0.18));
       --text: var(--text-primary, #f2fbff);
       --muted: var(--text-secondary, #9fb5c0);
@@ -40,13 +40,13 @@
       background:
         radial-gradient(circle at 18% 8%, rgba(54, 229, 143, 0.16), transparent 28%),
         radial-gradient(circle at 78% 4%, rgba(110, 223, 246, 0.12), transparent 26%),
-        linear-gradient(135deg, #050910, #070d17 58%, #050910);
+        linear-gradient(135deg, #070b14, #0b1424 58%, #07111e);
       line-height: 1.65;
     }
     a { color: inherit; }
     .container { width: min(100% - 32px, 1040px); margin: 0 auto; }
     header, footer {
-      background: rgba(48, 56, 67, 0.84);
+      background: rgba(7, 11, 20, 0.84);
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       backdrop-filter: blur(18px);
     }
@@ -162,7 +162,7 @@
       border-radius: 999px;
       color: #f2fbff;
       border: 1px solid rgba(110, 223, 246, .42);
-      background: rgba(42, 51, 64, .86);
+      background: rgba(8, 19, 35, .86);
       box-shadow: 0 0 28px rgba(110, 223, 246, .1);
       font-weight: 950;
       appearance: none;
@@ -249,7 +249,7 @@
       border: 1px solid rgba(110, 223, 246, .25);
       border-radius: 28px;
       padding: 26px;
-      background: linear-gradient(180deg, rgba(54, 61, 70, .86), rgba(54, 61, 70, .9));
+      background: linear-gradient(180deg, rgba(13, 31, 51, .86), rgba(8, 24, 39, .9));
       box-shadow: inset 0 -60px 70px rgba(54, 229, 143, .045);
     }
     .auth-feature span {
@@ -268,7 +268,7 @@
       border: 1px solid rgba(110, 223, 246, .2);
       border-radius: 26px;
       padding: 26px;
-      background: linear-gradient(180deg, rgba(48, 56, 67, .92), rgba(48, 56, 67, .88));
+      background: linear-gradient(180deg, rgba(13, 22, 39, .92), rgba(8, 19, 35, .88));
       box-shadow: 0 30px 90px rgba(0, 0, 0, .32);
     }
     .auth-content .kicker { display: block; }
@@ -342,7 +342,7 @@
     <div class="container">
       <nav>
         <a class="brand" href="/">
-          <img src="{{ url_for('static', filename='brand/pulsesoc-mark-20260913.png') }}" alt="PulseSoc logo" />
+          <img src="{{ url_for('static', filename='brand/pulsesoc-logo-20260813.png') }}" alt="PulseSoc logo" />
           <span>PulseSoc</span>
         </a>
         <div class="nav-links">
@@ -377,7 +377,7 @@
               <option value="pt">Português</option>
             </select>
             <div class="auth-orbit" aria-hidden="true">
-              <img class="auth-logo" src="{{ url_for('static', filename='brand/pulsesoc-mark-20260913.png') }}" alt="" />
+              <img class="auth-logo" src="{{ url_for('static', filename='brand/pulsesoc-logo-20260813.png') }}" alt="" />
             </div>
             <h2 data-i18n="headline">Join PulseSoc</h2>
             <p data-i18n="slogan">Connect. Create. Discover. Pulse the World.</p>
@@ -404,7 +404,7 @@
           <p data-i18n="signupIntro">Create your PulseSoc account. Core tools are free for authenticated users; PulseSoc Premium is optional for prestige identity, elite creator effects, and deeper creator enhancements.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-            <input type="hidden" name="next" value="{{ next_target }}" />
+            <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
             <input name="full_name" autocomplete="name" placeholder="Display name" required />
             <input name="username" autocomplete="username" placeholder="Username / handle" required />
             <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
@@ -423,7 +423,7 @@
           <p data-i18n="loginIntro">Log in to manage your PulseSoc profile, account, alerts, and optional Telegram companion connection.</p>
           <form method="post">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-            <input type="hidden" name="next" value="{{ next_target }}" />
+            <input type="hidden" name="next" value="{{ request.args.get('next', '') }}" />
             <input name="email" type="email" autocomplete="email" placeholder="Email address" value="{{ resend_email or '' }}" required />
             <input name="password" type="password" autocomplete="current-password" placeholder="Password" required />
             <label class="consent-row"><input type="checkbox" name="terms_accepted" required /><span>I agree to the Terms, Privacy Policy, and PulseSoc no-tolerance rules for objectionable content and abusive users.</span></label>
@@ -711,14 +711,7 @@
         {% endif %}
 
         <div class="notice">CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords. Educational AI intelligence only, not financial, betting, investment, or legal advice.</div>
-        {# Two controls because they are two different things. The button is the
-           only way to start a browser-owned install (`beforeinstallprompt`), and
-           the anchor is the only way to hand a tap to the App Store app rather
-           than loading apps.apple.com in a web view. The script below reveals
-           exactly one. The href comes from `app_store_url()`, the context
-           processor over `services/app_links.py` -- never spelled out here. #}
         <button class="button gold install-app-button" type="button" data-install-app hidden>Install PulseSoc App</button>
-        <a class="button gold install-app-button" data-app-store-app href="{{ app_store_url() }}" data-app-link="app-store" hidden>Get the PulseSoc app</a>
       </article>
     </div>
   </main>
@@ -816,7 +809,7 @@
     })();
   </script>
   {% endif %}
-  {% if current_user %}<script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script>{% endif %}
+  {% if current_user %}<script src="/static/notifications.js" defer></script>{% endif %}
 
   <footer>
     <div class="container footer-inner">
@@ -832,10 +825,9 @@
     (function () {
       var installPrompt = null;
       var button = document.querySelector("[data-install-app]");
-      var appStoreLink = document.querySelector("[data-app-store-app]");
       var standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
       var ua = window.navigator.userAgent || "";
-      var isIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      var iosSafari = /iphone|ipad|ipod/i.test(ua) && /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
 
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", function () {
@@ -843,25 +835,14 @@
         });
       }
 
-      // On iPhone the product is the App Store app, not a Safari shortcut
-      // wearing an app icon. A home-screen bookmark on iOS gets no push
-      // notifications, is not a share-sheet target, and cannot hold an audio
-      // session -- so teaching the Share -> Add to Home Screen gesture here
-      // spent the visitor's attention on the weaker of the two things we have.
-      //
-      // Deliberately every iOS browser, not just Safari. The old gesture
-      // needed Safari because only Safari can add to the home screen; a link
-      // to the App Store works in Chrome, Firefox and every in-app browser,
-      // and those visitors previously saw no control at all.
-      if (appStoreLink && isIOS && appStoreLink.getAttribute("href")) {
-        appStoreLink.hidden = false;
+      if (button && !standalone && iosSafari) {
+        button.hidden = false;
+        button.textContent = "Add to Home Screen";
       }
 
       window.addEventListener("beforeinstallprompt", function (event) {
         event.preventDefault();
         installPrompt = event;
-        // Android and desktop only: iOS never fires this, so the two controls
-        // cannot both be showing.
         if (button && !standalone) {
           button.hidden = false;
         }
@@ -869,11 +850,8 @@
 
       if (button) {
         button.addEventListener("click", async function () {
-          // Reachable only after `beforeinstallprompt` revealed the button, so
-          // a missing prompt here means the event was consumed already rather
-          // than that this is iOS.
           if (!installPrompt) {
-            button.hidden = true;
+            alert("On iPhone Safari, tap Share, then Add to Home Screen.");
             return;
           }
           installPrompt.prompt();

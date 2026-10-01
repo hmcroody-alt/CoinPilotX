@@ -39,28 +39,15 @@ def ensure_schema(conn=None):
             conn.close()
 
 
-def schedule(*, connection_id, business_id, store_id, kind, resource_id="", now=None, dirty=False,
-             conn=None):
-    """Internal-only; callers must establish ownership before scheduling IDs.
-
-    ``conn`` lets a caller enqueueing many resources at once do it on one
-    connection. Without it, a merchant asking to refresh a catalogue of two
-    hundred products opens four hundred connections against a pool of eight, and
-    the request that was meant to help them times out instead. The caller that
-    passes a connection owns the commit, so the whole batch lands or none of it
-    does. ``ensure_schema`` is still called on its own connection either way --
-    running that DDL inside a borrowed transaction is what leaves it uncommitted
-    and blocks the next connection on the lock it took.
-    """
+def schedule(*, connection_id, business_id, store_id, kind, resource_id="", now=None, dirty=False):
+    """Internal-only; callers must establish ownership before scheduling IDs."""
     if kind not in KINDS or not isinstance(resource_id, str) or len(resource_id) > 200:
         raise fulfillment.FulfillmentError("invalid_sync_resource", 400)
     if kind in {"product", "inventory", "order", "tracking"} and not resource_id:
         raise fulfillment.FulfillmentError("missing_sync_resource", 400)
     now = time.time() if now is None else now
-    owned = conn is None
-    if owned:
-        ensure_schema()
-        conn = db.connect()
+    ensure_schema()
+    conn = db.connect()
     try:
         conn.execute("INSERT INTO business_os_supplier_sync_jobs "
              "(id,connection_id,business_id,store_id,kind,resource_id,available_at) VALUES(?,?,?,?,?,?,?) "
@@ -71,11 +58,9 @@ def schedule(*, connection_id, business_id, store_id, kind, resource_id="", now=
             conn.execute("UPDATE business_os_supplier_sync_jobs SET available_at=? "
                          "WHERE connection_id=? AND kind=? AND resource_id=? AND available_at>?",
                          (now, connection_id, kind, resource_id, now))
-        if owned:
-            conn.commit()
+        conn.commit()
     finally:
-        if owned:
-            conn.close()
+        conn.close()
 
 
 def schedule_connection(connection_id, business_id, store_id, *, now=None):
@@ -177,34 +162,6 @@ def _read_job(job, adapter, meta):
     raise fulfillment.FulfillmentError("invalid_sync_kind")
 
 
-def _apply(job, value, now, counts):
-    """Let a completed product/inventory read reach the listings it describes. §23/§24.
-
-    Placed *after* ``_finish``, deliberately. The read succeeded and the evidence
-    of that belongs in the job row whatever happens next; scheduling the retry on
-    the outcome of the write instead would re-read the supplier — spending quota
-    — to fix something that was never a read problem.
-
-    Which is also why every failure here is swallowed. This is a consumer bolted
-    onto a scheduler that worked without one for its whole life, and a reconciler
-    that can abort a worker tick would take fulfilment down with it. The cost of
-    swallowing is one stale listing until the next cadence; the cost of raising
-    is a supplier order that never dispatches.
-    """
-    if job["kind"] not in {"product", "inventory"}:
-        return
-    try:
-        from . import revisions
-        result = revisions.apply_supplier_read(
-            connection_id=job["connection_id"], business_id=job["business_id"],
-            store_id=job["store_id"], kind=job["kind"],
-            resource_id=job["resource_id"], payload=value, now=now)
-    except Exception:
-        counts["revision_failures"] += 1
-        return
-    counts["revisions"] += result["variants"]
-
-
 def _seed_jobs(limit, now):
     """Only persisted selected resources; never scan CJ's catalogue."""
     from . import gateway
@@ -241,23 +198,10 @@ def run_once(*, adapter_factory=None, limit=20, now=None):
     ensure_schema()
     fulfillment.ensure_schema()
     webhook_inbox.ensure_schema()
-    # Recorded before any work, and after the policy gates above, so the latch
-    # means "a process allowed to drain this outbox got here" -- which is the
-    # question the merchant-facing notice asks. Recording it only on success
-    # would leave a worker that crashes every tick indistinguishable from no
-    # worker at all; `fulfillment.drain_status` separates those two, and it can
-    # only do so if this write happens even when the tick below does not finish.
-    fulfillment.record_drain_tick(now=now)
     _seed_jobs(limit, now)
     # Existing inbox handler only performs idempotent scheduling; no financial write.
     inbox = webhook_inbox.reconcile_pending(webhooks.mark_dirty, provider="cj", limit=limit)
-    counts = {"intents": 0, "reads": 0, "deferred": 0, "inbox": inbox["examined"],
-              # Variants whose stock or cost a supplier read actually changed,
-              # and reads whose application failed. Reported separately from
-              # `reads` because a tick that reads twenty products and revises
-              # nothing is healthy, and one that reads twenty and fails to apply
-              # twenty is not — and both have `reads: 20`.
-              "revisions": 0, "revision_failures": 0}
+    counts = {"intents": 0, "reads": 0, "deferred": 0, "inbox": inbox["examined"]}
     for _ in range(limit):
         intent = fulfillment.claim(now=now)
         if intent is None:
@@ -289,7 +233,6 @@ def run_once(*, adapter_factory=None, limit=20, now=None):
             adapter.background = True
             value = _read_job(job, adapter, bundle["connection"])
             _finish(job, now=now, value=value)
-            _apply(job, value, now, counts)
             connections.record_activity(job["connection_id"], job["business_id"], job["store_id"], adapter=adapter, synced=True)
         except Exception as exc:
             try:
@@ -301,8 +244,4 @@ def run_once(*, adapter_factory=None, limit=20, now=None):
             _finish(job, now=now, retry_after=delay)
             counts["deferred"] += 1
         counts["reads"] += 1
-    # Only reached when the tick completed. Every per-item failure above is
-    # already caught and settled, so arriving here means the loop ran to its
-    # bound rather than that nothing went wrong.
-    fulfillment.record_drain_tick(now=now, completed=True)
     return counts

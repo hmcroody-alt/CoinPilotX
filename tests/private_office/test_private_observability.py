@@ -89,24 +89,6 @@ SECRETS = (
     "marguerite@example.invalid",
 )
 
-#: Every parameter ``private_office_health`` is allowed to accept. The point of the health
-#: surface is that it reports on the subsystem and cannot be asked about one member, and
-#: the structural reason it cannot is that there is no argument for it.
-#:
-#: Declared as a closed set rather than scanned for identifier-shaped names. The scan this
-#: replaced looked for "user", "owner", "actor", "member" and "subject" in each parameter
-#: name, which would have admitted one called ``account_id``, ``profile_id``, ``viewer``,
-#: ``caller`` or ``principal`` — and the payload assertions further down would not have
-#: caught it either, because they call the function with no arguments, so a new optional
-#: parameter is never exercised. That left a name the author did not think of as the whole
-#: distance between this gate and a per-member health surface.
-#: ``tests/private_office/test_tier_resolver.py`` already guards the sibling surface
-#: ``po_status.subsystem_status`` with set equality; this is the same form.
-#:
-#: Adding a parameter is not forbidden. Adding one silently is. Widen this set in the same
-#: diff and a reviewer gets asked the question.
-HEALTH_PARAMETERS = frozenset({"include_counts", "include_entitlement", "include_free_count"})
-
 _FAILURES: list[str] = []
 _EMITTED: list[tuple[str, dict]] = []
 _REAL_EMIT = telemetry.emit
@@ -449,10 +431,13 @@ def stage_health_surface():
     conn.close()
 
     signature = inspect.signature(health.private_office_health)
-    check("the health surface accepts no argument beyond its declared options, so there "
-          "is nothing to pass that would ask about one member",
-          set(signature.parameters) == HEALTH_PARAMETERS,
-          f"expected {sorted(HEALTH_PARAMETERS)}, got {sorted(signature.parameters)}")
+    identifier_params = [
+        name for name in signature.parameters
+        if any(token in name.lower()
+               for token in ("user", "owner", "actor", "member", "subject"))
+    ]
+    check("the health surface accepts no user identifier",
+          identifier_params == [], str(identifier_params))
     check("every parameter is keyword-only, so nothing can be passed positionally",
           all(p.kind == inspect.Parameter.KEYWORD_ONLY
               for p in signature.parameters.values()))
@@ -739,24 +724,11 @@ def stage_telemetry_carries_no_member_data():
     try:
         future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(
             timespec="seconds")
-        # The zombie used to be created 30 hours in the *past*. ``create_meeting``
-        # refuses that now — correctly; nobody schedules a meeting for yesterday
-        # — so the meeting is scheduled normally and the sweep is handed a later
-        # clock instead. Moving the clock rather than back-dating the row keeps
-        # the sweep's own threshold arithmetic under test; writing the row
-        # directly would have proved only that a hand-made row can be swept.
-        swept_at = datetime.now(timezone.utc) + timedelta(hours=27)
-        # ``duration_minutes`` is required by ``create_meeting`` and was not
-        # being passed, so this stage raised PrivateMeetingRejected here and
-        # every assertion below it — including the leak inspection this whole
-        # stage exists for — had not run in some time. The suite reported the
-        # crash, so it was never green; it was simply red for a reason that read
-        # like a meetings bug rather than like "the telemetry leak check is
-        # switched off".
+        stale = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat(
+            timespec="seconds")
         created = meetings.create_meeting(
             cur, owner_user_id=USER_A, title=f"Estate review at {SECRETS[0]}",
-            scheduled_start_at=future, duration_minutes=60,
-            waiting_room_enabled=True)
+            scheduled_start_at=future, waiting_room_enabled=True)
         check("a meeting was created through the canonical writer",
               created.get("status") == "SCHEDULED", str(created.get("status")))
         held = meetings.join_meeting(
@@ -769,9 +741,8 @@ def stage_telemetry_carries_no_member_data():
             reason=f"moved to {SECRETS[0]}")
         zombie = meetings.create_meeting(
             cur, owner_user_id=USER_A, title=f"Call {SECRETS[2]}",
-            scheduled_start_at=future, duration_minutes=30,
-            waiting_room_enabled=False)
-        swept = meetings.sweep_meetings(cur, now=swept_at)
+            scheduled_start_at=stale, waiting_room_enabled=False)
+        swept = meetings.sweep_meetings(cur)
         check("the stale meeting was swept, so the sweep metric fired",
               swept >= 1 and bool(zombie.get("public_id")), str(swept))
     finally:

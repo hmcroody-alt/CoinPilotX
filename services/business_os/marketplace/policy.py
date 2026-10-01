@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -25,7 +25,6 @@ INVENTORY_RESERVATION_TTL_SECONDS = 15 * 60
 OFFER_PRICE_LOCK_SECONDS = 24 * 60 * 60
 STANDARD_RETURN_WINDOW_DAYS = 14
 STANDARD_PAYOUT_PROTECTION_DAYS = 2
-SETTLEMENT_HOLD_HOURS_ENV_VAR = "MARKETPLACE_SETTLEMENT_HOLD_HOURS"
 
 PROHIBITED_CATEGORY_KEYS = frozenset({
     "illegal_goods", "stolen_goods", "counterfeit_goods", "weapons",
@@ -66,107 +65,6 @@ def _effective_now(value: str) -> bool:
         return False
 
 
-def _parse_iso(value: Any) -> datetime | None:
-    """Lenient ISO-8601 parse to an aware UTC datetime, or None.
-
-    Timestamps in this codebase are stored as TEXT (both SQLite and Postgres), are
-    written by several modules, and are not uniformly suffixed, so a naive value is
-    read as UTC rather than rejected.
-    """
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
-def return_window_anchor(*, delivered_at: Any = None,
-                         purchased_at: Any = None) -> datetime | None:
-    """When the buyer's return window starts counting.
-
-    Delivery is the right anchor — a buyer cannot judge an item they do not have
-    yet — so it wins whenever the system recorded one. Purchase is the fallback,
-    used for an order that was never marked delivered.
-
-    The fallback is deliberately *not* "the window never opens". Anchoring on a
-    delivery that may never be recorded would leave the return window open
-    forever, which is the unbounded liability this function exists to close.
-    """
-    return _parse_iso(delivered_at) or _parse_iso(purchased_at)
-
-
-def return_window_closes_at(*, delivered_at: Any = None,
-                            purchased_at: Any = None) -> str | None:
-    """The deadline itself, ISO-8601 UTC, or None when no anchor is known.
-
-    Returned to buyers so the deadline is something they are told rather than
-    something they discover by being refused.
-    """
-    anchor = return_window_anchor(delivered_at=delivered_at, purchased_at=purchased_at)
-    if anchor is None:
-        return None
-    return (anchor + timedelta(days=STANDARD_RETURN_WINDOW_DAYS)).strftime(
-        "%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-
-
-def return_window_open(*, delivered_at: Any = None, purchased_at: Any = None,
-                       now: datetime | None = None) -> bool:
-    """May a return still be opened on this order?
-
-    ``now`` is injectable so the boundary is testable without sleeping.
-
-    An order with no usable timestamp at all returns True. That is the one
-    fail-open case here and it is chosen on purpose: refusing a return because a
-    row is missing a date would deny a buyer a real right over a bookkeeping
-    defect, and the defect is the thing to fix.
-    """
-    anchor = return_window_anchor(delivered_at=delivered_at, purchased_at=purchased_at)
-    if anchor is None:
-        return True
-    moment = now or datetime.now(timezone.utc)
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment <= anchor + timedelta(days=STANDARD_RETURN_WINDOW_DAYS)
-
-
-def settlement_hold_hours() -> int:
-    """How long a confirmed delivery waits before the seller's money is released.
-
-    Configurable because the right answer is a business decision, not a constant:
-    it moves with dispute rates, category risk and whatever a card network asks
-    for next. `STANDARD_PAYOUT_PROTECTION_DAYS` remains the documented default so
-    an unconfigured deployment behaves exactly as it did before this was a knob.
-
-    A bad value falls back to that default rather than to zero. This is the
-    opposite of how the fulfillment timeouts fail, and deliberately so: there,
-    doing nothing leaves an order sitting where it is, while here doing nothing
-    would mean releasing the money the instant delivery is confirmed — a typo in
-    a deployment variable must not be able to pay a seller early.
-
-    An explicit zero is honoured. Waiving the hold is a decision the owner is
-    entitled to make, and silently overriding it would make the variable a lie.
-    """
-    raw = str(os.getenv(SETTLEMENT_HOLD_HOURS_ENV_VAR) or "").strip()
-    if not raw:
-        return STANDARD_PAYOUT_PROTECTION_DAYS * 24
-    try:
-        hours = int(raw)
-    except ValueError:
-        return STANDARD_PAYOUT_PROTECTION_DAYS * 24
-    if hours < 0:
-        return STANDARD_PAYOUT_PROTECTION_DAYS * 24
-    return hours
-
-
-def settlement_hold_ends_at(delivered_at: datetime) -> datetime:
-    """The moment a delivery confirmed at ``delivered_at`` clears its hold."""
-    return delivered_at + timedelta(hours=settlement_hold_hours())
-
-
 def fee_policy_active() -> bool:
     """Activation requires all three owner gates; unset is safely inactive."""
     return all((
@@ -174,17 +72,6 @@ def fee_policy_active() -> bool:
         _enabled("MARKETPLACE_STANDARD_V1_SELLER_DISCLOSURE_READY"),
         _effective_now(str(os.getenv("MARKETPLACE_STANDARD_V1_EFFECTIVE_AT") or "")),
     ))
-
-
-def platform_fee_bps() -> int:
-    """The one commission rate any Marketplace checkout may charge.
-
-    A commission has to be the rate the seller was actually shown, so it cannot
-    come from a database row an admin can edit out from under a live checkout.
-    Zero until the owner opens all three gates, and `PROPOSED_PLATFORM_FEE_BPS`
-    after — there is no third value.
-    """
-    return PROPOSED_PLATFORM_FEE_BPS if fee_policy_active() else 0
 
 
 @dataclass(frozen=True)

@@ -39,35 +39,12 @@ visible, because the failure is logged to the application logger under
 Note the asymmetry that keeps this honest: nothing here can *grant* anything.
 The audit path is downstream of every decision, so a failure in it can only
 lose a record, never widen access.
-
-What makes "best-effort" true
------------------------------
-The paragraph above was a promise this module could not keep on PostgreSQL,
-and the gap between the two is the whole reason :func:`_contained` exists.
-
-A failed statement there aborts the entire transaction, so ``services/db.py``
-rolls the *connection* back to keep it usable — and it does that inside its
-own ``except``, which runs before ours. By the time :func:`record` reached its
-handler the caller's uncommitted work was already gone: not the audit row, the
-*subject* of the audit row. ``record`` then returned ``False`` to a caller that
-never checks it, and the caller built a success response out of the objects it
-still held in memory. A log entry about a booking was able to cancel the
-booking, and the API said ``201`` over an empty table.
-
-So every statement here runs inside a savepoint. ``db.py`` deliberately does
-not roll the connection back while one is open — it logs
-``SQL_EXECUTE_ROLLBACK_DEFERRED_TO_SAVEPOINT`` and leaves recovery to whoever
-opened it — which is what bounds the damage to this module and lets the
-swallow above mean what it says. The savepoint lives here, at the two
-statements, rather than at the ~70 call sites across 19 modules that would
-otherwise each have to remember.
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from services.private_office import schema as _schema
@@ -224,11 +201,6 @@ ACTION_MEETING_MESSAGE = "PRIVATE_MEETING_MESSAGE"
 ACTION_MEETING_READ = "PRIVATE_MEETING_READ"
 ACTION_MEETING_CODE_ROTATED = "PRIVATE_MEETING_CODE_ROTATED"
 ACTION_MEETING_ARTIFACT_SAVE = "PRIVATE_MEETING_ARTIFACT_SAVE"
-#: A reschedule is its own verb, not a generic update. "When was this meeting
-#: moved, and by whom" has to be answerable from the log alone: the row that
-#: held the old time is overwritten in place, so without this verb the previous
-#: schedule leaves no trace anywhere in the system.
-ACTION_MEETING_RESCHEDULE = "PRIVATE_MEETING_RESCHEDULE"
 
 # Private Conversations vocabulary. The classification layer writes no message
 # rows, so there is deliberately no PRIVATE_CONVERSATION_MESSAGE action here —
@@ -311,7 +283,6 @@ ACTIONS: tuple[str, ...] = (
     ACTION_MEETING_READ,
     ACTION_MEETING_CODE_ROTATED,
     ACTION_MEETING_ARTIFACT_SAVE,
-    ACTION_MEETING_RESCHEDULE,
     ACTION_CONVERSATION_CLASSIFY,
     ACTION_CONVERSATION_SENSITIVITY_CHANGE,
     ACTION_CONVERSATION_LINK,
@@ -369,81 +340,6 @@ def normalize_purpose(value: object) -> str:
     return text if text in PURPOSES else "other"
 
 
-#: Savepoint names. Constants, never interpolated from anything a caller
-#: supplies — a savepoint name is an SQL identifier and cannot be bound as a
-#: parameter, so the only safe name is one written here.
-#:
-#: Distinct from every other savepoint in the codebase on purpose. ``meetings``
-#: uses ``pm_*`` and already opens ``pm_audit`` around its call into this
-#: module, so these nest inside it; the ledger, push and ad-wallet helpers use
-#: their own names. Re-using a name would be legal SQL — PostgreSQL keeps the
-#: older savepoint and makes it inaccessible until the newer one is released —
-#: but ``RELEASE`` would then close the *inner* one while a reader of the code
-#: reasonably expected the outer, and the two are only ever distinguishable at
-#: runtime. Unique names make the pairing readable.
-_SP_WRITE = "private_audit_write"
-_SP_READ = "private_audit_read"
-
-
-@contextmanager
-def _contained(cur, name: str):
-    """Run statements inside a savepoint, so swallowing their failure is safe.
-
-    This is the difference between "best-effort" and "silently destructive".
-    Without it, a failed statement in here costs the caller everything it had
-    not yet committed — see the module docstring.
-
-    Unlike ``meetings._nonfatal``, which this is modelled on, the block is not
-    given a chance to swallow its own error first: the callers below let the
-    exception reach this contextmanager, so a failure is *observed* rather than
-    inferred. That is why there is no ``SELECT 1`` health probe here. The probe
-    exists in ``_nonfatal`` because the blocks it guards catch their errors
-    several frames down, which makes a clean exit prove nothing about the
-    transaction — the only way to find such a failure is to ask the connection
-    directly. Here the exception is the answer, and probing every successful
-    audit write would add a round trip to the hot path to learn what we already
-    know.
-
-    The exception is re-raised. Deciding what a failed audit write means is the
-    caller's job, and both callers below do the same thing with it: log it and
-    return their fallback. What they must not do is decide it on a transaction
-    that is still poisoned.
-    """
-    opened = True
-    try:
-        cur.execute(f"SAVEPOINT {name}")
-    except Exception as exc:  # noqa: BLE001
-        # No savepoint means no containment, but an audit row is still not
-        # worth the caller's transaction: run the block anyway and let the
-        # existing swallow stand. This is the one path that keeps the old,
-        # unsafe behaviour, and it is logged so it is never a silent downgrade.
-        opened = False
-        LOGGER.warning("PRIVATE_AUDIT_NO_SAVEPOINT name=%s error=%s", name, exc)
-
-    unwound = True
-    try:
-        yield
-    except Exception:
-        if opened:
-            try:
-                cur.execute(f"ROLLBACK TO SAVEPOINT {name}")
-            except Exception:  # noqa: BLE001
-                # The transaction is beyond local repair. Say so and leave it
-                # to the caller's own savepoint, or to db.py.
-                unwound = False
-                LOGGER.exception("PRIVATE_AUDIT_UNWIND_FAILED name=%s", name)
-        raise
-    finally:
-        # A savepoint survives being rolled back to, so it still needs
-        # releasing; an unreleased one would grow the stack on a connection the
-        # route goes on using.
-        if opened and unwound:
-            try:
-                cur.execute(f"RELEASE SAVEPOINT {name}")
-            except Exception:  # noqa: BLE001
-                LOGGER.exception("PRIVATE_AUDIT_RELEASE_FAILED name=%s", name)
-
-
 def record(
     cur,
     *,
@@ -468,30 +364,27 @@ def record(
         LOGGER.warning("PRIVATE_AUDIT_UNKNOWN_ACTION action=%s", str(action)[:64])
         return False
     try:
-        with _contained(cur, _SP_WRITE):
-            cur.execute(
-                f"""INSERT INTO {_schema.AUDIT_TABLE}
-                (actor_user_id, owner_user_id, action, object_type, object_id,
-                 purpose, outcome, result_count, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    int(actor_user_id or 0),
-                    int(owner_user_id or 0),
-                    action,
-                    str(object_type or "")[:64],
-                    safe_object_id(object_id),
-                    normalize_purpose(purpose),
-                    str(outcome or OUTCOME_OK)[:32],
-                    max(0, int(result_count or 0)),
-                    _now_iso(),
-                ),
-            )
+        cur.execute(
+            f"""INSERT INTO {_schema.AUDIT_TABLE}
+            (actor_user_id, owner_user_id, action, object_type, object_id,
+             purpose, outcome, result_count, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                int(actor_user_id or 0),
+                int(owner_user_id or 0),
+                action,
+                str(object_type or "")[:64],
+                safe_object_id(object_id),
+                normalize_purpose(purpose),
+                str(outcome or OUTCOME_OK)[:32],
+                max(0, int(result_count or 0)),
+                _now_iso(),
+            ),
+        )
         return True
     except Exception as exc:
         # Best-effort by design — see the module docstring. The gap is visible
-        # here rather than being silent, and it can never widen access. The
-        # savepoint is what keeps it a gap in the log rather than a hole in the
-        # caller's transaction.
+        # here rather than being silent, and it can never widen access.
         LOGGER.warning("PRIVATE_AUDIT_WRITE_FAILED action=%s error=%s", action, exc)
         return False
 
@@ -587,19 +480,15 @@ def recent_record_activity(
         return []
     bounded = max(1, min(int(limit or 25), MAX_ACTIVITY_ROWS))
     try:
-        with _contained(cur, _SP_READ):
-            cur.execute(
-                f"SELECT action, object_type, object_id, actor_user_id, outcome, "
-                f"created_at FROM {_schema.AUDIT_TABLE} "
-                f"WHERE owner_user_id = ? AND action IN "
-                f"({', '.join('?' for _ in wanted)}) "
-                f"ORDER BY id DESC LIMIT {bounded}",
-                tuple([owner] + list(wanted)),
-            )
-            # Fetched inside the savepoint, not after it. Releasing runs another
-            # statement on this same cursor, and on psycopg that discards the
-            # result set the caller came for.
-            rows = cur.fetchall() or []
+        cur.execute(
+            f"SELECT action, object_type, object_id, actor_user_id, outcome, "
+            f"created_at FROM {_schema.AUDIT_TABLE} "
+            f"WHERE owner_user_id = ? AND action IN "
+            f"({', '.join('?' for _ in wanted)}) "
+            f"ORDER BY id DESC LIMIT {bounded}",
+            tuple([owner] + list(wanted)),
+        )
+        rows = cur.fetchall() or []
     except Exception as exc:  # noqa: BLE001
         LOGGER.warning("PRIVATE_AUDIT_ACTIVITY_READ_FAILED error=%s", exc)
         return []

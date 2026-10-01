@@ -29,7 +29,6 @@ import { isFlagValueOn } from "./src/core/envFlag";
 import { PerfOverlay } from "./src/components/PerfOverlay";
 import { TranslationPreferencesBootstrap } from "./src/components/TranslationPreferencesBootstrap";
 import { configurePulseShareCenter } from "./src/sharing/nativeShare";
-import { startOfflinePlatform, stopOfflinePlatform } from "./src/core/sync/offlinePlatform";
 
 // Captured at module evaluation so app.interactive reflects time-to-first-interactive-frame.
 const APP_MODULE_START = perfNow();
@@ -71,14 +70,7 @@ export default function App() {
 function AppRoot() {
   const { ready: i18nReady } = useI18n();
   const { t } = useTranslation();
-  // Lazy on purpose. `stateFor` is a constructor with module-level side effects
-  // -- it sets the media cache scope, sets the mutation outbox scope, and
-  // cancels in-flight notification reconciliation -- and React evaluates a
-  // non-lazy initializer on every render while using the result only on the
-  // first. The discarded calls resolved to a null scope, so one re-render of the
-  // app root reset a signed-in user's outbox scope to anonymous for the rest of
-  // the session and left read-message reconciliation permanently early-returning.
-  const [authState, setAuthState] = useState<AuthState>(() => stateFor("BOOTSTRAPPING"));
+  const [authState, setAuthState] = useState<AuthState>(stateFor("BOOTSTRAPPING"));
   const [pendingQaCameraRoute, setPendingQaCameraRoute] = useState<RootStackParamList["CameraStudio"] | null>(null);
   const [pendingQaRedirectTarget, setPendingQaRedirectTarget] = useState("");
   const [pendingNotificationTarget, setPendingNotificationTarget] = useState("");
@@ -108,14 +100,6 @@ function AppRoot() {
   useEffect(() => {
     bootstrapSession();
   }, [bootstrapSession]);
-
-  // Started before anything renders, and deliberately not gated on sign-in:
-  // connectivity has to be measured during the session restore itself, since
-  // that request is usually the first evidence there is a network at all.
-  useEffect(() => {
-    startOfflinePlatform();
-    return stopOfflinePlatform;
-  }, []);
 
   const interactiveRecorded = useRef(false);
   useEffect(() => {
@@ -356,10 +340,7 @@ function AppRoot() {
               */}
               <PulseBackground />
               {authState.status === "signedIn" ? (
-                <TranslationPreferencesBootstrap
-                  key={authState.user?.user_id || "signed-in"}
-                  userId={authState.user?.user_id}
-                />
+                <TranslationPreferencesBootstrap key={authState.user?.user_id || "signed-in"} />
               ) : null}
               <ThemedNavigationShell
                 signedIn={authState.status === "signedIn"}

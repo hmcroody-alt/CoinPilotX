@@ -128,31 +128,7 @@ describe("navigator header titles", () => {
     // three — an Office conversation is a canonical conversation, so the thread
     // itself opens in the existing `Chat` screen rather than in an Office-side
     // copy of it. A third entry appearing here is the regression to look for.
-    //
-    // 150 − 10: the Private Office was cut to the three things it contains —
-    // Relationship Intelligence, Private Meetings and Office Security. Facts,
-    // operations, the capital graph and its entity view, documents, briefings,
-    // shield, the concierge desk and the two conversation routes were withdrawn
-    // and their screens deregistered. All ten carried a title, so all ten leave
-    // this list — `PrivatePeople` is the one name in the "143 + 5" line that
-    // survives, because Relationship Intelligence is one of the three things the
-    // Office still contains. The running tally is kept rather than rewritten:
-    // the additions are what makes this number auditable, and a subtraction is a
-    // line in the same ledger.
-    //
-    // Five Private Office routes remain. Four of them are titled here —
-    // `PrivateOffice`, `PrivateOfficeSecurity`, `PrivatePeople` and
-    // `PrivateMeetings`. `PrivateMeetingRoom` is registered `headerShown: false`
-    // and so has never appeared in this list at all; a title arriving on it is a
-    // chrome regression in a call surface, not a copy change.
-    //
-    // 140 + 1: `CommerceSettings`, the Marketplace suggestions preferences
-    // screen. One entry and not two — the organic discovery placements it
-    // governs live inside Feed, Reels, Messenger and Marketplace, which are
-    // existing screens with existing titles. A second commerce route arriving
-    // here would mean discovery had grown a surface of its own, which is the
-    // thing the placement design is specifically not allowed to do.
-    expect(TITLE_OPTIONS.length).toBe(141);
+    expect(TITLE_OPTIONS.length).toBe(150);
   });
 
   it("has no hardcoded string literal titles", () => {

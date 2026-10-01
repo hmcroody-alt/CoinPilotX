@@ -10,11 +10,6 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scripts.local_database_guard import require_local_database  # noqa: E402
-
-# Importing bot runs init_db() against DATABASE_URL, so this has to come first.
-require_local_database("live_stream_audit")
-
 import bot  # noqa: E402
 from services import db as db_service  # noqa: E402
 
@@ -32,7 +27,7 @@ def create_owner() -> int:
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO users (username, display_name, email, email_verified, avatar_url, bio, signup_time, created_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?)",
-        ("livestreamaudit", "Roody Cherie", "coinpilotxai@gmail.com", "/static/brand/pulsesoc-logo-20260913.png", "Live audit creator", now, now),
+        ("livestreamaudit", "Roody Cherie", "coinpilotxai@gmail.com", "/static/brand/pulsesoc-logo-20260606.png", "Live audit creator", now, now),
     )
     user_id = int(cur.lastrowid)
     conn.commit()

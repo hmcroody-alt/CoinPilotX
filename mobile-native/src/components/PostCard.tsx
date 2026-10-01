@@ -3,30 +3,20 @@ import { ActivityIndicator, Alert, Animated, AppState, Image, Modal, PanResponde
 import { Audio, ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import { feedRenderableMedia, getPostDetail, mediaDisplayUrl, mediaKind, mediaPosterUrl, PulseMedia, PulsePost, pulsePostUrl, savablePostId } from "../api/feed";
-import { isPulseCommerceOverlay, PulseCommerceOverlay } from "../api/pulseCommerceOverlay";
-import { CommerceOverlay } from "./commerce/CommerceOverlay";
+import { feedRenderableMedia, getPostDetail, mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl, savablePostId } from "../api/feed";
 import { getLiveState } from "../api/live";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
-import { AUTOPLAY_STARTS_UNMUTED } from "../core/media/mediaAutoplayPolicy";
 import { AttachedMusicPolicy, resolvePostAudioPolicy } from "../core/attachedMusicAudioPolicy";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { canonicalMediaPlaybackUrl, refreshCanonicalMediaAccess } from "../media/mediaAccess";
 import { useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
-import { BLUE_GRAPHITE_LEVELS } from "../theme/blueGraphite";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatShortTime } from "../utils/format";
 import { sharePulseObject } from "../sharing/nativeShare";
-import { buildPostShareMetadata } from "../sharing/postShare";
 import { ContentTranslation } from "./ContentTranslation";
-import { LinkedText } from "../links/LinkedText";
-import { openContentLink } from "../links/openContentLink";
-import { detectLinks } from "../links/messageLinks";
-import { bodyEntity, bodyIsOnlyLinks } from "../links/pulseEntity";
-import { PulseEntityLinkCard } from "./messages/PulseEntityLinkCard";
 import { createThemedStyles } from "../theme/themedStyles";
 import { EmbeddedLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
 import { EmojiPicker } from "../emoji";
@@ -55,14 +45,16 @@ export function computeMediaBleedStyle(
   return { marginHorizontal: -bleed, width: windowWidth };
 }
 
-/**
- * The payload is built in `sharing/postShare.ts` rather than here, because what
- * may appear in it depends on the post's visibility. This used to pass
- * `post.body` unconditionally, which put a followers-only caption into whatever
- * target the person picked out of the OS share sheet.
- */
 function sharePostFromCard(post: PulsePost) {
-  return sharePulseObject(buildPostShareMetadata(post));
+  const author = post.author || post.user || {};
+  return sharePulseObject({
+    kind: "post",
+    url: pulsePostUrl(post.id),
+    title: post.title || "PulseSoc post",
+    description: post.body || post.text || post.content,
+    author: author.display_name || author.name || author.username || post.author_name,
+    previewImageUrl: post.thumbnail_url || post.image_url
+  });
 }
 
 const VISIBILITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -95,18 +87,6 @@ type PostCardProps = {
   onDelete?: (post: PulsePost) => void;
   onAuthorPress?: (post: PulsePost) => void;
   onOpenLive?: (post: PulsePost) => void;
-  /**
-   * Open the product a PulseDrop Signal is about.
-   *
-   * The commerce block renders only when this is supplied, which is deliberate
-   * and not defensive: the block's whole purpose is a call to action, and a
-   * surface with no way to reach the product would be drawing a button that
-   * promises a destination it cannot deliver. Ordinary posts carry no
-   * `commerce` payload and are unaffected either way.
-   */
-  onOpenCommerceProduct?: (commerce: PulseCommerceOverlay) => void;
-  /** Open the merchant's store. A distinct destination from the product. */
-  onOpenCommerceSeller?: (commerce: PulseCommerceOverlay) => void;
 };
 
 /**
@@ -141,9 +121,7 @@ function PostCardBody({
   onMute,
   onDelete,
   onAuthorPress,
-  onOpenLive,
-  onOpenCommerceProduct,
-  onOpenCommerceSeller
+  onOpenLive
 }: PostCardProps) {
   const [refreshedPost, setRefreshedPost] = useState<PulsePost | null>(null);
   const [replayMessage, setReplayMessage] = useState("Replay processing");
@@ -240,38 +218,6 @@ function PostCardBody({
   const handle = author.username || author.handle || post.author_username || "";
   const body = post.body || "";
   const showReadMore = !detail && bodyTruncated;
-  /** The URLs in the body, in the same reading `LinkedText` makes them tappable by. */
-  const bodyLinkTexts = useMemo(() => (body ? detectLinks(body).map((token) => token.text) : []), [body]);
-  /**
-   * The PulseSoc object this post's body is about, if it is about exactly one.
-   *
-   * Derived per render, never stored — the same arrangement as chat, and for the
-   * same reason: every post already carrying a link becomes a card the first time
-   * it is drawn, with nothing to backfill and no body this code has never parsed
-   * to guess at.
-   *
-   * The self-reference guard is new here and has no equivalent in chat, because a
-   * message cannot link to itself. A post can: the share sheet hands out
-   * `pulsePostUrl(post)`, so pasting a post's own share link back into its body —
-   * or a repost wrapper quoting the original it already wraps — is an ordinary
-   * accident. Without this the card resolves, fetches, and draws a picture of the
-   * post the reader is already looking at, with a "View post →" that navigates to
-   * where they already are. Compared by `kind` as well as `id` because a reel id
-   * and a post id are unrelated numbers from different tables that collide freely.
-   */
-  const bodyCardEntity = useMemo(() => {
-    const resolved = bodyEntity(body, bodyLinkTexts);
-    if (!resolved) return null;
-    if (resolved.kind === "post" && resolved.id === Number(post.id)) return null;
-    return resolved;
-  }, [body, bodyLinkTexts, post.id]);
-  /**
-   * A body that is nothing but the link keeps no prose worth showing, so the card
-   * stands in for it and the bare URL is never drawn. A body with a sentence
-   * around the link keeps the sentence — that part is the author's.
-   */
-  const cardReplacesBody = Boolean(bodyCardEntity) && bodyIsOnlyLinks(body, bodyLinkTexts);
-  const showBodyText = Boolean(body) && !cardReplacesBody;
   const visibilityKey = String(post.visibility || "public").toLowerCase();
   const visibilityIcon = VISIBILITY_ICON[visibilityKey] || "globe-outline";
   const visibilityLabel = visibilityKey.charAt(0).toUpperCase() + visibilityKey.slice(1);
@@ -433,7 +379,7 @@ function PostCardBody({
           {post.title}
         </Text>
       ) : null}
-      {showBodyText && !detail ? (
+      {body && !detail ? (
         <Text
           style={[styles.body, styles.bodyMeasure]}
           onTextLayout={(event) => setBodyTruncated(event.nativeEvent.lines.length > COLLAPSED_BODY_LINES)}
@@ -441,47 +387,19 @@ function PostCardBody({
           {body}
         </Text>
       ) : null}
-      {showBodyText ? (
+      {body ? (
         <ContentTranslation
           contentType="post"
           contentRef={post.id}
           text={body}
           textStyle={styles.body}
           numberOfLines={detail || bodyExpanded ? undefined : COLLAPSED_BODY_LINES}
-          // `renderText` replaces the plain `<Text>` entirely, so `textStyle`
-          // and `numberOfLines` above stop being applied and have to be passed
-          // through by hand -- they are left in place because the *untranslated*
-          // path and the measuring copy above still read them.
-          //
-          // The translated body is linkified too, not just the original: this
-          // receives whichever string is currently on screen, so a URL that
-          // survives translation stays tappable and one that translation mangles
-          // simply renders as prose. Same arrangement as `ChatScreen`.
-          renderText={(visible) => (
-            <LinkedText
-              text={visible}
-              style={styles.body}
-              linkStyle={styles.bodyLink}
-              numberOfLines={detail || bodyExpanded ? undefined : COLLAPSED_BODY_LINES}
-              onLinkPress={openContentLink}
-            />
-          )}
         />
       ) : null}
       {showReadMore ? (
         <Pressable accessibilityRole="button" accessibilityLabel={bodyExpanded ? "Collapse post" : "Read full post"} onPress={(event) => { event.stopPropagation(); setBodyExpanded((value) => !value); }}>
           <Text style={styles.readMore}>{bodyExpanded ? "Show less" : "Read more"}</Text>
         </Pressable>
-      ) : null}
-      {/* After the prose rather than before it, which is the opposite of chat and
-          deliberate: a message is usually *just* the link, so the card leads;
-          a post is usually a thought that happens to cite something, so the
-          thought leads and the card is what it cites. `variant="content"` drops
-          the chat bubble's width clamp so the card fills the text column. */}
-      {bodyCardEntity ? (
-        <View style={styles.bodyCard}>
-          <PulseEntityLinkCard entity={bodyCardEntity} variant="content" onOpen={openContentLink} />
-        </View>
       ) : null}
       </View>
 
@@ -543,22 +461,6 @@ function PostCardBody({
       ) : null}
 
       <View style={styles.cardInset}>
-      {/*
-        A PulseDrop Signal's price, stock state and call to action, read live
-        from the payload rather than baked into the post body — the post is
-        written once and the listing keeps changing. It sits between the media
-        and the social row because that is where the commercial claim belongs:
-        after the thing being sold, before the conversation about it. An
-        ordinary post has no `commerce` field and this is nothing.
-      */}
-      {isPulseCommerceOverlay(post.commerce) && onOpenCommerceProduct ? (
-        <CommerceOverlay
-          commerce={post.commerce}
-          surface="signal"
-          onOpenProduct={onOpenCommerceProduct}
-          onOpenSeller={onOpenCommerceSeller || onOpenCommerceProduct}
-        />
-      ) : null}
       <View style={styles.socialContextRow}>
         <Text style={styles.reactionSummary} accessibilityLabel={`${reactionTotal} reactions`}>{reactionSummary(post.reaction_counts || {})}</Text>
         <Text style={styles.socialContextText} numberOfLines={1}>
@@ -928,6 +830,13 @@ function clampedMediaAspect(media: PulseMedia) {
   return Math.min(MEDIA_ASPECT_MAX, Math.max(MEDIA_ASPECT_MIN, raw));
 }
 
+function mediaPosterUrl(media: PulseMedia) {
+  return mediaDisplayUrl({
+    ...media,
+    media_url: media.thumbnail_url || media.poster_url || media.valid_url || media.media_url || media.url || ""
+  });
+}
+
 function MediaStrip({ post, active, motionEnabled, onReact, onMediaError }: { post: PulsePost; active: boolean; motionEnabled: boolean; onReact?: (post: PulsePost, reactionType: string) => void; onMediaError?: () => void }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   // A URL that 404s or times out gets us right back to the empty rectangle the
@@ -1103,25 +1012,7 @@ function FeedInlineVideo({
   const videoRef = useRef<Video>(null);
   const attachedSoundRef = useRef<Audio.Sound | null>(null);
   const refreshAttempted = useRef(false);
-  /**
-   * §7/§49: feed video starts with sound on.
-   *
-   * It started muted, which made the feed silent by construction -- and because
-   * `audibleAutoplay` gates the claimMediaPlayback call below, a muted feed also
-   * never entered ownership arbitration at all. Unmuting is therefore not just a
-   * default flip: it is what puts feed video under the same single-owner
-   * coordinator as Reels, Statuses and calls, so the card that scrolls out of
-   * view is paused by the one that scrolls in.
-   *
-   * The audio *session* is deliberately not touched here. Configuring an
-   * AVAudioSession from a feed card is the exact failure the realtime-audio
-   * policy forbids -- HomeScreen is mounted for the whole session, so a
-   * setAudioModeAsync from this path could take the microphone away from a call
-   * in progress. Sound plays under whatever session is already active, which on
-   * iOS means the hardware silent switch still wins. That is correct behaviour,
-   * not a gap.
-   */
-  const [muted, setMuted] = useState(!AUTOPLAY_STARTS_UNMUTED);
+  const [muted, setMuted] = useState(true);
   const [buffering, setBuffering] = useState(false);
   const [failed, setFailed] = useState(false);
   const [refreshingUrl, setRefreshingUrl] = useState(false);
@@ -1297,45 +1188,11 @@ const REACTIONS = [
   { key: "rocket", emoji: "🚀", label: "Rocket" }
 ] as const;
 
-// The glyph for every reaction the API accepts, not just the six the tray
-// offers. Mirrors services/pulse_reactions.py, which is the source of truth;
-// tests/web_surface/test_reaction_catalogue.py fails if the two drift apart.
-//
-// REACTIONS above stays six on purpose -- that is the tray, a deliberate
-// choice about what is one tap away. This map is about *display*, and it has
-// to cover everything, because posts arrive carrying reactions sent from the
-// web, where all eighteen are reachable.
-const REACTION_EMOJI: Record<string, string> = {
-  like: "👍",
-  love: "❤️",
-  funny: "😂",
-  wow: "😮",
-  brutal: "😢",
-  scam_alert: "😡",
-  fire: "🔥",
-  fast_signal: "⚡",
-  elite: "💎",
-  rocket: "🚀",
-  clap: "👏",
-  hundred: "💯",
-  target: "🎯",
-  smart: "🧠",
-  shield: "🛡️",
-  whale: "🐳",
-  bullish: "📈",
-  bearish: "📉"
-};
-
 function reactionSummary(counts: Record<string, number>) {
-  // Driven by the counts the server actually sent, not by the tray. Filtering
-  // by the tray meant a post whose only reactions were e.g. `whale` or
-  // `bullish` summarised as "♡" -- the no-reactions state -- while real people
-  // had reacted to it.
-  const active = Object.keys(counts || {})
-    .filter((key) => Number(counts[key] || 0) > 0 && REACTION_EMOJI[key])
-    .sort((left, right) => Number(counts[right] || 0) - Number(counts[left] || 0))
+  const active = REACTIONS.filter((reaction) => Number(counts[reaction.key] || 0) > 0)
+    .sort((left, right) => Number(counts[right.key] || 0) - Number(counts[left.key] || 0))
     .slice(0, 3)
-    .map((key) => REACTION_EMOJI[key]);
+    .map((reaction) => reaction.emoji);
   return active.length ? active.join("") : "♡";
 }
 
@@ -1443,20 +1300,6 @@ const styles = createThemedStyles(() => ({
     lineHeight: 22,
     marginTop: 10
   },
-  // `LinkedText`'s built-in link colour is `chatGraphite.senderAccent`, chosen
-  // for contrast against a chat bubble rather than a feed card. This overrides
-  // the colour only; the underline it sets survives, and it is the underline
-  // doing the accessibility work here.
-  bodyLink: {
-    color: colors.accent
-  },
-  // The gap above the card, owned by the caller rather than the card. The card
-  // carries `marginBottom` for the chat bubble it was born in; a feed post needs
-  // space on the other side, and putting that here keeps the two surfaces from
-  // arguing over one margin.
-  bodyCard: {
-    marginTop: 10
-  },
   bodyMeasure: {
     position: "absolute",
     left: 0,
@@ -1542,7 +1385,7 @@ const styles = createThemedStyles(() => ({
   },
   inlineCommentComposer: {
     alignItems: "center",
-    backgroundColor: "rgba(42, 51, 64, 0.62)",
+    backgroundColor: "rgba(4, 11, 22, 0.62)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 18,
     borderWidth: 1,
@@ -1839,7 +1682,7 @@ const styles = createThemedStyles(() => ({
     width: 42
   },
   overflowMenu: {
-    backgroundColor: BLUE_GRAPHITE_LEVELS.panel,
+    backgroundColor: "rgb(5, 13, 26)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
@@ -1907,7 +1750,7 @@ const styles = createThemedStyles(() => ({
     fontWeight: "800"
   },
   reactionSelector: {
-    backgroundColor: "rgba(48, 56, 67, 0.92)",
+    backgroundColor: "rgba(3, 9, 18, 0.92)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 18,
     borderWidth: 1,

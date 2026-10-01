@@ -33,8 +33,7 @@ export const CATALOG_NAMESPACES = [
   "settings",
   "progress",
   "premium",
-  "briefings",
-  "translation"
+  "briefings"
 ] as const;
 
 export type CatalogNamespace = (typeof CATALOG_NAMESPACES)[number];
@@ -66,11 +65,7 @@ export const NAMESPACE_TIER: Readonly<Record<CatalogNamespace, CatalogTier>> = O
   premium: "extended",
   // One profile tile plus its hub; the tile's NEW micro-label is the only
   // piece that renders before navigation.
-  briefings: "extended",
-  // The Translate affordance is attached to text, so it is reachable from the
-  // feed, chat, reels and marketplace — but never before there is text on
-  // screen, which is after the first frame by definition.
-  translation: "extended"
+  briefings: "extended"
 });
 
 /** Namespaces the provider warms before it renders children. */

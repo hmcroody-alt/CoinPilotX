@@ -42,9 +42,6 @@ HTML_HELPERS = {
 
 FLASK_PARAM = re.compile(r"<[^>]+>")
 
-#: `<any("a","b"):name>` — a parameter that only accepts the names it lists.
-ANY_CONVERTER = re.compile(r'<any\(([^)]*)\):[^>]+>')
-
 
 def run(script: str) -> object:
     result = subprocess.run(
@@ -66,27 +63,7 @@ def normalize_native(path: str) -> list[str]:
 
 
 def normalize_web(rule: str) -> list[str]:
-    """Flask rule -> segments, where a parameter becomes what it can accept.
-
-    A bare `<name>` becomes `*`, but `<any("people"):section>` becomes the set
-    `{"people"}`, because that is what the rule answers. Collapsing it to `*`
-    was wrong in the direction that matters: `/pulse/private-office/<any(
-    "people"):section>` would then claim to answer
-    `/pulse/private-office/meetings`, and every native destination under a
-    constrained parameter scored PARITY whether the site served it or not. The
-    whole point of the matrix is to find the paths that 404.
-    """
-    out: list[str | frozenset[str]] = []
-    for seg in segments(rule):
-        listed = ANY_CONVERTER.fullmatch(seg)
-        if listed:
-            out.append(frozenset(
-                value.strip().strip('"\'') for value in listed.group(1).split(",")))
-        elif FLASK_PARAM.fullmatch(seg):
-            out.append("*")
-        else:
-            out.append(seg)
-    return out
+    return ["*" if FLASK_PARAM.fullmatch(seg) else seg for seg in segments(rule)]
 
 
 def matches(native: list[str], web: list[str]) -> bool:
@@ -98,34 +75,7 @@ def matches(native: list[str], web: list[str]) -> bool:
     """
     if len(native) != len(web):
         return False
-    for n, w in zip(native, web):
-        if isinstance(w, frozenset):
-            # A native wildcard against a closed list: the native path can be
-            # anything, so some value it produces is outside the list. Treated
-            # as a match anyway — the alternative is flagging every parametric
-            # native route over a constrained rule, which is noise, not signal.
-            if n != "*" and n not in w:
-                return False
-        elif not (n == "*" or w == "*" or n == w):
-            return False
-    return True
-
-
-def specificity(web: tuple) -> tuple[int, ...]:
-    """How specifically a rule names the path, leftmost segment first.
-
-    A literal segment outranks a constrained parameter, which outranks a bare
-    wildcard. All the keys this is compared across have already matched the same
-    native path, so they are the same length and the tuples compare
-    element-by-element -- which is also the order a reader resolves a URL in.
-    """
-    ranks = []
-    for seg in web:
-        if isinstance(seg, frozenset):
-            ranks.append(1)
-        else:
-            ranks.append(0 if seg == "*" else 2)
-    return tuple(ranks)
+    return all(n == "*" or w == "*" or n == w for n, w in zip(native, web))
 
 
 def classify(web_rows: list[dict]) -> str:
@@ -161,23 +111,9 @@ def main() -> int:
         if base and base[-1] == "*":
             candidates.append(base[:-1])
         for cand in candidates:
-            hits = [(key, rows) for key, rows in by_norm.items()
-                    if matches(cand, list(key))]
-            if hits:
-                # The *most specific* matching rule, not the first one found.
-                # Several rules can match one path and Werkzeug serves the
-                # specific one, so taking the first put the verdict on a handler
-                # that never runs. `/saved` scored PARITY on `/<slug>` -- the SEO
-                # topic-page rule, which answers nine bytes of "Not found" for
-                # anything it does not recognise -- and went on scoring PARITY on
-                # it after a literal `/saved` route was added, because `/<slug>`
-                # is declared 38,000 lines earlier and won the iteration.
-                #
-                # Same failure this file already fixed for `<any(...)>`: a
-                # parametric rule claiming a path it does not really serve, in
-                # the one direction the matrix exists to catch.
-                key, rows = max(hits, key=lambda hit: specificity(hit[0]))
-                return classify(rows), rows
+            for key, rows in by_norm.items():
+                if matches(cand, list(key)):
+                    return classify(rows), rows
         for cand in candidates:
             if any(matches(cand, list(key)) for key in url_map):
                 # Registered by a blueprint; rule exists but its handler body

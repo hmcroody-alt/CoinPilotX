@@ -1,12 +1,11 @@
 import { Audio, ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Dimensions, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { PanGestureHandler, PinchGestureHandler, State, TapGestureHandler } from "react-native-gesture-handler";
 import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "../api/feed";
 import { pollNativeMediaProcessing } from "../media/nativeMediaUpload";
 import { colors } from "../theme/colors";
 import { saveMediaToGallery, shareMedia, type MediaActionTarget } from "../media/mediaActions";
-import { namespacedMediaId } from "../media/mediaCache";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { AttachedMusicPolicy, resolveViewerAudioPlan } from "../core/attachedMusicAudioPolicy";
@@ -15,50 +14,9 @@ import { createThemedStyles } from "../theme/themedStyles";
 
 export type NativeMediaViewerItem = {
   id?: number;
-  /**
-   * What the underlying file is cached under, namespaced by the id space it came
-   * from — see `namespacedMediaId`.
-   *
-   * Deliberately not derived from `id`. Producers set `id` to whichever row they
-   * built the item from, and Messenger sets a *message* id there, so keying the
-   * media cache on it would file a chat attachment under a feed media row's
-   * number and hand one of them the other's bytes.
-   */
-  cacheIdentity?: string | null;
   media?: PulseMedia;
   kind?: "image" | "video" | "file";
-  /**
-   * The wire MIME type, for producers that have one without a `media` record.
-   *
-   * This is not cosmetic. It is the only input that gives the cached file an
-   * extension: the download engine derives one from the MIME type, falling back
-   * to the URL's own suffix, and a Messenger access URL ends in `/download`. An
-   * item that arrives here without a MIME type is therefore written to disk with
-   * no extension at all, which renders and shares fine but which the photo
-   * library write rejects outright — Photos routes on the extension, not on the
-   * bytes. The user sees "could not save this to your library" for a photo that
-   * is sitting decoded on their screen.
-   */
-  mimeType?: string;
   url: string;
-  /**
-   * The saveable/shareable file, when it is not the same resource as `url`.
-   *
-   * `url` is the PLAYBACK source. For a Mux-backed video that is an HLS
-   * manifest: a text playlist, streamed a segment at a time, which is exactly
-   * what makes the viewer start fast (§9/§21 — first frame from the manifest
-   * plus one segment, never a full download). It is also not a movie file.
-   * Save to Photos and Share go through `downloadMedia`, so pointing them at
-   * `url` writes a `.m3u8` to disk, the transfer succeeds, and the photo-library
-   * write refuses it — the user is told their library rejected a video they are
-   * watching.
-   *
-   * So the two are separate fields rather than one field that means different
-   * things depending on the item. Absent — which is every producer that has a
-   * single downloadable URL, i.e. all of them except conversation video —
-   * actions fall back to `url` and behave exactly as before.
-   */
-  downloadUrl?: string;
   thumbnailUrl?: string;
   title?: string;
   subtitle?: string;
@@ -74,68 +32,12 @@ export type NativeMediaViewerItem = {
    * its selected soundtrack.
    */
   musicPolicy?: AttachedMusicPolicy;
-  /**
-   * Mint a fresh access URL for this exact item, for Save and Share (§8).
-   *
-   * Only producers whose URLs are time-limited credentials set this — Messenger
-   * does, feed media does not. Absent, Save and Share behave as before: one
-   * attempt against `url`, and an authorization failure is reported as one.
-   */
-  refreshUrl?: () => Promise<string>;
 };
-
-/** Horizontal travel, in points, that commits a swipe to the next/previous item. */
-export const SWIPE_COMMIT_DISTANCE = 60;
-/** Vertical travel that commits a dismiss. Unchanged; named so the two can be compared. */
-export const DISMISS_COMMIT_DISTANCE = 90;
-/** Ceiling on pinch zoom. Beyond this a photo is texture, not content. */
-export const MAX_ZOOM = 4;
-/** What a double-tap zooms to, and toggles back from. */
-export const DOUBLE_TAP_ZOOM = 2.5;
-/**
- * How long a video may show nothing before the viewer calls it a failure.
- *
- * Generous on purpose: a cold segment fetch on a poor connection is allowed to
- * take a while, and the poster is showing throughout, so this is not a deadline
- * for a good load. It is the floor under a source that will never report
- * anything at all.
- */
-export const FIRST_FRAME_TIMEOUT_MS = 15_000;
 
 type Props = {
   visible: boolean;
   items: NativeMediaViewerItem[];
   initialIndex?: number;
-  /**
-   * Drive the position from outside. Pass this together with `onIndexChange` to
-   * make the viewer controlled.
-   *
-   * The chat gallery must be controlled, and the reason is specific: its
-   * collection grows while the viewer is open. When an older page lands, every
-   * item is pushed up by however many arrived, so an index the viewer had kept
-   * privately would now name a different photo — the picture would change under
-   * the user's hands. The owner tracks the item by key and recomputes the
-   * position, which is a thing only the owner can do.
-   *
-   * Left undefined, the viewer stays uncontrolled and every existing caller
-   * behaves exactly as before.
-   */
-  index?: number;
-  onIndexChange?: (index: number) => void;
-  /**
-   * Size of the whole collection when more of it exists than has been paged in,
-   * so the counter can say "12 of 43" rather than "12 of 60". Falls back to
-   * `items.length`.
-   */
-  totalCount?: number;
-  /**
-   * Swipe left/right to move through `items`.
-   *
-   * Off by default. The surfaces that show a single item, or that rely on the
-   * horizontal axis for something else, must not grow a gesture they never
-   * asked for.
-   */
-  swipeToNavigate?: boolean;
   title?: string;
   onClose: () => void;
   onSave?: (item: NativeMediaViewerItem) => void;
@@ -181,58 +83,10 @@ export const nativeMediaViewerIntegrationTargets = [
   "Creator Studio"
 ];
 
-/**
- * Turn transfer progress into something honest to put on screen.
- *
- * The downloader reports `fraction: null` when the server sent no
- * `Content-Length`, and the temptation is to render that as 0% and let it jump.
- * A percentage is a promise about how much is left; inventing one when the total
- * is genuinely unknown is the same class of lie as a black frame standing in for
- * a loading frame. So an unknown total gets megabytes — which still moves, still
- * proves the transfer is alive, and claims nothing it cannot support.
- *
- * `lead` is a parameter rather than a constant because Save is not the only
- * action that has to fetch the whole file first. Share downloads exactly the
- * same bytes through exactly the same path, so it earns the same rule; what
- * differs is only the sentence around the number.
- */
-export function transferMessageFor(
-  lead: string,
-  progress: { bytesWritten: number; fraction: number | null }
-): string {
-  if (progress.fraction !== null) {
-    return `${lead} ${Math.round(progress.fraction * 100)}%`;
-  }
-  const megabytes = progress.bytesWritten / (1024 * 1024);
-  if (megabytes < 0.1) return lead;
-  return `${lead} ${megabytes.toFixed(1)} MB`;
-}
-
-export function savingMessageFor(progress: { bytesWritten: number; fraction: number | null }): string {
-  return transferMessageFor("Saving to your library…", progress);
-}
-
-/**
- * Share had no progress surface at all, which was worse than Save's.
- *
- * Save at least printed the word "Saving". `shareItem` set no status whatsoever
- * and then awaited a full download before the share sheet could open — measured
- * on device against a conversation video the origin serves at tens of KiB/s,
- * that is minutes of a screen that looks like the tap did nothing. Same defect
- * class as §19's infinite spinner, reached by a different button.
- */
-export function sharingMessageFor(progress: { bytesWritten: number; fraction: number | null }): string {
-  return transferMessageFor("Preparing to share…", progress);
-}
-
 export function NativeMediaViewer({
   visible,
   items,
   initialIndex = 0,
-  index: controlledIndex,
-  onIndexChange,
-  totalCount,
-  swipeToNavigate = false,
   title = "Media",
   onClose,
   onSave,
@@ -243,27 +97,8 @@ export function NativeMediaViewer({
   shareAsLink = false,
   allowGallerySave = true
 }: Props) {
-  const [internalIndex, setInternalIndex] = useState(initialIndex);
+  const [index, setIndex] = useState(initialIndex);
   const [failed, setFailed] = useState(false);
-  /**
-   * "No first frame yet", which is NOT "failed" — the distinction this whole
-   * surface turns on.
-   *
-   * These were one flag, and the conflation shipped: the first-frame watchdog set
-   * `failed`, line 640's `&& !failed` then unmounted the `<Video>`, and with it
-   * the poster it was displaying. On device that read as the viewer opening on a
-   * visible frame and replacing it with a black "Media unavailable" card fifteen
-   * seconds later — while the transfer was demonstrably still running (282x200,
-   * zero 4xx/5xx, CoreMedia reporting 1335 kbps). The user was told their video
-   * was gone, about a video that was arriving.
-   *
-   * So: `failed` means something REPORTED a failure (`onError`, `status.error`).
-   * `slow` means nobody has reported anything and the deadline passed. One is a
-   * verdict and the other is the absence of one, and only the verdict may take
-   * content off the screen.
-   */
-  const [slow, setSlow] = useState(false);
-  const [reloadNonce, setReloadNonce] = useState(0);
   const [buffering, setBuffering] = useState(false);
   const [checking, setChecking] = useState(false);
   const [processingMessage, setProcessingMessage] = useState("");
@@ -275,42 +110,15 @@ export function NativeMediaViewer({
    */
   const [actionStatus, setActionStatus] = useState("");
   const [savingToGallery, setSavingToGallery] = useState(false);
-  const [sharing, setSharing] = useState(false);
-  /** Drives the re-entry guard; `sharing` only drives what the button looks like. */
-  const sharingRef = useRef(false);
   const videoRef = useRef<Video>(null);
   const attachedSoundRef = useRef<Audio.Sound | null>(null);
   const videoPlayingRef = useRef(false);
-  /** Has THIS source ever reported a loaded status? Drives the watchdog below. */
-  const loadedOnceRef = useRef(false);
-  /**
-   * Zoom is two values multiplied, not one value assigned.
-   *
-   * `baseScale` is what the photo is zoomed to right now and survives the end of
-   * a gesture; `pinchScale` is the live gesture, which always starts at 1. A
-   * single value cannot express both, which is why the previous implementation
-   * had to spring back to 1 when the fingers lifted — the zoom had nowhere to
-   * live. Requirement §10 is that the zoom *stays*.
-   */
-  const baseScale = useRef(new Animated.Value(1)).current;
-  const pinchScale = useRef(new Animated.Value(1)).current;
-  const scale = useRef(Animated.multiply(baseScale, pinchScale)).current;
-  /** Committed zoom, readable synchronously. Animated.Value is not. */
-  const zoomRef = useRef(1);
-  const translateX = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(1)).current;
   const translateY = useRef(new Animated.Value(0)).current;
-  /** Where the zoomed photo has been dragged to, committed across gestures. */
-  const panOffset = useRef({ x: 0, y: 0 });
   const likeBurstRef = useRef<LikeBurstHandle>(null);
   const panRef = useRef<PanGestureHandler>(null);
   const pinchRef = useRef<PinchGestureHandler>(null);
   const doubleTapRef = useRef<TapGestureHandler>(null);
-  const controlled = typeof controlledIndex === "number";
-  // Clamped on read, because a controlled owner whose collection just shrank can
-  // legitimately hand us a position that no longer exists for one render.
-  const index = controlled
-    ? Math.max(0, Math.min(controlledIndex as number, items.length - 1))
-    : internalIndex;
   const item = items[index] || items[0];
   const author = item?.author || {};
   const kind = item?.kind || (item?.media ? mediaKind(item.media) : "file");
@@ -335,32 +143,13 @@ export function NativeMediaViewer({
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
       return;
     }
-    // Capture the player while the ref is still attached.
-    //
-    // React detaches refs during the commit, and a `useEffect` cleanup runs
-    // afterwards — so reading `videoRef.current` from the cleanup finds `null`
-    // in precisely the case that matters: swiping from a video to a photo, when
-    // the <Video> is being unmounted. Holding the instance in the effect's own
-    // closure is what makes the pause below reach a real player.
-    const player = videoRef.current;
     claimMediaPlayback({
       id: playbackOwnerId,
       kind: "viewer",
-      // These run while the component is mounted and the coordinator wants the
-      // *current* player, so they stay on the live ref.
       pause: () => videoRef.current?.pauseAsync().then(() => undefined),
       stop: () => videoRef.current?.stopAsync().then(() => undefined)
     }).then((granted) => granted ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
-    return () => {
-      // Pause the outgoing video *before* handing the claim back. Releasing only
-      // tells the coordinator nobody owns playback any more; it does not stop a
-      // player that is already running, and on a video→video swipe the same
-      // <Video> survives with a new source. Without this, audio from the item
-      // you swiped away keeps playing over the next one.
-      // `pauseAsync` touches this player only — it is not an audio-session call.
-      player?.pauseAsync().catch(() => undefined);
-      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
-    };
+    return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
   }, [item?.url, kind, playbackOwnerId, visible]);
 
   // Load (and tear down) the attached-music track that must play in place of the
@@ -410,237 +199,58 @@ export function NativeMediaViewer({
   }, []);
 
   useEffect(() => {
-    // A controlled viewer takes its position from its owner. Seeding from
-    // `initialIndex` here would fight that owner on every collection change —
-    // the gallery pages in older media, `items.length` moves, this effect fires,
-    // and the photo on screen jumps back to wherever the caller first opened.
-    if (!visible || controlled) return;
-    setInternalIndex(Math.max(0, Math.min(initialIndex, items.length - 1)));
-  }, [controlled, initialIndex, items.length, visible]);
+    if (!visible) return;
+    setIndex(Math.max(0, Math.min(initialIndex, items.length - 1)));
+  }, [initialIndex, items.length, visible]);
 
   useEffect(() => {
+    setFailed(false);
     setBuffering(false);
     setProcessingMessage("");
     // The status line describes one specific file. Swiping to the next item must
     // not leave "Saved to your library." sitting under a photo that was not saved.
     setActionStatus("");
-    // A new photo arrives unzoomed and centred. Carrying the previous item's zoom
-    // over would open the next picture already cropped into its middle.
-    zoomRef.current = 1;
-    panOffset.current = { x: 0, y: 0 };
-    baseScale.setValue(1);
-    pinchScale.setValue(1);
-    translateX.setOffset(0);
-    translateX.setValue(0);
-    translateY.setOffset(0);
+    scale.setValue(1);
     translateY.setValue(0);
-  }, [baseScale, index, pinchScale, translateX, translateY]);
+  }, [index, scale, translateY]);
 
   const pinchEvent = useMemo(
     () =>
-      Animated.event([{ nativeEvent: { scale: pinchScale } }], {
+      Animated.event([{ nativeEvent: { scale } }], {
         useNativeDriver: true
       }),
-    [pinchScale]
+    [scale]
   );
 
   const panEvent = useMemo(
     () =>
-      Animated.event([{ nativeEvent: { translationX: translateX, translationY: translateY } }], {
+      Animated.event([{ nativeEvent: { translationY: translateY } }], {
         useNativeDriver: true
       }),
-    [translateX, translateY]
+    [translateY]
   );
-
-  /**
-   * Per-item load state, reset DURING RENDER and keyed on the item's identity.
-   *
-   * Two bugs live in the obvious alternative (`useEffect(..., [index])`):
-   *
-   *   - It keys on a POSITION. The gallery pages older media in underneath, so
-   *     the same photo's index moves while the photo does not, and a different
-   *     photo can arrive at the same index. When the item changes but the index
-   *     does not, the effect never fires and the previous item's `failed` stays
-   *     on — one dead video reads as "everything after it is broken too".
-   *   - It fires AFTER the commit. React paints one frame with the new item and
-   *     the old item's state, which is a visible flash of the previous item's
-   *     error card over the new item's media.
-   *
-   * Assigning during render is React's documented pattern for exactly this: the
-   * re-render happens before anything is painted, so there is no intermediate
-   * frame and no effect ordering to reason about.
-   */
-  const identityKey = String(item?.cacheIdentity || item?.id || item?.url || "");
-  const [loadStateKey, setLoadStateKey] = useState(identityKey);
-  if (loadStateKey !== identityKey) {
-    setLoadStateKey(identityKey);
-    setFailed(false);
-    setSlow(false);
-    loadedOnceRef.current = false;
-  }
-
-  /**
-   * A video that never loads and never errors must still stop looking like one
-   * that is loading.
-   *
-   * This is the generalisation of the bug that opened this mission. AVPlayer
-   * rejected a site-relative URL with NSURLErrorUnsupportedURL and expo-av
-   * surfaced it as `isLoaded: false` with no `error`, so there was no event to
-   * render — the viewer sat on a black rectangle indefinitely with every control
-   * working and no way for the user (or a test) to tell it had failed.
-   *
-   * The URL bug is fixed at the source. This exists so the NEXT source that
-   * fails without an error event is reported instead of disappearing: an
-   * unrecognised codec, a 302 to somewhere unreachable, a DNS hole. Bounded to
-   * "has never reported a loaded status", so a buffering stall on a video that
-   * already played is untouched.
-   *
-   * What it may NOT do is conclude. Fifteen seconds without a first frame is a
-   * real thing to say to the user and a useless thing to decide on their behalf:
-   * a non-faststart MP4 with its moov atom at the end legitimately exceeds this,
-   * and the deadline passing tells us nothing about whether the bytes are still
-   * coming. So the watchdog sets `slow` — which puts a sentence over the poster
-   * and leaves the player running — and never `failed`, which is reserved for
-   * something that actually reported a failure. It also clears itself: the
-   * loaded branch below sets `slow` false, so a video that arrives at 20s heals
-   * the surface with no user action at all.
-   */
-  const watchdogUrl = kind === "video" ? item?.url || "" : "";
-  useEffect(() => {
-    if (!visible || !watchdogUrl) return;
-    const timer = setTimeout(() => {
-      if (!loadedOnceRef.current) {
-        console.warn(`[NativeMediaViewer] no first frame in ${FIRST_FRAME_TIMEOUT_MS}ms: ${watchdogUrl.slice(0, 120)}`);
-        setSlow(true);
-      }
-    }, FIRST_FRAME_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [visible, watchdogUrl, loadStateKey, reloadNonce]);
 
   if (!item) return null;
 
-  /**
-   * The one place the position changes, controlled or not.
-   *
-   * Controlled callers are *told*; they are not written to. Writing local state
-   * as well would give the viewer a second opinion about which photo is showing,
-   * and the two would disagree the moment the owner's collection moved.
-   */
-  function goToIndex(next: number) {
-    const clamped = Math.max(0, Math.min(next, items.length - 1));
-    if (clamped === index) return;
-    if (!controlled) setInternalIndex(clamped);
-    onIndexChange?.(clamped);
-  }
-
-  /**
-   * Re-attempt a source that REPORTED a failure. Offered for `failed` only.
-   *
-   * Bumping the nonce remounts the player, which is the only way to make
-   * expo-av attempt a source it has already rejected. That is safe here and
-   * would not be for `slow`: a remount abandons whatever has been transferred,
-   * so offering it on a video that is merely taking its time would throw away
-   * progress to restart the same download — §4's "no throwing away already-loaded
-   * media", performed by the button meant to help.
-   *
-   * The nonce is also in the watchdog's deps, so a retry gets a fresh deadline
-   * rather than inheriting an already-expired one.
-   */
-  function retryLoad() {
-    loadedOnceRef.current = false;
-    setFailed(false);
-    setSlow(false);
-    setReloadNonce((value) => value + 1);
-  }
-
-  /** How far a photo at this zoom can be dragged before it shows empty space. */
-  function panBounds() {
-    const window = Dimensions.get("window");
-    const overflow = Math.max(0, zoomRef.current - 1) / 2;
-    return { x: window.width * overflow, y: window.height * overflow };
-  }
-
-  function settleZoom(next: number) {
-    const clamped = Math.max(1, Math.min(next, MAX_ZOOM));
-    zoomRef.current = clamped;
-    pinchScale.setValue(1);
-    Animated.spring(baseScale, { toValue: clamped, useNativeDriver: true }).start();
-    if (clamped === 1) recentre();
-    else clampPan();
-  }
-
-  function recentre() {
-    panOffset.current = { x: 0, y: 0 };
-    translateX.setOffset(0);
-    translateY.setOffset(0);
-    Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
-    Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
-  }
-
-  /** Commit the live drag into the persistent offset, inside the zoom's bounds. */
-  function clampPan(translationX = 0, translationY = 0) {
-    const bounds = panBounds();
-    const x = Math.max(-bounds.x, Math.min(panOffset.current.x + translationX, bounds.x));
-    const y = Math.max(-bounds.y, Math.min(panOffset.current.y + translationY, bounds.y));
-    panOffset.current = { x, y };
-    translateX.setOffset(x);
-    translateY.setOffset(y);
-    translateX.setValue(0);
-    translateY.setValue(0);
-  }
-
   function handleImageDoubleTap(event: { nativeEvent: { state: number; x: number; y: number } }) {
-    if (event.nativeEvent.state !== State.ACTIVE) return;
-    // Double-tap already means "like" on the surfaces that pass `onLike` (feed,
-    // status). Those surfaces keep it. Only a viewer with no like handler — the
-    // chat gallery, Marketplace — is free to spend the gesture on zoom.
-    if (onLike) {
-      onLike(item);
-      likeBurstRef.current?.trigger(event.nativeEvent.x, event.nativeEvent.y);
-      return;
-    }
-    settleZoom(zoomRef.current > 1 ? 1 : DOUBLE_TAP_ZOOM);
-  }
-
-  function handlePanEnd(translationX: number, translationY: number) {
-    // Zoomed in, the horizontal axis belongs to panning the photo. Swiping to
-    // the next item from inside a zoom would make it impossible to look at the
-    // right-hand side of anything.
-    if (zoomRef.current > 1) {
-      clampPan(translationX, translationY);
-      return;
-    }
-    const horizontal = Math.abs(translationX);
-    const vertical = Math.abs(translationY);
-    if (swipeToNavigate && horizontal > vertical && horizontal > SWIPE_COMMIT_DISTANCE) {
-      goToIndex(translationX < 0 ? index + 1 : index - 1);
-    } else if (vertical > DISMISS_COMMIT_DISTANCE) {
-      onClose();
-    }
-    Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
-    Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+    if (event.nativeEvent.state !== State.ACTIVE || !onLike) return;
+    onLike(item);
+    likeBurstRef.current?.trigger(event.nativeEvent.x, event.nativeEvent.y);
   }
 
   function actionTargetFor(current: NativeMediaViewerItem): MediaActionTarget {
     return {
-      // Save, Share and open-document all download this. `downloadUrl` first
-      // because for a streamed video `url` is a playlist, not the file — see
-      // the field's own note. Falling back to `url` keeps every producer that
-      // has only one URL working unchanged.
-      url: current.downloadUrl || current.url,
-      mediaId: current.cacheIdentity || null,
+      url: current.url,
+      mediaId: current.id || current.media?.id,
       kind: (current.kind === "file" ? "file" : current.kind) as MediaActionTarget["kind"],
-      // `mimeType` first: producers that carry a `media` record set both, and
-      // producers that do not (Messenger) can only set this one.
-      mimeType: current.mimeType || current.media?.mime_type,
+      mimeType: current.media?.mime_type,
       expectedBytes: Number(current.media?.file_size || 0) || undefined,
       surface,
       sourceUrl: current.sourceUrl,
       title: current.title || title,
       description: current.subtitle,
       author: current.author?.display_name || current.author?.name || current.author?.username,
-      thumbnailUrl: current.thumbnailUrl || (current.kind === "image" ? current.url : undefined),
-      refreshUrl: current.refreshUrl
+      thumbnailUrl: current.thumbnailUrl || (current.kind === "image" ? current.url : undefined)
     };
   }
 
@@ -649,40 +259,10 @@ export function NativeMediaViewer({
       onShare(item);
       return;
     }
-    // Save has had a guard like this since it was written; Share never did, and
-    // once Share can take minutes the omission stops being theoretical. A second
-    // entry joins the same in-flight transfer (`downloadMedia` dedupes by cache
-    // key) and then both callbacks write `actionStatus`, so the line flickers
-    // between two verbs describing one download.
-    //
-    // A ref rather than the state flag, and the difference is not pedantic: the
-    // mutation battery could not kill a `if (sharing) return` because `sharing`
-    // is still `false` on any second entry that happens before React re-renders.
-    // The `disabled` prop was doing all the work and the guard was decoration.
-    // The ref is written synchronously, so it guards the case the prop cannot.
-    if (sharingRef.current) return;
-    sharingRef.current = true;
-    setSharing(true);
     // Shares the real file by default and degrades to the canonical link when
     // the file cannot be produced — see `shareMedia`.
-    if (!shareAsLink) setActionStatus("Preparing to share…");
-    try {
-      const result = await shareMedia(actionTargetFor(item), {
-        preferLink: shareAsLink,
-        // The file leg of `shareMedia` downloads the whole asset before the
-        // sheet can open. Without this the user gets a motionless screen for the
-        // whole of it and no way to tell a slow transfer from a dead one.
-        onProgress: (progress) => setActionStatus(sharingMessageFor(progress))
-      });
-      if (result.status === "failed") setActionStatus(result.message);
-      // The sheet is up (or the link was shared): the transfer message has
-      // outlived its subject and would otherwise sit there claiming a percentage
-      // for something that already finished.
-      else setActionStatus("");
-    } finally {
-      sharingRef.current = false;
-      setSharing(false);
-    }
+    const result = await shareMedia(actionTargetFor(item), { preferLink: shareAsLink });
+    if (result.status === "failed") setActionStatus(result.message);
   }
 
   /**
@@ -696,13 +276,7 @@ export function NativeMediaViewer({
     setSavingToGallery(true);
     setActionStatus("Saving to your library…");
     try {
-      const result = await saveMediaToGallery(actionTargetFor(item), {
-        // Conversation video is the untranscoded camera original, and the origin
-        // is not fast: an 8.6 MB save measured minutes, not seconds. Without this
-        // the only thing on screen for the whole of that is the word "Saving",
-        // which is indistinguishable from a hang — and was mistaken for one.
-        onProgress: (progress) => setActionStatus(savingMessageFor(progress))
-      });
+      const result = await saveMediaToGallery(actionTargetFor(item));
       setActionStatus(
         result.status === "saved"
           ? result.limited
@@ -736,54 +310,40 @@ export function NativeMediaViewer({
       <View style={styles.root} testID="native-media-viewer" accessibilityLabel="Native media viewer">
         <PanGestureHandler
           ref={panRef}
-          simultaneousHandlers={[pinchRef]}
           onGestureEvent={panEvent}
           onHandlerStateChange={(event) => {
             if (event.nativeEvent.state === State.END) {
-              handlePanEnd(event.nativeEvent.translationX, event.nativeEvent.translationY);
+              if (Math.abs(event.nativeEvent.translationY) > 90) onClose();
+              Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
             }
           }}
         >
-          <Animated.View style={[styles.stage, { transform: [{ translateX }, { translateY }] }]}>
+          <Animated.View style={[styles.stage, { transform: [{ translateY }] }]}>
             {processing ? (
               <ProcessingState checking={checking} message={processingMessage || item.processingStatus || "PulseSoc is processing this media."} onRetry={checkProcessing} />
             ) : kind === "image" && item.url ? (
               <PinchGestureHandler
                 ref={pinchRef}
-                simultaneousHandlers={[doubleTapRef, panRef]}
+                simultaneousHandlers={onLike ? [doubleTapRef] : undefined}
                 onGestureEvent={pinchEvent}
                 onHandlerStateChange={(event) => {
                   if (event.nativeEvent.state === State.END) {
-                    settleZoom(zoomRef.current * event.nativeEvent.scale);
+                    Animated.spring(scale, { toValue: 1, useNativeDriver: true }).start();
                   }
                 }}
               >
                 <Animated.View style={styles.imageWrap}>
-                  <TapGestureHandler ref={doubleTapRef} numberOfTaps={2} simultaneousHandlers={[pinchRef]} onHandlerStateChange={handleImageDoubleTap}>
-                    <Animated.Image
-                      testID="native-media-viewer-image"
-                      source={{ uri: item.url }}
-                      style={[styles.image, { transform: [{ scale }] }]}
-                      resizeMode="contain"
-                      onError={() => setFailed(true)}
-                    />
-                  </TapGestureHandler>
+                  {onLike ? (
+                    <TapGestureHandler ref={doubleTapRef} numberOfTaps={2} simultaneousHandlers={[pinchRef]} onHandlerStateChange={handleImageDoubleTap}>
+                      <Animated.Image source={{ uri: item.url }} style={[styles.image, { transform: [{ scale }] }]} resizeMode="contain" onError={() => setFailed(true)} />
+                    </TapGestureHandler>
+                  ) : (
+                    <Animated.Image source={{ uri: item.url }} style={[styles.image, { transform: [{ scale }] }]} resizeMode="contain" onError={() => setFailed(true)} />
+                  )}
                 </Animated.View>
               </PinchGestureHandler>
-            ) : kind === "video" && item.url ? (
-              // `&& !failed` used to guard this line, and it is what made the
-              // fullscreen viewer go black on a video that was still arriving.
-              // Unmounting the player also unmounts `posterSource` — the one
-              // bitmap already decoded from the thread — so the surface that was
-              // showing the user their own content replaced it with a black card
-              // (§3/§4). The condition is now about whether there is anything to
-              // play at all; whether it is going badly is said OVER the poster,
-              // by the overlay below. Keeping the player mounted is also what
-              // makes the `setFailed(false)` recovery branch reachable: a
-              // re-minted grant can heal the surface in place instead of needing
-              // the user to back out and tap again.
+            ) : kind === "video" && item.url && !failed ? (
               <Video
-                key={`${loadStateKey}:${reloadNonce}`}
                 ref={videoRef}
                 source={{ uri: item.url }}
                 style={styles.video}
@@ -796,27 +356,10 @@ export function NativeMediaViewer({
                 posterSource={item.thumbnailUrl ? { uri: item.thumbnailUrl } : undefined}
                 onPlaybackStatusUpdate={(status) => {
                   if (!status.isLoaded) {
-                    // `setFailed(Boolean(status.error))` used to live here, and it
-                    // is why a dead video looked like a loading video forever.
-                    // expo-av reports `isLoaded: false` with NO `error` field for
-                    // a source AVPlayer rejected outright — a relative URL fails
-                    // exactly this way — so the assignment CLEARED the failure
-                    // flag on every tick, including one `onError` had just set.
-                    // An unloaded status is the absence of news, not good news:
-                    // it may never clear a failure, only the watchdog or a real
-                    // error may set one.
-                    if (status.error) setFailed(true);
+                    setFailed(Boolean(status.error));
                     setBuffering(false);
                     return;
                   }
-                  // Genuine recovery — a later successful load clears an earlier
-                  // failure, so a re-minted grant can heal the surface in place.
-                  // `slow` clears here too, and that is the whole point of it
-                  // being a separate flag: a video whose first frame arrives at
-                  // twenty seconds takes its own notice down.
-                  setFailed(false);
-                  setSlow(false);
-                  loadedOnceRef.current = true;
                   setBuffering(Boolean(status.isBuffering));
                   // Keep the attached-music track in lockstep with the video's
                   // play/pause state. Only act on transitions so we don't spam
@@ -840,44 +383,7 @@ export function NativeMediaViewer({
 
         {onLike && kind === "image" ? <LikeBurst ref={likeBurstRef} /> : null}
 
-        {/*
-          * The condition is said OVER the media, never instead of it.
-          *
-          * This overlay is the half of the watchdog fix that makes the other half
-          * safe to do. Because the player and its poster stay mounted, something
-          * still has to tell the user why nothing is moving — and the scrim is
-          * deliberately translucent so the frame they already saw in the thread is
-          * visible underneath the sentence about it. "BLACK IS NEVER THE LOADING
-          * STATE" is satisfied by showing the poster, not by staying silent.
-          *
-          * The two cases get different affordances because they are different
-          * facts. `slow` offers no button: the bytes are still coming, and the
-          * only "retry" available would discard a partial transfer to start it
-          * again, which is the §4 violation dressed up as a fix. `failed` offers
-          * Retry, because a reported failure means there is nothing to discard.
-          */}
-        {item.url && (failed || slow) ? (
-          <View style={styles.conditionOverlay} pointerEvents="box-none" testID="native-media-viewer-condition">
-            <View style={styles.conditionPanel} testID="native-media-viewer-condition-panel">
-              {slow && !failed ? <ActivityIndicator color={colors.accent} /> : null}
-              <Text style={styles.stateTitle} testID="native-media-viewer-condition-title">
-                {failed ? "Media unavailable" : "Still loading"}
-              </Text>
-              <Text style={styles.stateText}>
-                {failed
-                  ? "This media could not be loaded. Your copy in the conversation is unchanged."
-                  : "This is taking longer than usual. It will appear as soon as enough of it arrives."}
-              </Text>
-              {failed ? (
-                <Pressable style={styles.stateButton} testID="native-media-viewer-retry" onPress={retryLoad}>
-                  <Text style={styles.stateButtonText}>Try again</Text>
-                </Pressable>
-              ) : null}
-            </View>
-          </View>
-        ) : null}
-
-        {buffering && !slow && !failed ? (
+        {buffering ? (
           <View style={styles.buffering}>
             <ActivityIndicator color={colors.accent} />
           </View>
@@ -889,7 +395,7 @@ export function NativeMediaViewer({
           </Pressable>
           <View style={styles.titleWrap}>
             <Text style={styles.title} numberOfLines={1}>{item.title || title}</Text>
-            <Text testID="native-media-viewer-position" style={styles.subtitle} numberOfLines={1}>{item.subtitle || item.alt || `${index + 1} of ${Math.max(totalCount || 0, items.length)}`}</Text>
+            <Text style={styles.subtitle} numberOfLines={1}>{item.subtitle || item.alt || `${index + 1} of ${items.length}`}</Text>
           </View>
         </View>
 
@@ -904,10 +410,10 @@ export function NativeMediaViewer({
             </Pressable>
           ) : null}
           <View style={styles.actions}>
-            <Pressable testID="native-media-viewer-prev" accessibilityRole="button" accessibilityLabel="Previous media" style={[styles.actionButton, !canGoPrevious && styles.disabled]} disabled={!canGoPrevious} onPress={() => goToIndex(index - 1)}>
+            <Pressable testID="native-media-viewer-prev" accessibilityRole="button" accessibilityLabel="Previous media" style={[styles.actionButton, !canGoPrevious && styles.disabled]} disabled={!canGoPrevious} onPress={() => setIndex((current) => Math.max(0, current - 1))}>
               <Text style={styles.actionText}>Prev</Text>
             </Pressable>
-            <Pressable testID="native-media-viewer-next" accessibilityRole="button" accessibilityLabel="Next media" style={[styles.actionButton, !canGoNext && styles.disabled]} disabled={!canGoNext} onPress={() => goToIndex(index + 1)}>
+            <Pressable testID="native-media-viewer-next" accessibilityRole="button" accessibilityLabel="Next media" style={[styles.actionButton, !canGoNext && styles.disabled]} disabled={!canGoNext} onPress={() => setIndex((current) => Math.min(items.length - 1, current + 1))}>
               <Text style={styles.actionText}>Next</Text>
             </Pressable>
             {onSave ? (
@@ -928,16 +434,8 @@ export function NativeMediaViewer({
                 <Text style={styles.actionText}>{savingToGallery ? "Saving" : "Save to Photos"}</Text>
               </Pressable>
             ) : null}
-            <Pressable
-              testID="native-media-viewer-share"
-              accessibilityRole="button"
-              accessibilityLabel="Share media"
-              accessibilityState={{ disabled: sharing, busy: sharing }}
-              style={[styles.actionButton, sharing && styles.disabled]}
-              disabled={sharing}
-              onPress={shareItem}
-            >
-              <Text style={styles.actionText}>{sharing ? "Preparing" : "Share"}</Text>
+            <Pressable testID="native-media-viewer-share" accessibilityRole="button" accessibilityLabel="Share media" style={styles.actionButton} onPress={shareItem}>
+              <Text style={styles.actionText}>Share</Text>
             </Pressable>
           </View>
         </View>
@@ -969,7 +467,6 @@ export function mediaViewerItemFromPulseMedia(media: PulseMedia, context: Partia
   }) as NativeMediaViewerItem["kind"];
   return {
     id: Number(media.id || 0),
-    cacheIdentity: namespacedMediaId("pulse_media", media.id),
     media,
     kind,
     url: playbackUrl || thumbnailUrl,
@@ -1077,31 +574,6 @@ const styles = createThemedStyles(() => ({
   closeText: {
     color: colors.text,
     fontWeight: "900"
-  },
-  // Translucent on purpose, and the whole fix depends on it. An opaque scrim
-  // here would reintroduce the black screen with better copy on it -- the poster
-  // underneath is the content the user already saw in the thread, and it has to
-  // stay visible while we explain what is happening to it.
-  conditionOverlay: {
-    alignItems: "center",
-    bottom: 0,
-    justifyContent: "center",
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0,
-    zIndex: 9
-  },
-  conditionPanel: {
-    alignItems: "center",
-    backgroundColor: "rgba(8,15,28,0.78)",
-    borderColor: "rgba(255,255,255,0.14)",
-    borderRadius: 14,
-    borderWidth: 1,
-    marginHorizontal: 32,
-    maxWidth: 420,
-    paddingHorizontal: 22,
-    paddingVertical: 18
   },
   disabled: {
     opacity: 0.4

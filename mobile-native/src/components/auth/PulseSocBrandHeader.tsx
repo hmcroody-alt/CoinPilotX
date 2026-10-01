@@ -1,20 +1,25 @@
 import { useEffect, useRef } from "react";
-import { Animated, Easing, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, Image, StyleSheet, Text, View } from "react-native";
 import { useTranslation } from "../../i18n";
 import { colors } from "../../theme/colors";
 import { logiNexus } from "../../theme/logiNexus";
 import { useLogiNexusReducedMotion } from "../../theme/logiNexusMotion";
 import { createThemedStyles } from "../../theme/themedStyles";
-import { BrandLogo, brandLogoHeight } from "../brand/BrandLogo";
+
+// Official PulseSoc brand mark (canonical logo: pulse waveform + three connected
+// people), pre-processed to a transparent background so it blends into the login
+// environment with no image boundary. Derived from assets/brand/pulsesoc-logo-master.png.
+const PULSESOC_LOGO = require("../../assets/brand/pulsesoc-mark.png");
+const LOGO_ASPECT = 1;
 
 const RING_COUNT = 3;
 const RING_DURATION = 2600;
 const RING_STAGGER = 850;
 
 const LOGO_WIDTH = 188;
-const LOGO_HEIGHT = brandLogoHeight("mark", LOGO_WIDTH);
-// The mark is horizontally centered in its own frame, so the ambient glow and
-// signal rings emanate from the image center.
+const LOGO_HEIGHT = LOGO_WIDTH / LOGO_ASPECT;
+// The canonical mark is a centered square symbol, so the ambient glow and signal
+// rings emanate from the image center.
 const SYMBOL_OFFSET_Y = 0;
 const RING_SIZE = 148;
 
@@ -102,7 +107,13 @@ export function PulseSocBrandHeader({ compact = false }: { compact?: boolean }) 
           <Animated.View style={[styles.particle, styles.particleC, { opacity: reducedMotion ? 0.16 : glowOpacity }]} />
         </View>
 
-        <BrandLogo variant="mark" width={compact ? LOGO_WIDTH * 0.82 : LOGO_WIDTH} />
+        <Image
+          source={PULSESOC_LOGO}
+          style={[styles.logo, compact && styles.logoCompact]}
+          resizeMode="contain"
+          fadeDuration={0}
+          accessible={false}
+        />
       </View>
 
       <View style={styles.connection}>
@@ -140,6 +151,14 @@ const styles = createThemedStyles(() => ({
     height: RING_SIZE,
     position: "absolute",
     width: RING_SIZE
+  },
+  logo: {
+    height: LOGO_HEIGHT,
+    width: LOGO_WIDTH
+  },
+  logoCompact: {
+    height: LOGO_HEIGHT * 0.82,
+    width: LOGO_WIDTH * 0.82
   },
   particle: {
     backgroundColor: colors.accentStrong,

@@ -40,9 +40,11 @@ jest.mock("expo-av", () => {
   const ReactActual = jest.requireActual("react");
   return { ResizeMode: { COVER: "cover", CONTAIN: "contain" }, Video: ReactActual.forwardRef(() => null) };
 });
-jest.mock("../../components/ContentTranslation", () =>
-  require("../../testing/contentTranslationStub").contentTranslationStub()
-);
+jest.mock("../../components/ContentTranslation", () => {
+  const { Text } = jest.requireActual("react-native");
+  const ReactActual = jest.requireActual("react");
+  return { ContentTranslation: ({ text }: any) => ReactActual.createElement(Text, null, text) };
+});
 jest.mock("../../core/eventSync", () => ({
   invalidateNativeSync: jest.fn().mockResolvedValue(undefined),
   registerSyncInvalidation: jest.fn(() => () => undefined)
@@ -92,7 +94,6 @@ const mockRepost = jest.fn();
 const mockReport = jest.fn();
 const mockNotInterested = jest.fn();
 const mockFollow = jest.fn();
-const mockShareReel = jest.fn();
 jest.mock("../../api/reels", () => ({
   ...jest.requireActual("../../api/reels"),
   listReels: (...args: any[]) => mockList(...args),
@@ -102,7 +103,6 @@ jest.mock("../../api/reels", () => ({
   reportReel: (...args: any[]) => mockReport(...args),
   markReelNotInterested: (...args: any[]) => mockNotInterested(...args),
   followReelCreator: (...args: any[]) => mockFollow(...args),
-  shareReel: (...args: any[]) => mockShareReel(...args),
   trackReelView: jest.fn().mockResolvedValue({ view_count: 1 }),
   getReelComments: jest.fn().mockResolvedValue({ comments: [], commentsCount: 0 }),
   loadReelCommentDraft: jest.fn().mockResolvedValue(null),
@@ -246,24 +246,6 @@ describe("ReelsScreen visibility playback", () => {
   });
 });
 
-/**
- * The save requests only, picked out of every request the screen makes.
- *
- * `mockSaveApi` is the whole `pulseApi` transport, not a save-specific spy, so
- * `mock.calls[0]` means "the first request this screen made for any reason" —
- * which was the save request only for as long as saving was the only thing the
- * screen did on this path. It no longer is: the Marketplace chip's serve
- * request goes out on mount and lands first, and a dedupe assertion counting
- * *all* calls would count that one too.
- *
- * Filtering by route keeps both assertions saying exactly what they were
- * written to say, and makes them indifferent to whatever the screen fetches
- * next for reasons of its own.
- */
-function saveCalls(): any[][] {
-  return mockSaveApi.mock.calls.filter(([url]) => String(url).endsWith(`/reels/${REEL_ID}/save`));
-}
-
 describe("ReelsScreen save", () => {
   it("states the wanted state on the reel save route rather than asking for a toggle", async () => {
     // A Reel used to save through `saveReel(id)`, a bodyless POST that flipped
@@ -278,8 +260,7 @@ describe("ReelsScreen save", () => {
       `/api/pulse/reels/${REEL_ID}/save`,
       expect.objectContaining({ method: "POST" })
     );
-    expect(saveCalls()).toHaveLength(1);
-    expect(JSON.parse(saveCalls()[0][1].body)).toEqual({ reel_id: REEL_ID, saved: true });
+    expect(JSON.parse(mockSaveApi.mock.calls[0][1].body)).toEqual({ reel_id: REEL_ID, saved: true });
   });
 
   it("issues one request for a double tap, so a save cannot race an unsave", async () => {
@@ -294,7 +275,7 @@ describe("ReelsScreen save", () => {
       first = onSave(reel());
       second = onSave(reel());
     });
-    expect(saveCalls()).toHaveLength(1);
+    expect(mockSaveApi).toHaveBeenCalledTimes(1);
 
     await tap(async () => {
       pending.resolve({ ok: true, saved: true });
@@ -541,68 +522,5 @@ describe("ReelsScreen busy state", () => {
       await run;
     });
     expect(card().busy).toBe(false);
-  });
-});
-
-/**
- * `sharing/reelShare.ts` can be flawless and unreached.
- *
- * Its own suite proves the builder withholds a private Reel's caption, title,
- * creator and poster. None of that matters if this screen goes on assembling
- * the metadata object inline, which is what it did before -- and an inline
- * object is not a failing test anywhere, it is just a screen that never asks.
- * So the assertions below are about what `sharePulseObject` actually *receives*
- * from this screen, which is the only place the two halves meet.
- *
- * The share route is exercised on both legs. A network failure falls back to a
- * locally built URL, and that fallback is the tempting place to "just send what
- * we have" -- it runs only when something already went wrong, so nobody sees it
- * in normal use.
- */
-describe("ReelsScreen sharing", () => {
-  const PRIVATE_CAPTION = "the rough cut nobody outside the group should see";
-
-  function sharedMetadata() {
-    const { sharePulseObject } = require("../../sharing/nativeShare");
-    expect(sharePulseObject).toHaveBeenCalledTimes(1);
-    return sharePulseObject.mock.calls[0][0];
-  }
-
-  it("sends the Reel's own words and the share route's link when the Reel is public", async () => {
-    mockShareReel.mockResolvedValue({ share_url: "https://pulsesoc.com/pulse/reels/88?pulse_app=1&pulse_src=share" });
-    await renderScreen({ visibility: "public", caption: "A reel fixture." });
-    await tap(() => card().onShare(card().reel));
-
-    const metadata = sharedMetadata();
-    expect(metadata.kind).toBe("reel");
-    // The link the server minted for this share, not one rebuilt from the id.
-    expect(metadata.url).toBe("https://pulsesoc.com/pulse/reels/88?pulse_app=1&pulse_src=share");
-    expect(metadata.message).toContain("Check out this Reel on PulseSoc 🎬");
-    expect(metadata.message).toContain("A reel fixture.");
-    expect(metadata.author).toBe("Fixture Creator");
-  });
-
-  it("lets nothing about a private Reel reach the share sheet", async () => {
-    mockShareReel.mockResolvedValue({ share_url: "https://pulsesoc.com/pulse/reels/88" });
-    await renderScreen({ visibility: "private", caption: PRIVATE_CAPTION, title: "Rough cut" });
-    await tap(() => card().onShare(card().reel));
-
-    const text = Object.values(sharedMetadata()).filter((value) => typeof value === "string").join(" ");
-    expect(text).not.toContain(PRIVATE_CAPTION);
-    expect(text).not.toContain("Rough cut");
-    expect(text).not.toContain("Fixture Creator");
-    expect(sharedMetadata().previewImageUrl).toBe("");
-    // The link still goes: it enforces its own access on the other side.
-    expect(sharedMetadata().url).toContain("/pulse/reels/88");
-  });
-
-  it("does not restore the unguarded share when the share route fails", async () => {
-    mockShareReel.mockRejectedValue(new Error("offline"));
-    await renderScreen({ visibility: "private", caption: PRIVATE_CAPTION });
-    await tap(() => card().onShare(card().reel));
-
-    const metadata = sharedMetadata();
-    expect(metadata.url).toContain("/pulse/reels/88");
-    expect(Object.values(metadata).join(" ")).not.toContain(PRIVATE_CAPTION);
   });
 });

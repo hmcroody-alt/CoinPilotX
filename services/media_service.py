@@ -16,7 +16,6 @@ from werkzeug.utils import secure_filename
 
 from . import media_covers
 from . import media_storage
-from . import stored_video_policy
 from . import user_context
 
 
@@ -50,37 +49,7 @@ def _comm_v2_limit_mb(ext):
     return float(os.getenv("COMM_V2_VIDEO_MAX_MB", "1024"))
 
 
-# A stored video is bounded by two independent things: how long it may run, and
-# how many bytes may cross the wire. Keeping them independent is right -- but
-# they must not contradict each other. The 90-minute surfaces against the old
-# 700 MB video ceiling work out to 1.04 Mbps, and the deployed
-# MEDIA_UPLOAD_MAX_VIDEO_MB=150 works out to 233 kbps: the duration policy would
-# be unreachable at any watchable quality, which is a limit that forbids the
-# feature while appearing to allow it.
-#
-# So the direct-to-storage ceiling is *derived* from the surface's own duration
-# ceiling at a sustainable 720p bitrate, rather than being a second free-floating
-# constant that can drift out of step with the duration table.
-DIRECT_VIDEO_BUDGET_BITS_PER_SECOND = int(float(os.getenv("MEDIA_UPLOAD_VIDEO_BUDGET_MBPS", "3.2")) * 1_000_000)
-
-# Short surfaces would derive a ceiling smaller than what they already allow, and
-# tightening them is not this mission's business.
-DIRECT_VIDEO_FLOOR_BYTES = 350 * 1024 * 1024
-
-
-def direct_video_limit_bytes(context_type=""):
-    """The byte ceiling for a video uploaded straight to object storage.
-
-    Only for the direct-to-storage path. The synchronous POST path keeps its own
-    much smaller ceiling because those bytes pass through the web process, where a
-    2 GB request is a memory and timeout problem rather than a storage one.
-    """
-    seconds = stored_video_policy.max_duration_seconds(context_type)
-    derived = int(seconds * DIRECT_VIDEO_BUDGET_BITS_PER_SECOND / 8)
-    return max(DIRECT_VIDEO_FLOOR_BYTES, derived)
-
-
-def _limit_bytes(ext, context_type="", direct_to_storage=False):
+def _limit_bytes(ext, context_type=""):
     if str(context_type or "").startswith("pulse_comm_v2"):
         return int(_comm_v2_limit_mb(ext) * 1024 * 1024)
     if ext in IMAGE_EXTS:
@@ -91,8 +60,6 @@ def _limit_bytes(ext, context_type="", direct_to_storage=False):
         return int(float(os.getenv("MEDIA_UPLOAD_MAX_AUDIO_MB", "15")) * 1024 * 1024)
     if ext in FILE_EXTS:
         return int(float(os.getenv("MEDIA_UPLOAD_MAX_FILE_MB", "12")) * 1024 * 1024)
-    if direct_to_storage:
-        return direct_video_limit_bytes(context_type)
     if str(context_type or "") == "pulse_status":
         return int(float(os.getenv("MEDIA_UPLOAD_MAX_STATUS_VIDEO_MB", "350")) * 1024 * 1024)
     return int(float(os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "700")) * 1024 * 1024)
@@ -112,38 +79,9 @@ def _media_type(ext):
     return ""
 
 
-# Extensions this test knows about beyond the upload vocabulary in
-# `VIDEO_EXTS`. The two lists are deliberately different: `VIDEO_EXTS` answers
-# "what kind of file did somebody upload", while this answers "is this URL the
-# asset rather than a picture of it" -- and the second question has to cover
-# playback formats nobody ever uploads.
-#
-# `m3u8` is the one that matters and the one that was missing. Every Mux video
-# resolves to an HLS playlist, so the guard that exists to keep a video URL out
-# of a still field was letting through the exact URL almost every PulseSoc
-# video is served as. The native client's own copy of this test
-# (`mobile-native/src/api/feed.ts`, `stillCandidate`) lists `m3u8`; it was
-# fixed there after a shared video post drew a black rectangle with a "Video"
-# badge over it, and the server half was left behind. The two are supposed to
-# agree about what a still is -- when they do not, the one that is wrong
-# decides, because it is the one that puts the URL in the field.
-NON_UPLOAD_VIDEO_EXTS = {"m4v", "qt", "m3u8"}
-
-
 def _is_video_url(value):
     lowered = str(value or "").split("?", 1)[0].split("#", 1)[0].lower()
-    return any(lowered.endswith(f".{ext}") for ext in VIDEO_EXTS | NON_UPLOAD_VIDEO_EXTS)
-
-
-def is_video_url(value):
-    """Public name for the video-extension test.
-
-    Feed serializers build their own still-frame fallbacks on top of
-    `resolve_media`, so they need the same notion of "this URL is the asset, not
-    a picture of it". Re-spelling the extension list at each call site is how the
-    two drift apart.
-    """
-    return _is_video_url(value)
+    return any(lowered.endswith(f".{ext}") for ext in VIDEO_EXTS | {"m4v", "qt"})
 
 
 def _is_image_url(value):
@@ -155,20 +93,13 @@ def mux_playback_urls(playback_id):
     """Return safe public Mux playback URLs for a playback id, without secrets."""
     playback_id = str(playback_id or "").strip()
     if not playback_id:
-        return {"hls_url": "", "thumbnail_url": "", "mp4_url": ""}
+        return {"hls_url": "", "thumbnail_url": ""}
     safe_id = "".join(ch for ch in playback_id if ch.isalnum() or ch in {"_", "-"})
     if not safe_id:
-        return {"hls_url": "", "thumbnail_url": "", "mp4_url": ""}
+        return {"hls_url": "", "thumbnail_url": ""}
     return {
         "hls_url": f"https://stream.mux.com/{safe_id}.m3u8",
         "thumbnail_url": f"https://image.mux.com/{safe_id}/thumbnail.jpg",
-        # Assets are created with ``mp4_support="standard"`` (see
-        # create_mux_asset_from_url), which publishes low/medium/high renditions
-        # -- not the newer ``capped-1080p`` name, which 404s on these assets.
-        # This is the rendition to hand to a caller that wants a plain file URL
-        # rather than a manifest: ``media_url`` consumers include <img>-style
-        # code paths and downloaders that cannot parse HLS.
-        "mp4_url": f"https://stream.mux.com/{safe_id}/high.mp4",
     }
 
 
@@ -328,22 +259,8 @@ def get_mux_asset(asset_id):
     return {**result, "asset": asset, "asset_id": asset.get("id") or asset_id, "playback_id": playback_id, "mux_status": asset.get("status") or ""}
 
 
-def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0, playback_policy="public"):
-    """Create a Mux playback asset from an already durable media URL.
-
-    ``playback_policy`` defaults to ``"public"`` because that is what every
-    caller of this function has always got, and reels/live/replay are content
-    whose whole purpose is to be reachable by a bare URL. Messenger is the one
-    caller that passes ``"signed"``: a conversation video is private, and a
-    public playback id is an unguessable URL rather than an access check --
-    anyone it leaks to can watch it forever, with no membership test and no
-    expiry. That is a weaker guarantee than the rest of the messenger media
-    path, which re-checks conversation membership on every single request.
-
-    Anything other than the two policies Mux defines falls back to ``"public"``
-    rather than being forwarded, so a typo in a caller cannot turn into a 400
-    from Mux at asset-creation time -- i.e. into a video that never ingests.
-    """
+def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
+    """Create a public Mux playback asset from an already durable media URL."""
     log_mux_diagnostics_once()
     input_url = normalize_url(input_url)
     auth_header = _mux_auth_header()
@@ -410,12 +327,9 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0, playback_po
             "source": source_check,
             "message": "Mux cannot download the video source URL. Configure MUX_SOURCE_BASE_URL or R2_MUX_SOURCE_BASE_URL to a public R2 source.",
         }
-    requested_policy = str(playback_policy or "public").strip().lower()
-    if requested_policy not in {"public", "signed"}:
-        requested_policy = "public"
     payload = {
         "input": input_url,
-        "playback_policy": [requested_policy],
+        "playback_policy": ["public"],
         "mp4_support": "standard",
     }
     request = Request(
@@ -470,22 +384,13 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0, playback_po
     asset = data.get("data") or {}
     playback_ids = asset.get("playback_ids") or []
     playback_id = ""
-    playback_id_policy = ""
-    # Prefer the policy we actually asked for rather than a hardcoded "public".
-    # An asset can carry more than one playback id, and picking the wrong one is
-    # not a cosmetic error: a signed id served unsigned is a 403, and a public id
-    # recorded as signed gets a pointless token appended. The policy is read back
-    # off Mux's response instead of echoing the request so that the column the
-    # caller stores describes the id it was handed, not the one it hoped for.
     for item in playback_ids:
-        if item.get("policy") == requested_policy or not playback_id:
+        if item.get("policy") == "public" or not playback_id:
             playback_id = item.get("id") or ""
-            playback_id_policy = str(item.get("policy") or "")
     result = {
         "ok": bool(asset.get("id") and playback_id),
         "asset_id": asset.get("id") or "",
         "playback_id": playback_id,
-        "playback_policy": playback_id_policy or requested_policy,
         "status": asset.get("status") or "created",
         "status_code": response_status,
         "error_type": "" if asset.get("id") and playback_id else "missing_playback_id",
@@ -817,29 +722,6 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
             kind = "audio"
         else:
             kind = "image"
-    # Mux is the primary delivery path for video. The R2 CDN hostname sits behind
-    # an edge rule that challenges video extensions -- a request for .mp4/.mov/.webm
-    # is answered 403 with an HTML interstitial before it ever reaches origin, while
-    # images and audio on that same host return 200. So a `media_url` pointing at the
-    # CDN hands every caller a URL that cannot play. `playback_url` already preferred
-    # Mux; this makes the plain-file fields agree with it, so a caller reading
-    # `media_url` is not left holding the one field that is still broken.
-    #
-    # The MP4 rendition is used rather than the HLS manifest because `media_url` is
-    # the field consumed by downloaders and by <video> tags with no HLS support;
-    # `playback_url` keeps serving HLS for players that prefer it.
-    #
-    # Two guards, both load-bearing:
-    #   * a signed playback id must never be served as a bare URL. Mux answers 403
-    #     without a token, and messenger records that policy per attachment, so the
-    #     absence of the column means public -- matching create_mux_asset_from_url's
-    #     documented default -- while an explicit "signed" opts out.
-    #   * an asset still ingesting has no rendition yet. Swapping a 403 for a 404 is
-    #     not an improvement, so the CDN copy stays until Mux reports ready.
-    mux_policy = str(item.get("mux_playback_policy") or "").strip().lower()
-    mux_ready = not mux_status or mux_status in {"ready", "asset_ready", "available"}
-    if kind == "video" and mux_urls["mp4_url"] and mux_policy != "signed" and mux_ready:
-        source = mux_urls["mp4_url"]
     if kind == "video":
         if _is_video_url(thumb):
             thumb = ""
@@ -895,20 +777,6 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
     poster_value = (poster or thumb or source)
     if kind == "video" and _is_video_url(poster_value):
         poster_value = ""
-    # The same guard, one field over. It was missing here for as long as it has
-    # been present above, and the asymmetry is the whole bug: a video with no
-    # stored still had `thumb` correctly blanked further up, fell back to
-    # `source`, and was served as `thumbnail_url` -- the asset itself, under the
-    # name of its own thumbnail. Every client that pointed an <img>/<Image> at
-    # that field drew an empty box, silently, because a video URL is a valid URL
-    # and image renderers do not report a decode that never starts.
-    #
-    # `poster` is preferred over `source` as the fallback, because by this point
-    # `poster` already holds the Mux thumbnail for any asset that has a playback
-    # id -- so the common case resolves to a real frame rather than to nothing.
-    thumb_value = (thumb or poster or source)
-    if kind == "video" and _is_video_url(thumb_value):
-        thumb_value = ""
     mux_playback_url = mux_urls["hls_url"] if kind == "video" else ""
     mux_processing = bool(kind == "video" and mux_playback_url and mux_status and mux_status not in {"ready", "asset_ready", "available"})
     return {
@@ -917,7 +785,7 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
         "cdn_url": item.get("cdn_url") or canonical_cdn_url,
         "media_url": source,
         "playback_url": mux_playback_url or saved_playback_url or first_party_stream or source,
-        "thumbnail_url": thumb_value,
+        "thumbnail_url": thumb or source,
         "poster_url": poster_value,
         "mux_playback_id": mux_playback_id,
         "mux_asset_id": item.get("mux_asset_id") or "",
@@ -1067,48 +935,13 @@ def _public(row):
 
 
 def _image_dimensions(path):
-    """Read an uploaded image's pixel size, or return (None, None).
-
-    The two ways this returns nothing are not the same thing, and collapsing
-    them into one silent `except Exception` cost four months of metadata.
-    Pillow was never listed in requirements.txt, so `from PIL import Image`
-    raised ImportError on every production deploy and every caller read that as
-    "unreadable image". The result was total and invisible: 318 of 318 uploaded
-    images -- every avatar, cover, status, marketplace photo and pulse post
-    picture written since 2026-05-19 -- stored width/height NULL, while the 67
-    images that carry dimensions all came from the automated pipeline, which
-    passes its own and never calls this function.
-
-    A missing width is not cosmetic. `hasRenderableImage` once treated a zero
-    dimension as evidence of a dead upload, so a healthy photo was dropped from
-    the post detail screen entirely -- the ghost post. That gate now keys on
-    server-marked availability instead, but the size is still wanted for layout,
-    so this failure must be loud enough to notice the next time the dependency
-    slips rather than showing up months later as a rendering bug.
-    """
     try:
         from PIL import Image
-    except Exception as exc:
-        # A deploy defect, not a property of the file: no image will ever get a
-        # size until the dependency is back. Error, not warning.
-        logging.error(
-            "MEDIA_IMAGE_DIMENSIONS_UNAVAILABLE error_type=%s detail=%s",
-            type(exc).__name__,
-            str(exc)[:200],
-        )
-        return None, None
-    try:
+
         with Image.open(path) as img:
             width, height = img.size
             return int(width or 0), int(height or 0)
-    except Exception as exc:
-        # This one is about the bytes -- truncated, or a format Pillow declines.
-        # Expected occasionally, so it does not deserve an error.
-        logging.warning(
-            "MEDIA_IMAGE_DIMENSIONS_UNREADABLE error_type=%s path_suffix=%s",
-            type(exc).__name__,
-            str(path)[-60:],
-        )
+    except Exception:
         return None, None
 
 
@@ -1219,19 +1052,6 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     width = height = None
     if media_type in {"image", "gif"}:
         width, height = _image_dimensions(path)
-        # Tied to the trace so "did this upload get a size" is answerable per
-        # upload rather than only in aggregate. The silent version of this step
-        # failed for every image for four months without leaving a mark.
-        logging.info(
-            "PULSE_MEDIA_DIMENSIONS trace_id=%s user_id=%s context_type=%s media_type=%s width=%s height=%s measured=%s",
-            upload_trace,
-            int(user_id),
-            context_type,
-            media_type,
-            width,
-            height,
-            bool(width and height),
-        )
     url = storage.get("media_url") or _public_url_for_path(path)
     cdn_url = storage.get("media_url") if str(storage.get("media_url") or "").startswith("https://") else cdn_url_for_key(storage.get("storage_key") or stored)
     verification_status = "verified" if storage.get("durable_uploaded") or media_storage.provider() == "local" else "failed"
@@ -1239,50 +1059,14 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     availability_error = "" if verification_status == "verified" else (storage.get("upload_error") or "durable_upload_unverified")
     thumbnail_url = url if media_type != "video" else ""
     poster_url = thumbnail_url if media_type != "video" else ""
-    measured_seconds = 0.0
-    if media_type == "video":
-        # The duration the client declared is checked earlier, in
-        # upload_progress_service, and only when a client declared one. Nothing
-        # obliges it to: every web upload path falls back to a plain form POST when
-        # the upload manager script has not loaded, and those fallbacks send no
-        # duration at all. This is the measurement, read off the stored container,
-        # and it is the first number about the video that the uploader did not
-        # choose.
-        measured_seconds = media_covers.video_duration_seconds(path)
-        # measured_violation, not exceeds_limit: it declines to judge a surface
-        # nobody registered. `save_upload` is reached with free-form context_types
-        # (asset_focus, native, pulse_comment), and the strictest-cap fallback
-        # would cut those to 60s here while looking like a product decision.
-        violation = stored_video_policy.measured_violation(context_type, measured_seconds)
-        if violation:
-            media_storage.discard_public_file(storage)
-            logging.warning(
-                "PULSE_MEDIA_UPLOAD_DURATION_REJECTED trace_id=%s user_id=%s context_type=%s measured_seconds=%s limit_seconds=%s reason=%s",
-                upload_trace,
-                int(user_id),
-                context_type,
-                int(measured_seconds),
-                stored_video_policy.max_duration_seconds(context_type),
-                violation,
-            )
-            return {
-                "ok": False,
-                "message": stored_video_policy.limit_message(context_type),
-                "error": stored_video_policy.MEASURED_REJECTION_CODE,
-                # The mobile client reads `error_code`; `error` alone collapses this
-                # into a generic failure and the user never learns it was length.
-                "error_code": stored_video_policy.MEASURED_REJECTION_CODE,
-                "measured_duration_seconds": int(measured_seconds),
-                "max_duration_seconds": stored_video_policy.max_duration_seconds(context_type),
-            }, 413
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO chat_media_uploads
         (uploader_user_id, context_type, context_id, original_filename, stored_filename, media_url, thumbnail_url,
-         media_type, mime_type, file_size_bytes, duration_seconds, width, height, moderation_status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?)
+         media_type, mime_type, file_size_bytes, width, height, moderation_status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?)
         """,
         (
             int(user_id),
@@ -1295,11 +1079,6 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
             media_type,
             storage.get("mime_type") or mime,
             int(storage.get("file_size") or size),
-            # Written here so the row carries its own length from the moment it
-            # exists. Leaving it 0 would also hand the row to the worker's
-            # reconciler, which selects on duration_seconds<=0 and would re-measure
-            # a video this function already measured.
-            measured_seconds or None,
             width,
             height,
             _now(),
@@ -1518,138 +1297,6 @@ def report_media(user_id, media_id, reason=""):
     conn.commit()
     conn.close()
     return {"ok": True, "message": "Media reported for review."}
-
-
-def enforce_measured_video_duration(cur, *, asset_id="", media_id=0, duration_seconds=0.0):
-    """Record a measured duration, and take the asset down if it breaks the ceiling.
-
-    The upload-time check can only ever test a claim: `duration_ms` arrives from
-    the client, and a caller talking to the API directly sends whatever number
-    gets it a signed URL. The measurement is the first thing on the server that
-    nobody outside can choose, so this is where the ceiling is actually enforced
-    -- everything before it is a courtesy that saves an honest uploader an hour of
-    bandwidth.
-
-    The ceiling is per-surface, so the verdict cannot be reached in SQL: the
-    webhook updates by `mux_asset_id` and does not know whether that row is a
-    Reel (90 minutes) or a marketplace listing (10). Hence a read, a decision per
-    row through the one policy authority, then a write.
-
-    Takedown here is `moderation_status='blocked'`, which is the lever feed
-    hydration already respects, rather than a new flag that every reader would
-    have to learn. It does not delete bytes: an over-long upload is a rule
-    violation, not an attack, and the owner may want the file back if a surface's
-    limit is raised.
-
-    The caller owns the transaction. This runs inside the webhook's cursor so a
-    row cannot be published ready-and-available by one statement and blocked by a
-    second one that fails to commit.
-    """
-    reference = str(asset_id or "").strip()
-    if not reference and not int(media_id or 0):
-        return {"checked": 0, "blocked": [], "measured_seconds": 0.0}
-    try:
-        measured = max(0.0, float(duration_seconds or 0))
-    except (TypeError, ValueError):
-        measured = 0.0
-    if int(media_id or 0):
-        cur.execute("SELECT id, context_type, context_id FROM chat_media_uploads WHERE id=?", (int(media_id),))
-    else:
-        cur.execute("SELECT id, context_type, context_id FROM chat_media_uploads WHERE mux_asset_id=?", (reference,))
-    rows = [dict(row) for row in (cur.fetchall() or [])]
-    blocked = []
-    blocked_reels = []
-    for row in rows:
-        row_id = int(row.get("id") or 0)
-        surface = str(row.get("context_type") or "")
-        if measured > 0:
-            cur.execute("UPDATE chat_media_uploads SET duration_seconds=?, updated_at=? WHERE id=?", (measured, _now(), row_id))
-        reason = stored_video_policy.measured_violation(surface, measured)
-        if not reason:
-            # A long video on a surface nobody registered is deliberately left
-            # alone (see measured_violation), but it is still the one case where
-            # this function declines to enforce a rule that may well apply. Logged
-            # so the missing surface is findable, instead of looking like a video
-            # that was measured and found to be within the limit.
-            if measured > stored_video_policy.strictest_seconds() and not stored_video_policy.is_known_surface(surface):
-                logging.warning(
-                    "MEDIA_DURATION_SURFACE_UNREGISTERED media_id=%s surface=%s measured_seconds=%s",
-                    row_id, surface, int(measured),
-                )
-            continue
-        # Re-asserted on every delivery rather than written once, because Mux
-        # redelivers `video.asset.ready` and the ready-handler ahead of this one
-        # sets is_available back to 1. Last word has to belong to the measurement.
-        cur.execute(
-            """
-            UPDATE chat_media_uploads
-            SET moderation_status='blocked', moderation_reason=?, is_available=0,
-                processing_status=?, error_message=?, updated_at=?
-            WHERE id=?
-            """,
-            (reason[:500], "rejected_too_long", reason[:1000], _now(), row_id),
-        )
-        blocked.append(row_id)
-        logging.warning(
-            "MEDIA_DURATION_ENFORCED media_id=%s surface=%s measured_seconds=%s limit_seconds=%s code=%s",
-            row_id, surface, int(measured), stored_video_policy.max_duration_seconds(surface),
-            stored_video_policy.MEASURED_REJECTION_CODE,
-        )
-        if stored_video_policy.publishes_through_reels(surface):
-            blocked_reels.extend(_block_reel_for_post(cur, row.get("context_id"), reason))
-    return {
-        "checked": len(rows),
-        "blocked": blocked,
-        "blocked_reels": blocked_reels,
-        "measured_seconds": measured,
-    }
-
-
-def _block_reel_for_post(cur, context_id, reason):
-    """Take down the Reel that republishes a blocked post's video.
-
-    `pulse_reels.video_url` is written at creation and read back in preference to
-    the post's media, so a Reel stays playable after its upload is blocked -- the
-    feed's own `is_available` guard is applied to media items and not to that
-    column. Marking the Reel row is what makes the measurement reach the surface
-    long video actually matters on.
-
-    `context_id` is TEXT (`str(post_id)`) while `pulse_reels.post_id` is INTEGER,
-    so the comparison is done on an int parsed here rather than in SQL. Postgres
-    rejects `integer = text` outright, and SQLite would quietly match nothing --
-    the second being the dangerous one, since the block would look applied.
-    """
-    try:
-        post_id = int(str(context_id or "").strip() or 0)
-    except (TypeError, ValueError):
-        post_id = 0
-    if post_id <= 0:
-        return []
-    try:
-        cur.execute(
-            "SELECT id FROM pulse_reels WHERE post_id=? AND COALESCE(moderation_status,'approved')!='blocked'",
-            (post_id,),
-        )
-        reel_ids = [int(dict(row).get("id") or 0) for row in (cur.fetchall() or [])]
-        if not reel_ids:
-            return []
-        cur.execute(
-            "UPDATE pulse_reels SET moderation_status='blocked', updated_at=? WHERE post_id=?",
-            (_now(), post_id),
-        )
-    except Exception as exc:
-        # Not swallowed: the upload block above is already durable, and losing it
-        # by letting this raise through the caller's transaction would be worse
-        # than a Reel that outlives it. Reported loudly and in the return value so
-        # the gap is visible instead of assumed closed.
-        logging.warning(
-            "MEDIA_DURATION_REEL_TAKEDOWN_FAILED post_id=%s error_type=%s", post_id, type(exc).__name__,
-        )
-        return []
-    logging.warning(
-        "MEDIA_DURATION_REEL_BLOCKED post_id=%s reel_ids=%s reason=%s", post_id, reel_ids, reason[:120],
-    )
-    return reel_ids
 
 
 def migrate_local_media_row(row, *, force=False):

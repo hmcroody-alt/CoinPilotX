@@ -44,24 +44,6 @@ const mockGetOverview = jest.fn();
 const mockOfficeStatus = jest.fn();
 const mockUnlockOffice = jest.fn();
 
-/**
- * The member's own tier, as the lock gate reads it.
- *
- * Stubbed rather than left real for two reasons. The real hook issues a network
- * read on mount, which this suite does not otherwise need and whose rejection
- * would surface as unrelated noise. More importantly the gate's upgrade door
- * now branches on this value, so leaving it to a shared module-level cache
- * would let one case's answer leak into the next and decide a sentence the test
- * never set. Default: the resolver did not answer, which is the honest starting
- * point for a suite that is mostly not about entitlement.
- */
-const mockTier = jest.fn(() => ({ state: "unavailable", effectiveTier: "FREE" }));
-jest.mock("../../entitlements/useCanonicalTier", () => ({
-  useCanonicalTier: () => mockTier(),
-  loadCanonicalTier: jest.fn(async () => mockTier()),
-  resetCanonicalTier: jest.fn()
-}));
-
 // Only the network reads are replaced. `parseOverview`, `parseProductState` and
 // `UNKNOWN_OVERVIEW` are the real ones — they are the contract under test, and
 // a stubbed parser would leave a suite that proves the stub agrees with itself.
@@ -108,20 +90,10 @@ import { PrivateOfficeScreen } from "../PrivateOfficeScreen";
 /** The member's office passcode for this suite. Any other value is refused. */
 const OFFICE_PASSCODE = "846195";
 
-/**
- * A `_child_state` row exactly as `office.product_state` emits it.
- *
- * The default id used to be `private_facts`, and the cases below named it
- * throughout. That feature was withdrawn: the server no longer sends the id, the
- * screen no longer has a copy key or a destination for it, and a row carrying it
- * now renders as the unknown-capability fallback. So the default moves to
- * `relationship_intelligence` — one of the two ids the Office actually has
- * children for — rather than leaving a suite that exercised the fallback path
- * while claiming to exercise the known one.
- */
+/** A `_child_state` row exactly as `office.product_state` emits it. */
 function child(overrides: Record<string, unknown> = {}) {
   return {
-    feature_id: "relationship_intelligence",
+    feature_id: "private_facts",
     availability: "ENTITLED",
     implementation: "IMPLEMENTED",
     minimum_tier: "PRIVATE",
@@ -192,10 +164,6 @@ beforeEach(() => {
   jest.clearAllMocks();
   // Every case starts locked: the in-memory grant does not survive a test.
   __resetOfficeLockForTests();
-  // Re-established, not merely cleared. `clearAllMocks` strips the
-  // implementation, and a tier hook returning `undefined` would crash the gate
-  // in every test after the first one that sets its own answer.
-  mockTier.mockImplementation(() => ({ state: "unavailable", effectiveTier: "FREE" }));
   mockGetOverview.mockResolvedValue(overview());
   mockOfficeStatus.mockResolvedValue({
     state: "READY",
@@ -227,40 +195,22 @@ describe("PrivateOfficeScreen", () => {
 
   it("lists the children the server sent and no others", async () => {
     mockGetOverview.mockResolvedValue(
-      overview({ available: [child()], unavailable: [] })
+      overview({
+        available: [child()],
+        unavailable: [
+          child({ feature_id: "capital_graph", availability: "NOT_IMPLEMENTED", reason: "NOT_IMPLEMENTED", opens: false })
+        ]
+      })
     );
     const { getByText, queryByText } = await renderScreen();
-    await waitFor(() => getByText("premium:privateOffice.features.relationshipIntelligence.label"));
+    await waitFor(() => getByText("premium:privateOffice.features.privateFacts.label"));
+    expect(getByText("premium:privateOffice.features.capitalGraph.label")).toBeTruthy();
     // Nothing invented: a capability this build knows a name for but the server
-    // did not send must not be drawn. `private_meetings` is the check with teeth
-    // now — the Office has exactly two children, so the only way to state "and
-    // no others" against a name the client can actually render is to withhold
-    // one of the two. It used to be stated against `human_concierge`, which
-    // stopped meaning anything the moment that id left `COPY_KEYS`: a key the
-    // screen can no longer produce is absent from every render, including a
-    // broken one.
-    expect(queryByText("premium:privateOffice.features.privateMeetings.label")).toBeNull();
+    // did not send must not be drawn.
+    expect(queryByText("premium:privateOffice.features.humanConcierge.label")).toBeNull();
   });
 
-  // This pair replaces a case that asserted the opposite — that an unknown id
-  // renders as its raw string rather than vanishing. That was the better rule
-  // while the client and the server agreed on what existed. Once the Office was
-  // narrowed they stop agreeing on exactly the window that matters: a mobile
-  // build ships on its own train, so a narrowed client stands in front of an
-  // un-narrowed server during rollout, and in front of a rolled-back one after.
-  // Run against production, that rendered ten rows, seven of them retired, each
-  // titled with a machine id over an `Open` that went nowhere. A ghost feature
-  // is not a gentler failure than a dropped row.
-  it("drops an available capability this build has no screen for", async () => {
-    mockGetOverview.mockResolvedValue(
-      overview({ available: [child(), child({ feature_id: "some_future_thing" })] })
-    );
-    const { getByText, queryByText } = await renderScreen();
-    await waitFor(() => getByText("premium:privateOffice.features.relationshipIntelligence.label"));
-    expect(queryByText("some_future_thing")).toBeNull();
-  });
-
-  it("drops an unavailable row this build cannot name, section and all", async () => {
+  it("renders a capability it has never heard of rather than dropping it", async () => {
     mockGetOverview.mockResolvedValue(
       overview({
         available: [],
@@ -269,18 +219,15 @@ describe("PrivateOfficeScreen", () => {
         ]
       })
     );
-    const { queryByText } = await renderScreen();
-    await waitFor(() => expect(queryByText("some_future_thing")).toBeNull());
-    // The heading goes with its only row. A "not yet" section with nothing
-    // under it is a promise with no subject.
-    expect(queryByText("premium:privateOffice.sections.notYet")).toBeNull();
+    const { getByText } = await renderScreen();
+    await waitFor(() => getByText("some_future_thing"));
   });
 
-  it("opens Relationship Intelligence when the server says the child opens", async () => {
+  it("opens Private Facts when the server says the child opens", async () => {
     const { getByText, navigation } = await renderScreen();
-    await waitFor(() => getByText("premium:privateOffice.features.relationshipIntelligence.label"));
-    fireEvent.press(getByText("premium:privateOffice.features.relationshipIntelligence.label"));
-    expect(navigation.navigate).toHaveBeenCalledWith("PrivatePeople");
+    await waitFor(() => getByText("premium:privateOffice.features.privateFacts.label"));
+    fireEvent.press(getByText("premium:privateOffice.features.privateFacts.label"));
+    expect(navigation.navigate).toHaveBeenCalledWith("PrivateFacts");
   });
 
   it("does not navigate for a child the server did not mark as opening", async () => {
@@ -288,31 +235,26 @@ describe("PrivateOfficeScreen", () => {
       overview({ available: [child({ opens: false })] })
     );
     const { getByText, navigation } = await renderScreen();
-    await waitFor(() => getByText("premium:privateOffice.features.relationshipIntelligence.label"));
-    fireEvent.press(getByText("premium:privateOffice.features.relationshipIntelligence.label"));
+    await waitFor(() => getByText("premium:privateOffice.features.privateFacts.label"));
+    fireEvent.press(getByText("premium:privateOffice.features.privateFacts.label"));
     expect(navigation.navigate).not.toHaveBeenCalled();
   });
 
-  // The three reasons are the subject, not the ids. The ids that used to carry
-  // them here were all withdrawn, and the two that survive are the only ones
-  // this build can name — so the third reason gets its own render rather than a
-  // third id. The vocabulary is still the server's, and the screen must still
-  // keep the three apart.
-  it.each([
-    ["PROVIDER_REQUIRED", "NOT_IMPLEMENTED"],
-    ["NOT_IMPLEMENTED", "NOT_IMPLEMENTED"],
-    ["TEMPORARILY_DISABLED", "FEATURE_DISABLED"]
-  ])("renders %s as its own reason", async (reason, availability) => {
+  it("keeps provider-required, not-built and switched-off as three distinct reasons", async () => {
     mockGetOverview.mockResolvedValue(
       overview({
         available: [],
         unavailable: [
-          child({ feature_id: "relationship_intelligence", reason, availability, opens: false })
+          child({ feature_id: "private_shield", reason: "PROVIDER_REQUIRED", availability: "NOT_IMPLEMENTED", opens: false }),
+          child({ feature_id: "capital_graph", reason: "NOT_IMPLEMENTED", availability: "NOT_IMPLEMENTED", opens: false }),
+          child({ feature_id: "private_briefings", reason: "TEMPORARILY_DISABLED", availability: "FEATURE_DISABLED", opens: false })
         ]
       })
     );
     const { getByText } = await renderScreen();
-    await waitFor(() => getByText(`premium:privateOffice.reason.${reason}`));
+    await waitFor(() => getByText("premium:privateOffice.reason.PROVIDER_REQUIRED"));
+    expect(getByText("premium:privateOffice.reason.NOT_IMPLEMENTED")).toBeTruthy();
+    expect(getByText("premium:privateOffice.reason.TEMPORARILY_DISABLED")).toBeTruthy();
   });
 
   it("asks the member to upgrade only when the server says so, naming the tier it sent", async () => {
@@ -348,7 +290,7 @@ describe("PrivateOfficeScreen", () => {
     await waitFor(() => getByText("premium:privateOffice.retry"));
     mockGetOverview.mockResolvedValue(overview());
     fireEvent.press(getByText("premium:privateOffice.retry"));
-    await waitFor(() => getByText("premium:privateOffice.features.relationshipIntelligence.label"));
+    await waitFor(() => getByText("premium:privateOffice.features.privateFacts.label"));
     expect(mockGetOverview).toHaveBeenCalledTimes(2);
   });
 
@@ -356,21 +298,13 @@ describe("PrivateOfficeScreen", () => {
   // says no. This mounts without `renderScreen`, which exists to get past the
   // passcode door — a member whose membership has expired never sees that door.
   it("offers a way to renew, not a retry, when the membership has lapsed", async () => {
-    // The lapse is now ESTABLISHED rather than assumed. This case used to mock
-    // only the 403 and then assert the renew sentence — but a 403 alone does
-    // not mean "lapsed", it means "your tier does not reach this", and an
-    // active member gets the identical status code. The suite was therefore
-    // asserting the renew copy for a member it had never shown to be lapsed,
-    // which is precisely the conflation the gate itself used to make.
-    mockTier.mockImplementation(() => ({ state: "resolved", effectiveTier: "FREE" }));
     mockOfficeStatus.mockResolvedValue({
       state: "UPGRADE_REQUIRED",
       passcodeSet: false,
       setupRequired: false,
       cooldownSeconds: 0,
       biometricPreference: "unset",
-      unlocked: false,
-      upgradeTier: "PRIVATE"
+      unlocked: false
     });
     const navigation = { navigate: jest.fn(), goBack: jest.fn(), setOptions: jest.fn() };
     const { getByText, queryByText } = render(
@@ -389,87 +323,6 @@ describe("PrivateOfficeScreen", () => {
     expect(navigation.navigate).toHaveBeenCalledWith("Premium");
 
     // And the office itself stays shut: a renew prompt is still a closed door.
-    expect(queryByText("premium:privateOffice.features.relationshipIntelligence.label")).toBeNull();
-  });
-
-  /**
-   * The case the door was getting wrong, and the one behind the report.
-   *
-   * An ACTIVE Premium member opening Private Meetings gets the same 403 a
-   * lapsed member gets, because `private_meetings` is `TIER_PRIVATE` — a rung
-   * above PREMIUM — and a 403 only ever meant "your tier does not reach this".
-   * The gate read that as expiry and said so: "Private Office is part of
-   * premium membership, and yours isn't active right now. Renew to open it
-   * again." Every clause of that is false to this member, and the button under
-   * it sold them the tier they were already standing on.
-   *
-   * The assertions are deliberately about the ABSENCE of the renew copy as much
-   * as the presence of the upgrade copy. Rendering both would technically show
-   * the true sentence while leaving the false one on screen next to it.
-   */
-  it("tells an active member the rung is higher, not that their membership lapsed", async () => {
-    mockTier.mockImplementation(() => ({ state: "resolved", effectiveTier: "PREMIUM" }));
-    mockOfficeStatus.mockResolvedValue({
-      state: "UPGRADE_REQUIRED",
-      passcodeSet: false,
-      setupRequired: false,
-      cooldownSeconds: 0,
-      biometricPreference: "unset",
-      unlocked: false,
-      upgradeTier: "PRIVATE"
-    });
-    const navigation = { navigate: jest.fn(), goBack: jest.fn(), setOptions: jest.fn() };
-    const { getByText, queryByText } = render(
-      <PrivateOfficeScreen
-        route={{ key: "o", name: "PrivateOffice", params: {} } as never}
-        navigation={navigation as never}
-      />
-    );
-
-    await waitFor(() => getByText("premium:privateOffice.upgrade.title"));
-    // The tier the server named is the tier the member is shown.
-    expect(getByText("premium:privateOffice.upgrade.body")).toBeTruthy();
-
-    // None of the expiry vocabulary may survive anywhere on this screen.
-    expect(queryByText("premium:privateOffice.lock.upgrade.title")).toBeNull();
-    expect(queryByText("premium:privateOffice.lock.upgrade.body")).toBeNull();
-    // And no button that charges for a tier they already hold.
-    expect(queryByText("premium:privateOffice.lock.upgrade.action")).toBeNull();
-    expect(navigation.navigate).not.toHaveBeenCalledWith("Premium");
-  });
-
-  /**
-   * The third person at this door: one whose membership we could not resolve.
-   *
-   * `UNKNOWN` is not `LAPSED`. The member most likely to hit a degraded resolve
-   * is the one who paid, so guessing "lapsed" here would aim the renew prompt
-   * at precisely the wrong person. The plan-neutral sentence is true whichever
-   * way the unresolved read would have gone, and nothing asks for money on the
-   * strength of a question the app could not answer.
-   */
-  it("does not sell a renewal to a member whose tier it could not resolve", async () => {
-    mockTier.mockImplementation(() => ({ state: "unavailable", effectiveTier: "FREE" }));
-    mockOfficeStatus.mockResolvedValue({
-      state: "UPGRADE_REQUIRED",
-      passcodeSet: false,
-      setupRequired: false,
-      cooldownSeconds: 0,
-      biometricPreference: "unset",
-      unlocked: false,
-      upgradeTier: "PRIVATE"
-    });
-    const navigation = { navigate: jest.fn(), goBack: jest.fn(), setOptions: jest.fn() };
-    const { getByText, queryByText } = render(
-      <PrivateOfficeScreen
-        route={{ key: "o", name: "PrivateOffice", params: {} } as never}
-        navigation={navigation as never}
-      />
-    );
-
-    await waitFor(() => getByText("premium:privateOffice.upgrade.title"));
-    // Generic, not tier-named: naming a rung implies we know where they stand.
-    expect(getByText("premium:privateOffice.upgrade.bodyGeneric")).toBeTruthy();
-    expect(queryByText("premium:privateOffice.lock.upgrade.body")).toBeNull();
-    expect(queryByText("premium:privateOffice.lock.upgrade.action")).toBeNull();
+    expect(queryByText("premium:privateOffice.features.privateFacts.label")).toBeNull();
   });
 });

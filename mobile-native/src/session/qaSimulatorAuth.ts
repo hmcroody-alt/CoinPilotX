@@ -1,9 +1,8 @@
 import { Platform } from "react-native";
-import { PulseUser, SessionResponse } from "../api/auth";
 import { PULSE_API_BASE_URL } from "../api/config";
 import { RootStackParamList } from "../navigation/types";
-import { authenticatedState, AuthState, persistSessionEnvelope, signIn, unauthenticatedState } from "./auth";
-import { setCachedSessionUser, setSessionCookie } from "./sessionStore";
+import { authenticatedState, AuthState, signIn, unauthenticatedState } from "./auth";
+import { setSessionCookie } from "./sessionStore";
 import { canUseTemporaryQaAccount, isLocalApiBaseUrl } from "./qaTemporaryAccount";
 
 type CameraStudioParams = NonNullable<RootStackParamList["CameraStudio"]>;
@@ -60,26 +59,6 @@ export async function tryHandleQaSimulatorAuthUrl(url: string): Promise<QaSimula
   };
 }
 
-/**
- * Finish a hand-rolled QA sign-in the way `signIn` finishes a real one.
- *
- * `setSessionCookie` on its own is not a session. pulseApi attaches its bearer
- * from the envelope, and bootstrapSession rebuilds identity from the envelope
- * plus the cached user -- so storing only the cookie yields a state that is
- * signedIn in memory and signedOut on the next bootstrap, while every
- * authenticated request 401s for lack of a bearer. Observed exactly that way:
- * the register call returned 200 eight times over and the app sat on the login
- * form, re-registering a fresh throwaway user on each remount.
- *
- * `rememberAccount` is deliberately NOT called -- a throwaway account has no
- * business in the returning-user list.
- */
-async function persistQaSession(session: SessionResponse & { user: PulseUser }): Promise<AuthState> {
-  await persistSessionEnvelope(session);
-  await setCachedSessionUser(session.user);
-  return authenticatedState(session.user);
-}
-
 async function signInWithQaApiBase(apiBase: string, identifier: string, password: string): Promise<AuthState> {
   const response = await fetch(`${apiBase}/api/mobile/auth/login`, {
     method: "POST",
@@ -91,7 +70,7 @@ async function signInWithQaApiBase(apiBase: string, identifier: string, password
   if (cookie) await setSessionCookie(cookie.split(";")[0] || cookie);
   const data = await response.json().catch(() => ({}));
   if (!response.ok || !data?.authenticated || !data?.user) return unauthenticatedState();
-  return persistQaSession(data);
+  return authenticatedState(data.user);
 }
 
 async function registerLocalQaAccount(apiBase: string): Promise<AuthState> {
@@ -119,7 +98,7 @@ async function registerLocalQaAccount(apiBase: string): Promise<AuthState> {
   if (cookie) await setSessionCookie(cookie.split(";")[0] || cookie);
   const data = await response.json().catch(() => ({}));
   if (!response.ok || !data?.authenticated || !data?.user) return unauthenticatedState();
-  return persistQaSession(data);
+  return authenticatedState(data.user);
 }
 
 function runtimeWebCredentials() {

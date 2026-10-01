@@ -393,31 +393,44 @@
       "requests_other": "{{count}} طلب رسالة"
     },
     "chat": {
+      "placeholder": "رسالة…",
+      "typing": "{{name}} يكتب…",
+      "typingMultiple": "عدة أشخاص يكتبون…",
+      "delivered": "تم التسليم",
+      "read": "تمت القراءة",
+      "sent": "تم الإرسال",
+      "failed": "لم يتم التسليم",
+      "tapToRetry": "اضغط لإعادة المحاولة",
+      "editedLabel": "معدَّلة",
+      "deletedMessage": "تم حذف هذه الرسالة",
+      "replyingTo": "رد على {{name}}",
+      "forwarded": "معاد توجيهها",
+      "attachPhoto": "صورة",
+      "attachFile": "ملف",
+      "attachVoice": "رسالة صوتية",
+      "recordingVoice": "جارٍ التسجيل…",
+      "slideToCancel": "اسحب للإلغاء",
+      "newMessagesDivider": "رسائل جديدة",
+      "encryptedNotice": "الرسائل مشفَّرة أثناء النقل.",
+      "emptyTitle": "ألقِ التحية",
+      "emptyBody": "هذه بداية محادثتكما.",
       "a11yAddAttachment": "إضافة مرفق",
       "a11yAddEmoji": "إضافة رمز تعبيري مبتسم",
       "a11yBack": "الرجوع إلى المحادثات",
       "a11yBackFive": "رجوع 5 ثوانٍ",
-      "a11yCancelEdit": "إلغاء التحرير",
       "a11yCancelReply": "إلغاء الرد",
       "a11yCancelUndxAction": "إلغاء إجراء UNDX",
       "a11yCloseAttachmentSheet": "إغلاق لوحة المرفقات",
-      "a11yCloseForward": "إغلاق إعادة التوجيه",
-      "a11yCloseInfo": "إغلاق معلومات الرسالة",
       "a11yComposer": "مربع كتابة الرسالة",
       "a11yComposerUndx": "مربع كتابة رسالة UNDX",
       "a11yConfirmUndxAction": "تأكيد إجراء UNDX",
       "a11yDiscardRecording": "تجاهل التسجيل الصوتي",
       "a11yDismissStatus": "تجاهل حالة الرسالة",
       "a11yForwardFive": "تقدّم 5 ثوانٍ",
-      "a11yGalleryPhotoPosition": "صورة من {{sender}}، {{position}} من {{total}}",
-      "a11yGalleryVideoPosition": "فيديو من {{sender}}، {{position}} من {{total}}",
       "a11yGifAttachment": "{{label}}. مرفق GIF.",
-      "a11yGridPhotoTile": "{{label}}. صورة {{position}} من {{total}}.",
-      "a11yGridVideoTile": "{{label}}. فيديو {{position}} من {{total}}.",
       "a11yImageAttachment": "{{label}}. مرفق صورة.",
       "a11yOpenControls": "فتح عناصر التحكم في المحادثة",
       "a11yOpenUndxResult": "فتح نتيجة {{type}}",
-      "a11yOpensDocument": "يفتح في عارض المستندات",
       "a11yOpensViewer": "يفتح العارض بملء الشاشة",
       "a11yPauseVoice": "إيقاف الرسالة الصوتية مؤقتًا",
       "a11yPlayVoice": "تشغيل الرسالة الصوتية",
@@ -427,7 +440,6 @@
       "a11yRecordingVoice": "جارٍ تسجيل رسالة صوتية. {{duration}}",
       "a11yRetryLoad": "إعادة محاولة تحميل الرسائل",
       "a11yRetryVoice": "إعادة محاولة الرسالة الصوتية",
-      "a11ySaveEdit": "حفظ التحرير",
       "a11ySend": "إرسال الرسالة",
       "a11yStartAudioCall": "بدء مكالمة صوتية",
       "a11yStartVideoCall": "بدء مكالمة فيديو",
@@ -436,26 +448,20 @@
       "a11yUndxAttachmentsOff": "دعم مرفقات UNDX غير متاح",
       "a11yUndxVoiceOff": "رسائل UNDX الصوتية غير متاحة",
       "a11yUploadingAttachment": "جارٍ رفع المرفق",
-      "a11yVideoAttachment": "فيديو، اضغط للتشغيل",
-      "a11yVideoAttachmentDuration": "فيديو، {{duration}}، اضغط للتشغيل",
       "a11yVoiceDuration": "المدة {{duration}}",
       "a11yVoiceProgress": "تقدّم الرسالة الصوتية",
       "a11yVoiceUnavailable": "{{label}}. الرسالة الصوتية غير متاحة.",
       "assistantAlwaysAvailable": "متاح دائمًا · ذكاء PulseSoc",
-      "assistantConnecting": "جارٍ الاتصال · ذكاء PulseSoc",
       "assistantReconnecting": "جارٍ إعادة اتصال الخدمة",
       "attachCamera": "الكاميرا",
       "attachCameraDetail": "التصوير الآن",
       "attachDocument": "مستند",
       "attachDocumentDetail": "ملف آمن",
-      "attachFile": "ملف",
-      "attachPhoto": "صورة",
       "attachPhotoDetail": "صورة محسَّنة",
       "attachRecordingNow": "جارٍ التسجيل الآن",
       "attachStopSend": "إيقاف وإرسال",
       "attachVideo": "فيديو",
       "attachVideoDetail": "حتى دقيقتين",
-      "attachVoice": "رسالة صوتية",
       "attachVoiceNote": "ملاحظة صوتية",
       "attachVoiceNoteDetail": "رسالة صوتية سريعة",
       "attachmentFailedTitle": "فشل المرفق",
@@ -477,33 +483,12 @@
       "deleteForMe": "الحذف لي",
       "deleteHidden": "تم إخفاء الرسالة من هذا الجهاز.",
       "deleteRequested": "تم طلب حذف الرسالة.",
-      "deletedMessage": "تم حذف هذه الرسالة",
       "deletedMessageBody": "تم حذف هذه الرسالة.",
-      "delivered": "تم التسليم",
-      "durationMinutes": "{{minutes}} دقيقة",
-      "durationMinutesSeconds": "{{minutes}} دقيقة و{{seconds}} ثانية",
-      "durationSeconds": "{{seconds}} ثانية",
-      "editEmpty": "لا يمكن أن تكون الرسالة المحررة فارغة.",
-      "editFailed": "تعذّر تحرير هذه الرسالة.",
-      "editSaved": "تم تحرير الرسالة.",
-      "editedLabel": "معدَّلة",
-      "editingMessage": "تحرير الرسالة",
-      "emptyBody": "هذه بداية محادثتكما.",
       "emptyThreadBody": "ستظهر رسائل هذه المحادثة هنا.",
-      "emptyTitle": "ألقِ التحية",
-      "encryptedNotice": "الرسائل مشفَّرة أثناء النقل.",
-      "failed": "لم يتم التسليم",
       "fileAttachment": "مرفق ملف",
       "filePickerFailed": "تعذّر فتح أداة اختيار الملفات.",
       "fileSharingUnavailableTitle": "مشاركة الملفات غير متاحة",
-      "forwardFailed": "تعذّرت إعادة توجيه هذه الرسالة.",
-      "forwardNoConversations": "لا توجد محادثات أخرى لإعادة التوجيه إليها.",
-      "forwardSend": "إعادة التوجيه إلى {{total}}",
-      "forwardSent": "أُعيد التوجيه إلى {{total}}.",
-      "forwarded": "معاد توجيهها",
       "forwardedSignal": "إشارة معاد توجيهها",
-      "galleryUnavailable": "غير متاح",
-      "galleryUnavailableOffline": "غير متاح دون اتصال",
       "headerCachedHistory": "سجل مخزَّن مؤقتًا",
       "headerLiveChannel": "قناة مباشرة",
       "headerReconnecting": "جارٍ إعادة الاتصال",
@@ -511,26 +496,6 @@
       "imageAttachment": "مرفق صورة",
       "imagePickerFailed": "تعذّر فتح أداة اختيار الصور.",
       "imageSharingUnavailableTitle": "مشاركة الصور غير متاحة",
-      "infoDelivered": "سُلّمت",
-      "infoDeliveredAt": "سُلّمت",
-      "infoDuration": "المدة",
-      "infoEditedAt": "حُرّرت",
-      "infoForwarded": "أُعيد توجيهها",
-      "infoForwardedYes": "نعم",
-      "infoFrom": "من",
-      "infoId": "معرّف الرسالة",
-      "infoRead": "قُرئت",
-      "infoReadAt": "قُرئت",
-      "infoReadGroup": "قرأها شخص واحد على الأقل",
-      "infoSent": "أُرسلت",
-      "infoSentAt": "أُرسلت",
-      "infoSize": "الحجم",
-      "infoStatus": "الحالة",
-      "infoType": "النوع",
-      "infoTypeMedia": "وسائط",
-      "infoTypeText": "نص",
-      "infoTypeUnavailable": "غير متاحة",
-      "infoTypeVoice": "رسالة صوتية",
       "liveVoiceKicker": "LIVE VOICE PULSE",
       "loadFailed": "تعذّر تحميل الرسائل.",
       "loadFailedBody": "تعذّر على PulseSoc تحميل هذه المحادثة. اضغط إعادة المحاولة للاتصال بسجل الرسائل الأساسي.",
@@ -545,16 +510,12 @@
       "microphoneUnavailableTitle": "الميكروفون غير متاح",
       "moderatedMessageBody": "هذه الرسالة غير متاحة بعد مراجعة السلامة.",
       "muteBlock": "كتم / حظر",
-      "newMessagesDivider": "رسائل جديدة",
-      "openDocument": "اضغط للفتح",
       "openViewer": "فتح العارض",
       "openingBody": "جارٍ تحميل سجل المحادثة من الخادم.",
-      "openingDocument": "جارٍ الفتح…",
       "openingTitle": "جارٍ فتح المحادثة",
       "pendingRemoved": "تمت إزالة الرسالة المعلّقة المحلية.",
       "photosUnavailableBody": "اسمح بالوصول إلى الصور من الإعدادات لمشاركة صورة.",
       "photosUnavailableTitle": "الصور غير متاحة",
-      "placeholder": "رسالة…",
       "presenceActivityDirect": "{{activity}} · فردية",
       "presenceOffline": "غير متصل",
       "presenceOnline": "متصل",
@@ -564,14 +525,11 @@
       "reactPending": "يمكن التفاعل مع الرسائل المعلّقة بعد أن يقبلها الخادم.",
       "reactionFailed": "فشل التفاعل.",
       "reactionSent": "تم إرسال التفاعل.",
-      "read": "تمت القراءة",
       "realtimeReconnecting": "جارٍ إعادة الاتصال الفوري. يبقى سجل الرسائل مرئيًا.",
       "recordingDiscarded": "تم تجاهل التسجيل الصوتي.",
       "recordingFailed": "تعذّر بدء التسجيل الصوتي.",
       "recordingNoFile": "لم يُنتج التسجيل ملفًا صوتيًا.",
       "recordingStarted": "جارٍ تسجيل رسالة صوتية… اضغط الميكروفون مرة أخرى للإرسال.",
-      "recordingVoice": "جارٍ التسجيل…",
-      "replyingTo": "رد على {{name}}",
       "reportConversationTitle": "الإبلاغ عن المحادثة",
       "reportFailed": "فشل الإبلاغ.",
       "reportPending": "لا يمكن الإبلاغ عن الرسائل المعلّقة حتى يقبلها الخادم.",
@@ -580,17 +538,12 @@
       "retryFailedSend": "إعادة محاولة الإرسال الفاشل",
       "sendFailed": "تعذّر إرسال الرسالة.",
       "sendingVoice": "جارٍ إرسال الرسالة الصوتية…",
-      "sent": "تم الإرسال",
       "showingCached": "يتم عرض الرسائل المخزَّنة مؤقتًا أثناء إعادة اتصال PulseSoc.",
-      "slideToCancel": "اسحب للإلغاء",
       "stateReconnecting": "جارٍ إعادة الاتصال",
       "stateRecording": "جارٍ التسجيل",
       "stateSecureReady": "آمن · جاهز",
       "stateSendingMedia": "جارٍ إرسال الوسائط",
       "stateUndxReady": "UNDX · جاهز",
-      "tapToRetry": "اضغط لإعادة المحاولة",
-      "typing": "{{name}} يكتب…",
-      "typingMultiple": "عدة أشخاص يكتبون…",
       "undxActionFailed": "فشل إجراء UNDX.",
       "undxActionFinished": "انتهى إجراء UNDX.",
       "undxAttachmentsUnsupported": "يدعم UNDX المحادثة النصية في الدردشة الأصلية حاليًا. تبقى المرفقات في المحادثات البشرية حتى يتيح الخادم وسائط المساعد.",
@@ -616,8 +569,6 @@
       "uploadingAttachment": "جارٍ رفع المرفق…",
       "videoAttachment": "مرفق فيديو",
       "videoPickerFailed": "تعذّر فتح أداة اختيار الفيديو.",
-      "videoPosterFailed": "المعاينة غير متاحة",
-      "videoProcessing": "جارٍ معالجة الفيديو…",
       "videoSharingUnavailableTitle": "مشاركة الفيديو غير متاحة",
       "videosUnavailableBody": "اسمح بالوصول إلى الصور من الإعدادات لمشاركة فيديو.",
       "videosUnavailableTitle": "مقاطع الفيديو غير متاحة",
@@ -628,8 +579,7 @@
       "voiceSent": "تم إرسال الرسالة الصوتية.",
       "voiceUnavailable": "الرسالة الصوتية غير متاحة",
       "voiceUnavailableTitle": "الرسالة الصوتية غير متاحة",
-      "yourMessage": "رسالتك",
-      "moreReactions": "تفاعلات إضافية"
+      "yourMessage": "رسالتك"
     },
     "group": {
       "createGroup": "إنشاء مجموعة",
@@ -1006,7 +956,6 @@
           "minimalBlack": "أسود بسيط",
           "neonPlanet": "كوكب نيون",
           "pulseHorizon": "أفق Pulse",
-          "pulsesocCosmic": "بلس سوك جرافيت",
           "starTunnel": "نفق النجوم"
         }
       },
@@ -1185,140 +1134,9 @@
       "signInTitle": "سجّل الدخول لبدء محادثة",
       "subtitle": "ابحث في شبكة PulseSoc الحقيقية. تُفتح المحادثات الفردية القائمة تلقائيًا.",
       "title": "ابدأ محادثة"
-    },
-    "postCard": {
-      "a11yOpen": "فتح منشور بلسسوك من {{author}}",
-      "a11yOpenGeneric": "فتح منشور بلسسوك هذا",
-      "cta": "عرض المنشور ←",
-      "eyebrow": "منشور بلسسوك",
-      "forbidden": "هذا المحتوى غير متاح لك.",
-      "loading": "جارٍ تحميل المنشور…",
-      "missing": "لم يعد هذا المنشور متاحًا.",
-      "unavailable": "المحتوى غير متاح",
-      "video": "فيديو"
-    },
-    "profileCard": {
-      "eyebrow": "ملف بلسسوك",
-      "cta": "عرض الملف الشخصي ←",
-      "loading": "جارٍ تحميل الملف الشخصي…",
-      "forbidden": "هذا الملف الشخصي غير متاح لك.",
-      "missing": "لم يعد هذا الملف الشخصي متاحًا.",
-      "unavailable": "الملف الشخصي غير متاح",
-      "a11yOpen": "فتح ملف {{author}} الشخصي على بلسسوك",
-      "a11yOpenGeneric": "فتح هذا الملف الشخصي على بلسسوك"
-    },
-    "reelCard": {
-      "eyebrow": "ريل بلسسوك",
-      "cta": "عرض الريل ←",
-      "loading": "جارٍ تحميل الريل…",
-      "forbidden": "هذا المحتوى غير متاح لك.",
-      "missing": "لم يعد هذا الريل متاحًا.",
-      "unavailable": "الريل غير متاح",
-      "play": "تشغيل",
-      "a11yOpen": "فتح ريل بلسسوك من {{author}}",
-      "a11yOpenGeneric": "فتح ريل بلسسوك هذا"
-    },
-    "messageActions": {
-      "openLink": "فتح الرابط",
-      "copyLink": "نسخ الرابط",
-      "shareLink": "مشاركة الرابط",
-      "saveToPhotos": "حفظ في الصور",
-      "translate": "ترجمة",
-      "forward": "إعادة توجيه",
-      "info": "معلومات الرسالة",
-      "chooseLink": "أي رابط؟",
-      "closeMenu": "إغلاق قائمة الرسالة",
-      "reactWith": "التفاعل بـ {{emoji}}"
     }
   },
   "commerce": {
-    "discovery": {
-      "label": {
-        "recommended": "مقترح من المتجر",
-        "trending": "رائج على PulseSoc",
-        "sponsored": "برعاية"
-      },
-      "subtitle": {
-        "matches_your_interests": "بناءً على ما يعجبك",
-        "because_you_viewed": "لأنك شاهدت عناصر مشابهة",
-        "related_to_this_post": "متعلق بما تتصفحه",
-        "similar_to_this_product": "مشابه لهذا المنتج",
-        "from_sellers_you_follow": "من بائعين تتابعهم",
-        "trending": "رائج على PulseSoc الآن",
-        "new_arrival": "أُضيف حديثًا إلى المتجر",
-        "popular": "مشهور بين المتسوقين",
-        "new_to_marketplace": "جديد في المتجر"
-      },
-      "action": {
-        "viewProduct": "عرض المنتج",
-        "save": "حفظ",
-        "saved": "تم الحفظ",
-        "seeAll": "عرض الكل"
-      },
-      "menu": {
-        "title": "خيارات التوصية",
-        "hide": "إخفاء هذا",
-        "notInterested": "غير مهتم",
-        "seeFewer": "عرض عناصر أقل مثل هذا",
-        "hideSeller": "لا توصِ بهذا البائع",
-        "why": "لماذا أرى هذا؟",
-        "snooze": "إخفاء اقتراحات المتجر لمدة 30 يومًا"
-      },
-      "why": {
-        "title": "لماذا أرى هذا؟",
-        "loading": "جارٍ التحقق…",
-        "unavailable": "لا يمكننا شرح هذه التوصية الآن.",
-        "factorsTitle": "ما استندت إليه",
-        "close": "إغلاق"
-      },
-      "factor": {
-        "relevance": "مدى تطابقه مع ما كنت تشاهده",
-        "quality": "جودة الإعلان",
-        "predicted_interest": "أشياء أبديت اهتمامًا بها من قبل",
-        "conversion_probability": "عدد مرات شراء المتسوقين لعناصر مماثلة",
-        "seller_reliability": "سجل البائع",
-        "freshness": "حداثة الإعلان",
-        "exploration_bonus": "منح الإعلانات الجديدة فرصة",
-        "diversity_bonus": "عرض مجموعة متنوعة من البائعين"
-      },
-      "module": {
-        "recommended_for_you": "موصى به لك",
-        "because_you_viewed": "لأنك شاهدت",
-        "similar_to_this_product": "منتجات مشابهة",
-        "you_might_also_like": "قد يعجبك أيضًا",
-        "trending": "الرائج",
-        "new_arrivals": "وصل حديثًا",
-        "from_sellers_you_follow": "من بائعين تتابعهم",
-        "new_to_marketplace": "جديد في المتجر",
-        "popular": "شائع"
-      },
-      "tagging": {
-        "open": "وسم المنتجات",
-        "title": "منتجاتك",
-        "subtitle": "اختر ما يتعلق به هذا المنشور",
-        "cap": "حتى {{max}} لكل منشور",
-        "selected": "تم تحديد {{selected}} من {{max}}",
-        "loading": "جارٍ تحميل منتجاتك…",
-        "empty": "ليس لديك أي منتجات بعد",
-        "emptyHint": "تظهر هنا المنتجات التي تعرضها في السوق.",
-        "error": "لم نتمكن من تحميل منتجاتك",
-        "errorHint": "هذا لا يعني أنه ليس لديك منتجات. يُرجى المحاولة مرة أخرى.",
-        "retry": "إعادة المحاولة",
-        "wontShow": "لن يتم عرضه",
-        "wontShowHint": "يمكنك وسمه، لكن المتسوقين لن يرَوه حتى تُصلح ذلك.",
-        "done": "تم",
-        "blocked": {
-          "not_purchasable": "غير متاح للشراء",
-          "no_cover_image": "يحتاج إلى صورة غلاف",
-          "no_resolvable_price": "يحتاج إلى سعر",
-          "moderation_flagged": "قيد المراجعة",
-          "listing_risk": "غير مؤهل للعرض",
-          "seller_risk": "متجرك غير مؤهل للعرض",
-          "unknown_reason": "لا يمكن عرضه حاليًا"
-        },
-        "cleared": "تمت إزالة وسوم المنتجات: منشورات آخر الأخبار وحدها تحملها."
-      }
-    },
     "marketplace": {
       "title": "Marketplace",
       "browse": "تصفح",
@@ -1416,18 +1234,15 @@
       "storeOfflineNotice": "عرض بيانات البائع/المتجر المحفوظة.",
       "storeKicker": "Marketplace Command",
       "storefrontReadiness": "جاهزية المتجر",
-      "storeHeroCopy": "اعتماد البائع ومراجعة المنتج والدفع والمدفوعات والتنفيذ كلها قرارات تتخذها PulseSoc.",
+      "storeHeroCopy": "تبقى قرارات اعتماد البائع ومراجعة المنتج والدفع والمدفوعات والثقة والتنفيذ خاضعة لسلطة الخادم.",
       "loadingSellerControls": "جارٍ تحميل عناصر تحكم البائع",
       "sellerToolsLoadFailed": "تعذّر تحميل أدوات البائع.",
       "metricListingsLoaded": "الإعلانات المحمَّلة",
-      "metricPublished": "منشور",
       "metricActiveReviewReady": "نشطة/جاهزة للمراجعة",
       "metricPendingReview": "قيد المراجعة",
       "metricOrdersLoaded": "الطلبات المحمَّلة",
       "merchantApplication": "طلب الانضمام كتاجر",
-      "merchantApplicationCopy": "قدّم طلبًا للبيع على PulseSoc. يرشدك الطلب خطوة بخطوة إلى من أنت وما الذي تبيعه والمستندات التي نتحقق منها. تُحفظ إجاباتك أولًا بأول، ويتخذ القرار شخص من فريق المراجعة لدينا.",
-      "openSellerApplication": "فتح طلب البائع",
-      "openSellerApplicationHint": "يفتح طلب البائع حيث يمكنك بدء إجاباتك أو متابعتها",
+      "merchantApplicationCopy": "أرسل طلب البائع الأصلي إلى نقطة نهاية البائع القائمة. يتم التحقق من المستندات والمراجعة الإدارية من قِبل PulseSoc بعد استلام طلبك.",
       "sellerDisplayNamePlaceholder": "الاسم المعروض للبائع",
       "sellerBioPlaceholder": "اوصف ما تبيعه وكيف يفيد المشترين",
       "saving": "جارٍ الحفظ...",
@@ -1441,7 +1256,6 @@
       "sellerInventory": "مخزون البائع",
       "sellerInventoryCopy": "عدّل حقول الإعلانات التي يملكها البائع وتحكّم في الظهور من خلال مراجعة Marketplace في PulseSoc. يبقى الظهور العام في Marketplace مرتبطًا بالاعتماد.",
       "emptyInventory": "يظهر مخزون البائع بعد إنشاء المنتجات أو تحميلها.",
-      "productNotYours": "هذا المنتج ليس في متجرك. ربما تمت إزالته، أو أن الرابط يشير إلى إعلان بائع آخر.",
       "editListingTitle": "تعديل الإعلان رقم {{id}}",
       "saveAndReview": "حفظ ومراجعة",
       "addMedia": "إضافة وسائط",
@@ -1449,13 +1263,13 @@
       "resuming": "جارٍ الاستئناف...",
       "resumeReview": "استئناف المراجعة",
       "removing": "جارٍ الإزالة...",
-      "editorFooterNote": "تُحفظ تعديلاتك في متجرك على PulseSoc، ويعود العرض إلى مراجعة Marketplace كلما تغيّر محتواه. أما الدفع والمدفوعات والتنفيذ والنزاعات فتتم على pulsesoc.com.",
+      "editorFooterNote": "تُحفظ التحديثات على الخادم ويُعاد إدخالها إلى مراجعة Marketplace عند تغيّر المحتوى. يبقى الدفع والمدفوعات والتنفيذ والنزاعات وإجراءات المزوّد داخل حدود المزوّد الأصلية.",
       "listingUpdatedReview": "تم تحديث الإعلان وإرساله عبر المراجعة.",
       "listingUpdateFailed": "تعذّر تحديث الإعلان.",
       "listingUpdated": "تم تحديث الإعلان.",
       "listingStatusUpdateFailed": "تعذّر تحديث حالة الإعلان.",
       "productMediaGallery": "معرض وسائط المنتج",
-      "productMediaGalleryCopy": "اضغط على أي عنصر لفتحه بملء الشاشة. وأي وسائط لا يستطيع العارض تشغيلها تظهر كمعاينة ثابتة.",
+      "productMediaGalleryCopy": "يعيد المعرض استخدام بيانات وسائط Marketplace وعارض الوسائط الأصلي المشترك. وتُعرض الوسائط غير المدعومة بشكل آمن داخل العارض.",
       "openStoreMediaA11y": "فتح وسائط المتجر {{index}}",
       "mediaFallback": "وسائط",
       "openMedia": "فتح الوسائط",
@@ -1463,37 +1277,18 @@
       "ordersAndPayouts": "الطلبات والمدفوعات",
       "ordersAndPayoutsCopy": "تبقى الطلبات ورسوم البائع وإعداد Stripe Connect والدفع وإطلاق المدفوعات تحت تحكم المزوّد والخادم.",
       "noSellerOrders": "لم تُحمَّل أي طلبات للبائع.",
-      "orderMerchandiseLine": "قيمة البضاعة {{merchandise}} · رصيد الشحن {{shipping}}",
-      "orderFeeLine": "رسوم PulseSoc {{rate}} · تسويات الاسترداد {{refunds}}",
-      "orderNetEarningsLine": "صافي الأرباح {{net}} · {{state}}",
-      "orderBlockedLine": "محظور: {{reason}}. عالج هذه المشكلة قبل صرف المدفوعات.",
       "checking": "جارٍ التحقق...",
       "connectPayouts": "ربط المدفوعات",
       "payoutChecked": "تم التحقق من إعداد المدفوعات.",
       "payoutUnavailable": "إعداد المدفوعات غير متاح بعد.",
-      "policyFixNeedsReview": "يحتاج هذا إلى مراجعة سياسات لا يمكن إنهاؤها من التطبيق. عدّل تفاصيل المنتج أو تواصل مع الدعم على pulsesoc.com.",
       "payoutManagedNote": "يدير PulseSoc ومزوّد الدفع التابع له إعداد المدفوعات وإطلاقها. سيتم إشعارك عندما تصبح مدفوعاتك جاهزة.",
-      "termsAcceptedLabel": "مقبولة",
-      "reviewAndAccept": "مراجعة وقبول",
-      "termsAcceptedNotice": "تم قبول رسوم وشروط Marketplace.",
-      "termsAcceptFailed": "تعذّر حفظ قبول الشروط.",
       "trustAndEligibility": "الثقة والأهلية",
       "verification": "التوثيق",
-      "trustCopy": "النماذج الضريبية وإعداد الحساب البنكي والنزاعات والاسترداد والتنفيذ ومراجعة PulseSoc تتم حاليًا على موقع PulseSoc وليس داخل التطبيق.",
+      "trustCopy": "تبقى النماذج الضريبية المتقدمة وإعداد الحساب البنكي والنزاعات والاسترداد والتنفيذ والمراجعة الإدارية على مسارات الويب والمزوّد الآمنة حتى تجهز بوابات ضمان الجودة الأصلية.",
       "storeMediaViewerTitle": "وسائط المتجر",
       "statusApprovedLive": "معتمد/مباشر",
       "statusPendingReview": "قيد المراجعة",
-      "statusRemoved": "تمت الإزالة",
-      "status": {
-        "live": "نشط",
-        "store_offline": "المتجر غير مفعّل",
-        "store_name_needed": "مطلوب اسم المتجر",
-        "paused": "متوقفة مؤقتًا",
-        "draft": "مسودة",
-        "rejected": "مرفوض"
-      },
-      "dropshipping": "المنتجات المستوردة",
-      "dropshippingCopy": "المنتجات التي استوردتها من مورّد، بما في ذلك ما لا يزال بانتظار المراجعة."
+      "statusRemoved": "تمت الإزالة"
     },
     "orders": {
       "title": "الطلبات",
@@ -1613,52 +1408,6 @@
       "statusInReview": "قيد المراجعة",
       "pauseCampaign": "إيقاف الحملة مؤقتًا",
       "resumeCampaign": "استئناف الحملة"
-    },
-    "sellerAccess": {
-      "checking": "جارٍ التحقق من حالتك كبائع…",
-      "retry": "حاول مرة أخرى",
-      "unreadableTitle": "تعذّر التحقق من حالتك كبائع",
-      "unreadableBody": "متجرك على ما يرام — لم نتمكن فقط من إجراء الفحص. حاول مرة أخرى بعد قليل.",
-      "noApplicationTitle": "ابدأ البيع على PulseSoc",
-      "noApplicationBody": "قدّم طلبًا للحصول على حساب بائع لفتح متجرك وعرض المنتجات وتلقّي الطلبات.",
-      "noApplicationCta": "تقديم طلب للبيع",
-      "draftTitle": "أكمل طلب البائع الخاص بك",
-      "draftBody": "طلبك محفوظ كمسودة. تابع من حيث توقفت — سيُفتح متجرك بمجرد الموافقة عليه.",
-      "draftCta": "متابعة الطلب",
-      "reviewTitle": "طلبك قيد المراجعة",
-      "reviewBody": "نحن نتحقق من بياناتك. ستصلك إشعار بمجرد صدور القرار — لا نحتاج منك أي شيء آخر الآن.",
-      "reviewCta": "عرض حالة الطلب",
-      "moreInfoTitle": "نحتاج إلى مزيد من المعلومات",
-      "moreInfoBody": "طلبك متوقف مؤقتًا إلى أن ترسل ما طلبه المراجعون.",
-      "moreInfoCta": "إكمال التعديلات المطلوبة",
-      "declinedTitle": "لم تتم الموافقة على طلب البائع الخاص بك",
-      "declinedBody": "افتح طلبك لمعرفة السبب وما إذا كان بإمكانك التقديم مرة أخرى.",
-      "declinedCta": "عرض حالة الطلب",
-      "suspendedTitle": "متجرك موقوف",
-      "suspendedBody": "لا يمكنك العرض أو البيع أثناء إيقاف متجرك. لا يزال بإمكانك الاطلاع على طلباتك الحالية ومعالجة المبالغ المستردة والنزاعات.",
-      "suspendedCta": "عرض الطلبات الحالية",
-      "suspendedSupportCta": "تواصل مع الدعم"
-    },
-    "sellerPayments": {
-      "sectionTitle": "الدفع بالبطاقة",
-      "setupRequiredLabel": "الإعداد مطلوب",
-      "setupRequiredBody": "لا يمكن للمشترين الدفع لك بالبطاقة بعد. اربط بيانات التحويل الخاصة بك مع Stripe لبدء قبول المدفوعات بالبطاقة.",
-      "setupRequiredCta": "إعداد المدفوعات",
-      "setupInProgressLabel": "الإعداد قيد التنفيذ",
-      "setupInProgressBody": "لقد بدأت إعداد الدفع بالبطاقة، لكن Stripe لا يزال يحتاج إلى بعض البيانات منك.",
-      "setupInProgressCta": "متابعة الإعداد",
-      "actionRequiredLabel": "مطلوب إجراء",
-      "actionRequiredBody": "يحتاج Stripe إلى شيء منك قبل أن تتمكن من قبول المدفوعات بالبطاقة.",
-      "actionRequiredCta": "إكمال الإعداد",
-      "underReviewLabel": "قيد المراجعة",
-      "underReviewBody": "يراجع Stripe بياناتك. عادةً ما يستغرق ذلك وقتًا قصيرًا ولا يتطلب منك شيئًا.",
-      "readyLabel": "جاهز",
-      "readyBody": "الدفع بالبطاقة مُفعّل. يمكن للمشترين الدفع لك بالبطاقة عند إتمام الشراء.",
-      "restrictedLabel": "مقيّد",
-      "restrictedBody": "قيّد Stripe المدفوعات بالبطاقة على حسابك. افتح Stripe لمعرفة المطلوب.",
-      "restrictedCta": "فتح Stripe",
-      "unavailableLabel": "غير متاح",
-      "unavailableBody": "الدفع بالبطاقة غير متاح على PulseSoc حاليًا. لن تتأثر طرق الدفع الأخرى لديك."
     },
     "business": {
       "title": "الأعمال",
@@ -2750,26 +2499,6 @@
       "upcomingBody": "قيد الإنشاء. ستظهر هنا فور توفرها.",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "هذا الجزء من Business OS ليس له صفحة بعد. عد إلى Business OS لاختيار قسم آخر."
-    },
-    "pulsedrop": {
-      "label": {
-        "trending": "الرائج",
-        "newDrop": "وصل حديثًا",
-        "popular": "شائع",
-        "topPick": "اختيارنا",
-        "discovery": "اكتشف"
-      },
-      "availability": {
-        "unavailable": "لم يعد متاحًا",
-        "notPriced": "السعر غير محدد"
-      },
-      "cta": {
-        "viewProduct": "عرض المنتج"
-      },
-      "seller": {
-        "openSeller": "فتح متجر {{name}}",
-        "visitStore": "زيارة المتجر"
-      }
     }
   },
   "discovery": {
@@ -3247,39 +2976,7 @@
       "reportFailed": "تعذّر إرسال البلاغ.",
       "selectedForFeedComposer": "تم اختيار {{title}} لمُنشئ المنشورات.",
       "selectedForReel": "تم اختيار {{title}} للريل.",
-      "selectedForStatus": "تم اختيار {{title}} للحالة.",
-      "ownerSectionTitle": "أدوات المالك",
-      "ownerManage": "إدارة",
-      "ownerClose": "إغلاق",
-      "ownerLoading": "جارٍ فحص هذا المقطع…",
-      "ownerRetry": "أعد المحاولة",
-      "ownerImpactTitle": "قبل أن تقرر",
-      "ownerImpactUses": "مرفق بـ {{count}} من الريلز والمنشورات والحالات.",
-      "ownerImpactReports": "{{count}} بلاغات مفتوحة.",
-      "ownerCdnCaveat": "الإزالة توقف تقديم الملف من PulseSoc، لكن النسخ المخزّنة على الأجهزة تظل تعمل حتى يُحذف المقطع نهائيًا. الحجر يحذف الملف نفسه.",
-      "ownerLegalHold": "هذا المقطع خاضع لحجز قانوني ولا يمكن حذفه نهائيًا.",
-      "ownerReason": "السبب",
-      "ownerNote": "ملاحظة",
-      "ownerNotePlaceholder": "أضف ملاحظة (مطلوبة مع OTHER ومع أي حذف نهائي)",
-      "ownerActionsTitle": "الإجراءات",
-      "ownerTakedown": "إزالة",
-      "ownerQuarantine": "حجر",
-      "ownerQuarantineHint": "يوقف التشغيل ويحذف الملف المخزَّن. يبقى سجل المقطع وسجله التاريخي.",
-      "ownerRestore": "استعادة",
-      "ownerSchedulePurge": "جدولة الحذف النهائي",
-      "ownerCancelPurge": "إلغاء الحذف النهائي",
-      "ownerPurge": "حذف نهائي",
-      "ownerPurgeExplainer": "الحذف النهائي يزيل الصوت بلا رجعة. تبقى المنشورات والريلز والحالات التي استخدمته، لكن صوتها يصمت.",
-      "ownerStepUpTitle": "كلمة المرور",
-      "ownerStepUpPlaceholder": "أعد إدخال كلمة المرور",
-      "ownerStepUpAction": "أكد هويتك",
-      "ownerStepUpGranted": "تم التأكيد. الحذف النهائي متاح لمدة {{seconds}} ثانية.",
-      "ownerPurgeConfirm": "اكتب {{id}} للتأكيد",
-      "ownerPurgeAction": "احذف نهائيًا",
-      "ownerAuditTitle": "السجل",
-      "ownerAuditEmpty": "لا توجد إجراءات مسجّلة لهذا المقطع.",
-      "ownerApplied": "تم تطبيق {{action}}.",
-      "ownerNoChange": "الحالة كما هي — لم يتغير شيء."
+      "selectedForStatus": "تم اختيار {{title}} للحالة."
     }
   },
   "settings": {
@@ -3317,7 +3014,7 @@
       "signOut": "تسجيل الخروج",
       "signOutSubtitle": "تسجيل الخروج من هذا الجهاز فقط.",
       "signOutConfirmTitle": "تسجيل الخروج من PulseSoc؟",
-      "signOutConfirmBody": "ستبقى مسجّل الدخول على أجهزتك الأخرى، وسيتم حذف المسودات غير المنشورة والوسائط المنزّلة على هذا الجهاز.",
+      "signOutConfirmBody": "ستبقى مسجّل الدخول على أجهزتك الأخرى، وسيتم الاحتفاظ بمسوداتك وتنزيلاتك على هذا الجهاز.",
       "signOutEverywhere": "تسجيل الخروج من جميع الأجهزة",
       "signOutEverywhereSubtitle": "يُنهي كل جلسات PulseSoc، بما فيها هذه الجلسة.",
       "signOutEverywhereConfirmTitle": "تسجيل الخروج من جميع الأجهزة؟",
@@ -3381,11 +3078,6 @@
           "title": "اللغة والمنطقة",
           "subtitle": "لغة التطبيق والترجمة وتنسيق الوقت",
           "keywords": "اللغة language الترجمة translate المنطقة region المنطقة الزمنية timezone تنسيق الوقت 24 ساعة"
-        },
-        "commerce": {
-          "title": "اقتراحات المتجر",
-          "subtitle": "اقتراحات المنتجات، عدد المرات، الإيقاف المؤقت",
-          "keywords": "المتجر السوق اقتراحات توصيات منتجات تسوق الموجز ريلز التكرار إيقاف مؤقت تخصيص تجارة"
         },
         "storage": {
           "title": "التخزين والبيانات",
@@ -3958,16 +3650,7 @@
       "copied": "تم النسخ",
       "share": "مشاركة",
       "unavailable": "رابط الدعوة الخاص بك ليس جاهزًا بعد.",
-      "fairness": "ادعُ أشخاصًا تعرفهم فعلًا. الجودة أهم من العدد.",
-      "message": {
-        "default": "مرحباً! أنا أستخدم PulseSoc. لنتواصل هناك ونبقى على اتصال.\n\nانضم إليّ على PulseSoc:",
-        "casual": "مرحباً — أنا الآن على PulseSoc. تعال وانضم إلينا.\n\nانضم من هنا:",
-        "network": "أبني شبكة علاقاتي على PulseSoc وأودّ أن أتواصل معك هناك.\n\nانضم إليّ على PulseSoc:",
-        "discovery": "على PulseSoc أجد أشخاصاً ومنشورات تستحق المتابعة. أظن أنها ستعجبك.\n\nألقِ نظرة:",
-        "short": "انضم إليّ على PulseSoc:",
-        "handle": "أنا @{{username}} هناك.",
-        "subject": "انضم إليّ على PulseSoc"
-      }
+      "fairness": "ادعُ أشخاصًا تعرفهم فعلًا. الجودة أهم من العدد."
     },
     "missions": {
       "heading": "المهام",
@@ -4798,19 +4481,122 @@
         "UNKNOWN": "غير متاح"
       },
       "features": {
+        "privateFacts": {
+          "label": "المعلومات الخاصة",
+          "hint": "معلومات موثّقة مسجّلة عن شؤونك."
+        },
+        "capitalGraph": {
+          "label": "خريطة رأس المال",
+          "hint": "كيف ترتبط أصولك وكياناتك والتزاماتك."
+        },
+        "privateBriefings": {
+          "label": "الإحاطات الخاصة",
+          "hint": "إحاطات مبنية على سجلاتك أنت."
+        },
         "relationshipIntelligence": {
           "label": "تحليل العلاقات",
           "hint": "الأشخاص والجهات المحيطة بشؤونك."
         },
+        "privateShield": {
+          "label": "الدرع الخاص",
+          "hint": "يراقب أي كشف لمعلوماتك الخاصة."
+        },
+        "breachMonitoring": {
+          "label": "مراقبة التسريبات",
+          "hint": "تنبيهات عند ظهور بياناتك في تسريب معروف."
+        },
+        "documentIntelligence": {
+          "label": "تحليل المستندات",
+          "hint": "يستخرج المعلومات من المستندات التي تقدّمها."
+        },
+        "humanConcierge": {
+          "label": "مساعد شخصي بشري",
+          "hint": "شخص يتولى طلباتك نيابة عنك."
+        },
+        "operations": {
+          "label": "العمليات",
+          "hint": "الالتزامات والقرارات والطلبات والمخاطر والفرص التي تتابعها."
+        },
         "privateMeetings": {
           "label": "الاجتماعات الخاصة",
           "hint": "اجتماعات آمنة مع غرفة انتظار وأدوات تحكم للمضيف."
+        },
+        "privateConversations": {
+          "label": "المحادثات الخاصة",
+          "hint": "محادثات المكتب، مصنّفة ومرتبطة بعملك."
         }
       },
       "entry": {
         "heading": "المكتب الخاص",
         "hint": "مركزك الخاص للمعلومات وإدارة شؤون حياتك.",
         "lockedHint": "مشمول في {{tier}}."
+      },
+      "facts": {
+        "subtitle": "ما سُجِّل لك فقط. لا يُستنتج شيء من نشاطك العلني.",
+        "loading": "جارٍ تحميل سجلاتك…",
+        "why": "كيف تعرف هذا؟",
+        "source": "المصدر",
+        "sourceUnknown": "غير مسجّل",
+        "verified": "التوثيق",
+        "observedLabel": "تاريخ الرصد",
+        "observed": "رُصد في {{date}}",
+        "confidence": "درجة الثقة",
+        "hasDocument": "يوجد مستند مصدر محفوظ.",
+        "close": "إغلاق",
+        "stale": "قديم",
+        "empty": {
+          "title": "لا شيء هنا بعد",
+          "body": "لم تُضَف أي معلومات موثّقة بعد."
+        },
+        "notEntitled": {
+          "title": "يتطلب ترقية",
+          "body": "المعلومات الخاصة مشمولة في {{tier}}.",
+          "bodyGeneric": "المعلومات الخاصة غير مشمولة في خطتك الحالية."
+        },
+        "disabled": {
+          "title": "معطّل مؤقتًا",
+          "body": "المعلومات الخاصة معطّلة حاليًا. سجلاتك كما هي دون مساس."
+        },
+        "notImplemented": {
+          "title": "غير متاح بعد",
+          "body": "لم يُبنَ هذا بعد."
+        },
+        "unavailable": {
+          "title": "غير متاح",
+          "body": "تعذّرت قراءة سجلاتك الآن. حاول مرة أخرى بعد قليل."
+        },
+        "error": {
+          "title": "حدث خطأ ما",
+          "body": "تعذّر تحميل سجلاتك."
+        },
+        "add": {
+          "open": "إضافة معلومة",
+          "title": "تسجيل معلومة",
+          "domain": "المجال",
+          "factType": "نوع المعلومة",
+          "factTypeHint": "مثال: رقم جواز السفر",
+          "valueType": "نوع القيمة",
+          "value": "القيمة",
+          "save": "حفظ",
+          "cancel": "إلغاء",
+          "failed": "تعذّر علينا الحفظ الآن."
+        }
+      },
+      "domains": {
+        "GENERAL": "عام",
+        "FINANCIAL": "مالي",
+        "LEGAL": "قانوني",
+        "HEALTH": "صحي",
+        "FAMILY": "العائلة",
+        "IDENTITY": "الهوية",
+        "SECURITY": "الأمان"
+      },
+      "verification": {
+        "VERIFIED": "موثّق",
+        "SOURCED": "له مصدر",
+        "SELF_REPORTED": "أفدت به بنفسك",
+        "ESTIMATED": "تقديري",
+        "NEEDS_REVIEW": "يحتاج مراجعة"
       },
       "security": {
         "title": "أمان المكتب",
@@ -4907,6 +4693,465 @@
           "failed": "فشلت إعادة التعيين. تحقّق من كلمة المرور وحاول مرة أخرى."
         }
       },
+      "operations": {
+        "title": "العمليات",
+        "subtitle": "الالتزامات والأحداث والقرارات والطلبات والمخاطر والفرص — مسجلة ومتابعة في مكان واحد.",
+        "loading": "جارٍ تحميل سجلاتك…",
+        "cancel": "إلغاء",
+        "save": "حفظ",
+        "move": "نقل",
+        "writeFailed": "لم يتم حفظ هذا التغيير.",
+        "empty": {
+          "title": "لا يوجد شيء مسجل"
+        },
+        "views": {
+          "obligations": "الالتزامات",
+          "events": "الأحداث",
+          "decisions": "القرارات",
+          "requests": "الطلبات",
+          "risks": "المخاطر",
+          "opportunities": "الفرص"
+        },
+        "add": {
+          "obligations": "تسجيل التزام",
+          "events": "تسجيل حدث",
+          "decisions": "تسجيل قرار",
+          "requests": "تسجيل طلب",
+          "risks": "تسجيل خطر",
+          "opportunities": "تسجيل فرصة"
+        },
+        "emptyBody": {
+          "obligations": "لا توجد التزامات مسجلة بعد.",
+          "events": "لا توجد أحداث مسجلة بعد.",
+          "decisions": "لا توجد قرارات مسجلة بعد.",
+          "requests": "لا توجد طلبات مسجلة بعد.",
+          "risks": "لا توجد مخاطر مسجلة بعد.",
+          "opportunities": "لا توجد فرص مسجلة بعد."
+        },
+        "notEntitled": {
+          "title": "الترقية مطلوبة",
+          "body": "العمليات متضمنة مع {{tier}}.",
+          "bodyGeneric": "العمليات غير متضمنة في خطتك الحالية."
+        },
+        "disabled": {
+          "title": "غير متاح",
+          "body": "العمليات متوقفة حاليًا."
+        },
+        "notImplemented": {
+          "title": "قيد الإعداد",
+          "body": "هذا الجزء من مكتبك لا يزال قيد الإعداد."
+        },
+        "unavailable": {
+          "title": "غير متاح",
+          "body": "تعذر الوصول إلى العمليات. سجلاتك لم تتغير."
+        },
+        "error": {
+          "title": "حدث خطأ ما",
+          "body": "تعذر تحميل سجلاتك."
+        },
+        "due": "الاستحقاق {{date}}",
+        "occurred": "وقع في {{date}}",
+        "outcome": "النتيجة: {{outcome}}",
+        "form": {
+          "title": "العنوان",
+          "question": "السؤال",
+          "kind": "النوع",
+          "details": "التفاصيل",
+          "due": "تاريخ الاستحقاق (YYYY-MM-DD)"
+        },
+        "status": {
+          "OPEN": "مفتوح",
+          "RESOLVED": "تمت التسوية",
+          "DISMISSED": "مستبعد",
+          "RECORDED": "مسجل",
+          "UNDER_REVIEW": "قيد المراجعة",
+          "DECIDED": "تم البت",
+          "ABANDONED": "متروك",
+          "IN_PROGRESS": "قيد التنفيذ",
+          "WAITING_ON_USER": "بانتظارك",
+          "WAITING_ON_PROVIDER": "بانتظار المزوّد",
+          "COMPLETED": "مكتمل",
+          "CANCELED": "ملغى",
+          "MONITORING": "قيد المتابعة",
+          "MITIGATED": "تم التخفيف",
+          "ACCEPTED": "مقبول",
+          "NEW": "جديد",
+          "REVIEWING": "قيد التقييم",
+          "INTERESTED": "مهتم",
+          "PASSED": "مستبعدة",
+          "CLOSED": "مغلقة",
+          "OVERDUE": "متأخر",
+          "DUE_SOON": "يستحق قريبًا"
+        },
+        "overview": {
+          "heading": "نظرة عامة",
+          "loading": "جارٍ تحميل نظرتك العامة…",
+          "unavailable": "تعذّر تحميل نظرتك العامة. هذه ليست أصفارًا.",
+          "needsAttention": "يحتاج إلى انتباهك",
+          "dueToday": "مستحق اليوم",
+          "overdue": "متأخر",
+          "pendingDecisions": "قرارات معلّقة",
+          "dueThisWeek": "مستحق هذا الأسبوع",
+          "highRisks": "مخاطر عالية",
+          "openRequests": "طلبات مفتوحة",
+          "awaitingResponse": "بانتظار ردّك",
+          "opportunities": "الفرص",
+          "recentlyCompleted": "أُنجز مؤخرًا",
+          "recentWindow": "آخر {{days}} يومًا",
+          "queue": "قائمة الانتباه",
+          "queueEmpty": "لا شيء يحتاج إلى انتباهك.",
+          "truncated": "عرض {{shown}} من {{total}}.",
+          "notTracked": "غير متتبَّع",
+          "reason": {
+            "OVERDUE": "متأخر",
+            "HIGH_RISK": "خطر عالٍ",
+            "DUE_SOON": "يستحق قريبًا",
+            "RESPONSE_REQUIRED": "يحتاج إلى ردّك",
+            "MISSING_REQUIRED_CONTEXT": "يحتاج إلى مراجعة",
+            "DECISION_REQUIRED": "قرار مفتوح",
+            "BLOCKED": "بانتظار المزوّد"
+          },
+          "expiringOpportunities": "فرص تنتهي قريبًا"
+        }
+      },
+      "capital": {
+        "title": "مخطط رأس المال",
+        "subtitle": "ما تملكه وما يغطيه وكيف يترابط — مع مدى موثوقية كل جزء.",
+        "loading": "جارٍ تحميل مخططك…",
+        "views": {
+          "coverage": "التغطية",
+          "documents": "المستندات",
+          "holdings": "الممتلكات",
+          "obligations": "الالتزامات",
+          "overview": "نظرة عامة",
+          "structure": "الهيكل",
+          "cash_flow": "التدفقات الخارجة",
+          "exposure": "التركّز"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "{{count}} حتى الآن",
+        "factCount": "{{count}} حقيقة مسجلة",
+        "empty": {
+          "title": "لا يوجد شيء مسجل",
+          "openPortfolio": "فتح المحفظة"
+        },
+        "emptyBody": {
+          "holdings": "لا توجد أصول مسجلة بعد. الأصول التي تضيفها إلى محفظتك ستظهر هنا وستتصل تلقائيًا بمخطط رأس المال الخاص بك.",
+          "coverage": "لا توجد تغطية مسجلة بعد.",
+          "structure": "لا يوجد هيكل مسجل بعد.",
+          "documents": "لا توجد مستندات رأس مال متصلة بعد."
+        },
+        "denied": {
+          "title": "غير معروض",
+          "body": "لم تتم الإجابة عن هذا السؤال."
+        },
+        "notFound": {
+          "title": "غير موجود",
+          "body": "لا يوجد كيان بهذا الاسم في مكتبك."
+        },
+        "notEntitled": {
+          "title": "الترقية مطلوبة",
+          "body": "مخطط رأس المال متضمن مع {{tier}}.",
+          "bodyGeneric": "مخطط رأس المال غير متضمن في خطتك الحالية."
+        },
+        "disabled": {
+          "title": "غير متاح",
+          "body": "مخطط رأس المال متوقف حاليًا."
+        },
+        "notImplemented": {
+          "title": "قيد الإعداد",
+          "body": "هذا الجزء من مكتبك لا يزال قيد الإعداد."
+        },
+        "unavailable": {
+          "title": "غير متاح",
+          "body": "تعذر الوصول إلى مخططك. سجلاتك لم تتغير."
+        },
+        "error": {
+          "title": "حدث خطأ ما",
+          "body": "تعذر تحميل مخططك."
+        },
+        "conflicts": {
+          "title": "معلومات متضاربة",
+          "disagree": "مصدران متعارضان"
+        },
+        "stale": {
+          "title": "تجاوز أفق الحداثة",
+          "age": "{{days}} يومًا"
+        },
+        "truth": {
+          "KNOWN": "معروف",
+          "INFERRED": "مستنتج",
+          "ESTIMATED": "مقدّر",
+          "STALE": "قديم",
+          "MISSING": "مفقود",
+          "CONFLICTING": "متضارب",
+          "PRO_REVIEW": "بحاجة إلى مراجعة"
+        },
+        "nodeType": {
+          "PERSON": "شخص",
+          "BUSINESS": "شركة",
+          "PROPERTY": "عقار",
+          "INSURANCE_POLICY": "وثيقة تأمين",
+          "CONTRACT": "عقد",
+          "DOCUMENT": "مستند",
+          "PROFESSIONAL": "مختص",
+          "ASSET": "أصل",
+          "LIABILITY": "التزام مالي"
+        },
+        "entity": {
+          "relationships": "العلاقات",
+          "facts": "الحقائق المسجلة",
+          "updated": "آخر تحديث {{date}}"
+        },
+        "relationshipsUnavailable": "تعذر تحميل العلاقات في الوقت الحالي.",
+        "portfolio": {
+          "title": "المحفظة",
+          "subtitle": "محفظتك في PulseSoc، منعكسة في مخططك. عدّل حيازاتك في المحفظة — التغييرات تصل إلى هنا تلقائيًا.",
+          "totalValue": "القيمة الإجمالية",
+          "partial": "{{priced}} من {{total}} من الحيازات لها سعر",
+          "lots_zero": "لا دفعات",
+          "lots_one": "دفعة واحدة",
+          "lots_two": "دفعتان",
+          "lots_few": "{{count}} دفعات",
+          "lots_many": "{{count}} دفعة",
+          "lots_other": "{{count}} دفعة",
+          "priceUnavailable": "السعر غير متاح",
+          "manualSource": "يدوي · من محفظتك",
+          "updatedSeconds": "تم تحديث الأسعار قبل {{count}} ث",
+          "updatedMinutes": "تم تحديث الأسعار قبل {{count}} د",
+          "updatedStale": "قد تكون الأسعار قديمة",
+          "sourceUnavailable": "الأسعار المباشرة غير متصلة حاليًا",
+          "syncPending_zero": "لا توجد تغييرات قيد المزامنة",
+          "syncPending_one": "جارٍ مزامنة تغيير واحد في المحفظة…",
+          "syncPending_two": "جارٍ مزامنة تغييرين في المحفظة…",
+          "syncPending_few": "جارٍ مزامنة {{count}} تغييرات في المحفظة…",
+          "syncPending_many": "جارٍ مزامنة {{count}} تغييرًا في المحفظة…",
+          "syncPending_other": "جارٍ مزامنة {{count}} تغيير في المحفظة…",
+          "syncFailed": "فشلت مزامنة حديثة — يُعرض آخر تحديث ناجح.",
+          "unpriced": "لا يوجد سعر مباشر لـ {{symbols}}. الإجماليات تغطي بقية حيازاتك فقط.",
+          "empty": "لا توجد حيازات في محفظتك بعد.",
+          "unavailable": "تعذر تحميل محفظتك الآن.",
+          "basisUnknown": "تكلفة الشراء غير مسجلة",
+          "pricedValue": "قيمة المحفظة المسعّرة",
+          "valueUnavailable": "لا توجد أصول مسعّرة بعد",
+          "excludesUnpriced": "الأصول غير المسعّرة مستبعدة: {{count}}",
+          "pnlLabel": "الربح غير المحقق",
+          "pnlUnavailable": "غير متاح",
+          "basisLabel": "تكلفة الشراء",
+          "basisPartial": "معروفة لـ {{known}} من {{total}}",
+          "holdingsLabel": "الأصول",
+          "allocationTitle": "التوزيع",
+          "allocationPricedOnly": "الأصول المسعّرة فقط",
+          "excludedFromTotal": "مستبعد من إجمالي المحفظة",
+          "qualityPriced": "مسعّرة {{priced}}/{{total}}",
+          "qualityBasis": "التكلفة معروفة {{known}}/{{total}}",
+          "unavailableTitle": "المحفظة غير متاحة",
+          "fresh": {
+            "live": "مباشر",
+            "fresh": "حديث",
+            "delayed": "متأخر",
+            "stale": "قديم",
+            "unavailable": "لا يوجد مصدر أسعار"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "تغطية المحفظة",
+          "pricing": "{{priced}} من {{total}} أصلًا مسعّرة",
+          "basis": "{{known}} من {{total}} بتكلفة شراء معروفة",
+          "factsTitle": "التحقق من البيانات",
+          "knownShare": "البيانات المؤكدة: {{pct}}",
+          "documentBacked": "بيانات مدعومة بمستندات: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "العلاقات",
+          "noRelationships": "لا توجد علاقات مسجلة بعد."
+        },
+        "relation": {
+          "OWNS": "يمتلك",
+          "ADVISED_BY": "بمشورة",
+          "COVERED_BY": "مغطى بواسطة",
+          "SECURED_BY": "مضمون بواسطة",
+          "GOVERNED_BY": "خاضع لـ",
+          "DESCRIBES": "يصف"
+        },
+        "documents": {
+          "evidenceTitle": "الأدلة المتصلة"
+        },
+        "overview": {
+          "assets": "الأصول المُسعَّرة",
+          "complete": "مكتمل",
+          "concentrationTitle": "أكبر المراكز",
+          "concentrationUnranked": "المراكز الأصغر غير مدرجة هنا.",
+          "coverageTitle": "التغطية",
+          "dimension": {
+            "pricing": "التسعير",
+            "cost_basis": "تكلفة الاقتناء",
+            "liability_amounts": "مبالغ الالتزامات",
+            "evidence": "المستندات"
+          },
+          "dimensionCount": "{{known}} من {{total}}",
+          "disclaimerBody": "يقارن هذا الأصول المُسعَّرة بالالتزامات المُحدَّدة. وكل ما تعذَّر تسعيره أو تحديده مستبعَد.",
+          "disclaimerTitle": "ليس رقم صافي الثروة",
+          "excludedForeignCurrency": "التزامات بعملة أخرى",
+          "excludedTitle": "مستبعَد من هذا الرقم",
+          "excludedUnpricedAssets": "أصول بلا سعر",
+          "excludedUnquantifiedLiabilities": "التزامات بلا مبلغ",
+          "excludedUnspecifiedCurrency": "التزامات بلا عملة",
+          "liabilities": "الالتزامات المُحدَّدة",
+          "liabilityConcentrationTitle": "أكبر الالتزامات",
+          "noLiabilities": "لا توجد التزامات مسجَّلة. وهذا لا يعني عدم وجود مستحقات.",
+          "notSummable": "لا توجد عملة واحدة، لذلك لا يُعرض أي إجمالي.",
+          "otherCurrencies": "عملات أخرى",
+          "partial": "جزئي",
+          "quantifiedOf": "المحدَّدة {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "تعذّر تسعير بعض الأصول.",
+            "incomplete_portfolio": "إجمالي المحفظة نفسه غير مكتمل.",
+            "unquantified_liabilities": "بعض الالتزامات لا يوجد لها مبلغ مسجّل.",
+            "uncomparable_currency": "بعض الالتزامات بعملة لا يمكن مقارنتها.",
+            "liabilities_truncated": "توجد التزامات أكثر مما تمت قراءته.",
+            "no_liabilities_recorded": "لا يوجد أي التزام مسجّل."
+          },
+          "reviewMore": "لا تُعرض هنا عناصر أخرى.",
+          "reviewTitle": "يحتاج مراجعة",
+          "shareUnknown": "الحصة غير معروفة",
+          "title": "صافي المركز",
+          "unscoreable": "لا شيء للتقييم",
+          "withheld": "غير مذكور"
+        },
+        "obligations": {
+          "amountMissing": "لا يوجد مبلغ مسجّل",
+          "complete": "كل المبالغ مسجّلة",
+          "currenciesTitle": "حسب العملة",
+          "disclaimerBody": "هذا مجموع الالتزامات التي سجّلتها، وليس كل ما هو مستحق عليك.",
+          "disclaimerTitle": "ما الذي يمثّله هذا المجموع",
+          "dueLabel": "الاستحقاق",
+          "dueMissing": "لا يوجد تاريخ استحقاق مسجّل",
+          "evidenceLabel": "الوقائع الداعمة",
+          "evidenceMissing": "لا توجد وقائع داعمة مسجّلة",
+          "none": "لا يوجد أي التزام مسجّل. وهذا لا يعني عدم وجود ما هو مستحق.",
+          "notProjected": "لم تُعَد بناء هذه القائمة من سجل البيانات.",
+          "notSummable": "لا توجد عملة واحدة، لذا لا يُعرض أي إجمالي.",
+          "partial": "بعض المبالغ ناقصة",
+          "projectedLabel": "أُعيد بناؤها من السجلات",
+          "quantifiedLabel": "بمبلغ مسجّل",
+          "recordedLabel": "الالتزامات المسجّلة",
+          "retiredLabel": "مُنهاة",
+          "skippedLabel": "متجاوَزة",
+          "staleTitle": "لم يُحدَّث مؤخرًا",
+          "syncTitle": "الإسقاط",
+          "title": "الإجمالي المحدَّد",
+          "truncated": "توجد التزامات أكثر مما هو معروض هنا.",
+          "unquantifiedLabel": "بدون مبلغ مسجّل",
+          "unspecifiedCurrency": "مبلغ مسجّل بدون عملة",
+          "withheld": "غير مذكور"
+        },
+        "cashFlow": {
+          "title": "التدفقات الخارجة المجدولة",
+          "complete": "كل ما هو مسجّل مُجدوَل",
+          "partial": "بعض الالتزامات خارج الجدول",
+          "withheld": "غير مذكور",
+          "notSummable": "لا توجد عملة واحدة، لذا لا يُعرض أي إجمالي.",
+          "outflowsTitle": "ما الذي يمثّله هذا الجدول",
+          "notProjected": "لم يُعَد بناء هذا الجدول من سجل البيانات.",
+          "scheduledLabel": "مجدولة",
+          "seenLabel": "التزامات جرت مراجعتها",
+          "excludedLabel": "خارج الحساب",
+          "noneScheduled": "لا شيء ممّا سجّلته يستحق في تاريخ نعرفه. وهذا لا يعني أنه لا شيء مستحق عليك.",
+          "truncated": "توجد التزامات أكثر مما هو معروض هنا.",
+          "mixedCurrency": "{{count}} بعملة لا يذكرها هذا الإجمالي، فاستُبعدت منه.",
+          "bucketsTitle": "حسب موعد الاستحقاق",
+          "bucketCountLabel": "الالتزامات",
+          "bucketMissing": "غير مُبلَّغ عنه",
+          "bucketUndeclared": "فترة غير موصوفة",
+          "bucketBefore": "حتى {{to}} يومًا",
+          "bucketDueNow": "مستحق الآن أو متأخر",
+          "bucketAfter": "أكثر من {{from}} يومًا",
+          "bucketBetween": "{{from}}–{{to}} يومًا",
+          "excludedTitle": "خارج كل الفترات",
+          "excludedBody": "هذه الالتزامات حقيقية. لا تظهر في أي فترة أعلاه لأن ما يلزم لتحديد موضعها لم يُسجَّل.",
+          "undated": "لا يوجد تاريخ استحقاق مسجّل",
+          "unquantified": "لا يوجد مبلغ مسجّل",
+          "undatedAndUnquantified": "لا تاريخ ولا مبلغ مسجّل",
+          "amountMissing": "لا يوجد مبلغ مسجّل",
+          "unspecifiedCurrency": "مبلغ مسجّل بدون عملة",
+          "dueLabel": "الاستحقاق",
+          "dueMissing": "لا يوجد تاريخ استحقاق مسجّل",
+          "overdue": "متأخرة",
+          "evidenceLabel": "الوقائع الداعمة",
+          "evidenceMissing": "لا توجد وقائع داعمة مسجّلة",
+          "syncTitle": "الإسقاط",
+          "projectedLabel": "أُعيد بناؤها من السجلات",
+          "skippedLabel": "متجاوَزة"
+        },
+        "exposure": {
+          "basisTitle": "أساس الترتيب",
+          "complete": "مكتمل",
+          "partial": "جزئي",
+          "withheld": "غير مذكور",
+          "noBasis": "لا يوجد إجمالي للترتيب عليه",
+          "basis": {
+            "priced_asset_value": "قيمة الأصول المسعّرة",
+            "quantified_liability_amount": "مبلغ الالتزامات المحددة"
+          },
+          "pricedOf": "{{priced}} من {{total}} حيازة مسعّرة",
+          "pricingCoverage": "تغطية التسعير",
+          "dimensionCount": "{{known}} من {{total}}",
+          "pricingUnknown": "لا يمكن تقييم تغطية التسعير",
+          "blindSpotTitle": "خارج هذا الترتيب",
+          "blindSpotBody": "هذه الحيازات بلا سعر، لذا فهي غائبة عن الترتيب لا في آخره. أي منها قد يفوق الصف الأول.",
+          "unpricedUnnamed": "بلا سعر وبلا اسم",
+          "pricesUnavailable": "تعذّرت قراءة الأسعار الحية، لذا هذا الترتيب ليس حديثاً.",
+          "readAt": "قُرئ في",
+          "assetsTitle": "أين المال المسعّر",
+          "shareUnknown": "النسبة غير مذكورة",
+          "sharesOfPriced": "النسب من الإجمالي المسعّر أعلاه، لا من كل ما هو مسجّل.",
+          "unrankedTail": "مسعّرة لكن غير مرتّبة",
+          "basisMismatch": "عدد المرتَّب وغير المرتَّب لا يساوي عدد الحيازات المسعّرة، لذا قد لا يكون هذا الترتيب على الإجمالي المعروض أعلاه.",
+          "rankedMismatch": "عدد المرتَّب لدى الخادم لا يطابق الصفوف التي أرسلها.",
+          "noHoldings": "لا توجد حيازات مسجّلة، فلا شيء لترتيبه. وهذا ليس كعدم امتلاك شيء.",
+          "nonePriced": "توجد حيازات مسجّلة لكن لا سعر لأي منها، فلا ترتيب ممكن.",
+          "pricedButUnrankable": "الحيازات المسعّرة لا تكوّن إجمالياً يمكن الترتيب عليه.",
+          "liabilitiesTitle": "أين الدَّين المحدد",
+          "liabilitiesGrouped": "مجمّع حسب نوع الالتزام، لا حسب الدائن.",
+          "noLiabilities": "لا توجد التزامات مسجّلة. وهذا ليس كعدم وجود دَين.",
+          "noneQuantified": "لا التزام له مبلغ مسجّل، فلا يمكن ترتيب أي منها.",
+          "quantifiedOf": "{{done}} من {{total}} التزاماً محدداً",
+          "excludedTitle": "مستبعد من هذا الترتيب",
+          "excludedUnquantified": "لا مبلغ مسجّل",
+          "excludedForeignCurrency": "عملة أخرى",
+          "excludedUnspecifiedCurrency": "لا عملة مذكورة",
+          "otherCurrencies": "مُنحّى جانباً، حسب العملة",
+          "liabilitiesTruncated": "قائمة الالتزامات مقتطعة، فقد يوجد أكثر مما رُتّب.",
+          "unmeasuredTitle": "ما لا تقيسه هذه العلامة",
+          "unmeasuredBody": "لا شيء في السجل يوثّق هذه، فهي غائبة هنا لا خالية من المخاطر. صمتها ليس طمأنة.",
+          "unmeasured": {
+            "counterparty": "التركّز حسب الطرف المقابل",
+            "custodian": "التركّز حسب الحافظ ومكان التداول",
+            "geography": "التركّز الجغرافي",
+            "sector": "التركّز القطاعي",
+            "assetCurrency": "عملة الأصول نفسها"
+          }
+        }
+      },
+      "attention": {
+        "title": "يتطلب انتباهك",
+        "none": "لا شيء يتطلب انتباهك الآن.",
+        "unavailable": "تعذّر علينا التحقق مما يتطلب انتباهك الآن."
+      },
+      "quick": {
+        "title": "إجراءات سريعة",
+        "record": "تسجيل شيء ما",
+        "addFact": "إضافة معلومة"
+      },
+      "valueTypes": {
+        "STRING": "نص",
+        "NUMBER": "رقم",
+        "MONEY": "مبلغ",
+        "PERCENT": "نسبة مئوية",
+        "DATE": "تاريخ",
+        "BOOLEAN": "نعم أو لا"
+      },
       "feature": {
         "loading": "جارٍ التحقق من هذه الميزة…",
         "retry": "إعادة المحاولة",
@@ -4930,6 +5175,35 @@
         "error": {
           "title": "حدث خطأ ما",
           "body": "تعذّر التحميل."
+        }
+      },
+      "documents": {
+        "subtitle": "يقرأ معلومات من المستندات التي تقدّمها. لا يُسجَّل شيء دون مراجعتك.",
+        "upload": "رفع مستند",
+        "uploading": "جارٍ الرفع…",
+        "duplicate": {
+          "title": "محفوظ مسبقًا",
+          "body": "لقد رفعت هذا الملف نفسه من قبل. تم الاحتفاظ بالنسخة الموجودة."
+        },
+        "uploadFailed": "فشل الرفع",
+        "reviewFailed": "فشلت المراجعة",
+        "empty": {
+          "title": "لا مستندات بعد",
+          "body": "المستندات التي ترفعها تظهر هنا مع ما قُرئ منها."
+        },
+        "states": {
+          "EXTRACTED": "تمت القراءة",
+          "NO_CLAIMS": "لا شيء لاستخراجه",
+          "PROVIDER_REQUIRED": "بانتظار مزوّد",
+          "FAILED": "تعذّرت القراءة"
+        },
+        "claims": {
+          "title": "معلومات مقترحة",
+          "none": "لم تُقترح أي معلومات من هذا المستند.",
+          "accept": "قبول",
+          "reject": "رفض",
+          "ACCEPTED": "مقبولة",
+          "REJECTED": "مرفوضة"
         }
       },
       "people": {
@@ -4959,6 +5233,127 @@
         "openCommitments_few": "{{count}} التزامات مفتوحة",
         "openCommitments_many": "{{count}} التزامًا مفتوحًا"
       },
+      "briefings": {
+        "subtitle": "إحاطات تُجمَع من سجلاتك الخاصة. لا يُضاف شيء من الخارج.",
+        "generate": "إعداد إحاطة",
+        "generating": "جارٍ الإعداد…",
+        "generateFailed": "تعذّر إعداد الإحاطة",
+        "itemCount_one": "{{count}} عنصر",
+        "itemCount_other": "{{count}} عناصر",
+        "noItems": "هذه الإحاطة فارغة — لم يكن في سجلاتك ما يُذكر.",
+        "empty": {
+          "title": "لا إحاطات بعد",
+          "body": "أعِدّ واحدة وستُجمَع من سجلاتك في تلك اللحظة."
+        },
+        "sections": {
+          "PEOPLE": "أشخاص",
+          "OBLIGATIONS": "التزامات",
+          "EVENTS": "أحداث",
+          "DECISIONS": "قرارات",
+          "REQUESTS": "طلبات",
+          "RISKS": "مخاطر",
+          "OPPORTUNITIES": "فرص"
+        },
+        "itemCount_zero": "لا توجد عناصر",
+        "itemCount_two": "عنصران",
+        "itemCount_few": "{{count}} عناصر",
+        "itemCount_many": "{{count}} عنصرًا"
+      },
+      "shield": {
+        "subtitle": "يفحص سجلاتك الخاصة بحثًا عن انكشاف. لا يرى إلا ما هو مذكور أدناه.",
+        "openFindings_one": "{{count}} نتيجة مفتوحة",
+        "openFindings_other": "{{count}} نتائج مفتوحة",
+        "severity": {
+          "HIGH": "مرتفعة",
+          "MEDIUM": "متوسطة",
+          "LOW": "منخفضة"
+        },
+        "scan": "تشغيل فحص",
+        "scanning": "جارٍ الفحص…",
+        "scanFailed": "تعذّر تشغيل الفحص",
+        "checksTitle": "ما الذي يُفحص",
+        "checksHint": "«لا نتائج» تعني لا شيء ضمن الفحوصات المذكورة هنا — لا أكثر.",
+        "externalTitle": "غير مفحوص خارجيًا",
+        "externalMonitored": "يراقبه مزوّد خارجي",
+        "externalNotMonitored": "لا يراقبه أي مزوّد خارجي",
+        "empty": {
+          "title": "لا نتائج مفتوحة",
+          "body": "لم يُعثر على شيء في الفحوصات المذكورة أعلاه. هذا كل ما يعنيه الأمر."
+        },
+        "status": {
+          "OPEN": "مفتوحة",
+          "ACKNOWLEDGED": "تم الاطلاع",
+          "RESOLVED": "معالجة",
+          "DISMISSED": "مستبعدة"
+        },
+        "acknowledge": "الاطلاع",
+        "resolve": "وضع علامة معالجة",
+        "dismiss": "استبعاد",
+        "updateFailed": "تعذّر التحديث",
+        "openFindings_zero": "لا توجد نتائج مفتوحة",
+        "openFindings_two": "نتيجتان مفتوحتان",
+        "openFindings_few": "{{count}} نتائج مفتوحة",
+        "openFindings_many": "{{count}} نتيجة مفتوحة"
+      },
+      "concierge": {
+        "subtitle": "مكتب لطلبات يتولاها إنسان. كل ردّ هنا كتبه شخص.",
+        "newRequest": "طلب جديد",
+        "submitFailed": "تعذّر الإرسال",
+        "sendFailed": "تعذّر إرسال الرسالة",
+        "cancelFailed": "تعذّر الإلغاء",
+        "cancelRequest": "إلغاء هذا الطلب",
+        "empty": {
+          "title": "لا طلبات بعد",
+          "body": "الطلبات التي تقدّمها تظهر هنا مع سجلها الكامل."
+        },
+        "desk": {
+          "staffed_one": "{{count}} مشغّل في الخدمة",
+          "staffed_other": "{{count}} مشغّلين في الخدمة",
+          "unstaffed": "لا يوجد مشغّل في الخدمة",
+          "staffed_zero": "لا يوجد مشغّلون في الخدمة",
+          "staffed_two": "مشغّلان في الخدمة",
+          "staffed_few": "{{count}} مشغّلين في الخدمة",
+          "staffed_many": "{{count}} مشغّلًا في الخدمة"
+        },
+        "form": {
+          "title": "ما الذي تحتاجه؟",
+          "description": "تفاصيل (اختياري)",
+          "category": "الفئة",
+          "priority": "الأولوية",
+          "submit": "إرسال",
+          "cancel": "إلغاء"
+        },
+        "categories": {
+          "GENERAL": "عام",
+          "TRAVEL": "سفر",
+          "LEGAL": "قانوني",
+          "FINANCIAL": "مالي",
+          "PERSONAL": "شخصي",
+          "RESEARCH": "بحث",
+          "ADMIN": "إداري"
+        },
+        "priorities": {
+          "LOW": "منخفضة",
+          "NORMAL": "عادية",
+          "HIGH": "مرتفعة",
+          "URGENT": "عاجلة"
+        },
+        "statusWords": {
+          "OPEN": "مفتوح",
+          "IN_PROGRESS": "قيد التنفيذ",
+          "WAITING_ON_USER": "بانتظارك",
+          "WAITING_ON_PROVIDER": "بانتظار مزوّد",
+          "COMPLETED": "مكتمل",
+          "CANCELED": "ملغى"
+        },
+        "thread": {
+          "none": "لا رسائل بعد.",
+          "operator": "المشغّل",
+          "you": "أنت",
+          "placeholder": "اكتب رسالة…",
+          "send": "إرسال"
+        }
+      },
       "meetings": {
         "subtitle": "اجتماعات آمنة على خطك الخاص. غرفة الانتظار وأدوات تحكم المضيف يفرضها الخادم، وليس الشاشة.",
         "instant": "بدء اجتماع فوري",
@@ -4974,11 +5369,8 @@
         "scheduleFailed": "تعذّرت الجدولة",
         "startFailed": "تعذّر البدء",
         "cancelFailed": "تعذّر الإلغاء",
-        "rescheduleFailed": "تعذّرت إعادة الجدولة",
         "start": "بدء",
         "cancel": "إلغاء",
-        "reschedule": "إعادة الجدولة",
-        "saveChanges": "حفظ التغييرات",
         "untitled": "اجتماع",
         "details": "تفاصيل {{title}}",
         "liveNow": "مباشر الآن",
@@ -4988,28 +5380,10 @@
         "durationMinutes_few": "{{count}} دقائق",
         "durationMinutes_many": "{{count}} دقيقة",
         "durationMinutes_other": "{{count}} دقيقة",
-        "confirmed": {
-          "title": "تم جدولة الاجتماع",
-          "when": "الموعد",
-          "duration": "المدة",
-          "guests": "المدعوون",
-          "guestsNone": "لم تتم دعوة أحد بعد. يمكنك دعوة أشخاص من داخل الاجتماع نفسه.",
-          "memberFallback": "العضو {{id}}",
-          "someone": "أحد ضيوفك",
-          "reminders": "التذكيرات",
-          "remindersNone": "لا توجد تذكيرات مجدولة لهذا الاجتماع.",
-          "reminderSkipped": "الوقت غير كافٍ لإرساله",
-          "meetingId": "معرّف الاجتماع",
-          "meetingCode": "رمز الدعوة",
-          "done": "تم",
-          "skipped": {
-            "emailRequired": "لم تتم الدعوة — لا يوجد عنوان بريد إلكتروني",
-            "emailInvalid": "لم تتم الدعوة — هذا العنوان غير صالح للاستخدام",
-            "tooMany": "لم تتم الدعوة — عدد الضيوف كبير جدًا لاجتماع واحد",
-            "isHost": "موجود بالفعل — أنت المضيف",
-            "alreadyIn": "موجود بالفعل في هذا الاجتماع",
-            "unavailable": "تعذّرت دعوته"
-          }
+        "presets": {
+          "in15m": "بعد {{minutes}} دقيقة",
+          "in1h": "بعد {{hours}} ساعة",
+          "tomorrowMorning": "غدًا الساعة {{time}}"
         },
         "buckets": {
           "live": "يحدث الآن",
@@ -5118,57 +5492,82 @@
             "feature_disabled": "تم إيقاف الاجتماعات أثناء اتصالك.",
             "generic": "انتهى الاجتماع."
           }
+        }
+      },
+      "conversations": {
+        "title": "المحادثات الخاصة",
+        "subtitle": "محادثات المكتب، مصنّفة ومرتبطة بالعمل الذي تنتمي إليه.",
+        "unread": "غير مقروءة",
+        "archived": "مؤرشفة",
+        "filters": {
+          "all": "الكل"
         },
-        "calendar": {
-          "browse": "تصفح التقويم",
-          "previousMonth": "الشهر السابق",
-          "nextMonth": "الشهر التالي",
-          "pickMonth": "اختر شهرًا",
-          "pickYear": "اختر سنة",
-          "jumpToYear": "الانتقال إلى سنة",
-          "today": "اليوم",
-          "close": "إغلاق",
-          "loadFailed": "تعذر تحميل هذا الشهر. أعد المحاولة أو انتقل إلى شهر آخر.",
-          "noneOnDay": "لا يوجد شيء مجدول في هذا اليوم.",
-          "dayWithMeetings_zero": "{{day}}، {{count}} اجتماع",
-          "dayWithMeetings_one": "{{day}}، اجتماع واحد",
-          "dayWithMeetings_two": "{{day}}، اجتماعان",
-          "dayWithMeetings_few": "{{day}}، {{count}} اجتماعات",
-          "dayWithMeetings_many": "{{day}}، {{count}} اجتماعًا",
-          "dayWithMeetings_other": "{{day}}، {{count}} اجتماع"
+        "scopes": {
+          "DIRECT": "مباشرة",
+          "GROUP": "مجموعة",
+          "ORGANIZATION_ROOM": "غرفة المؤسسة",
+          "PROJECT_ROOM": "غرفة المشروع"
         },
-        "wizard": {
-          "steps": {
-            "date": "اختر تاريخًا",
-            "time": "اختر وقتًا",
-            "zone": "أكّد المنطقة الزمنية",
-            "duration": "كم المدة؟",
-            "details": "العنوان وجدول الأعمال",
-            "guests": "من سيحضر؟",
-            "review": "المراجعة"
-          },
-          "timeHint": "الوقت كما سيُقرأ في المكان الذي يُعقد فيه الاجتماع.",
-          "zoneHint": "الجميع مدعوون إلى اللحظة نفسها. المنطقة الزمنية هي التي تحدد أي لحظة هي.",
-          "zoneUnknown": "لم يُبلّغ هذا الجهاز عن منطقة زمنية، لذا سيُقرأ الاجتماع بتوقيت UTC.",
-          "looksPast": "بحسب ساعة هذا الجهاز مضى هذا الوقت. القرار النهائي للخادم.",
-          "customDuration": "مدة مخصصة بالدقائق",
-          "durationRange": "اختر بين {{min}} و {{max}} دقيقة.",
-          "agendaField": "جدول الأعمال (اختياري)",
-          "inviteLater": "يمكنك دعوة الأشخاص بعد إنشاء الاجتماع.",
-          "guestsHint": "يتلقى كل شخص هنا الدعوة والتذكيرات. لا يحتاجون إلى حساب PulseSoc.",
-          "guestsNone": "لا يوجد ضيوف بعد. يمكنك إضافتهم الآن أو دعوة أشخاص لاحقًا.",
-          "guestsNoneShort": "لا أحد بعد",
-          "guestName": "الاسم الكامل (اختياري)",
-          "guestEmail": "عنوان البريد الإلكتروني",
-          "addGuest": "إضافة ضيف",
-          "updateGuest": "تحديث الضيف",
-          "editGuest": "تعديل {{name}}",
-          "removeGuest": "إزالة {{name}}",
-          "remove": "إزالة",
-          "guestEmailInvalid": "أضف عنوان بريد إلكتروني حتى نتمكن من إرسال الدعوة.",
-          "guestDuplicate": "هذا العنوان موجود بالفعل في القائمة.",
-          "back": "رجوع",
-          "next": "التالي"
+        "empty": {
+          "title": "لا توجد محادثات خاصة بعد",
+          "body": "تظهر هنا المحادثات المصنّفة كمحادثات مكتب مع نطاقها وروابطها."
+        },
+        "create": {
+          "open": "محادثة جديدة",
+          "failed": "تعذّر إنشاء المحادثة",
+          "boundScopeNote": "تُنشأ غرف المؤسسة والمشروع من عقدة المؤسسة أو المشروع الذي تنتمي إليه."
+        },
+        "sensitivity": {
+          "title": "درجة الحساسية",
+          "note": "تحدّد كيفية التعامل مع هذه المحادثة ومع من يمكن مشاركتها. ولا تغيّر طريقة نقل الرسائل.",
+          "failed": "تعذّر تغيير درجة الحساسية",
+          "unknownLabel": "درجة الحساسية المحفوظة",
+          "PUBLIC": "عامة",
+          "INTERNAL": "داخلية",
+          "CONFIDENTIAL": "سرّية",
+          "HIGHLY_SENSITIVE": "شديدة الحساسية",
+          "RESTRICTED": "مقيّدة"
+        },
+        "links": {
+          "title": "الروابط",
+          "note": "الرابط مجرد إشارة. إزالته لا تحذف المستند أو السجل أو المعلومة أو الاجتماع الذي يشير إليه.",
+          "empty": "لا يوجد شيء مرتبط بهذه المحادثة بعد.",
+          "remove": "إزالة الرابط",
+          "failed": "تعذّر تغيير الروابط"
+        },
+        "linkTypes": {
+          "DOCUMENT": "مستند",
+          "RECORD": "سجل",
+          "FACT": "معلومة",
+          "MEETING": "اجتماع",
+          "ORGANIZATION_NODE": "المؤسسة",
+          "PROJECT": "مشروع"
+        },
+        "security": {
+          "title": "الأمان",
+          "notEncrypted": "الرسائل محمية أثناء النقل وبواسطة التحكم في الوصول على الخادم. وهي ليست مشفّرة من طرف إلى طرف، لذا يمكن للخادم قراءتها.",
+          "encrypted": "الرسائل في هذه المحادثة مشفّرة من طرف إلى طرف.",
+          "ledger": "مخزن الرسائل",
+          "rtc": "المكالمات"
+        },
+        "info": {
+          "title": "تفاصيل المحادثة",
+          "subtitle": "تصنيف المكتب لهذه المحادثة. أما الرسائل فتبقى في المحادثة العادية.",
+          "open": "تفاصيل المحادثة",
+          "openThread": "فتح المحادثة",
+          "classification": "التصنيف",
+          "scope": "النطاق",
+          "archivedYes": "نعم",
+          "notFound": {
+            "title": "ليست محادثة مكتب",
+            "body": "لا يوجد لهذه المحادثة تصنيف المكتب الخاص. وهي لا تزال متاحة في الرسائل."
+          }
+        },
+        "untitled": "محادثة بلا عنوان",
+        "linked": {
+          "title": "تمت مناقشته في",
+          "unavailable": "تعذّر علينا التحقق من المحادثات المرتبطة.",
+          "none": "لم يُذكر في أي محادثة أنت طرف فيها."
         }
       }
     },
@@ -5283,45 +5682,6 @@
       "dominance": "هيمنة BTC",
       "gainers": "أكبر الرابحين",
       "losers": "أكبر الخاسرين"
-    }
-  },
-  "translation": {
-    "eyebrow": "الترجمة",
-    "translate": "ترجمة",
-    "translating": "جارٍ الترجمة…",
-    "translateNow": "ترجم الآن",
-    "translateNowHint": "ترجمة هذه الرسالة إلى {{language}}.",
-    "viewOriginal": "عرض النص الأصلي",
-    "showOriginalHint": "العودة إلى الرسالة الأصلية.",
-    "translatedFrom": "مترجمة من {{language}}",
-    "translatedLabel": "مترجمة",
-    "always": "دائمًا",
-    "never": "أبدًا",
-    "alwaysTranslate": "الترجمة دائمًا",
-    "alwaysTranslateHint": "يترجم هذه اللغة تلقائيًا عندما يتعرف عليها PulseSoc.",
-    "neverTranslate": "عدم الترجمة أبدًا",
-    "neverTranslateHint": "يبقي هذه اللغة كما هي.",
-    "optionsTitle": "خيارات لغة الرسالة",
-    "downloadLanguage": "تنزيل اللغة",
-    "downloadExplainer": "يستخدم PulseSoc ترجمة Apple الخاصة على الجهاز. قد تقوم Apple بتنزيل اللغة المطلوبة على هذا الـ iPhone.",
-    "tryAgain": "إعادة المحاولة",
-    "failure": {
-      "unavailable": "الترجمة غير متاحة",
-      "unsupportedLanguage": "لا يمكن ترجمة هذه اللغة على هذا الجهاز.",
-      "downloadFailed": "لم يكتمل تنزيل اللغة.",
-      "offline": "اتصل بالإنترنت لتنزيل هذه اللغة.",
-      "preferenceNotSaved": "تعذّر حفظ تفضيل الترجمة."
-    },
-    "a11y": {
-      "controls": "عناصر التحكم في الترجمة. اللغة الهدف: {{language}}.",
-      "translateTo": "الترجمة إلى {{language}}",
-      "showOriginal": "عرض النص الأصلي",
-      "options": "خيارات الترجمة. يتم عرض النص المترجم.",
-      "alwaysTo": "الترجمة دائمًا إلى {{language}}",
-      "neverTo": "عدم الترجمة أبدًا إلى {{language}}",
-      "closeOptions": "إغلاق خيارات الترجمة",
-      "retry": "إعادة محاولة الترجمة",
-      "download": "تنزيل لغة {{language}} على هذا الجهاز"
     }
   }
 }

@@ -1,8 +1,6 @@
-import { cancelMessageReconciliation } from "../core/messageNotificationReconciliation";
 import { createContext, useContext } from "react";
 import { getSession, login, logout, logoutAll, PulseUser, RegisterResponse, SessionResponse, signup } from "../api/auth";
 import { unregisterPushDevice } from "../api/push";
-import { revokeVoipPushRegistration } from "../calls/callKitBridge";
 import { PulseApiError, recoverNativeSession } from "../api/pulseApi";
 import {
   clearActiveSessionKeepBiometric,
@@ -18,10 +16,9 @@ import {
 } from "./sessionStore";
 import { shouldRejectTemporaryQaUser } from "./qaTemporaryAccount";
 import { setMediaCacheScope } from "../media/mediaCache";
-import { setOutboxScope } from "../core/mutations/outbox";
 import { clearUserScopedMediaState } from "../media/mediaSessionCleanup";
 import { rememberAccount } from "./rememberedAccounts";
-import { loadCanonicalTier, resetCanonicalTier } from "../entitlements/useCanonicalTier";
+import { resetCanonicalTier } from "../entitlements/useCanonicalTier";
 
 /**
  * Deterministic session-bootstrap phases. Every restore/sign-in/sign-out path
@@ -71,17 +68,10 @@ function statusForPhase(phase: SessionPhase): AuthStatus {
  * sites that produce states. Missing one of those would silently write the next
  * user's downloads into the previous user's cache directory, and the failure
  * would be invisible until someone went looking for it (Stage 35).
- *
- * The mutation outbox is scoped here for the same reason and a sharper one: a
- * queue carried across an account switch would not merely expose stale data, it
- * would send the previous user's unsent words from the new user's account.
  */
 export function stateFor(phase: SessionPhase, user: PulseUser | null = null): AuthState {
   const userId = Number((user as { user_id?: number; id?: number } | null)?.user_id ?? (user as { id?: number } | null)?.id ?? 0);
-  const scopeId = phase === "AUTHENTICATED" && userId > 0 ? userId : null;
-  setMediaCacheScope(scopeId);
-  setOutboxScope(scopeId);
-  cancelMessageReconciliation();
+  setMediaCacheScope(phase === "AUTHENTICATED" && userId > 0 ? userId : null);
   return { phase, status: statusForPhase(phase), user };
 }
 
@@ -208,12 +198,6 @@ export async function signIn(identifier: string, password: string): Promise<Auth
   await persistSessionEnvelope({ ...session, user });
   await setCachedSessionUser(user);
   await rememberAccount(user).catch(() => undefined);
-  // Ask for THIS member's entitlement now that the envelope is persisted, so
-  // the request carries the new token. Without it the reset above leaves the
-  // shared answer at "unavailable" until some surface happens to mount and ask,
-  // and a premium member's first seconds after signing in are spent looking at
-  // a product that cannot confirm they paid for it.
-  void refreshEntitlementAfterSignIn();
   return authenticatedState(user);
 }
 
@@ -225,24 +209,7 @@ export async function createAccount(payload: { full_name: string; username: stri
   await persistSessionEnvelope({ ...session, user });
   await setCachedSessionUser(user);
   await rememberAccount(user).catch(() => undefined);
-  // A new account starts on the signup trial grant, which is a real
-  // entitlement the server has already written. Not asking for it would show a
-  // brand-new member the upsell for something they already hold.
-  void refreshEntitlementAfterSignIn();
   return authenticatedState(user);
-}
-
-/**
- * Re-read the canonical tier for the member who just authenticated.
- *
- * Failures are swallowed on purpose: the shared cache already holds the honest
- * "unavailable" answer from the reset, every premium gate re-asks on mount and
- * on foreground, and a rejected promise here would surface as an unhandled
- * rejection during sign-in — noise about a condition the app already renders
- * truthfully.
- */
-function refreshEntitlementAfterSignIn(): Promise<unknown> {
-  return loadCanonicalTier().catch(() => undefined);
 }
 
 /**
@@ -310,12 +277,6 @@ export async function signOut(options: SignOutOptions = {}): Promise<AuthState> 
   // member's tier to whoever signs in next on this device.
   resetCanonicalTier();
   await unregisterPushDevice({ preservePreferences: true, reason: "logout" }).catch(() => undefined);
-  // The VoIP token is a *separate* credential in a separate table, so dropping the alert
-  // registration above does not touch it. Left behind it does active harm rather than
-  // nothing: the backend suppresses the incoming-call alert push for any device holding an
-  // active VoIP token, and it will still ring this handset through CallKit — showing a
-  // stranger's name and photo on the lock screen of a phone that has been signed out.
-  await revokeVoipPushRegistration("logout").catch(() => undefined);
   await clearUserScopedMediaState();
 
   if (!options.clearBiometrics && (await shouldRetainBiometricLogin())) {
@@ -359,9 +320,6 @@ async function shouldRetainBiometricLogin(): Promise<boolean> {
 export async function signOutEverywhere(): Promise<AuthState> {
   resetCanonicalTier();
   await unregisterPushDevice({ preservePreferences: true, reason: "logout" }).catch(() => undefined);
-  // Ordered before `logoutAll()` for the same reason the alert revoke is: both calls need a
-  // live session to authenticate, and `logoutAll` invalidates it.
-  await revokeVoipPushRegistration("logout_everywhere").catch(() => undefined);
   await logoutAll();
   await clearUserScopedMediaState();
   await clearNativeSessionCredentials();
@@ -369,12 +327,7 @@ export async function signOutEverywhere(): Promise<AuthState> {
   return unauthenticatedState();
 }
 
-/**
- * Exported so the QA simulator sign-in finishes the same way the real one does.
- * It is the only place the wire field names are mapped onto the envelope, and a
- * second copy of that mapping is how the two would drift apart.
- */
-export async function persistSessionEnvelope(session: SessionResponse) {
+async function persistSessionEnvelope(session: SessionResponse) {
   const userId = Number(session.user?.user_id ?? (session.user as Record<string, unknown> | undefined)?.id ?? 0);
   if (!userId || !session.refresh_token) return;
   const now = Date.now();
@@ -403,10 +356,5 @@ async function restoreCachedSession(): Promise<AuthState> {
 async function clearTemporaryQaSession(): Promise<AuthState> {
   await clearNativeSessionCredentials();
   await setCachedSessionUser(null);
-  // Same reason as every other session end: the credential clear is only half of
-  // a sign-out, and the caches this leaves behind are stored under bare keys that
-  // the next account reads straight back. A QA account's leftovers reaching a
-  // real one is a smaller blast radius than the reverse, not a different bug.
-  await clearUserScopedMediaState();
   return unauthenticatedState();
 }

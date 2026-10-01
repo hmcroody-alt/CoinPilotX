@@ -62,26 +62,22 @@ export const marketplaceLight = {
   },
   badge: {
     /**
-     * FEATURED. Near-black plate, brand-green text.
+     * FEATURED. Navy plate, brand-green text.
      *
      * This was the reference design's yellow (#FFD814) — the one place that
      * yellow appeared as *text* rather than as a CTA fill, which is why it sat
      * outside the `STORE_CTA` swap and stayed literal. It is now the same
      * PulseSoc green the Store accent and the primary CTA use, so no yellow is
-     * left anywhere in the Marketplace or Store chrome. On the plate the green
-     * reads at least as strongly as the yellow did.
-     *
-     * The plate itself was the reference navy #131A22. It is now the same
-     * near-black as `storeLight.bg.headerFrom`, so a FEATURED badge and the
-     * header it sits under are one colour rather than two dark blues.
+     * left anywhere in the Marketplace or Store chrome. On the navy plate the
+     * green reads at least as strongly as the yellow did.
      */
-    featuredBg: storeLight.bg.headerFrom,
+    featuredBg: "#131A22",
     featuredText: storeLight.accent.brand,
     /** NEW. Solid success green, white text. */
     newBg: "#067D62",
     newText: "#FFFFFF",
     /** Scrim laid over a sold item's image, with the word SOLD on top. */
-    soldOverlay: "rgba(11, 11, 12, 0.85)",
+    soldOverlay: "rgba(19, 26, 34, 0.85)",
     soldText: "#FFFFFF"
   },
   /**
@@ -105,8 +101,8 @@ export const marketplaceLight = {
     /** Category rail, inactive. */
     bg: "#FFFFFF",
     text: "#0F1111",
-    /** Category rail, active — filled near-black, matching the header. */
-    activeBg: storeLight.bg.headerFrom,
+    /** Category rail, active — filled navy per the reference. */
+    activeBg: "#131A22",
     activeText: "#FFFFFF"
   }
 } as const;

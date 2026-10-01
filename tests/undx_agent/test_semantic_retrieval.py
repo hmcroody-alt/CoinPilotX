@@ -24,7 +24,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from services import undx_cost
 from services import undx_embedding_service as embed
 from services import undx_platform_knowledge as lexical
 from services import undx_semantic_retrieval as semantic
@@ -37,33 +36,6 @@ BASE_ENV = {
     "UNDX_EMBEDDING_TIMEOUT_SECONDS": "1",
     "UNDX_EMBEDDING_MONTHLY_BUDGET_USD": "5",
 }
-
-
-class _IsolatedLedger:
-    """A private cost ledger for one scenario, and a reason it is not optional.
-
-    `services.db` falls back to the *relative* path ``coinpilotx.db`` when
-    ``DATABASE_URL`` is unset, and both case classes below clear the environment. So
-    without this, every ``embed_texts`` in this file records a row in the developer's
-    own dev database: a checksum of ``coinpilotx.db`` before and after one run of this
-    file changes, and the accumulated total reached 811 embedding calls and 1,026,821
-    tokens before anyone looked. The file *size* does not change, because SQLite
-    reuses free pages — checking the size is how this stayed invisible.
-
-    It went from untidy to load-bearing when the budget guard started reading its
-    month-to-date from that ledger. A polluted dev ledger is now spend the guard
-    counts: enough suite runs and a developer's real embedding calls start getting
-    refused for a budget consumed entirely by tests, and any test asserting that a
-    call is *allowed* becomes a test of how many times the suite has been run.
-    """
-
-    def __init__(self):
-        self._dir = tempfile.TemporaryDirectory()
-        self.url = "sqlite:///" + str(Path(self._dir.name) / "ledger.db")
-
-    def close(self):
-        undx_cost.reset_for_tests()
-        self._dir.cleanup()
 
 
 # ------------------------------------------------------------------- fake provider edge
@@ -130,14 +102,12 @@ class _ProviderCase:
 
     def __init__(self, responder, env: dict | None = None):
         self.requests = _FakeRequests(responder)
-        self._ledger = _IsolatedLedger()
-        self.env = {"DATABASE_URL": self._ledger.url, **BASE_ENV, **(env or {})}
+        self.env = {**BASE_ENV, **(env or {})}
         self._patches: list = []
 
     def __enter__(self):
         embed.reset_telemetry()
         embed.reset_budget()
-        undx_cost.reset_for_tests()
         self._patches = [
             patch.dict(os.environ, self.env, clear=True),
             patch.dict("sys.modules", {"requests": self.requests}),
@@ -149,7 +119,6 @@ class _ProviderCase:
     def __exit__(self, *exc):
         for item in reversed(self._patches):
             item.stop()
-        self._ledger.close()
         return False
 
 
@@ -412,8 +381,7 @@ class _IndexedCase:
     """Builds a real on-disk index with the deterministic embedder, then restores state."""
 
     def __init__(self, env: dict | None = None):
-        self._ledger = _IsolatedLedger()
-        self.env = {"DATABASE_URL": self._ledger.url, **BASE_ENV, **(env or {})}
+        self.env = {**BASE_ENV, **(env or {})}
         self._dir = None
         self._patches: list = []
 
@@ -423,7 +391,6 @@ class _IndexedCase:
         self._connection_factory = lambda: sqlite3.connect(path)
         embed.reset_telemetry()
         embed.reset_budget()
-        undx_cost.reset_for_tests()
         semantic.invalidate_cache()
         self._patches = [
             patch.dict(os.environ, self.env, clear=True),
@@ -442,7 +409,6 @@ class _IndexedCase:
             item.stop()
         semantic.invalidate_cache()
         self._dir.cleanup()
-        self._ledger.close()
         return False
 
 

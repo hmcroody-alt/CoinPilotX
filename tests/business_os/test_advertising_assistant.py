@@ -36,11 +36,12 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from services import db  # noqa: E402
-from services.business_os import schema_bootstrap  # noqa: E402
+from services.business_os.advertising import schema as ad_schema  # noqa: E402
 from services.business_os.advertising import service as ad  # noqa: E402
 from services.business_os.advertising import pricing  # noqa: E402
 from services.business_os.advertising import assistant  # noqa: E402
 from services.business_os.advertising.service import AdvertisingError  # noqa: E402
+from services.business_os.ledger import ledger  # noqa: E402
 
 
 OWNER = 700
@@ -49,11 +50,8 @@ ADMIN = 9
 
 
 def setup_module(module=None):
-    # The canonical bootstrap, not a hand-picked pair of ensure_schema calls.
-    # Eligibility reads advertising.guardrails, whose table lives behind its own
-    # ensure_schema, and that read fails CLOSED -- so naming only advertising +
-    # ledger refused every advertiser here with account_halt_state_unreadable.
-    schema_bootstrap.ensure_all()
+    ad_schema.ensure_schema()
+    ledger.ensure_schema()
     pricing.publish_policy("cpm", "usd", 500, actor="admin")
     pricing.publish_policy("cpc", "usd", 25, actor="admin")
     conn = db.connect()

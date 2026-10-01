@@ -27,12 +27,10 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { ChatWallpaper } from "../components/ChatWallpaper";
-import { useTimeZonePreference } from "../core/TimeZoneContext";
+import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import {
   cacheMessages,
   cancelPulseAiAction,
@@ -40,17 +38,12 @@ import {
   createLocalMessage,
   deleteMessage,
   drainMessengerQueue,
-  editMessage,
   enqueueMessengerMessage,
-  forwardMessage,
   getConversation,
   getPulseAiConversation,
   isRetryableMessengerSendError,
-  listConversations,
-  loadCachedConversations,
   loadCachedMessages,
   markConversationSeen,
-  MessengerConversation,
   MessengerMessage,
   MessengerPresence,
   PULSE_AI_CONVERSATION_ID,
@@ -66,38 +59,17 @@ import {
   uploadMessengerMedia
 } from "../api/messenger";
 import { mergeConversationMessages } from "../api/messengerOrdering";
-import {
-  ASSISTANT_CONNECTION_KEYS,
-  assistantConnectionDegraded,
-  assistantConnectionState
-} from "../messaging/assistantConnection";
-import { useConversationWallpaper } from "../messaging/conversationWallpaper";
 import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
 import { recoverRoomConversation } from "../community/roomConversationRecovery";
 import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
 import { buildUndxSendContext, clearMarketContext, peekMarketContext } from "../undx/marketContext";
 import { choiceRowsOf, describeTransition, readTapOutcome, toActionCard, UndxTapOutcome } from "../undx/actionCards";
-import { goBackFromChat } from "../undx/undxChatTarget";
-import {
-  ConversationGalleryProvider,
-  ConversationMediaGalleryViewer,
-  useConversationGallery
-} from "../media/ConversationMediaGalleryHost";
-import { gallerySeedFromMessage, useConversationMediaGallery } from "../media/useConversationMediaGallery";
-import { ConversationMediaItem } from "../media/conversationMediaCollection";
-import { isMultiMediaMessage, mediaTileColumns, messageMediaTiles } from "../media/messageMediaTiles";
-import {
-  MessengerMediaAccessState,
-  MessengerMediaMeta,
-  messengerMediaCacheIdentity,
-  useMessengerMediaAccessUrl
-} from "../media/messengerMediaAccess";
-import { exceedsLimit, limitMessage, maxDurationSeconds } from "../media/storedVideoPolicy";
-import { openDocument } from "../media/mediaActions";
+import { goBackFromUndxChat } from "../undx/undxChatTarget";
+import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
+import { useMessengerMediaAccessUrl } from "../media/messengerMediaAccess";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
-import { ContentTranslation, offersTranslation } from "../components/ContentTranslation";
-import { MessageFocusOverlay } from "../components/MessageFocusOverlay";
+import { ContentTranslation } from "../components/ContentTranslation";
 import { PulseCommandAvatar, PulseCommandPanel } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import {
@@ -113,22 +85,11 @@ import {
 import { translate, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
-import { LinkedText } from "../links/LinkedText";
-import { detectLinks } from "../links/messageLinks";
-import { bodyIsOnlyLinks, bodyEntity } from "../links/pulseEntity";
-import { PulseEntityLinkCard } from "../components/messages/PulseEntityLinkCard";
-import { openMessageLink } from "../links/openMessageLink";
 import { presenceActivityText } from "../api/presence";
 import { reportPresenceActivity } from "../api/presenceSession";
 import { useAuth } from "../session/auth";
-import { copyToClipboard, haptic } from "../native";
-import { openSystemShare } from "../sharing/nativeShare";
-import type { Rect } from "../pulseCommand/focusedMessageLayout";
-import type { PulseCommandActionKey } from "../pulseCommand/domain";
 import {
-  canReactToMessage,
   messageAccessibilityLabel,
-  messageActionKind,
   messageActionRules,
   messageDeliveryLabel,
   messagePreview,
@@ -136,81 +97,10 @@ import {
   reactionIcon,
   typingSummary
 } from "../pulseCommand/domain";
-import { chatGraphite } from "../theme/chatGraphite";
 import { colors } from "../theme/colors";
 import { EmojiPicker, QUICK_REACTIONS } from "../emoji";
 import { logiNexus } from "../theme/logiNexus";
 import { formatFileSize, formatShortTime } from "../utils/format";
-
-/**
- * Everything the focused-message overlay needs, gathered at the moment of the
- * press rather than looked up afterwards.
- *
- * `anchor` and `links` both have to be captured here: the rectangle only exists
- * while the row is mounted, and the links are the result of the same
- * `detectLinks` call that made them tappable. Re-parsing the body at the menu
- * would be a second parser, and a second parser is a second answer.
- */
-type MessageFocusRequest = {
-  message: MessengerMessage;
-  /** Window coordinates of the pressed bubble; null if it could not be measured. */
-  anchor: Rect | null;
-  links: readonly string[];
-  translatable: boolean;
-};
-
-/**
- * Whether this screen can actually carry out each action.
- *
- * A `Record` over the entire key union rather than a list of the ones that
- * work, so adding a rule to `messageActionRules` without deciding what it does
- * is a compile error instead of a menu row that swallows the tap.
- *
- * The two remaining `false` entries are not oversights, and they are false for
- * different reasons.
- *
- * `save` is refused by the saved-items contract outright: `SavableContentType`
- * has no member for a message, so there is nowhere for a saved message to go.
- * Adding one is a change to that contract and its storage, not to this screen.
- *
- * `saveMedia` needs the *granted* media URL -- a short-lived credential minted
- * inside the bubble's own media child -- plus photo-library permission, a
- * download with progress, and the handling of a Mux video whose playback URL is
- * a manifest rather than a file. The viewer already does all four, correctly
- * and in one place, so the route to Save is: open the media, save it from
- * there. A second copy of a credential protocol is the kind of thing that works
- * until the day it expires differently.
- *
- * `viewMedia` was in that same paragraph and did not belong there. It needs no
- * credential at all: the gallery host resolves any seed whose URL is protected
- * before the viewer loads it, so this screen can open on a message using
- * nothing but the message.
- *
- * Both falses are filtered out of the menu rather than shown inert, because a
- * row that does nothing is worse than an absent row: the user cannot tell it
- * apart from a failure.
- */
-const MESSAGE_ACTION_IMPLEMENTED: Record<PulseCommandActionKey, boolean> = {
-  reply: true,
-  react: true,
-  retry: true,
-  copy: true,
-  forward: true,
-  edit: true,
-  save: false,
-  share: true,
-  translate: true,
-  info: true,
-  openLink: true,
-  copyLink: true,
-  shareLink: true,
-  viewMedia: true,
-  saveMedia: false,
-  report: true,
-  safety: true,
-  deleteSelf: true,
-  deleteEveryone: true
-};
 
 const PAGE_SIZE = 40;
 const SYNC_INTERVAL_MS = 2500;
@@ -414,14 +304,6 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const { t } = useTranslation();
   const { authState } = useAuth();
   const selfUserId = Number(authState.user?.user_id || 0);
-  // Resolves to the PulseSoc Cosmic default on the first render and only
-  // changes if this viewer has picked something else for this thread. The
-  // assistant thread and the QA fixtures have no settings row to read.
-  const { applyWallpaper, wallpaper } = useConversationWallpaper(
-    selfUserId,
-    conversationId,
-    !assistantConversation && !isLocalMessengerFixtureConversation(conversationId)
-  );
   const [messages, setMessages] = useState<MessengerMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
@@ -432,16 +314,6 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [error, setError] = useState("");
   const [initialFetchComplete, setInitialFetchComplete] = useState(false);
   const [usingCachedMessages, setUsingCachedMessages] = useState(false);
-  /**
-   * The conversation's media gallery, owned here rather than in a bubble.
-   *
-   * It has to live above the list. The collection is the whole conversation's
-   * media, which a message cell cannot see — a cell only knows itself, and only
-   * the cells near the viewport are mounted at all. Hoisting it is what makes
-   * "tap the 17th photo, land on the 17th photo" a property of the code rather
-   * than a coincidence of where the thread happened to be scrolled.
-   */
-  const mediaGallery = useConversationMediaGallery(conversationId, { online: !usingCachedMessages });
   const [typing, setTyping] = useState("");
   // Live peer presence, refreshed from every conversation fetch and sync.
   // route.params.presence is only a snapshot taken at navigation time; relying
@@ -454,44 +326,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [recordingLevels, setRecordingLevels] = useState<number[]>(() => Array.from({ length: 24 }, () => 0.14));
   const [uploading, setUploading] = useState(false);
   const [replyTo, setReplyTo] = useState<MessengerMessage | null>(null);
-  /**
-   * The message the composer is currently amending, and the draft it displaced.
-   *
-   * `restoreDraft` exists because Edit takes over the one composer on the
-   * screen. Someone who had half a sentence typed and then went back to fix a
-   * typo above it would otherwise lose the sentence to a menu row -- silently,
-   * with no way to get it back. Cancelling an edit puts it exactly where it was.
-   *
-   * Editing and replying are mutually exclusive by construction: both own the
-   * composer's meaning on submit, and a composer that is both amending an old
-   * message and quoting another one has no coherent send. Each setter clears
-   * the other rather than trusting call sites to remember.
-   */
-  const [editing, setEditing] = useState<{ message: MessengerMessage; restoreDraft: string } | null>(null);
-  /**
-   * The message under the finger, plus what was true about it when it was
-   * pressed. Null closes the overlay.
-   */
-  const [focused, setFocused] = useState<MessageFocusRequest | null>(null);
-  /**
-   * Per-message translation requests, keyed by the same ref the bubble hands
-   * `ContentTranslation`. A counter rather than a flag because asking twice is
-   * a real thing to do -- translate, read the original, translate again -- and
-   * the second ask has to be distinguishable from the first.
-   */
-  const [translateRequests, setTranslateRequests] = useState<Record<string, number>>({});
-  /**
-   * A link action chosen on a message carrying more than one link.
-   *
-   * The brief is explicit that the user selects; picking the first link would
-   * be a coin toss dressed as a decision. `run` is captured so the chooser does
-   * not need to know which of Open, Copy or Share is waiting on it.
-   */
-  const [linkChoice, setLinkChoice] = useState<{ links: readonly string[]; run: (url: string) => void } | null>(null);
-  /** The message waiting on a destination. Null closes the picker. */
-  const [forwarding, setForwarding] = useState<MessengerMessage | null>(null);
-  /** The message whose delivery details are on screen. */
-  const [infoFor, setInfoFor] = useState<MessengerMessage | null>(null);
+  const [selectedMessage, setSelectedMessage] = useState<MessengerMessage | null>(null);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -510,19 +345,12 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   // only as a fallback, never in preference to the real stack, because the
   // stack knows about screens the member visited in between and this does not.
   const undxReturn = route.params.undxReturn;
-  // The rule itself lives in `goBackFromChat` (real stack first, recorded origin
-  // second, a guaranteed floor last) so the rendered navigation regression test
-  // exercises exactly what this screen runs.
-  //
-  // `conversationId` is passed because the floor depends on it: UNDX falls back
-  // to the dashboard, everyone else to the conversations list. This screen used
-  // to hand over only `undxReturn`, which meant a rule written for the one
-  // conversation that has no list behind it was being applied to all twelve —
-  // and a member arriving from a notification or a deep link pressed Back on a
-  // thread and got Mission Control.
-  const onBackPress = useCallback(() => {
-    goBackFromChat(navigation, { conversationId, undxReturn });
-  }, [navigation, conversationId, undxReturn]);
+  // The rule itself lives in `goBackFromUndxChat` (real stack first, recorded
+  // origin second, dashboard as the guaranteed floor) so the rendered
+  // navigation regression test exercises exactly what this screen runs.
+  const goBackFromChat = useCallback(() => {
+    goBackFromUndxChat(navigation, undxReturn);
+  }, [navigation, undxReturn]);
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
   const [undxComponents, setUndxComponents] = useState<UndxResponseComponent[]>([]);
   const [undxActionBusy, setUndxActionBusy] = useState(false);
@@ -537,21 +365,6 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   // the card that was actually pressed. A rail can hold more than one card, and an
   // outcome with no owner would attach itself to whichever one rendered first.
   const [undxTapOutcome, setUndxTapOutcome] = useState<(UndxTapOutcome & { token: string }) | null>(null);
-  /**
-   * Whether this thread has more than two people in it.
-   *
-   * Read from whatever the conversation payload happens to carry, defaulting
-   * to false. That default is the weak direction and worth naming: a group this
-   * fails to recognise gets Message Info's plain "Read", which beside six
-   * participants is read as "all six" and means "at least one".
-   *
-   * It is still not worth an extra request -- the payload has carried one of
-   * these two fields for every thread seen in practice, and the cost of being
-   * wrong is an overclaim in a sheet rather than anything the user acts on. But
-   * if a server change ever drops both fields, this is the line that goes quiet
-   * rather than loud, and the overclaim is where it will surface.
-   */
-  const [isGroupThread, setIsGroupThread] = useState(false);
   const [threadTitle, setThreadTitle] = useState(assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Messenger");
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingAt = useRef(0);
@@ -612,19 +425,6 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
   }, [navigation, t]);
 
-  /**
-   * A link tapped inside a message bubble.
-   *
-   * Deliberately thin: the decision of where a URL goes lives in
-   * `links/openMessageLink`, which asks `navigation/linking` — the same table
-   * that answers a Universal Link from Safari. Messenger contributes the
-   * navigator and nothing else, so there is no second deep-link system here to
-   * drift out of step with the first one.
-   */
-  const openLinkFromMessage = useCallback((url: string) => {
-    openMessageLink(navigation, url);
-  }, [navigation]);
-
   useEffect(() => () => {
     stopVoiceMessagePlayback("conversation_closed").catch(() => undefined);
   }, []);
@@ -649,13 +449,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
   useEffect(() => {
     if (!messages.length) return;
-    if (qaChatState === "context-menu") {
-      const target = messages.find((message) => !message.is_mine) || messages[0];
-      // No anchor: the QA harness opens the overlay without a press, so there
-      // is no rectangle to measure. The layout centres it, which is the same
-      // path a message unmounted under the finger takes.
-      setFocused({ message: target, anchor: null, links: [], translatable: false });
-    }
+    if (qaChatState === "context-menu") setSelectedMessage(messages.find((message) => !message.is_mine) || messages[0]);
     if (qaChatState === "attachment-sheet") setAttachmentSheetOpen(true);
     if (qaChatState === "reply-keyboard") setReplyTo(messages.find((message) => !message.is_mine) || messages[0]);
     if (qaChatState === "control-center") setControlCenterOpen(true);
@@ -694,26 +488,9 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   // snapshot. When the server has told us nothing about the peer we show
   // connection status instead of guessing.
   const presenceSubtitle = peerPresenceSubtitle(peerPresence);
-  // Derived in `assistantConnection` so the claim can be tested without
-  // mounting a conversation. See that module for why the order of the checks
-  // is the whole point.
-  const assistantState = assistantConnectionState({
-    error: Boolean(error),
-    loading,
-    initialFetchComplete,
-    usingCachedMessages
-  });
   const headerSubtitle = assistantConversation
-    ? typing || t(ASSISTANT_CONNECTION_KEYS[assistantState])
+    ? typing || (error ? t("messaging:chat.assistantReconnecting") : usingCachedMessages ? t("messaging:chat.headerCachedHistory") : t("messaging:chat.assistantAlwaysAvailable"))
     : typing || presenceSubtitle || headerStatus;
-  /**
-   * The dot has to agree with the words beside it. It used to warn on `error`
-   * only, which left it reading live-green next to "Cached history" — two
-   * opposite claims about the same connection, one of them wrong.
-   */
-  const connectionDegraded = assistantConversation
-    ? assistantConnectionDegraded(assistantState)
-    : Boolean(error) || usingCachedMessages;
   const peerIsOnline = Boolean(peerPresence?.online);
 
   const mergeMessages = useCallback(
@@ -756,21 +533,18 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       if (data.conversation) {
         const title = String(data.conversation.title || data.conversation.name || "").trim();
         if (title && title !== "[object Object]") setThreadTitle(title);
-        const record = data.conversation as Record<string, unknown>;
-        setIsGroupThread(record.is_group === true || Number(record.member_count || record.members || 0) > 2);
       }
       setMessages(nextMessages);
       setUsingCachedMessages(false);
       setStatusMessage("");
       await cacheMessages(conversationId, nextMessages);
-      if (!assistantConversation) await markConversationSeen(conversationId, nextMessages).catch(() => undefined);
+      if (!assistantConversation) await markConversationSeen(conversationId).catch(() => undefined);
       setTyping(typingSummary(data.presence));
       if (!assistantConversation) setPeerPresence(peerPresenceFrom(data.presence, selfUserId));
     } catch (loadError) {
       const cached = await loadCachedMessages(conversationId);
       if (cached.length) {
         setMessages(cached);
-        if (!assistantConversation) void markConversationSeen(conversationId, cached).catch(() => undefined);
         setUsingCachedMessages(true);
         setError("");
         setStatusMessage(t("messaging:chat.showingCached"));
@@ -867,7 +641,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           cacheMessages(conversationId, merged).catch(() => undefined);
           return merged;
         });
-        await markConversationSeen(conversationId, data.messages).catch(() => undefined);
+        await markConversationSeen(conversationId).catch(() => undefined);
       }
       setTyping(typingSummary(data.presence));
       setPeerPresence(peerPresenceFrom(data.presence, selfUserId));
@@ -1035,106 +809,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
   }, [assistantConversation, conversationId, acknowledgeLocalMessage, mergeMessages, messages, navigation, route.params.undxTaskId, sync]);
 
-  /**
-   * Hand the composer over to an existing message.
-   *
-   * The raw `body` is loaded, not `displayMessageBody`. The two agree for text,
-   * which is the only kind Edit is offered on, but they agree by coincidence
-   * rather than by contract: the display version deliberately *drops* text it
-   * judges to be a filename, and the day that heuristic touches a text message
-   * this would quietly PATCH the stored body down to nothing. An edit amends
-   * what is stored, so it has to start from what is stored.
-   */
-  const beginEdit = useCallback((message: MessengerMessage) => {
-    setReplyTo(null);
-    setEditing({ message, restoreDraft: draft });
-    setDraft(message.body || "");
-  }, [draft]);
-
-  const cancelEdit = useCallback(() => {
-    setEditing((current) => {
-      setDraft(current?.restoreDraft || "");
-      return null;
-    });
-  }, []);
-
-  /**
-   * Amend a sent message.
-   *
-   * Nothing is applied optimistically. Every other rule here -- whose message
-   * it is, whether the window has closed, whether the body is empty -- is the
-   * server's to enforce, and it enforces them on this exact request. Painting
-   * the new text first would show a successful edit for the length of a round
-   * trip and then take it back, which is worse than a moment's wait, and the
-   * case where it lies is exactly the case the user most needs told: the edit
-   * window closed while the keyboard was open.
-   *
-   * On success the server's row replaces the local one wholesale, so
-   * `edited_at` and any normalisation it applied arrive with the new body
-   * rather than being guessed at here.
-   */
-  const submitEdit = useCallback(async () => {
-    const target = editing?.message;
-    if (!target) return;
-    const body = draft.trim();
-    if (!body) {
-      setStatusMessage(t("messaging:chat.editEmpty"));
-      return;
-    }
-    if (body === (target.body || "").trim()) {
-      cancelEdit();
-      return;
-    }
-    try {
-      const result = await editMessage(target.id, body);
-      const updated = result.message;
-      setMessages((current) => {
-        const next = current.map((item) =>
-          item.id === target.id ? { ...item, ...(updated || {}), body, edited_at: updated?.edited_at || new Date().toISOString() } : item
-        );
-        cacheMessages(conversationId, next).catch(() => undefined);
-        return next;
-      });
-      setEditing(null);
-      setDraft("");
-      setStatusMessage(t("messaging:chat.editSaved"));
-    } catch (editError) {
-      setStatusMessage(editError instanceof Error ? editError.message : t("messaging:chat.editFailed"));
-    }
-  }, [cancelEdit, conversationId, draft, editing, t]);
-
-  /**
-   * Send the selected message on to other threads.
-   *
-   * The reported number is the server's `count`, never `conversationIds.length`.
-   * The two differ whenever a destination has gone away since the list was
-   * cached -- left, blocked, deleted -- and in that case the selection is a
-   * statement of intent while the count is a statement of fact. Reporting the
-   * intent would tell someone their message reached a thread it never entered.
-   *
-   * The picker closes on both paths. A sheet left open over a failure banner
-   * reads as "try again", and trying again is exactly what a duplicate forward
-   * is made of.
-   */
-  const forwardToConversations = useCallback(async (conversationIds: number[]) => {
-    const target = forwarding;
-    if (!target || conversationIds.length === 0) return;
-    try {
-      const result = await forwardMessage(target.id || target.message_id, conversationIds);
-      const count = Number(result.count ?? result.forwarded_message_ids?.length ?? 0);
-      setForwarding(null);
-      setStatusMessage(count > 0 ? t("messaging:chat.forwardSent", { total: count }) : t("messaging:chat.forwardFailed"));
-    } catch (forwardError) {
-      setForwarding(null);
-      setStatusMessage(forwardError instanceof Error ? forwardError.message : t("messaging:chat.forwardFailed"));
-    }
-  }, [forwarding, t]);
-
   const submitText = useCallback(async () => {
-    if (editing) {
-      await submitEdit();
-      return;
-    }
     const body = draft.trim();
     if (!body) return;
     setDraft("");
@@ -1150,7 +825,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       reply_to_message_id: currentReply?.message_id,
       reply_preview: currentReply ? messagePreview(currentReply) : undefined
     });
-  }, [assistantConversation, conversationId, draft, editing, replyTo, sendPayload, submitEdit]);
+  }, [assistantConversation, conversationId, draft, replyTo, sendPayload]);
 
   const retryMessage = useCallback(async (message: MessengerMessage) => {
     // A retry is the SAME logical message, so it must carry the same identity.
@@ -1207,7 +882,6 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
   }, [t]);
 
-  const dropGalleryMedia = mediaGallery.dropMessage;
   const removeMessage = useCallback(async (message: MessengerMessage, scope: "self" | "everyone" = "self") => {
     if (message.id <= 0) {
       setMessages((current) => current.filter((item) => item.id !== message.id));
@@ -1216,10 +890,6 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
     try {
       await deleteMessage(message.id, scope);
-      // The viewer may be open on exactly this photo. Dropping it from the
-      // collection lands the viewer on the next item, or closes it when there is
-      // no next item — rather than leaving a black frame over a deleted file.
-      dropGalleryMedia(message.id);
       setMessages((current) =>
         current.map((item) =>
           item.id === message.id
@@ -1231,7 +901,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     } catch (deleteError) {
       setStatusMessage(deleteError instanceof Error ? deleteError.message : t("messaging:chat.deleteFailed"));
     }
-  }, [dropGalleryMedia, t]);
+  }, [t]);
 
   const report = useCallback(async (message: MessengerMessage) => {
     if (message.id <= 0) {
@@ -1245,206 +915,6 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setStatusMessage(reportError instanceof Error ? reportError.message : t("messaging:chat.reportFailed"));
     }
   }, [t]);
-
-  /**
-   * Run one action from the focused-message menu.
-   *
-   * Every branch either delegates to something that already existed or closes
-   * the overlay; none of them re-implements a capability. `copy` and the link
-   * actions go through `src/native`, the link destinations go through
-   * `openLinkFromMessage` (and so through the Universal Link table), media goes
-   * through the conversation gallery, and Translate goes through the same
-   * `ContentTranslation` toggle the inline globe drives.
-   *
-   * The switch has no `default`. `MESSAGE_ACTION_IMPLEMENTED` is a `Record` over
-   * the whole key union, so a new rule added in `messageActionRules` fails to
-   * compile here until someone decides what it does -- which is the only
-   * structural defence against a menu row that swallows the tap.
-   */
-  const runMessageAction = useCallback(
-    (key: PulseCommandActionKey, focus: MessageFocusRequest) => {
-      const { message, links } = focus;
-      const body = displayMessageBody(message);
-      // One link is the overwhelming case and needs no question asked. Several
-      // is a real ambiguity, so the user picks rather than the code guessing
-      // "the first one".
-      const soleLink = links.length === 1 ? links[0] : "";
-
-      const close = () => setFocused(null);
-      const withLink = (run: (url: string) => void) => {
-        if (soleLink) {
-          close();
-          run(soleLink);
-          return;
-        }
-        setLinkChoice({ links, run });
-        close();
-      };
-
-      switch (key) {
-        case "reply":
-          // An edit in progress owns the composer and would otherwise keep the
-          // amended text sitting there under a "Replying to" banner, ready to
-          // be sent as a new message.
-          cancelEdit();
-          setReplyTo(message);
-          close();
-          return;
-        case "react":
-          // Reactions come from the strip above the bubble, never from a row
-          // in the list. `messageActionRules` emits no rule for this key at
-          // all, so nothing can dispatch it; the case exists only to keep the
-          // union exhaustive.
-          close();
-          return;
-        case "retry":
-          retryMessage(message).catch(() => undefined);
-          close();
-          return;
-        case "copy":
-          close();
-          void copyToClipboard(body, "text");
-          return;
-        case "share":
-          close();
-          void openSystemShare({ kind: "media", url: soleLink || PULSE_API_BASE_URL, message: body, title: threadTitle });
-          return;
-        case "translate":
-          setTranslateRequests((current) => {
-            const ref = messageTranslationRef(message);
-            return { ...current, [ref]: (current[ref] || 0) + 1 };
-          });
-          close();
-          return;
-        case "openLink":
-          withLink(openLinkFromMessage);
-          return;
-        case "copyLink":
-          withLink((url) => void copyToClipboard(url, "link"));
-          return;
-        case "shareLink":
-          withLink((url) => void openSystemShare({ kind: "media", url, title: threadTitle }));
-          return;
-        case "report":
-          report(message).catch(() => undefined);
-          close();
-          return;
-        case "safety":
-          close();
-          navigation.navigate("SafetyHub", { section: "blocks", title: t("common:screens.safetyHub") });
-          return;
-        case "deleteSelf":
-          removeMessage(message, "self").catch(() => undefined);
-          close();
-          return;
-        case "deleteEveryone":
-          removeMessage(message, "everyone").catch(() => undefined);
-          close();
-          return;
-        case "edit":
-          close();
-          beginEdit(message);
-          return;
-        case "forward":
-          close();
-          setForwarding(message);
-          return;
-        case "info":
-          close();
-          setInfoFor(message);
-          return;
-        case "viewMedia":
-          /**
-           * Open the gallery on this message without a granted URL in hand.
-           *
-           * The seed carries the protected API path straight off the message.
-           * That is safe here, and was not safe from the grid, because the two
-           * paths differ in who resolves it: a tile has already minted its own
-           * grant and hands the resolved URL up, whereas this menu row has
-           * nothing but the message. The host resolves any seed whose URL is
-           * protected before the viewer loads it -- so the protected path is
-           * never handed to the platform loader, it is only handed to the
-           * thing whose job is to exchange it.
-           *
-           * What is lost versus tapping the picture is the instant first paint:
-           * the tapped photo is already decoded, this one waits a grant. For a
-           * row in a menu that is the right trade against a second copy of the
-           * grant-and-refresh protocol living on this screen.
-           */
-          close();
-          mediaGallery.open(gallerySeedFromMessage({
-            messageId: Number(message.id || message.message_id || 0),
-            attachmentId: Number(message.attachment_id || message.media_upload_id || message.id || 0),
-            mediaUploadId: Number(message.media_upload_id || 0),
-            kind: (message.message_type || "").toLowerCase() === "video" ? "video" : "image",
-            url: String(message.media_url || ""),
-            downloadUrl: String(message.download_url || ""),
-            thumbnailUrl: String(message.thumbnail_url || ""),
-            mimeType: String(message.mime_type || ""),
-            durationSeconds: Number(message.duration_seconds || message.duration || 0),
-            senderId: Number(message.sender_user_id || message.sender_id || 0),
-            senderName: String(message.sender_display_name || ""),
-            createdAt: String(message.created_at || "")
-          }));
-          return;
-        case "save":
-        case "saveMedia":
-          // Filtered out of the menu by `MESSAGE_ACTION_IMPLEMENTED`; listed
-          // here so the union stays exhaustive and the day one of them is
-          // implemented, this is where the compiler points.
-          close();
-          return;
-      }
-    },
-    [beginEdit, cancelEdit, mediaGallery, navigation, openLinkFromMessage, removeMessage, report, retryMessage, t, threadTitle]
-  );
-
-  /**
-   * The rows the menu will draw, in the order `messageActionRules` returned
-   * them.
-   *
-   * Two filters, for two different reasons. `available` is the rules' own
-   * answer about this message -- whether it is mine, whether the edit window
-   * has closed, whether it has been deleted. `MESSAGE_ACTION_IMPLEMENTED` is
-   * this screen's answer about itself. Keeping them separate matters: the day
-   * Message Info is built, nothing about the rules changes.
-   */
-  const focusedActions = useMemo(() => {
-    if (!focused) return [];
-    return messageActionRules(focused.message, {
-      links: focused.links,
-      group: isGroupThread,
-      translatable: focused.translatable
-    }).filter((rule) => rule.available && MESSAGE_ACTION_IMPLEMENTED[rule.key]);
-  }, [focused, isGroupThread]);
-
-  /**
-   * The strip is asked its own question rather than looked up among the rules.
-   *
-   * It used to be `rules.some((rule) => rule.key === "react")`, which read like
-   * a lookup and behaved like a constant: there is no such rule, so the strip
-   * never drew. Reactions are a different control in a different band, and
-   * `canReactToMessage` is where their condition lives.
-   */
-  const focusedCanReact = focused ? canReactToMessage(focused.message) : false;
-
-  /**
-   * A long press arrives twice: once immediately with no anchor, and again a
-   * beat later carrying the measured rectangle.
-   *
-   * The second call is a refinement, not a new press, so it is only allowed to
-   * land on the message it measured. Without that check a measurement that
-   * resolves after the user has already dismissed the overlay would reopen it
-   * on a message they are no longer looking at -- a menu appearing by itself,
-   * which is how a mis-tap becomes a deletion.
-   */
-  const focusMessage = useCallback((focus: MessageFocusRequest) => {
-    setFocused((current) => {
-      if (!focus.anchor) return focus;
-      if (!current || current.message !== focus.message) return current;
-      return focus;
-    });
-  }, []);
 
   const uploadAndSend = useCallback(async (input: { uri: string; name: string; mimeType: string; sizeBytes?: number; voice?: boolean; durationSeconds?: number }) => {
     if (assistantConversation) {
@@ -1535,26 +1005,16 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         allowsEditing: false,
-        videoMaxDuration: maxDurationSeconds("messenger"),
+        videoMaxDuration: 120,
         videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium
       });
       if (result.canceled || !result.assets[0]) return;
       const asset = result.assets[0];
-      // expo-image-picker reports duration in milliseconds. Sending it lets the
-      // server refuse an overlong clip during init, before the bytes move.
-      const durationSeconds = asset.duration ? asset.duration / 1000 : undefined;
-      if (exceedsLimit("messenger", durationSeconds)) {
-        const message = limitMessage("messenger");
-        setStatusMessage(message);
-        Alert.alert(t("messaging:chat.videoSharingUnavailableTitle"), message);
-        return;
-      }
       await uploadAndSend({
         uri: asset.uri,
         name: asset.fileName || `pulsesoc-video-${Date.now()}.mov`,
         mimeType: asset.mimeType || "video/quicktime",
-        sizeBytes: asset.fileSize || 0,
-        durationSeconds
+        sizeBytes: asset.fileSize || 0
       });
     } catch (videoError) {
       const message = videoError instanceof Error ? videoError.message : t("messaging:chat.videoPickerFailed");
@@ -1727,21 +1187,19 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   }, [load, sync]);
 
   return (
-    <ConversationGalleryProvider gallery={mediaGallery}>
     <View style={styles.root}>
       <LogiNexusScreenShell bottomDock={false} contentStyle={styles.shellContent}>
-      {/* The wallpaper is the first paint layer, and its base colour is opaque,
-          so the conversation never opens on black and then fills in. Keeping it
-          after the header lets it cover the identity and call controls even
-          though it cannot receive touches. */}
-      <ChatWallpaper wallpaper={wallpaper} testID="messages-chat-wallpaper" />
+      {/* The atmosphere is the first paint layer. Keeping it after the header
+          lets its opaque deep-space gradient cover the identity and call
+          controls even though it cannot receive touches. */}
+      <GalacticAtmosphere variant="messages" testID="messages-galactic-atmosphere" />
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
         <View style={styles.threadHeader}>
-          <Pressable accessibilityRole="button" accessibilityLabel={undxReturn ? `Back to ${undxReturn.params.name || undxReturn.params.symbol}` : "Back to conversations"} style={styles.backButton} onPress={onBackPress}><Text style={styles.backButtonText}>‹</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={undxReturn ? `Back to ${undxReturn.params.name || undxReturn.params.symbol}` : "Back to conversations"} style={styles.backButton} onPress={goBackFromChat}><Text style={styles.backButtonText}>‹</Text></Pressable>
           <PulseCommandAvatar label={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Chat"} imageUrl={assistantConversation ? undefined : route.params.avatarUrl} active={assistantConversation || peerIsOnline} size={48} tone={assistantConversation ? "intelligence" : "default"} />
           <View style={styles.threadIdentity}>
             <Text style={styles.threadTitle} numberOfLines={1}>{threadTitle}</Text>
-            <View style={styles.threadStatusRow}><LiveStatusDot warning={connectionDegraded} /><Text style={styles.threadSubtitle} numberOfLines={1}>{headerSubtitle}</Text></View>
+            <View style={styles.threadStatusRow}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.threadSubtitle} numberOfLines={1}>{headerSubtitle}</Text></View>
           </View>
           <View style={styles.callActions}>
             {!assistantConversation ? <SignalIconButton accessibilityLabel={t("messaging:chat.a11yStartAudioCall")} icon="call-outline" onPress={() => navigation.navigate("Call", { conversationId, callType: "audio", direction: "outgoing", title: threadTitle })} /> : null}
@@ -1789,9 +1247,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
               message={item}
               onRetry={() => retryMessage(item)}
               onReact={() => react(item)}
-              onLongPress={focusMessage}
-              onLinkPress={openLinkFromMessage}
-              translateRequestId={translateRequests[messageTranslationRef(item)]}
+              onLongPress={() => setSelectedMessage(item)}
             />
           )}
         />
@@ -2393,33 +1849,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             <Text style={styles.statusBannerText}>{statusMessage}</Text>
           </Pressable>
         ) : null}
-        {editing ? (
-          /*
-            The same band the reply banner uses, for the same reason: it is the
-            only thing on screen that says what pressing Send will now do.
-            Without it the composer is just a box with text in it that will
-            silently replace a message somewhere up the thread instead of
-            adding one to the end.
-
-            Cancel is not decoration here. Edit is the only action in the menu
-            that takes the composer away from whatever was already being typed,
-            so the way back has to be a visible control rather than a
-            back-gesture people are expected to guess at.
-          */
-          <View style={styles.replyComposer}>
-            <View style={styles.replyCopy}>
-              <Text style={styles.replyTitle}>{t("messaging:chat.editingMessage")}</Text>
-              <Text style={styles.replyPreview} numberOfLines={1}>{messagePreview(editing.message)}</Text>
-            </View>
-            <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yCancelEdit")} style={styles.replyCancel} onPress={cancelEdit}>
-              <Text style={styles.replyCancelText}>{t("common:actions.cancel")}</Text>
-            </Pressable>
-          </View>
-        ) : null}
         {replyTo ? (
           <View style={styles.replyComposer}>
             <View style={styles.replyCopy}>
-              <Text style={styles.replyTitle}>{t("messaging:chat.replyingTo",{ name: replyTo.is_mine ? t("messaging:chat.yourMessage") : replyTo.sender_display_name || t("messaging:chat.unknownSender") })}</Text>
+              <Text style={styles.replyTitle}>{t("messaging:chat.replyingTo", { name: replyTo.is_mine ? t("messaging:chat.yourMessage") : replyTo.sender_display_name || t("messaging:chat.unknownSender") })}</Text>
               <Text style={styles.replyPreview} numberOfLines={1}>{messagePreview(replyTo)}</Text>
             </View>
             <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yCancelReply")} style={styles.replyCancel} onPress={() => setReplyTo(null)}>
@@ -2441,7 +1874,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             multiline
             autoFocus={qaChatState === "keyboard" || qaChatState === "reply-keyboard"}
             placeholder={assistantConversation ? t("messaging:chat.composerPlaceholderUndx") : t("messaging:chat.composerPlaceholder")}
-            placeholderTextColor={chatGraphite.secondaryText}
+            placeholderTextColor={colors.muted}
             style={styles.input}
             value={draft}
             onChangeText={notifyTyping}
@@ -2449,7 +1882,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           />
           <SignalIconButton accessibilityLabel="Add emoji" icon="happy-outline" size={42} onPress={() => setEmojiPickerOpen(true)} />
           <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX voice messages unavailable" : "Record voice message"} icon="mic-outline" disabled={uploading || assistantConversation} size={42} onPress={() => assistantConversation ? setStatusMessage("UNDX cannot receive voice messages yet.") : toggleVoiceRecording().catch(() => undefined)} />
-          <Pressable accessibilityRole="button" accessibilityLabel={editing ? t("messaging:chat.a11ySaveEdit") : "Send message"} disabled={!draft.trim()} style={({ pressed }) => [styles.sendButton, !draft.trim() && styles.sendDisabled, pressed && styles.pressed]} onPress={submitText}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={!draft.trim()} style={({ pressed }) => [styles.sendButton, !draft.trim() && styles.sendDisabled, pressed && styles.pressed]} onPress={submitText}>
             <Text style={styles.sendText}>➤</Text>
           </Pressable>
         </View>}
@@ -2469,42 +1902,37 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           setReactionPickerFor(null);
         }}
       />
-      <MessageFocusOverlay
-        message={focused?.message || null}
-        anchor={focused?.anchor || null}
-        actions={focusedActions}
-        preview={focused ? messagePreview(focused.message) : ""}
-        canReact={focusedCanReact}
-        viewerReaction={focused?.message.viewer_reaction}
-        onAction={(key) => {
-          if (focused) runMessageAction(key, focused);
+      <MessageActionSheet
+        message={selectedMessage}
+        onClose={() => setSelectedMessage(null)}
+        onReply={(message) => {
+          setReplyTo(message);
+          setSelectedMessage(null);
         }}
-        onReact={(reaction) => {
-          if (focused) react(focused.message, reaction).catch(() => undefined);
-          setFocused(null);
+        onReact={(message, reactionType) => {
+          react(message, reactionType).catch(() => undefined);
+          setSelectedMessage(null);
         }}
-        onReactMore={() => {
-          const target = focused?.message;
-          setFocused(null);
-          if (target) setReactionPickerFor(target);
+        onReactMore={(message) => {
+          setSelectedMessage(null);
+          setReactionPickerFor(message);
         }}
-        onClose={() => setFocused(null)}
-      />
-      <LinkChoiceSheet
-        choice={linkChoice}
-        onClose={() => setLinkChoice(null)}
-        onChoose={(url) => {
-          const run = linkChoice?.run;
-          setLinkChoice(null);
-          run?.(url);
+        onRetry={(message) => {
+          retryMessage(message).catch(() => undefined);
+          setSelectedMessage(null);
         }}
-      />
-      <MessageInfoSheet message={infoFor} group={isGroupThread} onClose={() => setInfoFor(null)} />
-      <ForwardSheet
-        message={forwarding}
-        currentConversationId={conversationId}
-        onClose={() => setForwarding(null)}
-        onForward={(conversationIds) => void forwardToConversations(conversationIds)}
+        onDelete={(message, scope) => {
+          removeMessage(message, scope).catch(() => undefined);
+          setSelectedMessage(null);
+        }}
+        onReport={(message) => {
+          report(message).catch(() => undefined);
+          setSelectedMessage(null);
+        }}
+        onSafety={() => {
+          setSelectedMessage(null);
+          navigation.navigate("SafetyHub", { section: "blocks", title: t("common:screens.safetyHub") });
+        }}
       />
       <AttachmentActionSheet
         visible={attachmentSheetOpen}
@@ -2524,7 +1952,6 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         connected={!error}
         activityStatus={peerPresenceControlLabel(peerPresence)}
         assistantConversation={assistantConversation}
-        onWallpaperChange={applyWallpaper}
         onClose={() => setControlCenterOpen(false)}
         onStartCall={!assistantConversation ? (callType) => {
           setControlCenterOpen(false);
@@ -2541,13 +1968,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         }}
       />
       </LogiNexusScreenShell>
-      {/* One viewer for the whole conversation, outside the shell so it is not
-          affected by the list's layout, and mounted unconditionally so that
-          opening it is a state change rather than a screen push — requirement
-          §6: swiping between photos must never push a new screen. */}
-      <ConversationMediaGalleryViewer gallery={mediaGallery} online={!usingCachedMessages} />
     </View>
-    </ConversationGalleryProvider>
   );
 }
 
@@ -2616,133 +2037,27 @@ function MediaSheetAction({ icon, label, detail, onPress, tone = "signal" }: { i
   );
 }
 
-/**
- * The key a message's translation is filed under.
- *
- * It is the same expression `ContentTranslation` receives as `contentRef`, and
- * it is a function for that reason: the screen keys its pending translate
- * requests by this and the bubble keys the component by it, so if the two ever
- * disagreed a request would be delivered to nobody.
- */
-function messageTranslationRef(message: MessengerMessage) {
-  return String(message.message_id || message.id || message.client_message_id || "pending");
-}
-
-/**
- * What the server said the message was written in, or "auto" to let the
- * translator detect it. Lifted out of the JSX because two callers now need the
- * same answer -- the translation control and the menu's decision to list
- * Translate at all.
- */
-function messageSourceLanguage(message: MessengerMessage) {
-  const record = message as Record<string, unknown>;
-  if (typeof record.source_language === "string") return record.source_language;
-  if (typeof record.language === "string") return record.language;
-  return "auto";
-}
-
 function MessageBubble({
   message,
   onRetry,
   onReact,
-  onLongPress,
-  onLinkPress,
-  translateRequestId
+  onLongPress
 }: {
   message: MessengerMessage;
   onRetry: () => void;
   onReact: () => void;
-  onLongPress: (focus: MessageFocusRequest) => void;
-  onLinkPress: (url: string) => void;
-  /** Bumped when the long-press menu's Translate is chosen for this message. */
-  translateRequestId?: number;
+  onLongPress: () => void;
 }) {
   const { t } = useTranslation();
-  const { locale } = useTimeZonePreference();
   const mine = Boolean(message.is_mine);
   const status = message.local_status || message.delivery_status || "sent";
   const deleted = Boolean(message.deleted_at || status === "deleted");
   const moderated = Boolean(message.moderated_at || message.moderation_state);
   const body = deleted ? t("messaging:chat.deletedMessageBody") : moderated ? t("messaging:chat.moderatedMessageBody") : displayMessageBody(message);
   const voiceMessage = isVoiceLikeMessage(message);
-  /**
-   * A photo or video sent with no caption gets a slimmer bubble.
-   *
-   * The 12/10 padding exists so a sentence is not pressed against a rounded
-   * edge. A picture is not a sentence: the same padding draws a visible frame of
-   * bubble colour around the image on all four sides, and with the media card
-   * also carrying its own radius the result is a rounded rectangle inside a
-   * rounded rectangle — §2, exactly. Caption messages keep the text padding,
-   * because there the padding is doing its job.
-   */
-  const mediaOnly = !deleted && !moderated && !body && isVisualMediaMessage(message);
-  /**
-   * A bubble with a link in it must not be one accessibility element.
-   *
-   * `accessible` on this wrapper collapses everything inside it into a single
-   * VoiceOver node, which is right for a bubble whose content is one utterance.
-   * It is wrong the moment part of that utterance is actionable: the link would
-   * be read as part of the sentence and could not be activated on its own. The
-   * grouping is dropped for exactly those bubbles, so each link becomes its own
-   * `link`-role element, and every other bubble keeps the behaviour it had.
-   */
-  const linkTexts = useMemo(
-    () => (deleted || moderated || !body ? [] : detectLinks(body).map((token) => token.text)),
-    [body, deleted, moderated]
-  );
-  const bodyHasLink = linkTexts.length > 0;
-  /**
-   * The PulseSoc object this message is about, if it is about exactly one.
-   *
-   * Derived from the body on every render rather than stored on the message, so
-   * a link sent long before cards existed becomes a card the first time it is
-   * drawn — no resend, no backfill, nothing to migrate.
-   */
-  const entity = useMemo(() => bodyEntity(body, linkTexts), [body, linkTexts]);
-  /**
-   * A body that is nothing but the link has no sentence worth keeping, so the
-   * card stands in for it and the raw URL is never drawn. A body with prose
-   * around the link keeps the prose: that part is the sender's.
-   */
-  const cardReplacesBody = Boolean(entity) && bodyIsOnlyLinks(body, linkTexts);
-  const showBodyText = Boolean(body) && !cardReplacesBody;
-  const sourceLanguage = messageSourceLanguage(message);
-  /**
-   * Whether Translate is worth listing, answered by the same predicate the
-   * inline globe uses. Asking it here rather than re-deriving it keeps the menu
-   * and the bubble from disagreeing about whether this message is foreign.
-   *
-   * `true` for the compact argument because a chat bubble is exactly the case
-   * that function's `compact` branch is about.
-   */
-  const translatable =
-    showBodyText && !deleted && !moderated && offersTranslation(body, sourceLanguage, locale.replace("_", "-").toLowerCase(), true);
-
-  /**
-   * The bubble measures itself so the overlay can draw the menu against it.
-   *
-   * The order here is the whole point: haptic, then open, then measure. Opening
-   * is not allowed to wait on `measureInWindow`, which is a round trip to the
-   * shadow tree and an answer that may never come -- a message unmounted under
-   * the finger, or any host that simply does not call the callback. A menu that
-   * silently fails to appear is the worst outcome of a long press, so the
-   * measurement refines a menu that is already on screen rather than gating it.
-   *
-   * The overlay knows how to centre itself with a null anchor, which is the
-   * same path the QA harness takes.
-   */
-  const bubbleRef = useRef<View>(null);
-  const handleLongPress = useCallback(() => {
-    void haptic("selection");
-    onLongPress({ message, anchor: null, links: linkTexts, translatable });
-    bubbleRef.current?.measureInWindow((x, y, width, height) => {
-      onLongPress({ message, anchor: { x, y, width, height }, links: linkTexts, translatable });
-    });
-  }, [linkTexts, message, onLongPress, translatable]);
-
   return (
-    <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible={!voiceMessage && !bodyHasLink} accessibilityLabel={messageAccessibilityLabel(message)}>
-      <Pressable ref={bubbleRef} onLongPress={handleLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, mediaOnly && styles.mediaBubble, moderated && styles.moderatedBubble]}>
+    <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible={!voiceMessage} accessibilityLabel={messageAccessibilityLabel(message)}>
+      <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, moderated && styles.moderatedBubble]}>
         {!mine ? <Text style={styles.senderLabel}>{message.sender_display_name || (message.sender_trust_state === "intelligence" ? "UNDX" : t("common:identity.member"))}</Text> : null}
         {message.reply_preview ? (
           <View style={styles.replyBlock}>
@@ -2751,29 +2066,22 @@ function MessageBubble({
           </View>
         ) : null}
         {!deleted && !moderated ? <MessageMedia message={message} /> : null}
-        {entity ? <PulseEntityLinkCard entity={entity} onOpen={onLinkPress} onLongPress={handleLongPress} /> : null}
-        {showBodyText ? (
+        {body ? (
           deleted || moderated ? (
             <Text style={[styles.body, styles.systemBody]}>{body}</Text>
           ) : (
             <ContentTranslation
               contentType="chat"
-              contentRef={messageTranslationRef(message)}
+              contentRef={message.message_id || message.id || message.client_message_id || "pending"}
               text={body}
-              sourceLanguage={sourceLanguage}
-              translateRequestId={translateRequestId}
-              // The translated body is linkified too, not just the original:
-              // `renderText` receives whichever string is currently visible, so
-              // a URL that survives translation stays tappable and one that is
-              // mangled by it simply renders as prose.
-              renderText={(visible) => (
-                <LinkedText
-                  text={visible}
-                  style={styles.body}
-                  onLinkPress={onLinkPress}
-                  onLongPress={handleLongPress}
-                />
-              )}
+              sourceLanguage={
+                typeof (message as Record<string, unknown>).source_language === "string"
+                  ? ((message as Record<string, unknown>).source_language as string)
+                  : typeof (message as Record<string, unknown>).language === "string"
+                    ? ((message as Record<string, unknown>).language as string)
+                    : "auto"
+              }
+              textStyle={styles.body}
               controlsMode="compact"
             />
           )
@@ -2810,48 +2118,68 @@ function ReactionRow({ reactions, viewerReaction, onReact }: { reactions?: Recor
   );
 }
 
-/**
- * Which link, when a message carries several.
- *
- * Deliberately not a menu of actions: the action was already chosen -- Open,
- * Copy or Share -- and the only open question is which URL it applies to. So
- * the rows are the links themselves, and the caller's handler comes back in
- * `run` rather than being re-derived here.
- *
- * The URLs are shown in full over two lines rather than prettified. A chooser
- * whose job is to disambiguate must not hide the part that distinguishes them,
- * and for links that differ only in their path a truncated host is no choice
- * at all.
- */
-function LinkChoiceSheet({
-  choice,
+function MessageActionSheet({
+  message,
   onClose,
-  onChoose
+  onReply,
+  onReact,
+  onReactMore,
+  onRetry,
+  onDelete,
+  onReport,
+  onSafety
 }: {
-  choice: { links: readonly string[] } | null;
+  message: MessengerMessage | null;
   onClose: () => void;
-  onChoose: (url: string) => void;
+  onReply: (message: MessengerMessage) => void;
+  onReact: (message: MessengerMessage, reactionType: string) => void;
+  onReactMore: (message: MessengerMessage) => void;
+  onRetry: (message: MessengerMessage) => void;
+  onDelete: (message: MessengerMessage, scope: "self" | "everyone") => void;
+  onReport: (message: MessengerMessage) => void;
+  onSafety: () => void;
 }) {
   const { t } = useTranslation();
-  if (!choice) return null;
+  if (!message) return null;
+  const actions = messageActionRules(message);
+  const canReact = actions.find((action) => action.key === "react")?.available;
+  const actionIsAvailable = (key: ReturnType<typeof messageActionRules>[number]["key"]) => actions.find((action) => action.key === key)?.available;
   return (
     <Modal transparent animationType="fade" visible onRequestClose={onClose}>
       <Pressable style={styles.sheetBackdrop} onPress={onClose}>
         <PulseCommandPanel style={styles.sheet}>
-          <Text style={styles.sheetTitle}>{t("messaging:messageActions.chooseLink", { defaultValue: "Which link?" })}</Text>
-          <View style={styles.sheetGrid}>
-            {choice.links.map((url) => (
+          <Text style={styles.sheetTitle}>{t("messaging:chat.messageControlsTitle")}</Text>
+          <Text style={styles.sheetPreview} numberOfLines={2}>{messagePreview(message)}</Text>
+          {canReact ? (
+            <View style={styles.reactionChoices}>
+              {QUICK_REACTIONS.map((reaction) => (
+                <Pressable
+                  key={reaction}
+                  accessibilityRole="button"
+                  accessibilityLabel={`React ${reaction}`}
+                  style={[styles.reactionChoice, message.viewer_reaction === reaction && styles.reactionActive]}
+                  onPress={() => onReact(message, reaction)}
+                >
+                  <Text style={styles.quickReactionGlyph} allowFontScaling={false}>{reaction}</Text>
+                </Pressable>
+              ))}
               <Pressable
-                key={url}
-                accessibilityRole="link"
-                accessibilityLabel={url}
-                style={({ pressed }) => [styles.linkChoiceRow, pressed && styles.pressed]}
-                onPress={() => onChoose(url)}
+                accessibilityRole="button"
+                accessibilityLabel="More reactions"
+                style={styles.reactionChoice}
+                onPress={() => onReactMore(message)}
               >
-                <Ionicons name="link-outline" size={16} color={colors.accent} />
-                <Text style={styles.linkChoiceText} numberOfLines={2}>{url}</Text>
+                <Text style={styles.quickReactionGlyph} allowFontScaling={false}>➕</Text>
               </Pressable>
-            ))}
+            </View>
+          ) : null}
+          <View style={styles.sheetGrid}>
+            {actionIsAvailable("reply") ? <SheetAction label={t("common:actions.reply")} onPress={() => onReply(message)} /> : null}
+            {actionIsAvailable("retry") ? <SheetAction label={t("messaging:chat.retry")} tone="warning" onPress={() => onRetry(message)} /> : null}
+            {actionIsAvailable("report") ? <SheetAction label={t("common:actions.report")} tone="warning" onPress={() => onReport(message)} /> : null}
+            {actionIsAvailable("safety") ? <SheetAction label={t("messaging:chat.muteBlock")} tone="safety" onPress={onSafety} /> : null}
+            {actionIsAvailable("deleteSelf") ? <SheetAction label={t("messaging:chat.deleteForMe")} tone="danger" onPress={() => onDelete(message, "self")} /> : null}
+            {actionIsAvailable("deleteEveryone") ? <SheetAction label={t("messaging:chat.deleteForEveryone")} tone="danger" onPress={() => onDelete(message, "everyone")} /> : null}
           </View>
         </PulseCommandPanel>
       </Pressable>
@@ -2859,227 +2187,18 @@ function LinkChoiceSheet({
   );
 }
 
-/**
- * When a message happened, and how far it got.
- *
- * Every line here is read off the message the thread already holds. That is a
- * deliberate ceiling, not a shortcut: the server aggregates read state to one
- * of sent/delivered/seen for the whole message and exposes no per-person
- * breakdown, so a screen promising "Read by Ana, Ben" would have to invent two
- * of those three words. What it can say truthfully, it says.
- *
- * In a group that ceiling has to be stated rather than implied, which is why
- * `deliveryDetail` differs by thread kind. "Read" next to six participants
- * reads as "all six", and it means "at least one". A one-line qualifier is the
- * difference between a fact and a wrong impression.
- */
-function MessageInfoSheet({
-  message,
-  group,
-  onClose
-}: {
-  message: MessengerMessage | null;
-  group: boolean;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-  if (!message) return null;
-
-  const stamp = (value?: string) => {
-    if (!value) return "";
-    const at = new Date(value);
-    // An unparseable timestamp is shown as nothing rather than as "Invalid
-    // Date", which is a string the user cannot act on and cannot report.
-    return Number.isNaN(at.getTime()) ? "" : at.toLocaleString();
-  };
-
-  const status = String(message.delivery_status || message.status || "").toLowerCase();
-  const seen = status === "seen" || status === "read" || Boolean(message.seen_at);
-  const delivered = seen || status === "delivered" || Boolean(message.delivered_at);
-  const deliveryDetail = seen
-    ? (group ? t("messaging:chat.infoReadGroup") : t("messaging:chat.infoRead"))
-    : delivered
-      ? t("messaging:chat.infoDelivered")
-      : t("messaging:chat.infoSent");
-
-  // Written out rather than built as `infoType_${kind}`. A composed key is
-  // invisible to the i18n extractor, so a locale missing one of the four would
-  // ship the raw key as the value and nobody would find out until a user in
-  // that locale opened this sheet.
-  const kind = messageActionKind(message);
-  const kindLabel = kind === "voice"
-    ? t("messaging:chat.infoTypeVoice")
-    : kind === "media"
-      ? t("messaging:chat.infoTypeMedia")
-      : kind === "unavailable"
-        ? t("messaging:chat.infoTypeUnavailable")
-        : t("messaging:chat.infoTypeText");
-  const bytes = Number(message.file_size || 0);
-  const seconds = Number(message.duration_seconds || message.duration || 0);
-
-  const rows: Array<{ label: string; value: string }> = [
-    { label: t("messaging:chat.infoFrom"), value: message.is_mine ? t("messaging:chat.yourMessage") : message.sender_display_name || t("messaging:chat.unknownSender") },
-    { label: t("messaging:chat.infoSentAt"), value: stamp(message.created_at) },
-    { label: t("messaging:chat.infoStatus"), value: deliveryDetail },
-    { label: t("messaging:chat.infoDeliveredAt"), value: stamp(message.delivered_at) },
-    { label: t("messaging:chat.infoReadAt"), value: stamp(message.seen_at) },
-    { label: t("messaging:chat.infoEditedAt"), value: stamp(message.edited_at) },
-    { label: t("messaging:chat.infoForwarded"), value: message.forwarded ? t("messaging:chat.infoForwardedYes") : "" },
-    { label: t("messaging:chat.infoType"), value: kindLabel },
-    { label: t("messaging:chat.infoDuration"), value: seconds > 0 ? formatDuration(seconds) : "" },
-    { label: t("messaging:chat.infoSize"), value: bytes > 0 ? formatFileSize(bytes) : "" },
-    { label: t("messaging:chat.infoId"), value: String(message.id || message.message_id || "") }
-    // Empty values are dropped below rather than shown as a dash. A blank row
-    // invites the reading that the fact is missing; an absent row says the
-    // fact does not apply, which for "Edited" or "Duration" is the truth.
-  ].filter((row) => row.value);
-
+function SheetAction({ label, onPress, tone = "default" }: { label: string; onPress: () => void; tone?: "default" | "warning" | "danger" | "safety" }) {
+  const textColor = tone === "danger" ? colors.danger : tone === "warning" ? colors.warning : tone === "safety" ? colors.accent : colors.text;
   return (
-    <Modal transparent animationType="fade" visible onRequestClose={onClose}>
-      <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yCloseInfo")} style={styles.sheetBackdrop} onPress={onClose}>
-        <PulseCommandPanel style={styles.sheet}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>{t("messaging:messageActions.info")}</Text>
-          <Text style={styles.sheetPreview} numberOfLines={2}>{messagePreview(message)}</Text>
-          <View style={styles.infoRows}>
-            {rows.map((row) => (
-              <View key={row.label} style={styles.infoRow}>
-                <Text style={styles.infoLabel}>{row.label}</Text>
-                <Text style={styles.infoValue} numberOfLines={2}>{row.value}</Text>
-              </View>
-            ))}
-          </View>
-        </PulseCommandPanel>
-      </Pressable>
-    </Modal>
+    <Pressable accessibilityRole="button" accessibilityLabel={label} style={styles.sheetAction} onPress={onPress}>
+      <Text style={[styles.sheetActionText, { color: textColor }]}>{label}</Text>
+    </Pressable>
   );
 }
-
-/**
- * Where to send it.
- *
- * The list is the conversations already cached for this account, read once when
- * the sheet opens. Cached rather than fetched because a picker that spins is a
- * picker people close, and the cache is exactly the list they just came from.
- * A refresh is attempted alongside, and only replaces the rows if it lands.
- *
- * The current conversation is excluded. Forwarding a message back into the
- * thread it is already in is a copy of itself directly beneath itself, which is
- * never the intent and is confusing enough to be worth one line to prevent.
- *
- * Multi-select, capped by the API wrapper at ten. The count that comes back is
- * what actually happened and may be smaller than the selection -- a thread the
- * account was removed from between the cache write and the send is a silent
- * drop otherwise -- so the caller reports the server's number, not its own.
- */
-function ForwardSheet({
-  message,
-  currentConversationId,
-  onClose,
-  onForward
-}: {
-  message: MessengerMessage | null;
-  currentConversationId: number;
-  onClose: () => void;
-  onForward: (conversationIds: number[]) => void;
-}) {
-  const { t } = useTranslation();
-  const [conversations, setConversations] = useState<MessengerConversation[]>([]);
-  const [selected, setSelected] = useState<number[]>([]);
-  const [busy, setBusy] = useState(false);
-  const open = Boolean(message);
-
-  useEffect(() => {
-    if (!open) {
-      setSelected([]);
-      return;
-    }
-    let active = true;
-    const keep = (list: MessengerConversation[]) =>
-      list.filter((item) => Number(item.conversation_id || item.id) !== currentConversationId);
-    loadCachedConversations()
-      .then((cached) => { if (active) setConversations(keep(cached)); })
-      .catch(() => undefined);
-    listConversations()
-      .then((fresh) => { if (active) setConversations(keep(fresh)); })
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, [currentConversationId, open]);
-
-  if (!message) return null;
-
-  const toggle = (id: number) => {
-    setSelected((current) => (current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]));
-  };
-
-  return (
-    <Modal transparent animationType="fade" visible onRequestClose={onClose}>
-      <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yCloseForward")} style={styles.sheetBackdrop} onPress={onClose}>
-        <PulseCommandPanel style={styles.sheet}>
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>{t("messaging:messageActions.forward")}</Text>
-          <Text style={styles.sheetPreview} numberOfLines={2}>{messagePreview(message)}</Text>
-          {conversations.length === 0 ? (
-            <Text style={styles.sheetPreview}>{t("messaging:chat.forwardNoConversations")}</Text>
-          ) : (
-            <ScrollView style={styles.forwardList} keyboardShouldPersistTaps="handled">
-              {conversations.slice(0, 60).map((item) => {
-                const id = Number(item.conversation_id || item.id);
-                const picked = selected.includes(id);
-                return (
-                  <Pressable
-                    key={id}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: picked }}
-                    accessibilityLabel={item.title || item.name || t("messaging:chat.defaultConversationTitle")}
-                    style={({ pressed }) => [styles.forwardRow, picked && styles.forwardRowPicked, pressed && styles.pressed]}
-                    onPress={() => toggle(id)}
-                  >
-                    <Ionicons name={picked ? "checkmark-circle" : "ellipse-outline"} size={20} color={picked ? colors.accent : colors.muted} />
-                    <Text style={styles.forwardRowText} numberOfLines={1}>{item.title || item.name || t("messaging:chat.defaultConversationTitle")}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          )}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("messaging:messageActions.forward")}
-            disabled={selected.length === 0 || busy}
-            style={({ pressed }) => [styles.sendButton, styles.forwardSend, (selected.length === 0 || busy) && styles.sendDisabled, pressed && styles.pressed]}
-            onPress={() => {
-              setBusy(true);
-              onForward(selected);
-            }}
-          >
-            {busy ? <ActivityIndicator color="#06101b" /> : <Text style={styles.forwardSendText}>{t("messaging:chat.forwardSend", { total: selected.length })}</Text>}
-          </Pressable>
-        </PulseCommandPanel>
-      </Pressable>
-    </Modal>
-  );
-}
-
-/**
- * Media card geometry.
- *
- * A share of the window, not a pixel count, so the card is proportionate on a
- * phone and on a tablet. `MEDIA_MAX_HEIGHT` is what stops a tall portrait clip
- * from filling the thread; past that bound the card crops and the viewer shows
- * the whole frame.
- */
-const MEDIA_WIDTH_RATIO = 0.78;
-const MEDIA_MAX_WIDTH = 420;
-const MEDIA_MAX_HEIGHT = 380;
-/** Portrait 9:16 through landscape 16:9, the range real camera media lives in. */
-const MEDIA_MIN_RATIO = 0.5625;
-const MEDIA_MAX_RATIO = 1.7778;
-/** Used only when the grant reported no dimensions at all. */
-const MEDIA_DEFAULT_RATIO = 1.25;
 
 function MessageMedia({ message }: { message: MessengerMessage }) {
   const { t } = useTranslation();
-  const gallery = useConversationGallery();
+  const [viewerOpen, setViewerOpen] = useState(false);
   const type = (message.message_type || "text").toLowerCase();
   // The message carries media identity; the renderer gets a short-lived access
   // URL for it. Handing the platform image loader a protected API path is what
@@ -3091,47 +2210,22 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
   // media_upload_id (the foundation message_attachments row) addresses the
   // access endpoint. attachment_id is passed for completeness and is
   // deliberately NOT marked as proven foundation media.
-  //
-  // ONE grant per bubble, carrying both the original and its preview. This used
-  // to be two calls to the same hook with the same identity, which resolved to
-  // the same attachment id and therefore returned the same `/download` URL
-  // twice: the thumbnail slot was handed the full asset, so a video bubble fed
-  // an entire movie to `<Image>` and a thread of photos downloaded every
-  // original at full size to paint cards a few hundred pixels wide.
   const mediaIdentity = { mediaUploadId: message.media_upload_id, attachmentId: message.attachment_id };
   const mediaAccess = useMessengerMediaAccessUrl(mediaIdentity, String(message.media_url || ""));
-  // One bounded re-grant when the platform loader rejects a URL we handed it —
-  // an expired grant is the ordinary cause. Single-shot per identity.
-  const retryMedia = mediaAccess.retry;
-  const mediaUrl = absoluteMediaUrl(mediaAccess.url);
-  const thumbnailUrl = absoluteMediaUrl(mediaAccess.thumbnailUrl);
-  /**
-   * §21. The message's own attachments, split back into tiles.
-   *
-   * `firstAttachment` in api/messenger.ts flattens a message down to its first
-   * attachment, which is lossless for anything the mobile composer sends — it
-   * sends exactly one — and quietly drops media for anything the web composer
-   * sends, which may send several. A three-photo message rendered as one photo
-   * with the other two reachable from nowhere.
-   *
-   * Memoised because it feeds a child component's props; the function itself is
-   * pure and cheap, but a fresh array every render re-renders the whole grid.
-   */
-  const mediaTiles = useMemo(
-    () => messageMediaTiles(Number(message.id || message.message_id || 0), message.attachments),
-    [message.attachments, message.id, message.message_id]
+  const thumbnailAccess = useMessengerMediaAccessUrl(
+    mediaIdentity,
+    String(message.thumbnail_url || message.media_url || "")
   );
-  /**
-   * The grid decision is made before the single-media grant is consulted at all.
-   *
-   * Every branch below this point reads `mediaUrl`, which is the grant for
-   * attachment *one*. A multi-photo message must not be gated on it: each tile
-   * carries its own identity and fetches its own grant, so a message whose first
-   * photo failed still renders the other two.
-   */
-  if (isMultiMediaMessage(mediaTiles)) {
-    return <MessageMediaGrid message={message} tiles={mediaTiles} />;
-  }
+  const retryThumbnail = thumbnailAccess.retry;
+  const retryMediaUrl = mediaAccess.retry;
+  // One bounded re-grant when the platform loader rejects a URL we handed it —
+  // an expired grant is the ordinary cause. Both are single-shot per identity.
+  const retryMedia = useCallback(() => {
+    retryThumbnail();
+    retryMediaUrl();
+  }, [retryThumbnail, retryMediaUrl]);
+  const mediaUrl = absoluteMediaUrl(mediaAccess.url);
+  const thumbnailUrl = absoluteMediaUrl(thumbnailAccess.url);
   if ((type === "image" || type === "gif") && mediaAccess.failed && !mediaUrl) {
     return (
       <View accessible accessibilityRole="text" accessibilityLabel={`${messageAccessibilityLabel(message)}. Image unavailable.`} style={styles.voiceUnavailable}>
@@ -3149,39 +2243,16 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
     );
   }
   if (!mediaUrl) return null;
-  /**
-   * Open the conversation gallery *on this item*.
-   *
-   * The seed is everything this bubble knows: which photo it is, and the URL it
-   * already decoded. The host puts that seed into the real collection and pages
-   * the rest of the conversation in around it, which is why the viewer opens on
-   * the tapped photo instantly and still ends up holding all 43.
-   *
-   * With no host — a preview, a harness — there is nothing to open, and a photo
-   * that does not expand is a better outcome than a crash.
-   */
-  function openInGallery() {
-    gallery?.open(gallerySeedFromMessage({
-      messageId: Number(message.id || message.message_id || 0),
-      attachmentId: Number(message.attachment_id || message.media_upload_id || message.id || 0),
-      mediaUploadId: Number(message.media_upload_id || 0),
-      kind: type === "video" ? "video" : "image",
-      url: mediaUrl,
-      // Carried separately because for a streamed video `mediaUrl` is a
-      // playlist, and Save to Photos needs the file.
-      downloadUrl: String(message.download_url || ""),
-      thumbnailUrl,
-      mimeType: String(message.mime_type || ""),
-      width: mediaAccess.meta.width,
-      height: mediaAccess.meta.height,
-      durationSeconds: Number(message.duration_seconds || message.duration || 0),
-      senderId: Number(message.sender_user_id || message.sender_id || 0),
-      senderName: String(message.sender_display_name || ""),
-      createdAt: String(message.created_at || "")
-    }));
-  }
+  const viewerItem: NativeMediaViewerItem = {
+    id: Number(message.id || message.message_id || 0),
+    kind: type === "video" ? "video" : type === "image" || type === "gif" ? "image" : "file",
+    url: mediaUrl,
+    thumbnailUrl,
+    title: type === "video" ? t("messaging:chat.videoAttachment") : type === "image" || type === "gif" ? t("messaging:chat.imageAttachment") : t("messaging:chat.messengerAttachment"),
+    subtitle: message.body || messageDeliveryLabel(message.local_status || message.delivery_status || "sent", message.seen_at),
+    sourceUrl: mediaUrl
+  };
   if (type === "image" || type === "gif") {
-    const photoPreviewUrl = thumbnailUrl || (isPreviewTerminal(mediaAccess.meta.processingStatus) ? mediaUrl : "");
     return (
       <>
         <Pressable
@@ -3190,443 +2261,22 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
             ? t("messaging:chat.a11yGifAttachment", { label: messageAccessibilityLabel(message) })
             : t("messaging:chat.a11yImageAttachment", { label: messageAccessibilityLabel(message) })}
           accessibilityHint={t("messaging:chat.a11yOpensViewer")}
-          onPress={openInGallery}
+          onPress={() => setViewerOpen(true)}
         >
-          {/* The derived rendition first, always. A photo may fall back to the
-              original because its size is bounded by the photo limit and the
-              viewer is about to need those bytes anyway — but only once the
-              rendition is known not to be coming, otherwise every bubble in a
-              thread pulls a full-resolution image down to paint a card a few
-              hundred points wide. Video deliberately does not fall back at all:
-              there is no bound worth falling back through. */}
-          <MediaSurface meta={mediaAccess.meta} message={message}>
-            {photoPreviewUrl ? (
-              <MediaPreviewImage
-                uri={photoPreviewUrl}
-                fallbackUri={isPreviewTerminal(mediaAccess.meta.processingStatus) ? mediaUrl : ""}
-                onRetry={retryMedia}
-              />
-            ) : (
-              <View style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaSkeleton]}>
-                <ActivityIndicator color={colors.muted} size="small" />
-              </View>
-            )}
-          </MediaSurface>
+          <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.image} resizeMode="cover" onError={retryMedia} />
         </Pressable>
+        <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
       </>
     );
   }
   if (isVoiceType(type)) {
     return <VoiceMessageCard message={message} url={mediaUrl} />;
   }
-  if (type === "video") {
-    return <VideoMessageCard message={message} access={mediaAccess} onOpen={openInGallery} />;
-  }
-  return <DocumentAttachmentCard message={message} url={mediaUrl} />;
-}
-
-/** Gap between tiles. Small enough that the grid reads as one object. */
-const MEDIA_TILE_GAP = 3;
-
-/**
- * §21: several photos in one message, as a grid of individually tappable tiles.
- *
- * The grid is laid out at the same bubble width as a single photo so a thread
- * containing both does not visibly change column. Each tile is square — a grid
- * of mixed aspect ratios reads as a broken layout rather than a deliberate one,
- * and the true ratio is one tap away in the viewer.
- *
- * What makes this more than a layout: every tile opens the *conversation*
- * gallery seeded with its own item. Tile 3 therefore lands on the third photo
- * of the message wherever that photo sits among the conversation's 43, because
- * the tile and the collection entry are the same object with the same key.
- */
-function MessageMediaGrid({ message, tiles }: { message: MessengerMessage; tiles: ConversationMediaItem[] }) {
-  const { width: windowWidth } = useWindowDimensions();
-  const gallery = useConversationGallery();
-  const columns = mediaTileColumns(tiles.length);
-  const gridWidth = Math.min(MEDIA_MAX_WIDTH, Math.round(windowWidth * MEDIA_WIDTH_RATIO));
-  const tileSize = Math.floor((gridWidth - MEDIA_TILE_GAP * (columns - 1)) / columns);
   return (
-    <View style={[styles.mediaGrid, { width: gridWidth }]}>
-      {tiles.map((tile, position) => (
-        <MediaGridTile
-          key={tile.key}
-          message={message}
-          tile={tile}
-          size={tileSize}
-          position={position + 1}
-          total={tiles.length}
-          // The tile hands its *granted* identity up rather than the grid
-          // reaching for `tile` directly: `tile.url` is the protected API path
-          // off the attachment payload, and the gallery shows a seeded URL until
-          // its own resolve lands (`grant?.url || item.url` in the host). Seeding
-          // the raw path would both lose the instant open and hand the platform
-          // image loader a protected path — the thing that made image loads run
-          // session refresh on the server.
-          onOpen={(granted) => gallery?.open(gallerySeedFromMessage(granted))}
-        />
-      ))}
-    </View>
-  );
-}
-
-/**
- * One tile.
- *
- * This is a component rather than a loop body because it needs a hook per tile —
- * `useMessengerMediaAccessUrl` grants a short-lived URL for one identity, and
- * hooks cannot be called in a loop over a variable-length array. A tile failing
- * to load is therefore local to that tile: a three-photo message with one dead
- * object shows two photos and one legible failure, not an empty bubble.
- *
- * The preview is the *thumbnail*, and falls back to the original only once the
- * rendition is known not to be coming. Three tiles pulling three full-resolution
- * originals to paint squares a hundred points wide is the same mistake the
- * single-photo card already learned not to make, multiplied.
- */
-function MediaGridTile({
-  message,
-  tile,
-  size,
-  position,
-  total,
-  onOpen
-}: {
-  message: MessengerMessage;
-  tile: ConversationMediaItem;
-  size: number;
-  position: number;
-  total: number;
-  onOpen: (granted: ConversationMediaItem) => void;
-}) {
-  const { t } = useTranslation();
-  const access = useMessengerMediaAccessUrl(
-    { mediaUploadId: tile.mediaUploadId, attachmentId: tile.attachmentId },
-    tile.url
-  );
-  const url = absoluteMediaUrl(access.url);
-  const thumbnail = absoluteMediaUrl(access.thumbnailUrl);
-  const previewUrl = thumbnail || (isPreviewTerminal(access.meta.processingStatus) ? url : "");
-  const label = tile.kind === "video"
-    ? t("messaging:chat.a11yGridVideoTile", { position, total, label: messageAccessibilityLabel(message) })
-    : t("messaging:chat.a11yGridPhotoTile", { position, total, label: messageAccessibilityLabel(message) });
-  return (
-    <Pressable
-      accessibilityRole="imagebutton"
-      accessibilityLabel={label}
-      accessibilityHint={t("messaging:chat.a11yOpensViewer")}
-      // The key is deliberately left alone: it is what makes this tile and the
-      // same photo in the server-paged collection one entry rather than two.
-      onPress={() => onOpen({ ...tile, url, thumbnailUrl: thumbnail })}
-      style={[styles.mediaTile, { height: size, width: size }]}
-    >
-      {previewUrl ? (
-        <MediaPreviewImage
-          uri={previewUrl}
-          fallbackUri={isPreviewTerminal(access.meta.processingStatus) ? url : ""}
-          onRetry={access.retry}
-        />
-      ) : (
-        <View style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaSkeleton]}>
-          <ActivityIndicator color={colors.muted} size="small" />
-        </View>
-      )}
-      {/* A video tile has to say it is a video before it is opened — a poster
-          frame alone is indistinguishable from a photo. The badge is scaled
-          down from the single-card one so it does not swallow a small tile. */}
-      {tile.kind === "video" ? (
-        <View pointerEvents="none" style={styles.mediaTilePlayBadge}>
-          <Ionicons name="play" size={14} color="#04110c" />
-        </View>
-      ) : null}
-    </Pressable>
-  );
-}
-
-/**
- * The bubble-width media frame every photo and video poster is drawn into.
- *
- * Width is a share of the window rather than the 200-220pt constants this
- * replaced, which made a photo read as a chip regardless of screen size. Height
- * comes from the media's own dimensions when the grant reported them, so a
- * portrait video stops being letterboxed into a 1.6 landscape box — bounded,
- * because one tall photo must not take the whole thread.
- *
- * A square placeholder is NOT a neutral default: it reflows the row the moment
- * the real ratio arrives. Absent dimensions keep the previous card shape.
- */
-function MediaSurface({ meta, message, children }: { meta: MessengerMediaMeta; message: MessengerMessage; children: React.ReactNode }) {
-  const { width: windowWidth } = useWindowDimensions();
-  const cardWidth = Math.min(MEDIA_MAX_WIDTH, Math.round(windowWidth * MEDIA_WIDTH_RATIO));
-  const declaredWidth = meta.width;
-  const declaredHeight = meta.height;
-  const ratio = declaredWidth > 0 && declaredHeight > 0
-    ? clamp(declaredWidth / declaredHeight, MEDIA_MIN_RATIO, MEDIA_MAX_RATIO)
-    : MEDIA_DEFAULT_RATIO;
-  const height = Math.min(Math.round(cardWidth / ratio), MEDIA_MAX_HEIGHT);
-  return <View style={[styles.mediaSurface, { width: cardWidth, height }]}>{children}</View>;
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-/**
- * The bitmap inside a media frame, with the two states a frame is allowed to be
- * in while it has no bitmap.
- *
- * Handing `<Image>` a URL and drawing nothing else is what made a photo read as
- * a blank card: the frame is sized from the grant's dimensions and painted
- * immediately, so between layout and the first byte there is a correctly-shaped
- * rectangle of surface colour with nothing in it, and a photo that fails to
- * decode leaves that rectangle up forever. Neither state says anything, so both
- * look like the same bug.
- *
- * So a load in flight gets a skeleton, and a load that ended badly gets a
- * legible failure with a retry on it. `onError` re-grants once through the
- * access layer before this gives up, because an expired signature is the
- * ordinary cause and it is invisible from here.
- */
-/**
- * `fallbackUri` covers the case the dispatch above cannot see: a rendition that
- * the record says exists and does not.
- *
- * The caller only falls back to the original when `thumbnailUrl` is *absent*.
- * But an attachment can sit at processing_status='ready' with a thumbnail_key
- * pointing at an object that was never written — the row claims a preview, the
- * access endpoint signs a perfectly valid URL for it, and the object 404s. That
- * is indistinguishable from a good preview until the image actually fails to
- * load, so the recovery has to live here, at the point of failure, rather than
- * in the branch that picks the URL. Falling through to the full-size photo is
- * the same trade the dispatch already makes when the rendition is known to be
- * missing, and it is bounded by the photo upload limit.
- */
-function MediaPreviewImage({ uri, fallbackUri, onRetry, onLoad }: { uri: string; fallbackUri?: string; onRetry?: () => void; onLoad?: () => void }) {
-  const { t } = useTranslation();
-  const [phase, setPhase] = useState<"loading" | "ready" | "failed">("loading");
-  const [source, setSource] = useState(uri);
-  // Keyed on the URL: a re-grant hands over a new signature for the same
-  // picture, and leaving the previous attempt's `failed` up would make the
-  // retry look like it did nothing.
-  useEffect(() => { setSource(uri); setPhase(uri ? "loading" : "failed"); }, [uri]);
-  const handleError = useCallback(() => {
-    // One step down, and only ever one: the fallback is a different object, so
-    // if it fails too there is nothing further to try and the card must say so.
-    if (fallbackUri && fallbackUri !== source) {
-      setSource(fallbackUri);
-      setPhase("loading");
-      return;
-    }
-    setPhase("failed");
-  }, [fallbackUri, source]);
-  const retry = useCallback(() => {
-    setSource(uri);
-    setPhase("loading");
-    onRetry?.();
-  }, [onRetry, uri]);
-  if (phase === "failed") {
-    return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${t("messaging:chat.videoPosterFailed")}. ${t("messaging:chat.tapToRetry")}`}
-        style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaFailed]}
-        onPress={retry}
-      >
-        <Ionicons name="alert-circle-outline" size={22} color={colors.danger} />
-        <Text style={styles.mediaFailedTitle}>{t("messaging:chat.videoPosterFailed")}</Text>
-        <Text style={styles.mediaFailedHint}>{t("messaging:chat.tapToRetry")}</Text>
-      </Pressable>
-    );
-  }
-  return (
-    <>
-      <Image
-        source={{ uri: source }}
-        style={styles.mediaFill}
-        resizeMode="cover"
-        onLoad={() => { setPhase("ready"); onLoad?.(); }}
-        onError={handleError}
-      />
-      {phase === "loading" ? (
-        <View pointerEvents="none" style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaSkeleton]}>
-          <ActivityIndicator color={colors.muted} size="small" />
-        </View>
-      ) : null}
-    </>
-  );
-}
-
-/**
- * Whether a preview that is absent is absent for good.
- *
- * A photo falls back to its original only here. While the derived rendition is
- * still coming the frame shows a skeleton instead, so the ordinary path never
- * pulls a full-resolution image down to paint a card a few hundred points wide.
- */
-function isPreviewTerminal(status: string) {
-  const value = String(status || "").toLowerCase();
-  return !isPosterPending(value);
-}
-
-/**
- * A video message, as a poster with a play control over it.
- *
- * What this replaced drew the words "Video attachment" and "Open viewer" over a
- * 200pt box and put the generated filename in the bubble underneath, so an
- * iPhone `.MOV` arrived looking like a file attachment with a UUID for a name.
- * The poster was already being granted and was already being rendered — it was
- * just small, unlabelled, and optional, and the text stayed regardless.
- *
- * The three states below are distinguishable on purpose. A poster that has not
- * been generated yet and one that never will are both an empty `thumbnailUrl`,
- * and collapsing them is how a permanently broken card ends up claiming it is
- * still working.
- */
-function VideoMessageCard({ message, access, onOpen }: {
-  message: MessengerMessage;
-  access: MessengerMediaAccessState;
-  /** Open the conversation gallery on this video. The card no longer owns a viewer. */
-  onOpen: () => void;
-}) {
-  const { t } = useTranslation();
-  const poster = absoluteMediaUrl(access.thumbnailUrl);
-  const durationMs = access.meta.durationMs || Number(message.duration_seconds || 0) * 1000;
-  const duration = formatMediaDuration(durationMs);
-  const processing = !poster && isPosterPending(access.meta.processingStatus);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={duration
-        ? t("messaging:chat.a11yVideoAttachmentDuration", { duration: spokenDuration(durationMs) })
-        : t("messaging:chat.a11yVideoAttachment")}
-      accessibilityHint={t("messaging:chat.a11yOpensViewer")}
-      onPress={onOpen}
-    >
-      <MediaSurface meta={access.meta} message={message}>
-        {poster ? (
-          <MediaPreviewImage uri={poster} onRetry={access.retry} />
-        ) : processing ? (
-          // Still being cut. A skeleton, not a dark block: the frame has to read
-          // as "coming" rather than as the finished article.
-          <View style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaSkeleton]}>
-            <ActivityIndicator color={colors.muted} size="small" />
-          </View>
-        ) : (
-          // No poster and nothing left to wait for. Says so, and offers the one
-          // re-grant that fixes the ordinary cause.
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${t("messaging:chat.videoPosterFailed")}. ${t("messaging:chat.tapToRetry")}`}
-            style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaFailed]}
-            onPress={access.retry}
-          >
-            <Ionicons name="alert-circle-outline" size={22} color={colors.danger} />
-            <Text style={styles.mediaFailedTitle}>{t("messaging:chat.videoPosterFailed")}</Text>
-            <Text style={styles.mediaFailedHint}>{t("messaging:chat.tapToRetry")}</Text>
-          </Pressable>
-        )}
-        {/* The play affordance stays up in every state: the asset is playable
-            even when its poster is not ready, so hiding it would make a
-            perfectly good video look broken while a frame is being cut. */}
-        <View pointerEvents="none" style={styles.videoPlayBadge}>
-          <Ionicons name="play" size={24} color="#04121c" />
-        </View>
-        {duration ? (
-          <View pointerEvents="none" style={styles.videoDurationBadge}>
-            <Text style={styles.videoDurationText}>{duration}</Text>
-          </View>
-        ) : null}
-        {processing ? (
-          <View pointerEvents="none" style={styles.videoStatusBadge}>
-            <Text style={styles.videoStatusText}>{t("messaging:chat.videoProcessing")}</Text>
-          </View>
-        ) : null}
-      </MediaSurface>
-    </Pressable>
-  );
-}
-
-/** Statuses that mean a poster is still coming. `queued` included: the job row exists. */
-function isPosterPending(status: string) {
-  return ["queued", "processing"].includes(String(status || "").toLowerCase());
-}
-
-/**
- * `0:45`, `13:42`, `1:12:08` — hours only once there are hours.
- *
- * Duration is read off the attachment row, which the processing worker filled in
- * from the container itself. Nothing here measures the file, and a 90-minute
- * video formats by the same rule as a 10-second one.
- */
-function formatMediaDuration(durationMs: number): string {
-  const total = Math.round(Math.max(0, Number(durationMs) || 0) / 1000);
-  if (total <= 0) return "";
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
-}
-
-/** The same length, said rather than shown, for VoiceOver. */
-function spokenDuration(durationMs: number): string {
-  const total = Math.round(Math.max(0, Number(durationMs) || 0) / 1000);
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  if (minutes && seconds) return translate("messaging:chat.durationMinutesSeconds", { minutes, seconds });
-  if (minutes) return translate("messaging:chat.durationMinutes", { minutes });
-  return translate("messaging:chat.durationSeconds", { seconds });
-}
-
-/**
- * A document attachment that actually opens.
- *
- * The card this replaced rendered a filename and a byte count under an
- * `onPress` that evaluated to `undefined` for every non-video attachment, so a
- * PDF arrived, said "Sent", and did nothing when tapped for the life of the
- * conversation. Opening goes through the shared `openDocument` action rather
- * than a Messenger-local implementation, so the access grant, the retry policy
- * and the on-disk cache are the same ones every other surface uses.
- */
-function DocumentAttachmentCard({ message, url }: { message: MessengerMessage; url: string }) {
-  const { t } = useTranslation();
-  const [opening, setOpening] = useState(false);
-  const [failure, setFailure] = useState("");
-  const filename = String(message.body || "").trim() || t("messaging:chat.fileAttachment");
-
-  const open = useCallback(async () => {
-    if (opening) return;
-    setOpening(true);
-    setFailure("");
-    const result = await openDocument({
-      url,
-      mediaId: messengerMediaCacheIdentity({ mediaUploadId: message.media_upload_id, attachmentId: message.attachment_id }),
-      mimeType: message.mime_type || undefined,
-      expectedBytes: Number(message.file_size || 0) || undefined,
-      surface: "messenger",
-      title: filename
-    });
-    setOpening(false);
-    if (result.status !== "opened") setFailure(result.message);
-  }, [filename, message.attachment_id, message.file_size, message.media_upload_id, message.mime_type, opening, url]);
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={filename}
-      accessibilityHint={t("messaging:chat.a11yOpensDocument")}
-      accessibilityState={{ busy: opening }}
-      style={styles.attachment}
-      onPress={open}
-    >
-      <Text style={styles.attachmentTitle}>{filename}</Text>
-      <Text style={styles.attachmentMeta}>
-        {opening
-          ? t("messaging:chat.openingDocument")
-          : `${formatFileSize(message.file_size)} · ${t("messaging:chat.openDocument")}`}
-      </Text>
-      {failure ? <Text style={styles.voiceError}>{failure}</Text> : null}
+    <Pressable style={styles.attachment} onPress={() => (type === "video" ? setViewerOpen(true) : undefined)}>
+      <Text style={styles.attachmentTitle}>{type === "video" ? t("messaging:chat.videoAttachment") : t("messaging:chat.fileAttachment")}</Text>
+      <Text style={styles.attachmentMeta}>{type === "video" ? t("messaging:chat.openViewer") : formatFileSize(message.file_size)}</Text>
+      <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
     </Pressable>
   );
 }
@@ -3723,64 +2373,8 @@ function isVoiceLikeMessage(message: MessengerMessage) {
   return isVoiceType(message.message_type || message.type);
 }
 
-/**
- * Photo or video — the two things that belong in the swipeable gallery.
- *
- * Voice notes and documents are deliberately excluded (§28): a waveform player
- * and a document card are not things you can swipe onto, and they keep their own
- * chrome. This is the client half of the same classification the media-history
- * endpoint applies server-side, so the inline thread and the gallery agree on
- * what "media" means.
- */
-function isVisualMediaMessage(message: MessengerMessage) {
-  return ["image", "gif", "video"].includes(normalizedMessageType(message.message_type || message.type));
-}
-
-/**
- * The text of a bubble, which for an attachment the user never captioned is
- * nothing.
- *
- * Messenger sends the picked file's name as the message body (`body:
- * input.name` in the attach flow) because there is no caption field — so the
- * bubble was printing `81084427942__310C6CDB-....MOV` under the media as if the
- * user had typed it. A document's name is its content, but the card already
- * prints it as the card title, so a bubble body said it a second time.
- *
- * Only a body that reads as a filename is dropped, and the two kinds of
- * attachment need different rules for that — see the helpers below. Flows that
- * do carry a typed caption keep it, and the filename itself survives on the
- * attachment row for the card, the viewer and downloads.
- */
 function displayMessageBody(message: MessengerMessage) {
-  const body = message.body || "";
-  if (!body) return "";
-  const type = (message.message_type || "text").toLowerCase();
-  // A voice note has no body, whatever the row says. The card already carries
-  // everything it means — play, waveform, length, speed — so a line of text
-  // above it is either the word "Voice message", which repeats the card, or the
-  // recorder's generated filename, which is an implementation detail and is
-  // deliberately never shown. There is no caption field on this flow, so
-  // nothing a person typed can be lost here.
-  if (isVoiceType(type)) return "";
-  if (["image", "gif", "video"].includes(type)) return looksLikeFilename(body) ? "" : body;
-  if (["file", "document"].includes(type)) return looksLikeDocumentName(body) ? "" : body;
-  return body;
-}
-
-/** A bare filename: one token, no spaces, with an extension on the end. */
-function looksLikeFilename(value: string) {
-  return /^[^\s/]+\.[A-Za-z0-9]{2,5}$/.test(value.trim());
-}
-
-/**
- * A document name, which unlike camera media routinely has spaces in it —
- * "Deployment gear list.pdf" is a filename and the single-token rule above
- * would call it a caption. The extension on the end carries the signal: a
- * sentence someone typed does not finish in `.pdf`.
- */
-function looksLikeDocumentName(value: string) {
-  const trimmed = value.trim();
-  return !trimmed.includes("\n") && /\.[A-Za-z0-9]{2,5}$/.test(trimmed);
+  return message.body || "";
 }
 
 function mediaPreviewLabel(type: string, hasMedia: boolean) {
@@ -3899,8 +2493,8 @@ const styles = StyleSheet.create({
     flex: 1
   },
   header: {
-    backgroundColor: chatGraphite.headerSurface,
-    borderBottomColor: chatGraphite.quietDivider,
+    backgroundColor: "rgba(7,15,32,0.96)",
+    borderBottomColor: "rgba(97,216,255,0.26)",
     borderBottomWidth: 1,
     padding: logiNexus.spacing.sm,
     paddingBottom: logiNexus.spacing.sm,
@@ -3908,10 +2502,10 @@ const styles = StyleSheet.create({
     zIndex: 3
   },
   threadHeader: { alignItems: "center", flexDirection: "row", gap: 8, minHeight: 56 },
-  backButton: { alignItems: "center", backgroundColor: chatGraphite.controlSurface, borderColor: chatGraphite.quietDivider, borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 42 },
-  backButtonText: { color: chatGraphite.primaryText, fontSize: 30, fontWeight: "400", marginTop: -3 },
+  backButton: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.035)", borderColor: colors.border, borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 42 },
+  backButtonText: { color: colors.text, fontSize: 30, fontWeight: "400", marginTop: -3 },
   threadIdentity: { flex: 1, gap: 3, minWidth: 0 },
-  threadTitle: { color: chatGraphite.primaryText, fontSize: 18, fontWeight: "900" },
+  threadTitle: { color: colors.text, fontSize: 18, fontWeight: "900" },
   threadStatusRow: { alignItems: "center", flexDirection: "row", gap: 5 },
   threadStatusSignal: { alignItems: "center", height: 10, justifyContent: "center", width: 10 },
   threadStatusHalo: { backgroundColor: colors.accent, borderRadius: 6, height: 10, position: "absolute", width: 10 },
@@ -3924,7 +2518,7 @@ const styles = StyleSheet.create({
   },
   signalButton: {
     alignItems: "center",
-    backgroundColor: chatGraphite.controlSurface,
+    backgroundColor: "rgba(4,16,28,0.9)",
     borderRadius: 15,
     borderWidth: 1,
     justifyContent: "center",
@@ -3982,7 +2576,7 @@ const styles = StyleSheet.create({
     marginTop: logiNexus.spacing.xxl
   },
   loadingOlder: {
-    color: chatGraphite.secondaryText,
+    color: colors.muted,
     fontSize: 12,
     fontWeight: "800",
     padding: logiNexus.spacing.md,
@@ -4005,31 +2599,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10
   },
-  mediaBubble: {
-    gap: 4,
-    minWidth: 0,
-    paddingHorizontal: 6,
-    paddingVertical: 6
-  },
   mineBubble: {
-    backgroundColor: chatGraphite.outgoingSurface,
-    borderColor: chatGraphite.outgoingBorder,
+    backgroundColor: "rgba(37,83,158,0.82)",
+    borderColor: "rgba(93,174,255,0.58)",
     borderBottomRightRadius: 6,
     borderWidth: 1
   },
   theirBubble: {
-    backgroundColor: chatGraphite.incomingSurface,
+    backgroundColor: "rgba(12,24,43,0.88)",
     borderBottomLeftRadius: 6,
-    borderColor: chatGraphite.incomingBorder,
+    borderColor: "rgba(105,218,240,0.28)",
     borderWidth: 1
   },
   body: {
-    color: chatGraphite.primaryText,
+    color: colors.text,
     fontSize: 15,
     lineHeight: 21
   },
   forwarded: {
-    color: chatGraphite.secondaryText,
+    color: colors.muted,
     fontSize: 11,
     fontWeight: "800",
     textTransform: "uppercase"
@@ -4041,14 +2629,14 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end"
   },
   meta: {
-    color: chatGraphite.secondaryText,
+    color: colors.muted,
     fontSize: 9
   },
   moderatedBubble: {
     borderColor: "rgba(255, 204, 102, 0.35)"
   },
   systemBody: {
-    color: chatGraphite.secondaryText,
+    color: colors.muted,
     fontStyle: "italic"
   },
   reactionRow: {
@@ -4057,8 +2645,8 @@ const styles = StyleSheet.create({
     gap: 6
   },
   reactionPill: {
-    backgroundColor: chatGraphite.insetSurface,
-    borderColor: chatGraphite.quietDivider,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderColor: colors.border,
     borderRadius: logiNexus.radius.capsule,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 7,
@@ -4068,118 +2656,44 @@ const styles = StyleSheet.create({
     borderColor: colors.accent
   },
   reactionText: {
-    color: chatGraphite.primaryText,
+    color: colors.text,
     fontSize: 11,
     fontWeight: "800",
     textTransform: "capitalize"
   },
   replyBlock: {
-    backgroundColor: chatGraphite.insetSurface,
-    borderLeftColor: chatGraphite.senderAccent,
+    backgroundColor: "rgba(97,216,255,0.08)",
+    borderLeftColor: colors.accent,
     borderLeftWidth: 2,
     borderRadius: 10,
     gap: 2,
     padding: 7
   },
   replyTitle: {
-    color: chatGraphite.senderAccent,
+    color: colors.accentStrong,
     fontSize: 11,
     fontWeight: "900",
     textTransform: "uppercase"
   },
   replyPreview: {
-    color: chatGraphite.secondaryText,
+    color: colors.muted,
     fontSize: 12,
     lineHeight: 17
   },
   image: {
     aspectRatio: 1.12,
-    backgroundColor: chatGraphite.insetSurface,
+    backgroundColor: colors.surfaceRaised,
     borderRadius: 12,
     width: 220
   },
-  // No border. The card sits inside a bubble that already has an edge, and a
-  // second hairline outline around the photo is the "nested rounded rectangle"
-  // §2 rules out. The radius stays so the image corners follow the bubble's.
-  mediaSurface: {
-    backgroundColor: chatGraphite.insetSurface,
-    borderRadius: 14,
-    overflow: "hidden",
-    position: "relative"
-  },
-  mediaFill: { height: "100%", width: "100%" },
-  // §21. `gap` rather than per-tile margins so the grid's outer edge lines up
-  // with a single photo's — a margin-based grid is inset by half a gap on every
-  // side and reads as a narrower card sitting inside the bubble.
-  mediaGrid: { borderRadius: 14, flexDirection: "row", flexWrap: "wrap", gap: MEDIA_TILE_GAP, overflow: "hidden" },
-  mediaTile: { backgroundColor: chatGraphite.insetSurface, overflow: "hidden", position: "relative" },
-  mediaTilePlayBadge: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: 13,
-    bottom: 6,
-    height: 26,
-    justifyContent: "center",
-    left: 6,
-    position: "absolute",
-    width: 26
-  },
-  mediaPlaceholder: { alignItems: "center", justifyContent: "center" },
-  // Absolute so it sits over the `<Image>` it is covering rather than pushing it
-  // out of the frame.
-  mediaSkeleton: { backgroundColor: "rgba(255,255,255,0.04)", bottom: 0, left: 0, position: "absolute", right: 0, top: 0 },
-  mediaFailed: { backgroundColor: "rgba(255,255,255,0.04)", bottom: 0, gap: 3, left: 0, padding: 12, position: "absolute", right: 0, top: 0 },
-  mediaFailedTitle: { color: chatGraphite.primaryText, fontSize: 12, fontWeight: "800", textAlign: "center" },
-  mediaFailedHint: { color: chatGraphite.secondaryText, fontSize: 11, fontWeight: "700", textAlign: "center" },
-  videoPlayBadge: {
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: 26,
-    height: 52,
-    justifyContent: "center",
-    left: "50%",
-    marginLeft: -26,
-    marginTop: -26,
-    paddingLeft: 3,
-    position: "absolute",
-    top: "50%",
-    width: 52
-  },
-  videoDurationBadge: {
-    backgroundColor: "rgba(4,18,28,0.78)",
-    borderRadius: 6,
-    bottom: 8,
-    left: 8,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    position: "absolute"
-  },
-  videoDurationText: { color: "#ffffff", fontSize: 12, fontWeight: "700" },
-  videoStatusBadge: {
-    backgroundColor: "rgba(4,18,28,0.78)",
-    borderRadius: 6,
-    bottom: 8,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    position: "absolute",
-    right: 8
-  },
-  videoStatusText: { color: "#ffffff", fontSize: 11, fontWeight: "600" },
   attachment: {
-    backgroundColor: chatGraphite.insetSurface,
-    borderColor: chatGraphite.quietDivider,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(97,216,255,0.24)",
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     gap: 3,
     minWidth: 190,
     padding: 10
-  },
-  videoPoster: {
-    aspectRatio: 1.6,
-    backgroundColor: chatGraphite.insetSurface,
-    borderRadius: 10,
-    marginBottom: 4,
-    width: 200
   },
   voiceCard: { minWidth: 222, paddingVertical: 1 },
   voiceSemanticSummary: { height: 1, left: 0, opacity: 0, position: "absolute", top: 0, width: 1 },
@@ -4200,12 +2714,12 @@ const styles = StyleSheet.create({
   voiceRate: { alignItems: "center", backgroundColor: "rgba(167,124,255,0.13)", borderColor: "rgba(167,124,255,0.62)", borderRadius: 11, borderWidth: 1, minHeight: 32, minWidth: 36, justifyContent: "center" },
   voiceRateText: { color: "#d7caff", fontSize: 12, fontWeight: "900" },
   attachmentTitle: {
-    color: chatGraphite.primaryText,
+    color: colors.text,
     fontSize: 14,
     fontWeight: "800"
   },
   attachmentMeta: {
-    color: chatGraphite.secondaryText,
+    color: colors.muted,
     fontSize: 12
   },
   retry: {
@@ -4222,8 +2736,8 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   composer: {
-    backgroundColor: chatGraphite.headerSurface,
-    borderColor: chatGraphite.quietDivider,
+    backgroundColor: "rgba(2,10,20,0.98)",
+    borderColor: "rgba(65,236,198,0.48)",
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     borderWidth: 1,
@@ -4233,13 +2747,13 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     paddingHorizontal: 10,
     paddingTop: 7,
-    shadowColor: chatGraphite.shadow,
+    shadowColor: colors.accent,
     shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: chatGraphite.shadowOpacity,
+    shadowOpacity: 0.22,
     shadowRadius: 24
   },
   composerAvoider: {
-    backgroundColor: chatGraphite.headerSurface,
+    backgroundColor: colors.background,
     flexShrink: 0,
     width: "100%"
   },
@@ -4276,7 +2790,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4
   },
   composerState: {
-    color: chatGraphite.secondaryText,
+    color: colors.muted,
     fontSize: 9,
     fontWeight: "900",
     letterSpacing: 0.8
@@ -4321,8 +2835,8 @@ const styles = StyleSheet.create({
   },
   replyComposer: {
     alignItems: "center",
-    backgroundColor: chatGraphite.composerSurface,
-    borderColor: chatGraphite.quietDivider,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderColor: colors.border,
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
@@ -4334,14 +2848,14 @@ const styles = StyleSheet.create({
     minWidth: 0
   },
   replyCancel: {
-    borderColor: chatGraphite.quietDivider,
+    borderColor: colors.border,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 10,
     paddingVertical: 7
   },
   replyCancelText: {
-    color: chatGraphite.secondaryText,
+    color: colors.muted,
     fontSize: 12,
     fontWeight: "900"
   },
@@ -4351,8 +2865,8 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     alignItems: "center",
-    backgroundColor: chatGraphite.controlSurface,
-    borderColor: chatGraphite.quietDivider,
+    backgroundColor: "rgba(255,255,255,0.045)",
+    borderColor: colors.border,
     borderRadius: logiNexus.radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
     minHeight: 44,
@@ -4364,7 +2878,7 @@ const styles = StyleSheet.create({
     opacity: 0.55
   },
   iconText: {
-    color: chatGraphite.primaryText,
+    color: colors.text,
     fontSize: 12,
     fontWeight: "800"
   },
@@ -4402,11 +2916,11 @@ const styles = StyleSheet.create({
   voiceCaptureBarPurple: { backgroundColor: "#a77cff" },
   voiceCaptureSend: { alignItems: "center", backgroundColor: colors.accent, borderColor: "rgba(255,255,255,0.56)", borderRadius: 23, borderWidth: 1, height: 46, justifyContent: "center", shadowColor: colors.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.42, shadowRadius: 14, width: 46 },
   input: {
-    backgroundColor: chatGraphite.composerSurface,
+    backgroundColor: "rgba(2,9,19,0.92)",
     borderColor: "rgba(97,216,255,0.5)",
     borderRadius: 23,
     borderWidth: 1,
-    color: chatGraphite.primaryText,
+    color: colors.text,
     flex: 1,
     fontSize: 16,
     maxHeight: 76,
@@ -4479,7 +2993,7 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   senderLabel: {
-    color: chatGraphite.senderAccent,
+    color: colors.accentStrong,
     fontSize: 11,
     fontWeight: "900",
     textTransform: "uppercase"
@@ -4537,82 +3051,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8
-  },
-  infoRows: {
-    gap: 2,
-    width: "100%"
-  },
-  infoRow: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: 12,
-    justifyContent: "space-between",
-    paddingVertical: 9
-  },
-  infoLabel: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "700"
-  },
-  infoValue: {
-    color: colors.text,
-    flexShrink: 1,
-    fontSize: 13,
-    fontWeight: "600",
-    textAlign: "right"
-  },
-  // Bounded rather than free-growing: a hundred conversations would push the
-  // send button off the bottom of a sheet that has no other way to reach it.
-  forwardList: {
-    maxHeight: 320,
-    width: "100%"
-  },
-  forwardRow: {
-    alignItems: "center",
-    borderRadius: logiNexus.radius.medium,
-    flexDirection: "row",
-    gap: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 12,
-    width: "100%"
-  },
-  forwardRowPicked: {
-    backgroundColor: "rgba(255,255,255,0.06)"
-  },
-  forwardRowText: {
-    color: colors.text,
-    flexShrink: 1,
-    fontSize: 15,
-    fontWeight: "700"
-  },
-  forwardSend: {
-    alignItems: "center",
-    height: 46,
-    justifyContent: "center",
-    width: "100%"
-  },
-  forwardSendText: {
-    color: "#06101b",
-    fontSize: 15,
-    fontWeight: "900"
-  },
-  linkChoiceRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    width: "100%",
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.glass
-  },
-  linkChoiceText: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 13,
-    lineHeight: 18
   },
   sheetAction: {
     backgroundColor: "rgba(255,255,255,0.045)",

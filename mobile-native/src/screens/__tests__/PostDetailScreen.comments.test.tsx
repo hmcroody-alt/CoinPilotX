@@ -35,9 +35,14 @@ jest.mock("../../components/PostCard", () => ({
 
 // ContentTranslation reaches for the translation engine and locale storage.
 // Reduced to the text it is handed so a comment body is still assertable.
-jest.mock("../../components/ContentTranslation", () =>
-  require("../../testing/contentTranslationStub").contentTranslationStub()
-);
+jest.mock("../../components/ContentTranslation", () => {
+  const { Text } = jest.requireActual("react-native");
+  const ReactActual = jest.requireActual("react");
+  return {
+    ContentTranslation: ({ text, textStyle }: { text?: string; textStyle?: unknown }) =>
+      ReactActual.createElement(Text, { style: textStyle }, text)
+  };
+});
 
 jest.mock("../../core/eventSync", () => ({
   invalidateNativeSync: jest.fn().mockResolvedValue(undefined),

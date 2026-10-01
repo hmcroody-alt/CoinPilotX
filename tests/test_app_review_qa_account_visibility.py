@@ -59,7 +59,6 @@ os.close(_HANDLE)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
 
 import bot  # noqa: E402
-from services import db as db_service  # noqa: E402
 from services.discovery_visibility import HIDDEN_ACCOUNT_STATUSES, discovery_visible_sql  # noqa: E402
 
 # A distinctive token shared by every account this suite creates, so searches
@@ -116,40 +115,17 @@ class QaAccountVisibilityTest(unittest.TestCase):
     # fixtures
     # ------------------------------------------------------------------
     def _make_user(self, role, hidden_from_discovery=0, account_status="active"):
-        """One account per role, created once and then reset to the asked-for state.
-
-        ``_use_module_database`` re-runs ``init_db`` per test but never empties the
-        tables, so an unconditional INSERT here minted a second account at
-        ``{MARK}_viewer@example.com`` on every test after the first -- the
-        duplicate-account state ``ux_users_email_identity`` now forbids, produced
-        by a fixture rather than by the product.
-
-        It UPDATEs rather than simply returning the existing row, because the two
-        flags are the whole subject of this suite: a caller asking for
-        ``hidden_from_discovery=1`` must get that, not whatever the last test set.
-        """
-        username = f"{MARK}_{role}"
-        email = f"{username}@example.com"
         conn = bot.db()
         cur = conn.cursor()
-        cur.execute("SELECT user_id FROM users WHERE email = ? LIMIT 1", (email,))
-        existing = cur.fetchone()
-        if existing is not None:
-            user_id = int(db_service.row_values(existing)[0])
-            cur.execute(
-                "UPDATE users SET display_name = ?, account_status = ?, "
-                "hidden_from_discovery = ? WHERE user_id = ?",
-                (f"{MARK} {role}", account_status, int(hidden_from_discovery), user_id),
-            )
-        else:
-            cur.execute(
-                """
-                INSERT INTO users (username, display_name, email, account_status, hidden_from_discovery, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (username, f"{MARK} {role}", email, account_status, int(hidden_from_discovery), self.now),
-            )
-            user_id = int(cur.lastrowid)
+        username = f"{MARK}_{role}"
+        cur.execute(
+            """
+            INSERT INTO users (username, display_name, email, account_status, hidden_from_discovery, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (username, f"{MARK} {role}", f"{username}@example.com", account_status, int(hidden_from_discovery), self.now),
+        )
+        user_id = int(cur.lastrowid)
         conn.commit()
         conn.close()
         return {"user_id": user_id, "username": username, "display_name": f"{MARK} {role}", "email": f"{username}@example.com"}

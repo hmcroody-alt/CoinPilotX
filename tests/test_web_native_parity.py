@@ -68,68 +68,6 @@ def test_closed_parity_gaps_are_removed_from_the_baseline():
     assert not stale, f"Fixed on web — drop from parity_baseline.json: {stale}"
 
 
-def test_the_generated_parity_documents_are_not_stale():
-    """A stale inventory is worse than no inventory.
-
-    ``docs/parity/*.md`` carry a "do not edit by hand, regenerate" banner, and
-    they are what someone reads to answer "what does the web not have yet".
-    Nothing forced them to be regenerated, so they fell three snapshot updates
-    behind and went on claiming 39 native destinations had no web route. All 39
-    existed: `/pulse/dashboard` was serving a 168kB page while the document said
-    it was MISSING. A document in that state does not merely fail to help -- it
-    sends someone to rebuild a page that is already live.
-    """
-    result = subprocess.run(
-        [sys.executable, str(PARITY / "render_reports.py"), "--check"],
-        capture_output=True, text=True, cwd=str(REPO_ROOT),
-    )
-    assert result.returncode == 0, (
-        "docs/parity is out of date with the extractors:\n"
-        f"{result.stderr.strip() or result.stdout.strip()}"
-    )
-
-
-def test_a_verdict_is_attributed_to_the_rule_that_would_actually_serve_it():
-    """The verdict has to come from the handler Werkzeug would run.
-
-    Several rules can match one path, and the matrix reports one verdict, so it
-    has to pick the same one the server does -- Werkzeug resolves by specificity,
-    not by declaration order. Taking the first rule that matched instead put the
-    verdict on a handler that never runs, and it did so in the one direction the
-    matrix exists to catch: ``/saved`` scored PARITY on ``/<slug>``, the SEO
-    topic-page rule, which answers nine bytes of "Not found" for anything it does
-    not recognise. It went on scoring PARITY after a literal ``/saved`` route was
-    added, because ``/<slug>`` is declared 38,000 lines earlier.
-
-    So: where the app's destination is itself a registered rule, that rule is
-    what answers, and the matrix must say so. Derived from the url_map rather
-    than pinned to the eleven rows that were wrong, because the next
-    misattribution will be somewhere else.
-
-    Without this the misattribution is only caught by the staleness check above,
-    whose remedy -- regenerate the documents -- would bake the wrong verdicts in
-    rather than report them.
-    """
-    rules = set(json.loads((PARITY / "url_map_snapshot.json").read_text()))
-    misattributed = []
-    for row in _matrix():
-        route = row["native_route"]
-        # No rows: the rule exists but its handler was not statically reachable
-        # (BLUEPRINT_UNVERIFIED), or nothing matched at all (MISSING). Neither is
-        # an attribution question.
-        if not row["web_rules"] or route not in rules:
-            continue
-        if route not in row["web_rules"]:
-            misattributed.append(
-                f"  {route} is itself a registered rule, but the matrix credits "
-                f"{row['web_rules']} and reports {row['parity']}"
-            )
-    assert not misattributed, (
-        "these verdicts describe a handler that never runs for the path, because "
-        "a more specific rule answers it first:\n" + "\n".join(misattributed)
-    )
-
-
 def test_the_matrix_still_classifies_the_primary_destinations():
     # A matcher bug that silently returned MISSING for everything would make
     # the guard above vacuous, so pin destinations known to be served.

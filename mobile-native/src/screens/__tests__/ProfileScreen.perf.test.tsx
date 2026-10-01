@@ -23,13 +23,13 @@ const mockListFeed = jest.fn();
 const mockAuthState = { user: { user_id: 7 } };
 const mockGetMyProfile = jest.fn();
 const mockGetPublicProfile = jest.fn();
-const mockLoadCachedProfileEntry = jest.fn();
+const mockLoadCachedProfile = jest.fn();
 
 jest.mock("../../api/profile", () => ({
   getMyProfile: () => mockGetMyProfile(),
   getPublicProfile: (...args: unknown[]) => mockGetPublicProfile(...args),
   listPublicProfilePosts: (...args: unknown[]) => mockListFeed(...args),
-  loadCachedProfileEntry: (...args: unknown[]) => mockLoadCachedProfileEntry(...args),
+  loadCachedProfile: (...args: unknown[]) => mockLoadCachedProfile(...args),
   profileErrorState: jest.fn(() => ({ title: "Error", body: "Error", retryable: true, offline: false })),
   toggleProfileFollow: jest.fn()
 }));
@@ -42,12 +42,7 @@ jest.mock("../../components/ProfileHeader", () => {
   const { Text } = require("react-native");
   return { ProfileHeader: ({ profile }: { profile: { display_name?: string } }) => <Text>{profile?.display_name || ""}</Text> };
 });
-// Profile paints itself with `ProfileCanvas` now, not with the decorative
-// atmosphere. The mock this replaced named a component the screen no longer
-// renders, so it stubbed nothing and quietly implied the old layer was still
-// there. Stubbed for the original reason: these files assert behaviour, and the
-// canvas has its own assertions in `ProfileScreen.graphite.test.tsx`.
-jest.mock("../../components/ProfileCanvas", () => ({ ProfileCanvas: () => null }));
+jest.mock("../../components/GalacticAtmosphere", () => ({ GalacticAtmosphere: () => null }));
 jest.mock("../../components/Screen", () => ({
   LogiNexusScreenShell: ({ children }: { children: React.ReactNode }) => children,
   LogiNexusStatePanel: ({ title }: { title: string }) => title
@@ -75,19 +70,10 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-/**
- * What `loadCachedProfileEntry` resolves to: the profile plus how old it is.
- * The age travels with the value rather than beside it, so a cached paint can
- * say when it was written without a second read that might disagree.
- */
-function cachedEntry(value: Record<string, unknown>, ageMs = 60_000) {
-  return { value, storedAt: Date.now() - ageMs, ageMs };
-}
-
 beforeEach(() => {
   jest.clearAllMocks();
   mockAuthState.user = { user_id: 7 };
-  mockLoadCachedProfileEntry.mockResolvedValue(null);
+  mockLoadCachedProfile.mockResolvedValue(null);
   mockGetMyProfile.mockResolvedValue({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", post_count: 4 });
   mockGetPublicProfile.mockResolvedValue({ user_id: 8, display_name: "Maria Cherie", username: "mariacherie", post_count: 5 });
   mockListFeed.mockResolvedValue({ posts, next_offset: 1, has_more: false });
@@ -151,7 +137,7 @@ describe("stale-while-revalidate paint", () => {
   it("paints the cached profile while the canonical request is still in flight", async () => {
     const profile = deferred<Record<string, unknown>>();
     mockGetMyProfile.mockReturnValue(profile.promise);
-    mockLoadCachedProfileEntry.mockResolvedValue(cachedEntry({ user_id: 7, display_name: "Cached Roody", post_count: 4 }));
+    mockLoadCachedProfile.mockResolvedValue({ user_id: 7, display_name: "Cached Roody", post_count: 4 });
 
     const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
 
@@ -164,7 +150,7 @@ describe("stale-while-revalidate paint", () => {
 
   it("never lets a slow cache read overwrite a canonical response that already landed", async () => {
     const cached = deferred<Record<string, unknown>>();
-    mockLoadCachedProfileEntry.mockReturnValue(cached.promise);
+    mockLoadCachedProfile.mockReturnValue(cached.promise);
     mockGetMyProfile.mockResolvedValue({ user_id: 7, display_name: "Canonical Roody", post_count: 4 });
 
     const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
@@ -172,7 +158,7 @@ describe("stale-while-revalidate paint", () => {
 
     // The disk read finally answers, with an older copy. Cache is display, not
     // authority: it must lose to a response that has already rendered.
-    cached.resolve(cachedEntry({ user_id: 7, display_name: "Stale Roody", post_count: 4 }));
+    cached.resolve({ user_id: 7, display_name: "Stale Roody", post_count: 4 });
     await waitFor(() => expect(screen.getByText("Canonical Roody")).toBeTruthy());
     expect(screen.queryByText("Stale Roody")).toBeNull();
   });
@@ -209,11 +195,11 @@ describe("stale-while-revalidate paint", () => {
 
   it("reuses the one cache read on the error path instead of hitting disk twice", async () => {
     mockGetMyProfile.mockRejectedValue(new Error("offline"));
-    mockLoadCachedProfileEntry.mockResolvedValue(cachedEntry({ user_id: 7, display_name: "Cached Roody", post_count: 4 }));
+    mockLoadCachedProfile.mockResolvedValue({ user_id: 7, display_name: "Cached Roody", post_count: 4 });
 
     const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
 
     await waitFor(() => expect(screen.getByText("Cached Roody")).toBeTruthy());
-    expect(mockLoadCachedProfileEntry).toHaveBeenCalledTimes(1);
+    expect(mockLoadCachedProfile).toHaveBeenCalledTimes(1);
   });
 });

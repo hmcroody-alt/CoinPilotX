@@ -42,159 +42,13 @@ export function listingStatusCopy(
       };
     case "out_of_stock":
       return { label: "Out of stock — hidden", action: "Restock" };
-    // Not "Out of stock". The shelf may be full; what is missing is the count,
-    // and the fix is to enter one rather than to reorder from a supplier. Saying
-    // "Out of stock" here sends a seller to solve a problem they do not have,
-    // and is exactly what the old client did to every untracked listing.
-    case "unknown_stock":
-      return { label: "No stock count — buyers can't order", action: "Add stock count" };
-    // "In review" is the server's own word for this state
-    // (`marketplace_listing_lifecycle.seller_label` maps both awaiting states to
-    // it), not a new one coined here. No action: the seller has done everything
-    // the listing needs and the next move belongs to the reviewer. An action
-    // chip would have to name something to fix, and there is nothing.
-    case "pending_review":
-      return { label: "In review — not live yet", action: null };
     case "hidden":
-      // Was "Restock" — the fix for an empty shelf, which does nothing for a
-      // paused or rejected listing. Same wrong-remedy mistake the
-      // `unknown_stock` note above exists to prevent, one case further down.
-      // The tap opens the listing, so the label says that and promises no cure.
-      return { label: "Hidden from buyers", action: "Review listing" };
+      return { label: "Hidden from buyers", action: "Restock" };
     case "draft":
+    default:
       return { label: "Draft — not published", action: "Finish listing" };
-    default:
-      // A state this build does not recognise. Say so rather than filing it
-      // under Draft, which is what the previous `default` did and would have
-      // mislabelled every future state as unpublished.
-      return { label: "Needs attention", action: "Review listing" };
   }
 }
-
-/**
- * "2 things left · Add price + Add photo" — §7.
- *
- * Every word here comes from the verdict. There used to be a `BLOCKER_COPY`
- * table in this file mapping each server code to an imperative, and it was the
- * third copy of that table in the codebase; a code the server had learned and
- * this build had not was silently counted-but-unnamed, so a seller was told
- * "3 things left · Add price" and left to guess the other two.
- *
- * Returns `null` when there is nothing left *or* when no verdict arrived. Those
- * are different situations and both correctly render no line: the row must not
- * claim a listing is complete on the strength of a payload that never said so.
- */
-export function listingRemainingCopy(readiness: StoreListingRowData["readiness"]): string | null {
-  if (!readiness || !Array.isArray(readiness.blockers)) return null;
-  if (readiness.blockers.length === 0) return null;
-  const labels = (Array.isArray(readiness.fixes) ? readiness.fixes : [])
-    .map((entry) => entry?.label)
-    .filter(Boolean);
-  return labels.length ? `${readiness.summary} · ${labels.join(" + ")}` : readiness.summary;
-}
-
-/**
- * "Rejected · The product images need to be replaced." — §9.
- *
- * The row's stock copy for a rejected or restricted listing is "Hidden from
- * buyers", which names the effect and none of the cause. The seller is looking
- * at the one screen they would go to after a rejection, and until this line
- * existed there was nowhere in the product that told them what to fix — the
- * decision was announced once by push and then lived only in the admin queue.
- *
- * Every word comes from the server. There is deliberately no `REASON_COPY`
- * table here mapping `INVALID_MEDIA` to an imperative: that table already
- * exists once, in `listing_review.SELLER_MESSAGES`, and a second copy in this
- * file would go stale the first time a reason code is added — leaving a seller
- * with a rejection this build can count and cannot name. Same argument as
- * {@link listingRemainingCopy}, which is where it was learned.
- *
- * Returns `null` when there is nothing to act on *or* when no verdict arrived.
- * Both correctly render no line. A row must not claim a listing is fine on the
- * strength of a payload that never said so, and must not claim it is broken
- * either — `needs_action` is the server's word, not an inference from `health`.
- */
-export function listingReviewCopy(review: StoreListingRowData["review"]): string | null {
-  if (!review || !review.needs_action) return null;
-  // The normalizer refuses a verdict that needs action and carries no sentence,
-  // so this cannot render a bare state word. Checked again rather than assumed,
-  // because the fallback is silence and silence is the safe half.
-  return review.message ? `${reviewStateWord(review.state)} · ${review.message}` : null;
-}
-
-/**
- * The state as a word a seller would use, not the column value.
- *
- * `changes_requested` is the one that matters: rendered raw it is a snake_cased
- * internal constant on a merchant's screen, and title-casing it mechanically
- * gives "Changes Requested", which reads like a section heading rather than
- * something that happened to their product.
- *
- * An unrecognised state falls through to "Needs attention" rather than to the
- * raw value. A state this build has not learned is still a real state — the
- * sentence beside it came from the server and is what the seller acts on — so
- * the prefix must not be the thing that breaks.
- */
-function reviewStateWord(state: string): string {
-  switch (state) {
-    case "rejected":
-      return "Rejected";
-    case "changes_requested":
-      return "Changes needed";
-    case "restricted":
-      return "Restricted";
-    default:
-      return "Needs attention";
-  }
-}
-
-/**
- * What the price line says — §12.
- *
- * A blank price used to render as nothing at all (GAP 23). That is safe from the
- * worse failure of printing "Free" or "$0.00" over an unpriced listing, but it
- * tells the seller nothing, and silence is indistinguishable from a row that
- * simply has no price element. So the gap gets a name.
- *
- * `required` drives the styling: this is the seller's own store, where an
- * unpriced listing is a task, not a fact about the product.
- */
-export function listingPriceCopy(
-  priceText: string,
-  readiness: StoreListingRowData["readiness"]
-): { text: string; required: boolean } | null {
-  if (priceText) return { text: priceText, required: false };
-  // Only on the server's say-so. Without a verdict the row cannot tell an
-  // unpriced listing from a payload that omitted the field, and "Price required"
-  // on a listing that has a price would be its own lie.
-  if (readiness?.blockers?.includes("MISSING_PRICE")) {
-    return { text: "Price required", required: true };
-  }
-  return null;
-}
-
-/**
- * How this row participates in selection mode — §16–§20.
- *
- * `null` is the normal list: no checkbox, tapping opens the listing. Anything
- * else means the seller is picking rows, and the whole row becomes the target.
- */
-export type StoreRowSelection = {
-  selected: boolean;
-  onToggle: () => void;
-  /**
-   * Why the pending bulk action cannot touch this row, or `null` if it can.
-   *
-   * A blocked row is still *selectable*. That is deliberate and it is the one
-   * decision here most likely to be read as a bug: the obvious design makes a
-   * blocked row unselectable, which quietly removes it from the seller's count
-   * and turns "Publish 18" into a surprise at 14. Instead the row stays
-   * pickable, wears the disabled wash, and says why — so the number on the
-   * confirm button and the number of rows the seller ticked describe the same
-   * set, and the shortfall is visible up front rather than in the result.
-   */
-  blockedReason: string | null;
-};
 
 export type StoreListingRowProps = {
   row: StoreListingRowData;
@@ -205,28 +59,8 @@ export type StoreListingRowProps = {
   onPress: () => void;
   onEdit: () => void;
   onAction?: () => void;
-  /** Enters selection mode without leaving the list — long-press on any row. */
-  onLongPress?: () => void;
-  /** Absent outside selection mode. */
-  selection?: StoreRowSelection | null;
   reducedMotion: boolean;
 };
-
-/**
- * The tick box.
- *
- * Drawn rather than imported so the checked state is a *shape* (a tick) and not
- * only a fill: selection must survive a seller who cannot distinguish the green
- * from the white, which is the same reason `select.selectedBorder` is three
- * steps deeper than the brand green.
- */
-function StoreRowCheckbox({ selected }: { selected: boolean }) {
-  return (
-    <View style={[styles.checkbox, selected ? styles.checkboxOn : null]}>
-      {selected ? <Text style={styles.checkboxTick}>✓</Text> : null}
-    </View>
-  );
-}
 
 export function StoreListingRow({
   row,
@@ -235,8 +69,6 @@ export function StoreListingRow({
   onPress,
   onEdit,
   onAction,
-  onLongPress,
-  selection,
   reducedMotion
 }: StoreListingRowProps) {
   const { fontScale } = useWindowDimensions();
@@ -247,28 +79,13 @@ export function StoreListingRow({
   const editPress = useStorePress(reducedMotion, 0.96);
 
   const status = listingStatusCopy(row.health, row.quantity);
-  const price = listingPriceCopy(priceText, row.readiness);
-  const remaining = listingRemainingCopy(row.readiness);
-  const reviewCopy = listingReviewCopy(row.review);
   const titleLines = fontScale > 1.15 ? 3 : 2;
-
-  const selecting = !!selection;
-  const blocked = selection?.blockedReason ?? null;
 
   return (
     <Animated.View style={rowPress.style}>
       <Pressable
-        style={[
-          styles.row,
-          blocked ? styles.rowBlocked : null,
-          selection?.selected ? styles.rowSelected : null
-        ]}
-        // In selection mode the whole row is the checkbox. Routing the tap to
-        // the editor instead would make picking six listings a six-screen round
-        // trip, and tapping a row you meant to tick and landing in an edit form
-        // is the kind of thing that loses a half-built selection.
-        onPress={selecting ? selection!.onToggle : onPress}
-        onLongPress={onLongPress}
+        style={styles.row}
+        onPress={onPress}
         onPressIn={() => {
           rowPress.onPressIn();
           thumbPress.onPressIn();
@@ -277,39 +94,15 @@ export function StoreListingRow({
           rowPress.onPressOut();
           thumbPress.onPressOut();
         }}
-        accessibilityRole={selecting ? "checkbox" : "button"}
-        // `selected` rather than `checked` is what iOS VoiceOver announces for a
-        // row in a picking list; both are set so TalkBack reads the tick too.
-        accessibilityState={
-          selecting ? { selected: selection!.selected, checked: selection!.selected } : undefined
-        }
+        accessibilityRole="button"
         // Everything the row conveys visually, in one announcement, in reading
         // order: what it is, what it costs, whether it can be bought, and how
         // it is doing.
-        // "Price required" and "2 things left" are read out too. A seller using
-        // VoiceOver gets the same task list a sighted seller sees, rather than
-        // the silence the blank price used to leave behind.
-        // In selection mode the blocked reason joins them, because a seller who
-        // cannot see the wash has no other way to learn this row will not move.
-        // `reviewCopy` sits directly after the price, ahead of the stock label,
-        // because "Rejected - replace the images" outranks "3 in stock" for a
-        // seller deciding what to do next, and a screen reader announces in
-        // this order rather than in visual order.
-        accessibilityLabel={[
-          row.title,
-          price?.text,
-          reviewCopy,
-          remaining,
-          status.label,
-          soldText,
-          blocked
-        ]
+        accessibilityLabel={[row.title, priceText, status.label, soldText]
           .filter(Boolean)
           .join(", ")}
-        accessibilityHint={selecting ? undefined : "Opens the listing"}
+        accessibilityHint="Opens the listing"
       >
-        {selecting ? <StoreRowCheckbox selected={selection!.selected} /> : null}
-
         <Animated.View style={thumbPress.style}>
           {row.thumbnailUrl ? (
             <Image source={{ uri: row.thumbnailUrl }} style={styles.thumb} />
@@ -330,28 +123,10 @@ export function StoreListingRow({
               <Text style={styles.reviewCount}> {row.reviewCount ?? 0}</Text>
             </Text>
           ) : null}
-          {price ? (
-            <Text style={[styles.price, price.required ? styles.priceRequired : null]}>
-              {price.text}
-            </Text>
-          ) : null}
-          {remaining ? <Text style={styles.remaining}>{remaining}</Text> : null}
-          {/* Above the status LED, not below it. The LED says "Hidden from
-              buyers"; this says why, and a cause printed under its own effect
-              reads as an afterthought. Not clamped: a truncated rejection
-              reason is a rejection the seller still has to guess at. */}
-          {reviewCopy ? <Text style={styles.reviewReason}>{reviewCopy}</Text> : null}
-          {/* Why this row will not move, stated on the row itself rather than
-              only in the confirm button's blocked count. "4 blocked" tells a
-              seller how many; only this tells them which, and which is what
-              they need to go fix. */}
-          {blocked ? <Text style={styles.blockedReason}>{blocked}</Text> : null}
+          {priceText ? <Text style={styles.price}>{priceText}</Text> : null}
           <View style={styles.statusRow}>
             <StoreStatusLed health={row.health} label={status.label} reducedMotion={reducedMotion} />
-            {/* The inline action navigates away, which would abandon a
-                half-built selection. Suppressed while picking; the row's own
-                status LED and label still render, so nothing is hidden. */}
-            {status.action && onAction && !selecting ? (
+            {status.action && onAction ? (
               <Pressable
                 onPress={onAction}
                 hitSlop={8}
@@ -370,20 +145,18 @@ export function StoreListingRow({
               {soldText}
             </Text>
           ) : null}
-          {selecting ? null : (
-            <Animated.View style={editPress.style}>
-              <Pressable
-                style={styles.edit}
-                onPress={onEdit}
-                onPressIn={editPress.onPressIn}
-                onPressOut={editPress.onPressOut}
-                accessibilityRole="button"
-                accessibilityLabel={`Edit ${row.title}`}
-              >
-                <Text style={styles.editText}>Edit</Text>
-              </Pressable>
-            </Animated.View>
-          )}
+          <Animated.View style={editPress.style}>
+            <Pressable
+              style={styles.edit}
+              onPress={onEdit}
+              onPressIn={editPress.onPressIn}
+              onPressOut={editPress.onPressOut}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${row.title}`}
+            >
+              <Text style={styles.editText}>Edit</Text>
+            </Pressable>
+          </Animated.View>
         </View>
       </Pressable>
     </Animated.View>
@@ -402,46 +175,6 @@ const styles = StyleSheet.create({
     // Comfortably above the 44pt minimum even with a one-line title.
     minHeight: 88
   },
-  /**
-   * Selected. A left rule rather than a full border, because the row already
-   * has a hairline underneath it and boxing every picked row turns a list of
-   * six into six cards.
-   */
-  rowSelected: {
-    backgroundColor: storeLight.select.selected,
-    borderLeftWidth: 3,
-    borderLeftColor: storeLight.select.selectedBorder,
-    // Keeps the thumbnail aligned with unselected rows despite the new rule.
-    paddingLeft: storeLight.space.card - 3
-  },
-  /**
-   * Blocked for the pending action. Applied *under* `rowSelected`, so a
-   * selected-and-blocked row reads as selected first — which is honest, because
-   * it is in the seller's count.
-   */
-  rowBlocked: { backgroundColor: storeLight.select.disabled },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: storeLight.border.secondaryButton,
-    backgroundColor: storeLight.bg.card,
-    alignItems: "center",
-    justifyContent: "center",
-    // Centred against the 64pt thumbnail beside it.
-    alignSelf: "center"
-  },
-  checkboxOn: {
-    borderColor: storeLight.select.selectedBorder,
-    backgroundColor: storeLight.select.selectedBorder
-  },
-  checkboxTick: {
-    color: storeLight.text.onDark,
-    fontSize: 14,
-    fontWeight: "900",
-    lineHeight: 16
-  },
   thumb: {
     width: storeLight.size.thumb,
     height: storeLight.size.thumb,
@@ -455,47 +188,6 @@ const styles = StyleSheet.create({
   stars: { fontSize: 12, color: storeLight.accent.star },
   reviewCount: { color: storeLight.text.link },
   price: { fontSize: 15, color: storeLight.text.primary, fontWeight: "700" },
-  /**
-   * "Price required" in the attention colour, not the price colour. It occupies
-   * the price slot but it is a task, and styling it like a price would make an
-   * unpriced listing read as priced at a glance.
-   */
-  priceRequired: { color: storeLight.status.warning },
-  /** "2 things left · Add price + photo". Quieter than the price above it. */
-  remaining: { fontSize: 12, color: storeLight.status.warning, marginTop: 1 },
-  /**
-   * "Rejected · The product images need to be replaced."
-   *
-   * `status.error`, not `status.warning`, and the distinction is the point. The
-   * line above it is a task list — things the seller has not finished yet.
-   * This is a decision someone made about a finished product, and it is the one
-   * line on the row that means the listing is not going to sell until they act.
-   * Sharing the warning colour with "2 things left" would file a rejection
-   * under housekeeping.
-   *
-   * Weight rather than size carries the emphasis: 12pt matches the line above
-   * so the two read as one block, and a larger rejection line would push the
-   * status LED off a small screen at accessibility text sizes.
-   */
-  reviewReason: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: "600",
-    color: storeLight.status.error,
-    marginTop: 1
-  },
-  /**
-   * "No readiness check yet" / "1 thing left" — why the bulk action skips this
-   * row. Its own colour, measured against the disabled wash rather than the
-   * white card; see `storeLightContrast.test.ts` for why `status.warning` is
-   * not reused here.
-   */
-  blockedReason: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: storeLight.select.disabledReason,
-    marginTop: 1
-  },
   statusRow: { flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 2 },
   action: { fontSize: 12, color: storeLight.text.link, fontWeight: "600" },
   trailing: { alignItems: "flex-end", justifyContent: "space-between", gap: 8, minWidth: 64 },

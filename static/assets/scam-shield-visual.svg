@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" role="img" aria-labelledby="title desc">
+  <title id="title">CoinPilotX scam shield visual</title>
+  <desc id="desc">Original safety visual for scam protection and wallet security.</desc>
+  <defs><linearGradient id="s" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd166"/><stop offset="1" stop-color="#ff6b7a"/></linearGradient></defs>
+  <rect width="640" height="420" rx="34" fill="#08111f"/>
+  <path d="M320 60 500 126v108c0 92-73 144-180 178-107-34-180-86-180-178V126L320 60z" fill="#0d1627" stroke="url(#s)" stroke-width="7"/>
+  <path d="M248 222h144M320 150v144" stroke="url(#s)" stroke-width="16" stroke-linecap="round"/>
+  <rect x="84" y="92" width="122" height="50" rx="16" fill="#111d32" stroke="#ff6b7a"/>
+  <rect x="434" y="278" width="122" height="50" rx="16" fill="#111d32" stroke="#ffd166"/>
+  <text x="109" y="124" fill="#f5f8ff" font-family="Arial, sans-serif" font-size="17" font-weight="700">Seed?</text>
+  <text x="466" y="310" fill="#f5f8ff" font-family="Arial, sans-serif" font-size="17" font-weight="700">Block</text>
+  <text x="224" y="364" fill="#f5f8ff" font-family="Arial, sans-serif" font-size="24" font-weight="700">Scam Shield</text>
+</svg>

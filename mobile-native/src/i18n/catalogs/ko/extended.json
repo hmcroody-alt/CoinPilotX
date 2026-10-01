@@ -358,31 +358,44 @@
       "requests_other": "메시지 요청 {{count}}개"
     },
     "chat": {
+      "placeholder": "메시지…",
+      "typing": "{{name}}님이 입력 중…",
+      "typingMultiple": "여러 명이 입력 중…",
+      "delivered": "전달됨",
+      "read": "읽음",
+      "sent": "보냄",
+      "failed": "전달되지 않음",
+      "tapToRetry": "탭해서 다시 보내기",
+      "editedLabel": "수정됨",
+      "deletedMessage": "삭제된 메시지예요",
+      "replyingTo": "{{name}}님에게 답장",
+      "forwarded": "전달됨",
+      "attachPhoto": "사진",
+      "attachFile": "파일",
+      "attachVoice": "음성 메시지",
+      "recordingVoice": "녹음 중…",
+      "slideToCancel": "밀어서 취소",
+      "newMessagesDivider": "새 메시지",
+      "encryptedNotice": "메시지는 전송 중에 암호화돼요.",
+      "emptyTitle": "인사를 건네보세요",
+      "emptyBody": "여기서 대화가 시작돼요.",
       "a11yAddAttachment": "첨부파일 추가",
       "a11yAddEmoji": "웃는 이모지 추가",
       "a11yBack": "대화 목록으로 돌아가기",
       "a11yBackFive": "5초 뒤로",
-      "a11yCancelEdit": "편집 취소",
       "a11yCancelReply": "답장 취소",
       "a11yCancelUndxAction": "UNDX 작업 취소",
       "a11yCloseAttachmentSheet": "첨부 시트 닫기",
-      "a11yCloseForward": "전달 닫기",
-      "a11yCloseInfo": "메시지 정보 닫기",
       "a11yComposer": "메시지 입력창",
       "a11yComposerUndx": "UNDX 메시지 입력창",
       "a11yConfirmUndxAction": "UNDX 작업 확인",
       "a11yDiscardRecording": "음성 녹음 취소",
       "a11yDismissStatus": "메시지 상태 닫기",
       "a11yForwardFive": "5초 앞으로",
-      "a11yGalleryPhotoPosition": "{{sender}}님의 사진, {{total}}개 중 {{position}}번째",
-      "a11yGalleryVideoPosition": "{{sender}}님의 동영상, {{total}}개 중 {{position}}번째",
       "a11yGifAttachment": "{{label}}. GIF 첨부파일.",
-      "a11yGridPhotoTile": "{{label}}. 사진 {{total}}개 중 {{position}}번째.",
-      "a11yGridVideoTile": "{{label}}. 동영상 {{total}}개 중 {{position}}번째.",
       "a11yImageAttachment": "{{label}}. 이미지 첨부파일.",
       "a11yOpenControls": "대화 관리 열기",
       "a11yOpenUndxResult": "{{type}} 결과 열기",
-      "a11yOpensDocument": "문서 보기 앱에서 열립니다",
       "a11yOpensViewer": "전체 화면 뷰어를 열어요",
       "a11yPauseVoice": "음성 메시지 일시정지",
       "a11yPlayVoice": "음성 메시지 재생",
@@ -392,7 +405,6 @@
       "a11yRecordingVoice": "음성 메시지 녹음 중. {{duration}}",
       "a11yRetryLoad": "메시지 다시 불러오기",
       "a11yRetryVoice": "음성 메시지 다시 시도",
-      "a11ySaveEdit": "편집 저장",
       "a11ySend": "메시지 보내기",
       "a11yStartAudioCall": "음성 통화 시작",
       "a11yStartVideoCall": "영상 통화 시작",
@@ -401,26 +413,20 @@
       "a11yUndxAttachmentsOff": "UNDX 첨부파일을 지원하지 않음",
       "a11yUndxVoiceOff": "UNDX 음성 메시지를 사용할 수 없음",
       "a11yUploadingAttachment": "첨부파일 업로드 중",
-      "a11yVideoAttachment": "동영상, 탭하여 재생",
-      "a11yVideoAttachmentDuration": "동영상, {{duration}}, 탭하여 재생",
       "a11yVoiceDuration": "재생 시간 {{duration}}",
       "a11yVoiceProgress": "음성 메시지 진행",
       "a11yVoiceUnavailable": "{{label}}. 음성 메시지를 사용할 수 없어요.",
       "assistantAlwaysAvailable": "항상 이용 가능 · PulseSoc 인텔리전스",
-      "assistantConnecting": "연결 중 · PulseSoc 인텔리전스",
       "assistantReconnecting": "서비스 다시 연결 중",
       "attachCamera": "카메라",
       "attachCameraDetail": "지금 촬영",
       "attachDocument": "문서",
       "attachDocumentDetail": "안전한 파일",
-      "attachFile": "파일",
-      "attachPhoto": "사진",
       "attachPhotoDetail": "최적화된 이미지",
       "attachRecordingNow": "녹음 중",
       "attachStopSend": "정지하고 보내기",
       "attachVideo": "동영상",
       "attachVideoDetail": "최대 2분",
-      "attachVoice": "음성 메시지",
       "attachVoiceNote": "음성 메모",
       "attachVoiceNoteDetail": "빠른 음성 메시지",
       "attachmentFailedTitle": "첨부 실패",
@@ -442,33 +448,12 @@
       "deleteForMe": "나에게서만 삭제",
       "deleteHidden": "이 기기에서 메시지를 숨겼어요.",
       "deleteRequested": "메시지 삭제를 요청했어요.",
-      "deletedMessage": "삭제된 메시지예요",
       "deletedMessageBody": "삭제된 메시지예요.",
-      "delivered": "전달됨",
-      "durationMinutes": "{{minutes}}분",
-      "durationMinutesSeconds": "{{minutes}}분 {{seconds}}초",
-      "durationSeconds": "{{seconds}}초",
-      "editEmpty": "편집한 메시지는 비워 둘 수 없습니다.",
-      "editFailed": "이 메시지를 편집할 수 없습니다.",
-      "editSaved": "메시지를 편집했습니다.",
-      "editedLabel": "수정됨",
-      "editingMessage": "메시지 편집 중",
-      "emptyBody": "여기서 대화가 시작돼요.",
       "emptyThreadBody": "이 채팅의 메시지가 여기에 표시돼요.",
-      "emptyTitle": "인사를 건네보세요",
-      "encryptedNotice": "메시지는 전송 중에 암호화돼요.",
-      "failed": "전달되지 않음",
       "fileAttachment": "파일 첨부",
       "filePickerFailed": "파일 선택기를 열 수 없어요.",
       "fileSharingUnavailableTitle": "파일 공유를 사용할 수 없어요",
-      "forwardFailed": "이 메시지를 전달할 수 없습니다.",
-      "forwardNoConversations": "전달할 다른 대화가 없습니다.",
-      "forwardSend": "{{total}}개에 전달",
-      "forwardSent": "{{total}}개에 전달했습니다.",
-      "forwarded": "전달됨",
       "forwardedSignal": "전달된 시그널",
-      "galleryUnavailable": "사용할 수 없음",
-      "galleryUnavailableOffline": "오프라인에서 사용할 수 없음",
       "headerCachedHistory": "저장된 기록",
       "headerLiveChannel": "실시간 채널",
       "headerReconnecting": "다시 연결 중",
@@ -476,26 +461,6 @@
       "imageAttachment": "이미지 첨부",
       "imagePickerFailed": "이미지 선택기를 열 수 없어요.",
       "imageSharingUnavailableTitle": "이미지 공유를 사용할 수 없어요",
-      "infoDelivered": "전달됨",
-      "infoDeliveredAt": "전달됨",
-      "infoDuration": "길이",
-      "infoEditedAt": "편집됨",
-      "infoForwarded": "전달됨",
-      "infoForwardedYes": "예",
-      "infoFrom": "보낸 사람",
-      "infoId": "메시지 ID",
-      "infoRead": "읽음",
-      "infoReadAt": "읽음",
-      "infoReadGroup": "최소 한 명이 읽음",
-      "infoSent": "보냄",
-      "infoSentAt": "보냄",
-      "infoSize": "크기",
-      "infoStatus": "상태",
-      "infoType": "유형",
-      "infoTypeMedia": "미디어",
-      "infoTypeText": "텍스트",
-      "infoTypeUnavailable": "사용할 수 없음",
-      "infoTypeVoice": "음성 메시지",
       "liveVoiceKicker": "LIVE VOICE PULSE",
       "loadFailed": "메시지를 불러올 수 없어요.",
       "loadFailedBody": "PulseSoc이 이 대화를 불러오지 못했어요. 다시 시도를 눌러 원본 메시지 기록에 다시 연결해 주세요.",
@@ -510,16 +475,12 @@
       "microphoneUnavailableTitle": "마이크를 사용할 수 없어요",
       "moderatedMessageBody": "안전 검토 후 이 메시지를 볼 수 없어요.",
       "muteBlock": "알림 끄기 / 차단",
-      "newMessagesDivider": "새 메시지",
-      "openDocument": "탭하여 열기",
       "openViewer": "뷰어 열기",
       "openingBody": "서버에서 대화 기록을 불러오는 중이에요.",
-      "openingDocument": "여는 중…",
       "openingTitle": "채팅 여는 중",
       "pendingRemoved": "전송 대기 중이던 메시지를 삭제했어요.",
       "photosUnavailableBody": "이미지를 공유하려면 설정에서 사진 접근을 허용해 주세요.",
       "photosUnavailableTitle": "사진을 사용할 수 없어요",
-      "placeholder": "메시지…",
       "presenceActivityDirect": "{{activity}} · 1:1 대화",
       "presenceOffline": "오프라인",
       "presenceOnline": "온라인",
@@ -529,14 +490,11 @@
       "reactPending": "전송 대기 중인 메시지는 서버가 수락한 뒤에 반응을 남길 수 있어요.",
       "reactionFailed": "반응을 남기지 못했어요.",
       "reactionSent": "반응을 남겼어요.",
-      "read": "읽음",
       "realtimeReconnecting": "실시간 연결을 다시 맺는 중이에요. 메시지 기록은 계속 볼 수 있어요.",
       "recordingDiscarded": "음성 녹음을 취소했어요.",
       "recordingFailed": "음성 녹음을 시작할 수 없어요.",
       "recordingNoFile": "녹음에서 오디오 파일이 만들어지지 않았어요.",
       "recordingStarted": "음성 메시지 녹음 중… 마이크를 다시 누르면 전송돼요.",
-      "recordingVoice": "녹음 중…",
-      "replyingTo": "{{name}}님에게 답장",
       "reportConversationTitle": "대화 신고",
       "reportFailed": "신고하지 못했어요.",
       "reportPending": "전송 대기 중인 메시지는 서버가 수락하기 전에는 신고할 수 없어요.",
@@ -545,17 +503,12 @@
       "retryFailedSend": "전송 실패한 메시지 다시 보내기",
       "sendFailed": "메시지를 보내지 못했어요.",
       "sendingVoice": "음성 메시지를 보내는 중…",
-      "sent": "보냄",
       "showingCached": "PulseSoc이 다시 연결되는 동안 저장된 메시지를 보여드려요.",
-      "slideToCancel": "밀어서 취소",
       "stateReconnecting": "다시 연결 중",
       "stateRecording": "녹음 중",
       "stateSecureReady": "보안 연결 · 준비 완료",
       "stateSendingMedia": "미디어 전송 중",
       "stateUndxReady": "UNDX · 준비 완료",
-      "tapToRetry": "탭해서 다시 보내기",
-      "typing": "{{name}}님이 입력 중…",
-      "typingMultiple": "여러 명이 입력 중…",
       "undxActionFailed": "UNDX 작업이 실패했어요.",
       "undxActionFinished": "UNDX 작업을 마쳤어요.",
       "undxAttachmentsUnsupported": "UNDX는 현재 네이티브 채팅에서 텍스트 대화만 지원해요. 어시스턴트 미디어 기능이 백엔드에서 열릴 때까지 첨부파일은 사람 간 채팅에서만 쓸 수 있어요.",
@@ -581,8 +534,6 @@
       "uploadingAttachment": "첨부파일 업로드 중…",
       "videoAttachment": "동영상 첨부",
       "videoPickerFailed": "동영상 선택기를 열 수 없어요.",
-      "videoPosterFailed": "미리보기를 사용할 수 없음",
-      "videoProcessing": "동영상 처리 중…",
       "videoSharingUnavailableTitle": "동영상 공유를 사용할 수 없어요",
       "videosUnavailableBody": "동영상을 공유하려면 설정에서 사진 접근을 허용해 주세요.",
       "videosUnavailableTitle": "동영상을 사용할 수 없어요",
@@ -593,8 +544,7 @@
       "voiceSent": "음성 메시지를 보냈어요.",
       "voiceUnavailable": "음성 메시지를 사용할 수 없어요",
       "voiceUnavailableTitle": "음성 메시지를 사용할 수 없어요",
-      "yourMessage": "내 메시지",
-      "moreReactions": "반응 더 보기"
+      "yourMessage": "내 메시지"
     },
     "group": {
       "createGroup": "그룹 만들기",
@@ -782,7 +732,6 @@
           "minimalBlack": "미니멀 블랙",
           "neonPlanet": "네온 플래닛",
           "pulseHorizon": "펄스 호라이즌",
-          "pulsesocCosmic": "PulseSoc 그래파이트",
           "starTunnel": "스타 터널"
         }
       },
@@ -1091,140 +1040,9 @@
       "signInTitle": "채팅을 시작하려면 로그인하세요",
       "subtitle": "실제 PulseSoc 네트워크를 검색해요. 이미 있는 1:1 대화는 자동으로 다시 열려요.",
       "title": "대화 시작"
-    },
-    "postCard": {
-      "a11yOpen": "{{author}}님의 PulseSoc 게시물 열기",
-      "a11yOpenGeneric": "이 PulseSoc 게시물 열기",
-      "cta": "게시물 보기 →",
-      "eyebrow": "PULSESOC 게시물",
-      "forbidden": "이 콘텐츠는 볼 수 없습니다.",
-      "loading": "게시물을 불러오는 중…",
-      "missing": "이 게시물은 더 이상 사용할 수 없습니다.",
-      "unavailable": "콘텐츠를 사용할 수 없음",
-      "video": "동영상"
-    },
-    "profileCard": {
-      "eyebrow": "PULSESOC 프로필",
-      "cta": "프로필 보기 →",
-      "loading": "프로필을 불러오는 중…",
-      "forbidden": "이 프로필은 볼 수 없습니다.",
-      "missing": "이 프로필은 더 이상 사용할 수 없습니다.",
-      "unavailable": "프로필을 사용할 수 없음",
-      "a11yOpen": "{{author}}님의 PulseSoc 프로필 열기",
-      "a11yOpenGeneric": "이 PulseSoc 프로필 열기"
-    },
-    "reelCard": {
-      "eyebrow": "PULSESOC 릴스",
-      "cta": "릴스 보기 →",
-      "loading": "릴스를 불러오는 중…",
-      "forbidden": "이 콘텐츠는 볼 수 없습니다.",
-      "missing": "이 릴스는 더 이상 사용할 수 없습니다.",
-      "unavailable": "릴스를 사용할 수 없음",
-      "play": "재생",
-      "a11yOpen": "{{author}}님의 PulseSoc 릴스 열기",
-      "a11yOpenGeneric": "이 PulseSoc 릴스 열기"
-    },
-    "messageActions": {
-      "openLink": "링크 열기",
-      "copyLink": "링크 복사",
-      "shareLink": "링크 공유",
-      "saveToPhotos": "사진에 저장",
-      "translate": "번역",
-      "forward": "전달",
-      "info": "메시지 정보",
-      "chooseLink": "어떤 링크인가요?",
-      "closeMenu": "메시지 메뉴 닫기",
-      "reactWith": "{{emoji}}(으)로 반응하기"
     }
   },
   "commerce": {
-    "discovery": {
-      "label": {
-        "recommended": "마켓플레이스 추천",
-        "trending": "PulseSoc 인기",
-        "sponsored": "스폰서"
-      },
-      "subtitle": {
-        "matches_your_interests": "회원님의 취향을 바탕으로",
-        "because_you_viewed": "비슷한 상품을 봤기 때문에",
-        "related_to_this_post": "지금 보고 있는 게시물과 관련",
-        "similar_to_this_product": "이 상품과 유사한 상품",
-        "from_sellers_you_follow": "팔로우하는 판매자의 상품",
-        "trending": "지금 PulseSoc에서 인기",
-        "new_arrival": "마켓플레이스에 새로 등록됨",
-        "popular": "구매자에게 인기",
-        "new_to_marketplace": "마켓플레이스의 새 판매자"
-      },
-      "action": {
-        "viewProduct": "상품 보기",
-        "save": "저장",
-        "saved": "저장됨",
-        "seeAll": "모두 보기"
-      },
-      "menu": {
-        "title": "추천 옵션",
-        "hide": "숨기기",
-        "notInterested": "관심 없음",
-        "seeFewer": "이런 상품 덜 보기",
-        "hideSeller": "이 판매자 추천 안 함",
-        "why": "이 추천이 표시되는 이유",
-        "snooze": "마켓플레이스 추천을 30일간 숨기기"
-      },
-      "why": {
-        "title": "이 추천이 표시되는 이유",
-        "loading": "확인 중…",
-        "unavailable": "지금은 이 추천을 설명할 수 없습니다.",
-        "factorsTitle": "판단 근거",
-        "close": "닫기"
-      },
-      "factor": {
-        "relevance": "보고 있던 내용과의 일치도",
-        "quality": "상품 등록 정보의 품질",
-        "predicted_interest": "이전에 관심을 보인 항목",
-        "conversion_probability": "비슷한 상품의 구매 빈도",
-        "seller_reliability": "판매자의 거래 이력",
-        "freshness": "등록된 지 얼마나 되었는지",
-        "exploration_bonus": "새 상품에도 기회를 주기 위해",
-        "diversity_bonus": "다양한 판매자를 보여주기 위해"
-      },
-      "module": {
-        "recommended_for_you": "회원님을 위한 추천",
-        "because_you_viewed": "최근 본 상품 기반",
-        "similar_to_this_product": "유사한 상품",
-        "you_might_also_like": "이런 상품도 어때요",
-        "trending": "인기 급상승",
-        "new_arrivals": "새로 등록된 상품",
-        "from_sellers_you_follow": "팔로우하는 판매자의 상품",
-        "new_to_marketplace": "마켓플레이스의 새 상품",
-        "popular": "인기 상품"
-      },
-      "tagging": {
-        "open": "상품 태그",
-        "title": "내 상품",
-        "subtitle": "이 게시물과 관련된 상품을 선택하세요",
-        "cap": "게시물당 최대 {{max}}개",
-        "selected": "{{max}}개 중 {{selected}}개 선택됨",
-        "loading": "상품을 불러오는 중…",
-        "empty": "아직 상품이 없습니다",
-        "emptyHint": "마켓플레이스에 등록한 상품이 여기에 표시됩니다.",
-        "error": "상품을 불러올 수 없습니다",
-        "errorHint": "상품이 없다는 뜻은 아닙니다. 다시 시도해 주세요.",
-        "retry": "다시 시도",
-        "wontShow": "표시되지 않음",
-        "wontShowHint": "태그할 수 있지만 문제가 해결될 때까지 구매자에게 표시되지 않습니다.",
-        "done": "완료",
-        "blocked": {
-          "not_purchasable": "구매할 수 없음",
-          "no_cover_image": "대표 사진이 필요합니다",
-          "no_resolvable_price": "가격이 필요합니다",
-          "moderation_flagged": "검토 중",
-          "listing_risk": "표시 대상이 아닙니다",
-          "seller_risk": "내 스토어는 표시 대상이 아닙니다",
-          "unknown_reason": "지금은 표시할 수 없습니다"
-        },
-        "cleared": "상품 태그가 삭제되었습니다. 피드 게시물에만 포함됩니다."
-      }
-    },
     "marketplace": {
       "title": "마켓플레이스",
       "browse": "둘러보기",
@@ -1317,18 +1135,15 @@
       "storeOfflineNotice": "저장된 판매자/스토어 정보를 보여드려요.",
       "storeKicker": "마켓플레이스 커맨드",
       "storefrontReadiness": "스토어 준비 상태",
-      "storeHeroCopy": "판매자 승인, 상품 검토, 결제, 정산, 배송은 모두 PulseSoc에서 결정해요.",
+      "storeHeroCopy": "판매자 승인, 상품 검토, 결제, 정산, 신뢰, 배송에 관한 결정은 모두 서버에서 내려요.",
       "loadingSellerControls": "판매자 도구 불러오는 중",
       "sellerToolsLoadFailed": "판매자 도구를 불러올 수 없어요.",
       "metricListingsLoaded": "불러온 상품",
-      "metricPublished": "게시됨",
       "metricActiveReviewReady": "판매 중/검토 준비",
       "metricPendingReview": "검토 대기",
       "metricOrdersLoaded": "불러온 주문",
       "merchantApplication": "판매자 신청",
-      "merchantApplicationCopy": "PulseSoc에서 판매하려면 신청하세요. 신청서에서 본인 정보, 판매 품목, 저희가 확인하는 서류를 차례대로 안내해 드려요. 답변은 작성하는 대로 저장되고, 모든 결정은 검토팀 담당자가 직접 내려요.",
-      "openSellerApplication": "판매자 신청서 열기",
-      "openSellerApplicationHint": "판매자 신청서를 열어요. 답변을 새로 시작하거나 이어서 작성할 수 있어요",
+      "merchantApplicationCopy": "네이티브 판매자 신청서를 기존 판매자 엔드포인트로 제출해요. 서류 확인과 관리자 검토는 신청이 접수된 뒤 PulseSoc에서 진행해요.",
       "sellerDisplayNamePlaceholder": "판매자 표시 이름",
       "sellerBioPlaceholder": "무엇을 판매하고 구매자에게 어떤 도움이 되는지 알려주세요",
       "saving": "저장 중...",
@@ -1342,7 +1157,6 @@
       "sellerInventory": "판매자 재고",
       "sellerInventoryCopy": "판매자 소유 상품 항목을 수정하고 PulseSoc 마켓플레이스 검토를 통해 공개 여부를 관리해요. 공개 마켓플레이스 노출은 승인을 받아야 해요.",
       "emptyInventory": "상품을 만들거나 불러오면 판매자 재고가 표시돼요.",
-      "productNotYours": "해당 상품은 회원님의 스토어에 없습니다. 삭제되었거나 링크가 다른 판매자의 상품을 가리키고 있을 수 있습니다.",
       "editListingTitle": "상품 #{{id}} 수정",
       "saveAndReview": "저장하고 검토 요청",
       "addMedia": "미디어 추가",
@@ -1350,13 +1164,13 @@
       "resuming": "재개 중...",
       "resumeReview": "검토 재개",
       "removing": "삭제 중...",
-      "editorFooterNote": "수정 내용은 내 PulseSoc 스토어에 저장되고, 내용이 바뀔 때마다 상품이 마켓플레이스 검토를 다시 받아요. 결제, 정산, 배송, 분쟁은 pulsesoc.com에서 처리해요.",
+      "editorFooterNote": "수정 내용은 서버에 저장되고, 내용이 바뀌면 마켓플레이스 검토를 다시 받아요. 결제, 정산, 배송, 분쟁, 제공업체 작업은 네이티브 제공업체 범위 안에서 처리돼요.",
       "listingUpdatedReview": "상품을 수정하고 검토로 보냈어요.",
       "listingUpdateFailed": "상품을 수정하지 못했어요.",
       "listingUpdated": "상품을 수정했어요.",
       "listingStatusUpdateFailed": "상품 상태를 변경하지 못했어요.",
       "productMediaGallery": "상품 미디어 갤러리",
-      "productMediaGalleryCopy": "항목을 탭하면 전체 화면으로 열려요. 뷰어에서 재생할 수 없는 항목은 정지 이미지 미리보기로 표시돼요.",
+      "productMediaGalleryCopy": "갤러리는 마켓플레이스 미디어 데이터와 공용 네이티브 미디어 뷰어를 재사용해요. 지원하지 않는 미디어는 뷰어에서 안전하게 대체 표시돼요.",
       "openStoreMediaA11y": "스토어 미디어 {{index}} 열기",
       "mediaFallback": "미디어",
       "openMedia": "미디어 열기",
@@ -1364,37 +1178,18 @@
       "ordersAndPayouts": "주문 및 정산",
       "ordersAndPayoutsCopy": "주문, 판매자 수수료, Stripe Connect 등록, 결제, 정산 지급은 제공업체와 백엔드에서 관리해요.",
       "noSellerOrders": "불러온 판매자 주문이 없어요.",
-      "orderMerchandiseLine": "상품 금액 {{merchandise}} · 배송비 크레딧 {{shipping}}",
-      "orderFeeLine": "PulseSoc 수수료 {{rate}} · 환불 조정 {{refunds}}",
-      "orderNetEarningsLine": "순수익 {{net}} · {{state}}",
-      "orderBlockedLine": "보류됨: {{reason}}. 정산 전에 이 문제를 해결해 주세요.",
       "checking": "확인 중...",
       "connectPayouts": "정산 연결",
       "payoutChecked": "정산 등록 상태를 확인했어요.",
       "payoutUnavailable": "정산 등록은 아직 이용할 수 없어요.",
-      "policyFixNeedsReview": "이 항목은 앱에서 해제할 수 없는 정책 검토가 필요해요. 상품 정보를 수정하거나 pulsesoc.com에서 고객지원에 문의해 주세요.",
       "payoutManagedNote": "정산 등록과 정산 지급은 PulseSoc과 결제 대행사가 관리해요. 정산이 준비되면 알려드려요.",
-      "termsAcceptedLabel": "동의함",
-      "reviewAndAccept": "검토 후 동의",
-      "termsAcceptedNotice": "마켓플레이스 수수료 및 약관에 동의했어요.",
-      "termsAcceptFailed": "약관 동의를 저장하지 못했어요.",
       "trustAndEligibility": "신뢰 및 자격",
       "verification": "인증",
-      "trustCopy": "세금 서류, 계좌 등록, 분쟁, 환불, 배송, PulseSoc 검토는 당분간 앱이 아니라 PulseSoc 웹사이트에서 처리해요.",
+      "trustCopy": "고급 세금 서류, 계좌 등록, 분쟁, 환불, 배송, 관리자 검토는 네이티브 QA 준비가 끝날 때까지 안전한 웹/제공업체 화면에서 처리해요.",
       "storeMediaViewerTitle": "스토어 미디어",
       "statusApprovedLive": "승인/판매 중",
       "statusPendingReview": "검토 대기",
-      "statusRemoved": "삭제됨",
-      "status": {
-        "live": "활성",
-        "store_offline": "스토어 비활성",
-        "store_name_needed": "스토어 이름 필요",
-        "paused": "일시중지됨",
-        "draft": "임시저장",
-        "rejected": "거부됨"
-      },
-      "dropshipping": "가져온 상품",
-      "dropshippingCopy": "공급업체에서 가져온 상품입니다. 아직 검토를 기다리는 상품도 포함됩니다."
+      "statusRemoved": "삭제됨"
     },
     "orders": {
       "title": "주문",
@@ -1514,52 +1309,6 @@
       "statusInReview": "검토 중",
       "pauseCampaign": "캠페인 일시중지",
       "resumeCampaign": "캠페인 재개"
-    },
-    "sellerAccess": {
-      "checking": "판매자 상태를 확인하는 중…",
-      "retry": "다시 시도",
-      "unreadableTitle": "판매자 상태를 확인하지 못했습니다",
-      "unreadableBody": "스토어에는 문제가 없습니다. 확인만 하지 못했을 뿐입니다. 잠시 후 다시 시도해 주세요.",
-      "noApplicationTitle": "PulseSoc에서 판매를 시작하세요",
-      "noApplicationBody": "판매자 계정을 신청하면 스토어를 열고 상품을 등록하며 주문을 받을 수 있습니다.",
-      "noApplicationCta": "판매 신청하기",
-      "draftTitle": "판매자 신청을 완료하세요",
-      "draftBody": "신청서가 임시 저장되어 있습니다. 이어서 진행하세요. 승인되는 즉시 스토어가 열립니다.",
-      "draftCta": "신청 이어서 하기",
-      "reviewTitle": "신청서를 검토 중입니다",
-      "reviewBody": "정보를 확인하고 있습니다. 결정이 나는 즉시 알림을 보내 드립니다. 지금은 추가로 하실 일이 없습니다.",
-      "reviewCta": "신청 상태 보기",
-      "moreInfoTitle": "정보가 조금 더 필요합니다",
-      "moreInfoBody": "검토자가 요청한 자료를 보내실 때까지 신청이 보류됩니다.",
-      "moreInfoCta": "요청된 변경 사항 완료하기",
-      "declinedTitle": "판매자 신청이 승인되지 않았습니다",
-      "declinedBody": "사유와 재신청 가능 여부를 확인하려면 신청서를 열어 보세요.",
-      "declinedCta": "신청 상태 보기",
-      "suspendedTitle": "스토어가 정지되었습니다",
-      "suspendedBody": "스토어가 정지된 동안에는 등록과 판매를 할 수 없습니다. 기존 주문 확인과 환불·분쟁 처리는 계속 가능합니다.",
-      "suspendedCta": "기존 주문 보기",
-      "suspendedSupportCta": "고객지원 문의"
-    },
-    "sellerPayments": {
-      "sectionTitle": "카드 결제",
-      "setupRequiredLabel": "설정 필요",
-      "setupRequiredBody": "구매자가 아직 카드로 결제할 수 없습니다. 카드 결제를 받으려면 정산 정보를 Stripe에 연결하세요.",
-      "setupRequiredCta": "결제 설정하기",
-      "setupInProgressLabel": "설정 진행 중",
-      "setupInProgressBody": "카드 결제 설정을 시작했지만 Stripe에서 몇 가지 정보가 더 필요합니다.",
-      "setupInProgressCta": "설정 계속하기",
-      "actionRequiredLabel": "조치 필요",
-      "actionRequiredBody": "카드 결제를 받으려면 Stripe에 필요한 정보를 제공해야 합니다.",
-      "actionRequiredCta": "설정 완료하기",
-      "underReviewLabel": "검토 중",
-      "underReviewBody": "Stripe가 정보를 검토하고 있습니다. 보통 오래 걸리지 않으며 따로 하실 일은 없습니다.",
-      "readyLabel": "준비 완료",
-      "readyBody": "카드 결제가 켜져 있습니다. 구매자가 결제 시 카드로 지불할 수 있습니다.",
-      "restrictedLabel": "제한됨",
-      "restrictedBody": "Stripe가 계정의 카드 결제를 제한했습니다. 필요한 조치를 보려면 Stripe를 여세요.",
-      "restrictedCta": "Stripe 열기",
-      "unavailableLabel": "사용 불가",
-      "unavailableBody": "현재 PulseSoc에서는 카드 결제를 사용할 수 없습니다. 다른 결제 수단은 영향을 받지 않습니다."
     },
     "business": {
       "title": "비즈니스",
@@ -2619,26 +2368,6 @@
       "upcomingBody": "준비 중입니다. 열리면 여기에 표시됩니다.",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "Business OS의 이 부분에는 아직 페이지가 없습니다. Business OS로 돌아가 다른 섹션을 선택하세요."
-    },
-    "pulsedrop": {
-      "label": {
-        "trending": "인기 급상승",
-        "newDrop": "신상품",
-        "popular": "인기",
-        "topPick": "추천",
-        "discovery": "발견"
-      },
-      "availability": {
-        "unavailable": "판매 종료",
-        "notPriced": "가격 미정"
-      },
-      "cta": {
-        "viewProduct": "상품 보기"
-      },
-      "seller": {
-        "openSeller": "{{name}} 스토어 열기",
-        "visitStore": "스토어 보기"
-      }
     }
   },
   "discovery": {
@@ -3102,39 +2831,7 @@
       "reportFailed": "신고를 전송할 수 없습니다.",
       "selectedForFeedComposer": "{{title}} 곡을 피드 작성기용으로 선택했습니다.",
       "selectedForReel": "{{title}} 곡을 릴스용으로 선택했습니다.",
-      "selectedForStatus": "{{title}} 곡을 스토리용으로 선택했습니다.",
-      "ownerSectionTitle": "소유자 제어",
-      "ownerManage": "관리",
-      "ownerClose": "닫기",
-      "ownerLoading": "이 트랙을 확인하는 중…",
-      "ownerRetry": "다시 시도",
-      "ownerImpactTitle": "결정하기 전에",
-      "ownerImpactUses": "릴스·게시물·상태 {{count}}개에 사용 중입니다.",
-      "ownerImpactReports": "미처리 신고 {{count}}건.",
-      "ownerCdnCaveat": "내리면 PulseSoc가 파일 제공을 중단하지만, 기기에 이미 캐시된 사본은 완전 삭제 전까지 계속 재생됩니다. 격리는 파일 자체를 삭제합니다.",
-      "ownerLegalHold": "이 트랙은 법적 보존 대상이라 완전 삭제할 수 없습니다.",
-      "ownerReason": "사유",
-      "ownerNote": "메모",
-      "ownerNotePlaceholder": "메모 추가 (OTHER 및 모든 완전 삭제에 필수)",
-      "ownerActionsTitle": "작업",
-      "ownerTakedown": "내리기",
-      "ownerQuarantine": "격리",
-      "ownerQuarantineHint": "재생을 멈추고 저장된 파일을 삭제합니다. 트랙 기록과 이력은 유지됩니다.",
-      "ownerRestore": "복원",
-      "ownerSchedulePurge": "완전 삭제 예약",
-      "ownerCancelPurge": "완전 삭제 취소",
-      "ownerPurge": "완전 삭제",
-      "ownerPurgeExplainer": "완전 삭제는 오디오를 영구히 지웁니다. 이를 사용한 게시물·릴스·상태는 그대로 남고 오디오만 무음이 됩니다.",
-      "ownerStepUpTitle": "비밀번호",
-      "ownerStepUpPlaceholder": "비밀번호를 다시 입력하세요",
-      "ownerStepUpAction": "본인 확인",
-      "ownerStepUpGranted": "확인되었습니다. 완전 삭제가 {{seconds}}초 동안 허용됩니다.",
-      "ownerPurgeConfirm": "확인하려면 {{id}}를 입력하세요",
-      "ownerPurgeAction": "영구 삭제",
-      "ownerAuditTitle": "이력",
-      "ownerAuditEmpty": "이 트랙에 기록된 작업이 없습니다.",
-      "ownerApplied": "{{action}} 적용됨.",
-      "ownerNoChange": "이미 해당 상태입니다 — 변경 없음."
+      "selectedForStatus": "{{title}} 곡을 스토리용으로 선택했습니다."
     }
   },
   "settings": {
@@ -3172,7 +2869,7 @@
       "signOut": "로그아웃",
       "signOutSubtitle": "이 기기에서만 로그아웃해요.",
       "signOutConfirmTitle": "PulseSoc에서 로그아웃할까요?",
-      "signOutConfirmBody": "다른 기기에서는 로그인 상태가 유지돼요. 이 기기에 저장된 임시저장 글과 내려받은 미디어는 삭제돼요.",
+      "signOutConfirmBody": "다른 기기에서는 로그인 상태가 유지돼요. 이 기기의 임시저장과 다운로드는 그대로 남아요.",
       "signOutEverywhere": "모든 기기에서 로그아웃",
       "signOutEverywhereSubtitle": "이 기기를 포함한 모든 PulseSoc 세션을 해제해요.",
       "signOutEverywhereConfirmTitle": "모든 기기에서 로그아웃할까요?",
@@ -3231,11 +2928,6 @@
           "title": "언어 및 지역",
           "subtitle": "앱 언어, 번역, 시간 형식",
           "keywords": "언어 번역 로케일 지역 시간대 시간 형식 24시간 language region"
-        },
-        "commerce": {
-          "title": "마켓플레이스 추천",
-          "subtitle": "상품 추천, 빈도, 일시중지",
-          "keywords": "마켓플레이스 추천 제안 상품 쇼핑 피드 릴스 빈도 일시중지 스누즈 개인 맞춤 커머스 상점"
         },
         "storage": {
           "title": "저장공간 및 데이터",
@@ -3783,16 +3475,7 @@
       "copied": "복사됨",
       "share": "공유",
       "unavailable": "초대 링크가 아직 준비되지 않았어요.",
-      "fairness": "실제로 아는 사람을 초대해 주세요. 수보다 질이 중요해요.",
-      "message": {
-        "default": "안녕하세요! 저는 PulseSoc을 사용하고 있어요. 거기서 연결해서 계속 연락해요.\n\nPulseSoc에서 함께해요:",
-        "casual": "안녕 — 나 이제 PulseSoc 해. 너도 같이 하자.\n\n여기로 들어와:",
-        "network": "PulseSoc에서 네트워크를 넓히고 있어요. 거기서도 연결되면 좋겠어요.\n\nPulseSoc에서 함께해요:",
-        "discovery": "PulseSoc에서 팔로우할 만한 사람과 게시물을 찾고 있어요. 마음에 드실 것 같아요.\n\n한번 둘러보세요:",
-        "short": "PulseSoc에서 함께해요:",
-        "handle": "거기서는 @{{username}}이에요.",
-        "subject": "PulseSoc에서 함께해요"
-      }
+      "fairness": "실제로 아는 사람을 초대해 주세요. 수보다 질이 중요해요."
     },
     "missions": {
       "heading": "미션",
@@ -4578,19 +4261,122 @@
         "UNKNOWN": "이용 불가"
       },
       "features": {
+        "privateFacts": {
+          "label": "비공개 정보",
+          "hint": "회원님에 관해 기록된 확인된 정보입니다."
+        },
+        "capitalGraph": {
+          "label": "자본 그래프",
+          "hint": "자산, 법인, 채무가 어떻게 연결되는지 보여줍니다."
+        },
+        "privateBriefings": {
+          "label": "비공개 브리핑",
+          "hint": "회원님의 기록으로 작성한 브리핑입니다."
+        },
         "relationshipIntelligence": {
           "label": "관계 인텔리전스",
           "hint": "회원님의 일과 관련된 사람과 조직입니다."
         },
+        "privateShield": {
+          "label": "프라이빗 실드",
+          "hint": "비공개 정보의 노출 여부를 감시합니다."
+        },
+        "breachMonitoring": {
+          "label": "유출 모니터링",
+          "hint": "알려진 유출에 정보가 나타나면 알려드립니다."
+        },
+        "documentIntelligence": {
+          "label": "문서 인텔리전스",
+          "hint": "제공하신 문서에서 정보를 추출합니다."
+        },
+        "humanConcierge": {
+          "label": "휴먼 컨시어지",
+          "hint": "담당자가 회원님을 대신해 요청을 처리합니다."
+        },
+        "operations": {
+          "label": "오퍼레이션",
+          "hint": "추적 중인 의무, 결정, 요청, 리스크, 기회."
+        },
         "privateMeetings": {
           "label": "프라이빗 회의",
           "hint": "대기실과 호스트 제어 기능을 갖춘 안전한 회의."
+        },
+        "privateConversations": {
+          "label": "비공개 대화",
+          "hint": "분류되어 업무와 연결된 오피스 스레드입니다."
         }
       },
       "entry": {
         "heading": "프라이빗 오피스",
         "hint": "회원님만의 정보와 생활 운영 센터입니다.",
         "lockedHint": "{{tier}}에 포함됩니다."
+      },
+      "facts": {
+        "subtitle": "회원님을 위해 기록된 내용만 표시합니다. 공개 활동에서 추론하지 않습니다.",
+        "loading": "기록을 불러오는 중…",
+        "why": "이걸 어떻게 아나요?",
+        "source": "출처",
+        "sourceUnknown": "기록 없음",
+        "verified": "확인 상태",
+        "observedLabel": "기록일",
+        "observed": "{{date}}에 기록",
+        "confidence": "신뢰도",
+        "hasDocument": "출처 문서가 보관되어 있습니다.",
+        "close": "닫기",
+        "stale": "오래된 정보",
+        "empty": {
+          "title": "아직 아무것도 없습니다",
+          "body": "확인된 정보가 아직 추가되지 않았습니다."
+        },
+        "notEntitled": {
+          "title": "업그레이드 필요",
+          "body": "비공개 정보는 {{tier}}에 포함됩니다.",
+          "bodyGeneric": "비공개 정보는 현재 요금제에 포함되어 있지 않습니다."
+        },
+        "disabled": {
+          "title": "일시 중지",
+          "body": "비공개 정보는 현재 꺼져 있습니다. 기록은 그대로 보존됩니다."
+        },
+        "notImplemented": {
+          "title": "아직 제공되지 않음",
+          "body": "아직 만들어지지 않았습니다."
+        },
+        "unavailable": {
+          "title": "이용 불가",
+          "body": "지금은 기록을 읽을 수 없었습니다. 잠시 후 다시 시도해 주세요."
+        },
+        "error": {
+          "title": "문제가 발생했습니다",
+          "body": "기록을 불러오지 못했습니다."
+        },
+        "add": {
+          "open": "팩트 추가",
+          "title": "팩트 기록",
+          "domain": "영역",
+          "factType": "팩트 유형",
+          "factTypeHint": "예: 여권 번호",
+          "valueType": "값 유형",
+          "value": "값",
+          "save": "저장",
+          "cancel": "취소",
+          "failed": "지금은 저장할 수 없었습니다."
+        }
+      },
+      "domains": {
+        "GENERAL": "일반",
+        "FINANCIAL": "재무",
+        "LEGAL": "법률",
+        "HEALTH": "건강",
+        "FAMILY": "가족",
+        "IDENTITY": "신원",
+        "SECURITY": "보안"
+      },
+      "verification": {
+        "VERIFIED": "확인됨",
+        "SOURCED": "출처 있음",
+        "SELF_REPORTED": "본인 신고",
+        "ESTIMATED": "추정",
+        "NEEDS_REVIEW": "검토 필요"
       },
       "security": {
         "title": "오피스 보안",
@@ -4683,6 +4469,457 @@
           "failed": "재설정에 실패했습니다. 비밀번호를 확인하고 다시 시도하세요."
         }
       },
+      "operations": {
+        "title": "오퍼레이션",
+        "subtitle": "의무, 이벤트, 결정, 요청, 리스크, 기회를 한곳에서 기록하고 추적합니다.",
+        "loading": "기록을 불러오는 중…",
+        "cancel": "취소",
+        "save": "저장",
+        "move": "변경",
+        "writeFailed": "변경 사항이 저장되지 않았습니다.",
+        "empty": {
+          "title": "기록 없음"
+        },
+        "views": {
+          "obligations": "의무",
+          "events": "이벤트",
+          "decisions": "결정",
+          "requests": "요청",
+          "risks": "리스크",
+          "opportunities": "기회"
+        },
+        "add": {
+          "obligations": "의무 기록",
+          "events": "이벤트 기록",
+          "decisions": "결정 기록",
+          "requests": "요청 기록",
+          "risks": "리스크 기록",
+          "opportunities": "기회 기록"
+        },
+        "emptyBody": {
+          "obligations": "아직 기록된 의무가 없습니다.",
+          "events": "아직 기록된 이벤트가 없습니다.",
+          "decisions": "아직 기록된 결정이 없습니다.",
+          "requests": "아직 기록된 요청이 없습니다.",
+          "risks": "아직 기록된 리스크가 없습니다.",
+          "opportunities": "아직 기록된 기회가 없습니다."
+        },
+        "notEntitled": {
+          "title": "업그레이드 필요",
+          "body": "오퍼레이션은 {{tier}}에 포함되어 있습니다.",
+          "bodyGeneric": "오퍼레이션은 현재 플랜에 포함되어 있지 않습니다."
+        },
+        "disabled": {
+          "title": "이용 불가",
+          "body": "오퍼레이션이 현재 중지되어 있습니다."
+        },
+        "notImplemented": {
+          "title": "준비 중",
+          "body": "오피스의 이 부분은 아직 준비 중입니다."
+        },
+        "unavailable": {
+          "title": "연결할 수 없음",
+          "body": "오퍼레이션에 연결할 수 없습니다. 기록은 변경되지 않았습니다."
+        },
+        "error": {
+          "title": "문제가 발생했습니다",
+          "body": "기록을 불러올 수 없습니다."
+        },
+        "due": "기한 {{date}}",
+        "occurred": "발생일 {{date}}",
+        "outcome": "결과: {{outcome}}",
+        "form": {
+          "title": "제목",
+          "question": "질문",
+          "kind": "유형",
+          "details": "세부 정보",
+          "due": "기한 (YYYY-MM-DD)"
+        },
+        "status": {
+          "OPEN": "진행 전",
+          "RESOLVED": "해결됨",
+          "DISMISSED": "기각됨",
+          "RECORDED": "기록됨",
+          "UNDER_REVIEW": "검토 중",
+          "DECIDED": "결정됨",
+          "ABANDONED": "중단됨",
+          "IN_PROGRESS": "진행 중",
+          "WAITING_ON_USER": "회원 응답 대기",
+          "WAITING_ON_PROVIDER": "제공자 대기",
+          "COMPLETED": "완료",
+          "CANCELED": "취소됨",
+          "MONITORING": "모니터링 중",
+          "MITIGATED": "완화됨",
+          "ACCEPTED": "수용됨",
+          "NEW": "신규",
+          "REVIEWING": "평가 중",
+          "INTERESTED": "관심 있음",
+          "PASSED": "보류",
+          "CLOSED": "종료",
+          "OVERDUE": "기한 초과",
+          "DUE_SOON": "기한 임박"
+        },
+        "overview": {
+          "heading": "개요",
+          "loading": "개요를 불러오는 중…",
+          "unavailable": "개요를 불러오지 못했습니다. 이것은 영이 아닙니다.",
+          "needsAttention": "주의 필요",
+          "dueToday": "오늘 마감",
+          "overdue": "기한 초과",
+          "pendingDecisions": "대기 중인 결정",
+          "dueThisWeek": "이번 주 마감",
+          "highRisks": "높은 위험",
+          "openRequests": "진행 중인 요청",
+          "awaitingResponse": "회신 대기 중",
+          "opportunities": "기회",
+          "recentlyCompleted": "최근 완료",
+          "recentWindow": "최근 {{days}}일",
+          "queue": "주의 목록",
+          "queueEmpty": "주의가 필요한 항목이 없습니다.",
+          "truncated": "{{total}}개 중 {{shown}}개 표시.",
+          "notTracked": "추적하지 않음",
+          "reason": {
+            "OVERDUE": "기한 초과",
+            "HIGH_RISK": "높은 위험",
+            "DUE_SOON": "마감 임박",
+            "RESPONSE_REQUIRED": "회신 필요",
+            "MISSING_REQUIRED_CONTEXT": "검토 필요",
+            "DECISION_REQUIRED": "결정 미완",
+            "BLOCKED": "제공자 대기"
+          },
+          "expiringOpportunities": "만료 예정 기회"
+        }
+      },
+      "capital": {
+        "title": "캐피털 그래프",
+        "subtitle": "보유한 것, 이를 보장하는 것, 그리고 그 연결 — 각 요소의 확실성과 함께.",
+        "loading": "그래프를 불러오는 중…",
+        "views": {
+          "coverage": "보장",
+          "documents": "문서",
+          "holdings": "보유 자산",
+          "obligations": "부채",
+          "overview": "개요",
+          "structure": "구조",
+          "cash_flow": "지출",
+          "exposure": "집중도"
+        },
+        "countExact": "{{count}}",
+        "countSoFar": "지금까지 {{count}}",
+        "factCount": "기록된 사실 {{count}}건",
+        "empty": {
+          "title": "기록 없음",
+          "openPortfolio": "포트폴리오 열기"
+        },
+        "emptyBody": {
+          "holdings": "아직 기록된 보유 자산이 없습니다. 포트폴리오에 추가한 자산이 여기에 표시되고 캐피털 그래프에 자동으로 연결됩니다.",
+          "coverage": "아직 기록된 보장이 없습니다.",
+          "structure": "아직 기록된 구조가 없습니다.",
+          "documents": "아직 연결된 자본 문서가 없습니다."
+        },
+        "denied": {
+          "title": "표시되지 않음",
+          "body": "이 질문에는 답변되지 않았습니다."
+        },
+        "notFound": {
+          "title": "찾을 수 없음",
+          "body": "오피스에 해당 항목이 없습니다."
+        },
+        "notEntitled": {
+          "title": "업그레이드 필요",
+          "body": "캐피털 그래프는 {{tier}}에 포함되어 있습니다.",
+          "bodyGeneric": "캐피털 그래프는 현재 플랜에 포함되어 있지 않습니다."
+        },
+        "disabled": {
+          "title": "이용 불가",
+          "body": "캐피털 그래프가 현재 중지되어 있습니다."
+        },
+        "notImplemented": {
+          "title": "준비 중",
+          "body": "오피스의 이 부분은 아직 준비 중입니다."
+        },
+        "unavailable": {
+          "title": "연결할 수 없음",
+          "body": "그래프에 연결할 수 없습니다. 기록은 변경되지 않았습니다."
+        },
+        "error": {
+          "title": "문제가 발생했습니다",
+          "body": "그래프를 불러올 수 없습니다."
+        },
+        "conflicts": {
+          "title": "상충하는 정보",
+          "disagree": "두 출처가 일치하지 않습니다"
+        },
+        "stale": {
+          "title": "최신성 기한 경과",
+          "age": "{{days}}일 경과"
+        },
+        "truth": {
+          "KNOWN": "확인됨",
+          "INFERRED": "추론됨",
+          "ESTIMATED": "추정치",
+          "STALE": "오래됨",
+          "MISSING": "누락",
+          "CONFLICTING": "상충",
+          "PRO_REVIEW": "검토 필요"
+        },
+        "nodeType": {
+          "PERSON": "인물",
+          "BUSINESS": "사업체",
+          "PROPERTY": "부동산",
+          "INSURANCE_POLICY": "보험 증권",
+          "CONTRACT": "계약",
+          "DOCUMENT": "문서",
+          "PROFESSIONAL": "전문가",
+          "ASSET": "자산",
+          "LIABILITY": "부채"
+        },
+        "entity": {
+          "relationships": "관계",
+          "facts": "기록된 사실",
+          "updated": "업데이트 {{date}}"
+        },
+        "relationshipsUnavailable": "지금은 관계를 불러올 수 없습니다.",
+        "portfolio": {
+          "title": "포트폴리오",
+          "subtitle": "PulseSoc 포트폴리오가 그래프에 반영됩니다. 보유 자산은 포트폴리오에서 수정하세요 — 변경 사항은 자동으로 여기에 반영됩니다.",
+          "totalValue": "총 평가액",
+          "partial": "{{total}}개 중 {{priced}}개 보유 자산에 가격 있음",
+          "lots_one": "로트 {{count}}개",
+          "lots_other": "로트 {{count}}개",
+          "priceUnavailable": "가격을 불러올 수 없음",
+          "manualSource": "수동 · 내 포트폴리오에서",
+          "updatedSeconds": "{{count}}초 전에 가격 업데이트됨",
+          "updatedMinutes": "{{count}}분 전에 가격 업데이트됨",
+          "updatedStale": "가격이 최신이 아닐 수 있습니다",
+          "sourceUnavailable": "실시간 가격이 현재 연결되어 있지 않습니다",
+          "syncPending_one": "포트폴리오 변경 {{count}}건 동기화 중…",
+          "syncPending_other": "포트폴리오 변경 {{count}}건 동기화 중…",
+          "syncFailed": "최근 동기화에 실패했습니다 — 마지막으로 성공한 업데이트 기준으로 표시됩니다.",
+          "unpriced": "{{symbols}}의 실시간 가격이 없습니다. 합계에는 나머지 보유 자산만 포함됩니다.",
+          "empty": "아직 포트폴리오에 보유 자산이 없습니다.",
+          "unavailable": "지금은 포트폴리오를 불러올 수 없습니다.",
+          "basisUnknown": "취득 원가 미기록",
+          "pricedValue": "가격 산정된 포트폴리오 가치",
+          "valueUnavailable": "아직 가격이 산정된 보유 자산이 없습니다",
+          "excludesUnpriced": "가격 미산정 자산 제외: {{count}}",
+          "pnlLabel": "미실현 손익",
+          "pnlUnavailable": "사용 불가",
+          "basisLabel": "취득 원가",
+          "basisPartial": "{{total}}개 중 {{known}}개 확인됨",
+          "holdingsLabel": "보유 자산",
+          "allocationTitle": "자산 배분",
+          "allocationPricedOnly": "가격 산정 자산만",
+          "excludedFromTotal": "포트폴리오 합계에서 제외됨",
+          "qualityPriced": "가격 산정 {{priced}}/{{total}}",
+          "qualityBasis": "원가 확인 {{known}}/{{total}}",
+          "unavailableTitle": "포트폴리오를 사용할 수 없습니다",
+          "fresh": {
+            "live": "실시간",
+            "fresh": "최신",
+            "delayed": "지연됨",
+            "stale": "오래됨",
+            "unavailable": "가격 소스 없음"
+          }
+        },
+        "coverage": {
+          "portfolioTitle": "포트폴리오 커버리지",
+          "pricing": "{{total}}개 중 {{priced}}개 자산 가격 산정됨",
+          "basis": "{{total}}개 중 {{known}}개 취득 원가 확인됨",
+          "factsTitle": "사실 검증",
+          "knownShare": "확인된 사실: {{pct}}",
+          "documentBacked": "문서로 뒷받침된 사실: {{count}}"
+        },
+        "structure": {
+          "relationshipsTitle": "관계",
+          "noRelationships": "아직 기록된 관계가 없습니다."
+        },
+        "relation": {
+          "OWNS": "소유",
+          "ADVISED_BY": "자문",
+          "COVERED_BY": "보장",
+          "SECURED_BY": "담보",
+          "GOVERNED_BY": "규율",
+          "DESCRIBES": "설명"
+        },
+        "documents": {
+          "evidenceTitle": "연결된 증빙"
+        },
+        "overview": {
+          "assets": "가격이 매겨진 자산",
+          "complete": "완전",
+          "concentrationTitle": "보유 규모 상위",
+          "concentrationUnranked": "규모가 작은 보유는 여기에 표시되지 않습니다.",
+          "coverageTitle": "커버리지",
+          "dimension": {
+            "pricing": "가격 평가",
+            "cost_basis": "취득 원가",
+            "liability_amounts": "부채 금액",
+            "evidence": "증빙"
+          },
+          "dimensionCount": "{{total}}건 중 {{known}}건",
+          "disclaimerBody": "가격이 매겨진 자산과 금액이 확정된 부채를 비교한 값입니다. 가격이나 금액을 확정하지 못한 항목은 빠져 있습니다.",
+          "disclaimerTitle": "순자산 수치가 아닙니다",
+          "excludedForeignCurrency": "다른 통화의 부채",
+          "excludedTitle": "이 수치에서 제외된 항목",
+          "excludedUnpricedAssets": "가격이 없는 자산",
+          "excludedUnquantifiedLiabilities": "금액이 없는 부채",
+          "excludedUnspecifiedCurrency": "통화가 없는 부채",
+          "liabilities": "금액이 확정된 부채",
+          "liabilityConcentrationTitle": "부채 규모 상위",
+          "noLiabilities": "기록된 부채가 없습니다. 갚을 것이 없다는 뜻은 아닙니다.",
+          "notSummable": "단일 통화가 아니어서 합계를 표시하지 않습니다.",
+          "otherCurrencies": "기타 통화",
+          "partial": "일부",
+          "quantifiedOf": "금액 확인 {{done}}/{{total}}",
+          "reason": {
+            "unpriced_assets": "가격을 확인할 수 없는 자산이 있습니다.",
+            "incomplete_portfolio": "포트폴리오 합계 자체가 불완전합니다.",
+            "unquantified_liabilities": "금액이 기록되지 않은 부채가 있습니다.",
+            "uncomparable_currency": "비교할 수 없는 통화로 표시된 부채가 있습니다.",
+            "liabilities_truncated": "읽어온 것보다 많은 부채가 존재합니다.",
+            "no_liabilities_recorded": "기록된 부채가 하나도 없습니다."
+          },
+          "reviewMore": "다른 항목은 여기에 표시되지 않습니다.",
+          "reviewTitle": "검토 필요",
+          "shareUnknown": "비중 미상",
+          "title": "순포지션",
+          "unscoreable": "평가할 항목 없음",
+          "withheld": "명시되지 않음"
+        },
+        "obligations": {
+          "amountMissing": "금액 기록 없음",
+          "complete": "모든 금액이 기록됨",
+          "currenciesTitle": "통화별",
+          "disclaimerBody": "기록된 채무의 합계이며, 갚아야 할 전부가 아닙니다.",
+          "disclaimerTitle": "이 합계의 의미",
+          "dueLabel": "만기",
+          "dueMissing": "만기일 기록 없음",
+          "evidenceLabel": "근거 기록",
+          "evidenceMissing": "근거 기록 없음",
+          "none": "기록된 부채가 없습니다. 갚을 것이 없다는 뜻은 아닙니다.",
+          "notProjected": "이 목록은 기록 저장소에서 다시 만들어지지 않았습니다.",
+          "notSummable": "통화가 하나로 정해지지 않아 합계를 표시하지 않습니다.",
+          "partial": "일부 금액이 없음",
+          "projectedLabel": "기록에서 다시 구성됨",
+          "quantifiedLabel": "금액이 기록된 항목",
+          "recordedLabel": "기록된 채무",
+          "retiredLabel": "종료됨",
+          "skippedLabel": "제외됨",
+          "staleTitle": "최근에 갱신되지 않음",
+          "syncTitle": "투영",
+          "title": "금액이 확인된 합계",
+          "truncated": "여기에 표시된 것보다 많은 부채가 있습니다.",
+          "unquantifiedLabel": "금액이 기록되지 않은 항목",
+          "unspecifiedCurrency": "통화 없이 기록된 금액",
+          "withheld": "기재 없음"
+        },
+        "cashFlow": {
+          "title": "예정된 지출",
+          "complete": "기록된 항목이 모두 일정에 반영됨",
+          "partial": "일부 채무가 빠져 있음",
+          "withheld": "표시되지 않음",
+          "notSummable": "통화가 하나로 정해지지 않아 합계를 표시하지 않습니다.",
+          "outflowsTitle": "이 일정표의 의미",
+          "notProjected": "이 일정표는 기록 저장소에서 다시 생성되지 않았습니다.",
+          "scheduledLabel": "일정 반영",
+          "seenLabel": "확인한 채무",
+          "excludedLabel": "제외됨",
+          "noneScheduled": "기록된 항목 중 만기일이 확인되는 것은 없습니다. 갚을 것이 없다는 뜻은 아닙니다.",
+          "truncated": "여기에 표시된 것보다 많은 채무가 있습니다.",
+          "mixedCurrency": "이 합계가 명시하지 않은 통화의 {{count}}건은 합계에서 제외했습니다.",
+          "bucketsTitle": "만기 시점별",
+          "bucketCountLabel": "채무",
+          "bucketMissing": "보고되지 않음",
+          "bucketUndeclared": "설명되지 않은 구간",
+          "bucketBefore": "{{to}}일 이내",
+          "bucketDueNow": "지금 만기이거나 이미 연체",
+          "bucketAfter": "{{from}}일 초과",
+          "bucketBetween": "{{from}}~{{to}}일",
+          "excludedTitle": "어느 구간에도 들어가지 않음",
+          "excludedBody": "이 채무들은 실재합니다. 위치를 정하는 데 필요한 정보가 기록되지 않아 위 어느 구간에도 들어가지 않았습니다.",
+          "undated": "만기일 기록 없음",
+          "unquantified": "금액 기록 없음",
+          "undatedAndUnquantified": "만기일도 금액도 기록 없음",
+          "amountMissing": "금액 기록 없음",
+          "unspecifiedCurrency": "통화 없이 기록된 금액",
+          "dueLabel": "만기",
+          "dueMissing": "만기일 기록 없음",
+          "overdue": "연체",
+          "evidenceLabel": "뒷받침하는 사실",
+          "evidenceMissing": "뒷받침하는 사실 기록 없음",
+          "syncTitle": "투영",
+          "projectedLabel": "기록에서 재구성",
+          "skippedLabel": "건너뜀"
+        },
+        "exposure": {
+          "basisTitle": "순위의 기준",
+          "complete": "완전",
+          "partial": "부분",
+          "withheld": "미기재",
+          "noBasis": "순위를 매길 총액이 없습니다",
+          "basis": {
+            "priced_asset_value": "가격이 있는 자산의 가치",
+            "quantified_liability_amount": "금액이 확인된 부채 총액"
+          },
+          "pricedOf": "{{total}}개 중 {{priced}}개에 가격 있음",
+          "pricingCoverage": "가격 반영 범위",
+          "dimensionCount": "{{total}}개 중 {{known}}개",
+          "pricingUnknown": "가격 반영 범위를 산정할 수 없습니다",
+          "blindSpotTitle": "이 순위에 없는 항목",
+          "blindSpotBody": "이 보유 자산에는 가격이 없어 순위의 맨 아래가 아니라 순위 자체에서 빠져 있습니다. 그중 어느 것이든 맨 위 항목보다 클 수 있습니다.",
+          "unpricedUnnamed": "가격도 이름도 없음",
+          "pricesUnavailable": "실시간 가격을 읽지 못해 이 순위는 최신이 아닙니다.",
+          "readAt": "조회 시각",
+          "assetsTitle": "가격이 있는 자금의 위치",
+          "shareUnknown": "비중 미기재",
+          "sharesOfPriced": "비중은 위의 가격 반영 총액 기준이며, 기록된 전체 기준이 아닙니다.",
+          "unrankedTail": "가격은 있으나 순위에 없음",
+          "basisMismatch": "순위에 든 수와 들지 않은 수의 합이 가격이 있는 보유 수와 맞지 않습니다. 이 순위는 위에 표시된 총액 기준이 아닐 수 있습니다.",
+          "rankedMismatch": "서버가 알린 순위 개수가 실제로 보낸 행 수와 다릅니다.",
+          "noHoldings": "기록된 보유가 없어 순위를 매길 것이 없습니다. 이는 아무것도 소유하지 않았다는 뜻이 아닙니다.",
+          "nonePriced": "보유는 기록되어 있으나 가격이 있는 것이 없어 순위를 매길 수 없습니다.",
+          "pricedButUnrankable": "가격이 있는 보유를 더해도 순위의 기준이 될 총액이 되지 않습니다.",
+          "liabilitiesTitle": "금액이 확인된 부채의 위치",
+          "liabilitiesGrouped": "채권자별이 아니라 채무 종류별로 묶었습니다.",
+          "noLiabilities": "기록된 채무가 없습니다. 이는 빚이 없다는 뜻이 아닙니다.",
+          "noneQuantified": "금액이 기록된 채무가 없어 순위를 매길 수 없습니다.",
+          "quantifiedOf": "{{total}}건 중 {{done}}건의 채무에 금액 있음",
+          "excludedTitle": "이 순위에서 제외됨",
+          "excludedUnquantified": "금액 기록 없음",
+          "excludedForeignCurrency": "다른 통화",
+          "excludedUnspecifiedCurrency": "통화 미기재",
+          "otherCurrencies": "통화별로 제외된 금액",
+          "liabilitiesTruncated": "채무 목록이 잘렸으므로 순위에 든 것보다 많을 수 있습니다.",
+          "unmeasuredTitle": "이 탭이 측정하지 않는 것",
+          "unmeasuredBody": "기록에 없는 항목이므로 여기서는 '이상 없음'이 아니라 '알 수 없음'입니다. 이 침묵은 안전하다는 신호가 아닙니다.",
+          "unmeasured": {
+            "counterparty": "거래상대방 집중도",
+            "custodian": "수탁기관 및 거래장소 집중도",
+            "geography": "지역 집중도",
+            "sector": "업종 집중도",
+            "assetCurrency": "자산 자체의 통화"
+          }
+        }
+      },
+      "attention": {
+        "title": "주의가 필요한 항목",
+        "none": "지금은 주의가 필요한 항목이 없습니다.",
+        "unavailable": "주의가 필요한 항목을 지금 확인할 수 없었습니다."
+      },
+      "quick": {
+        "title": "빠른 작업",
+        "record": "기록하기",
+        "addFact": "팩트 추가"
+      },
+      "valueTypes": {
+        "STRING": "텍스트",
+        "NUMBER": "숫자",
+        "MONEY": "금액",
+        "PERCENT": "백분율",
+        "DATE": "날짜",
+        "BOOLEAN": "예/아니요"
+      },
       "feature": {
         "loading": "이 기능을 확인하는 중…",
         "retry": "다시 시도",
@@ -4708,6 +4945,35 @@
           "body": "불러올 수 없습니다."
         }
       },
+      "documents": {
+        "subtitle": "제공한 문서에서 사실을 읽어냅니다. 검토 없이는 아무것도 기록되지 않습니다.",
+        "upload": "문서 업로드",
+        "uploading": "업로드 중…",
+        "duplicate": {
+          "title": "이미 보관 중",
+          "body": "이전에 동일한 파일을 업로드했습니다. 기존 사본이 유지됩니다."
+        },
+        "uploadFailed": "업로드 실패",
+        "reviewFailed": "검토 실패",
+        "empty": {
+          "title": "아직 문서가 없습니다",
+          "body": "업로드한 문서는 읽어낸 내용과 함께 여기에 표시됩니다."
+        },
+        "states": {
+          "EXTRACTED": "읽음",
+          "NO_CLAIMS": "추출할 내용 없음",
+          "PROVIDER_REQUIRED": "제공업체 대기 중",
+          "FAILED": "읽을 수 없음"
+        },
+        "claims": {
+          "title": "제안된 사실",
+          "none": "이 문서에서 제안된 사실이 없습니다.",
+          "accept": "수락",
+          "reject": "거절",
+          "ACCEPTED": "수락됨",
+          "REJECTED": "거절됨"
+        }
+      },
       "people": {
         "subtitle": "내 오피스에 기록된 사람들입니다. 누구에 대해서도 외부 조회는 하지 않습니다.",
         "add": "사람 추가",
@@ -4731,6 +4997,115 @@
           "nothing": "이 사람에 대해 아직 기록된 내용이 없습니다."
         }
       },
+      "briefings": {
+        "subtitle": "내 기록만으로 구성된 브리핑입니다. 외부에서 추가되는 내용은 없습니다.",
+        "generate": "브리핑 준비",
+        "generating": "준비 중…",
+        "generateFailed": "브리핑을 준비할 수 없습니다",
+        "itemCount_one": "{{count}}개 항목",
+        "itemCount_other": "{{count}}개 항목",
+        "noItems": "이 브리핑은 비어 있습니다 — 기록에 보고할 내용이 없었습니다.",
+        "empty": {
+          "title": "아직 브리핑이 없습니다",
+          "body": "준비하면 그 시점의 기록으로 구성됩니다."
+        },
+        "sections": {
+          "PEOPLE": "사람",
+          "OBLIGATIONS": "의무",
+          "EVENTS": "일정",
+          "DECISIONS": "결정",
+          "REQUESTS": "요청",
+          "RISKS": "위험",
+          "OPPORTUNITIES": "기회"
+        }
+      },
+      "shield": {
+        "subtitle": "내 기록의 노출 여부를 점검합니다. 아래에 명시된 항목만 확인합니다.",
+        "openFindings_one": "미해결 발견 {{count}}건",
+        "openFindings_other": "미해결 발견 {{count}}건",
+        "severity": {
+          "HIGH": "높음",
+          "MEDIUM": "중간",
+          "LOW": "낮음"
+        },
+        "scan": "점검 실행",
+        "scanning": "점검 중…",
+        "scanFailed": "점검을 실행할 수 없습니다",
+        "checksTitle": "점검 항목",
+        "checksHint": "'발견 없음'은 여기에 나열된 점검 범위에서 없다는 뜻이며, 그 이상을 의미하지 않습니다.",
+        "externalTitle": "외부 점검 없음",
+        "externalMonitored": "외부 제공업체가 모니터링 중",
+        "externalNotMonitored": "모니터링 중인 외부 제공업체가 없습니다",
+        "empty": {
+          "title": "미해결 발견이 없습니다",
+          "body": "위에 나열된 점검 범위에서는 아무것도 발견되지 않았습니다. 이 의미는 그것이 전부입니다."
+        },
+        "status": {
+          "OPEN": "미해결",
+          "ACKNOWLEDGED": "확인됨",
+          "RESOLVED": "해결됨",
+          "DISMISSED": "무시됨"
+        },
+        "acknowledge": "확인",
+        "resolve": "해결로 표시",
+        "dismiss": "무시",
+        "updateFailed": "업데이트할 수 없습니다"
+      },
+      "concierge": {
+        "subtitle": "사람이 처리하는 요청 데스크입니다. 여기의 모든 답변은 사람이 직접 작성했습니다.",
+        "newRequest": "새 요청",
+        "submitFailed": "제출할 수 없습니다",
+        "sendFailed": "보낼 수 없습니다",
+        "cancelFailed": "취소할 수 없습니다",
+        "cancelRequest": "이 요청 취소",
+        "empty": {
+          "title": "아직 요청이 없습니다",
+          "body": "제출한 요청은 전체 이력과 함께 여기에 표시됩니다."
+        },
+        "desk": {
+          "staffed_one": "근무 중인 오퍼레이터 {{count}}명",
+          "staffed_other": "근무 중인 오퍼레이터 {{count}}명",
+          "unstaffed": "근무 중인 오퍼레이터가 없습니다"
+        },
+        "form": {
+          "title": "무엇이 필요하신가요?",
+          "description": "세부 내용(선택)",
+          "category": "카테고리",
+          "priority": "우선순위",
+          "submit": "제출",
+          "cancel": "취소"
+        },
+        "categories": {
+          "GENERAL": "일반",
+          "TRAVEL": "여행",
+          "LEGAL": "법률",
+          "FINANCIAL": "재무",
+          "PERSONAL": "개인",
+          "RESEARCH": "리서치",
+          "ADMIN": "행정"
+        },
+        "priorities": {
+          "LOW": "낮음",
+          "NORMAL": "보통",
+          "HIGH": "높음",
+          "URGENT": "긴급"
+        },
+        "statusWords": {
+          "OPEN": "접수됨",
+          "IN_PROGRESS": "진행 중",
+          "WAITING_ON_USER": "회원 응답 대기",
+          "WAITING_ON_PROVIDER": "제공업체 대기",
+          "COMPLETED": "완료됨",
+          "CANCELED": "취소됨"
+        },
+        "thread": {
+          "none": "아직 메시지가 없습니다.",
+          "operator": "오퍼레이터",
+          "you": "나",
+          "placeholder": "메시지 작성…",
+          "send": "보내기"
+        }
+      },
       "meetings": {
         "subtitle": "프라이빗 회선에서의 안전한 회의. 대기실과 호스트 제어는 화면이 아닌 서버가 적용합니다.",
         "instant": "즉석 회의 시작",
@@ -4746,38 +5121,17 @@
         "scheduleFailed": "예약할 수 없습니다",
         "startFailed": "시작할 수 없습니다",
         "cancelFailed": "취소할 수 없습니다",
-        "rescheduleFailed": "일정을 변경할 수 없습니다",
         "start": "시작",
         "cancel": "취소",
-        "reschedule": "일정 변경",
-        "saveChanges": "변경사항 저장",
         "untitled": "회의",
         "details": "{{title}} 세부 정보",
         "liveNow": "지금 진행 중",
         "durationMinutes_one": "{{count}}분",
         "durationMinutes_other": "{{count}}분",
-        "confirmed": {
-          "title": "회의가 예약되었습니다",
-          "when": "일시",
-          "duration": "소요 시간",
-          "guests": "초대됨",
-          "guestsNone": "아직 아무도 초대하지 않았습니다. 회의 안에서 언제든 초대할 수 있습니다.",
-          "memberFallback": "멤버 {{id}}",
-          "someone": "참석자 중 한 명",
-          "reminders": "알림",
-          "remindersNone": "이 회의에 예약된 알림이 없습니다.",
-          "reminderSkipped": "시간이 너무 촉박해 보내지 않습니다",
-          "meetingId": "회의 ID",
-          "meetingCode": "초대 코드",
-          "done": "완료",
-          "skipped": {
-            "emailRequired": "초대되지 않음 — 이메일 주소 없음",
-            "emailInvalid": "초대되지 않음 — 사용할 수 없는 주소입니다",
-            "tooMany": "초대되지 않음 — 회의 하나에 참석자가 너무 많습니다",
-            "isHost": "이미 참여 중 — 본인이 주최자입니다",
-            "alreadyIn": "이미 이 회의에 있습니다",
-            "unavailable": "초대할 수 없습니다"
-          }
+        "presets": {
+          "in15m": "{{minutes}}분 후",
+          "in1h": "{{hours}}시간 후",
+          "tomorrowMorning": "내일 오전 {{time}}"
         },
         "buckets": {
           "live": "진행 중",
@@ -4886,52 +5240,82 @@
             "feature_disabled": "연결 중에 회의 기능이 꺼졌습니다.",
             "generic": "회의가 끝났습니다."
           }
+        }
+      },
+      "conversations": {
+        "title": "비공개 대화",
+        "subtitle": "분류되어 관련 업무와 연결된 오피스 스레드입니다.",
+        "unread": "읽지 않음",
+        "archived": "보관됨",
+        "filters": {
+          "all": "전체"
         },
-        "calendar": {
-          "browse": "캘린더 보기",
-          "previousMonth": "이전 달",
-          "nextMonth": "다음 달",
-          "pickMonth": "월 선택",
-          "pickYear": "연도 선택",
-          "jumpToYear": "연도로 이동",
-          "today": "오늘",
-          "close": "닫기",
-          "loadFailed": "이 달을 불러오지 못했습니다. 다시 시도하거나 다른 달로 이동하세요.",
-          "noneOnDay": "이 날에는 예정된 일정이 없습니다.",
-          "dayWithMeetings_other": "{{day}}, 미팅 {{count}}건"
+        "scopes": {
+          "DIRECT": "일대일",
+          "GROUP": "그룹",
+          "ORGANIZATION_ROOM": "조직 룸",
+          "PROJECT_ROOM": "프로젝트 룸"
         },
-        "wizard": {
-          "steps": {
-            "date": "날짜 선택",
-            "time": "시간 선택",
-            "zone": "시간대 확인",
-            "duration": "얼마나 걸리나요?",
-            "details": "제목과 안건",
-            "guests": "누가 참석하나요?",
-            "review": "검토"
-          },
-          "timeHint": "미팅이 열리는 곳에서 표시될 시간입니다.",
-          "zoneHint": "모두가 같은 순간에 초대됩니다. 그 순간을 결정하는 것이 시간대입니다.",
-          "zoneUnknown": "이 기기가 시간대를 알려주지 않아 미팅은 UTC로 해석됩니다.",
-          "looksPast": "이 기기의 시계로는 이미 지난 시간입니다. 최종 판단은 서버가 합니다.",
-          "customDuration": "직접 입력한 길이(분)",
-          "durationRange": "{{min}}분에서 {{max}}분 사이로 선택하세요.",
-          "agendaField": "안건 (선택)",
-          "inviteLater": "미팅이 생성된 뒤에 사람들을 초대할 수 있습니다.",
-          "guestsHint": "여기 있는 모든 분에게 초대장과 알림이 전송됩니다. PulseSoc 계정은 필요하지 않습니다.",
-          "guestsNone": "아직 참석자가 없습니다. 지금 추가하거나 나중에 초대할 수 있습니다.",
-          "guestsNoneShort": "아직 없음",
-          "guestName": "이름 (선택 사항)",
-          "guestEmail": "이메일 주소",
-          "addGuest": "참석자 추가",
-          "updateGuest": "참석자 수정",
-          "editGuest": "{{name}} 편집",
-          "removeGuest": "{{name}} 삭제",
-          "remove": "삭제",
-          "guestEmailInvalid": "초대장을 보낼 수 있도록 이메일 주소를 입력하세요.",
-          "guestDuplicate": "이미 목록에 있는 주소입니다.",
-          "back": "뒤로",
-          "next": "다음"
+        "empty": {
+          "title": "아직 비공개 대화가 없습니다",
+          "body": "오피스 대화로 분류된 스레드가 범위와 연결 항목과 함께 여기에 표시됩니다."
+        },
+        "create": {
+          "open": "새 대화",
+          "failed": "대화를 만들지 못했습니다",
+          "boundScopeNote": "조직 룸과 프로젝트 룸은 해당 조직 노드 또는 프로젝트에서 만듭니다."
+        },
+        "sensitivity": {
+          "title": "민감도",
+          "note": "이 스레드를 어떻게 다루고 누구와 공유할 수 있는지 정합니다. 메시지 전송 방식은 바뀌지 않습니다.",
+          "failed": "민감도를 변경하지 못했습니다",
+          "unknownLabel": "저장된 민감도",
+          "PUBLIC": "공개",
+          "INTERNAL": "내부",
+          "CONFIDENTIAL": "기밀",
+          "HIGHLY_SENSITIVE": "매우 민감",
+          "RESTRICTED": "제한"
+        },
+        "links": {
+          "title": "연결 항목",
+          "note": "연결은 참조입니다. 연결을 해제해도 가리키는 문서, 기록, 사실, 회의는 삭제되지 않습니다.",
+          "empty": "이 대화에 연결된 항목이 아직 없습니다.",
+          "remove": "연결 해제",
+          "failed": "연결 항목을 변경하지 못했습니다"
+        },
+        "linkTypes": {
+          "DOCUMENT": "문서",
+          "RECORD": "기록",
+          "FACT": "사실",
+          "MEETING": "회의",
+          "ORGANIZATION_NODE": "조직",
+          "PROJECT": "프로젝트"
+        },
+        "security": {
+          "title": "보안",
+          "notEncrypted": "메시지는 전송 구간과 서버의 접근 제어로 보호됩니다. 종단 간 암호화가 아니므로 서버가 내용을 읽을 수 있습니다.",
+          "encrypted": "이 대화의 메시지는 종단 간 암호화됩니다.",
+          "ledger": "메시지 저장소",
+          "rtc": "통화"
+        },
+        "info": {
+          "title": "대화 세부정보",
+          "subtitle": "이 스레드의 오피스 분류입니다. 메시지는 일반 대화에 있습니다.",
+          "open": "대화 세부정보",
+          "openThread": "대화 열기",
+          "classification": "분류",
+          "scope": "범위",
+          "archivedYes": "예",
+          "notFound": {
+            "title": "오피스 대화가 아닙니다",
+            "body": "이 스레드에는 비공개 오피스 분류가 없습니다. 메신저에서는 계속 사용할 수 있습니다."
+          }
+        },
+        "untitled": "제목 없는 대화",
+        "linked": {
+          "title": "언급된 대화",
+          "unavailable": "연결된 대화를 확인하지 못했습니다.",
+          "none": "참여 중인 대화에서 언급되지 않았습니다."
         }
       }
     },
@@ -5041,45 +5425,6 @@
       "dominance": "BTC 점유율",
       "gainers": "상승률 상위",
       "losers": "하락률 상위"
-    }
-  },
-  "translation": {
-    "eyebrow": "번역",
-    "translate": "번역",
-    "translating": "번역 중…",
-    "translateNow": "지금 번역",
-    "translateNowHint": "이 메시지를 {{language}}(으)로 번역합니다.",
-    "viewOriginal": "원문 보기",
-    "showOriginalHint": "원래 메시지로 돌아갑니다.",
-    "translatedFrom": "{{language}}에서 번역됨",
-    "translatedLabel": "번역됨",
-    "always": "항상",
-    "never": "안 함",
-    "alwaysTranslate": "항상 번역",
-    "alwaysTranslateHint": "PulseSoc이 이 언어를 감지하면 자동으로 번역합니다.",
-    "neverTranslate": "번역 안 함",
-    "neverTranslateHint": "이 언어는 원문 그대로 둡니다.",
-    "optionsTitle": "메시지 언어 옵션",
-    "downloadLanguage": "언어 다운로드",
-    "downloadExplainer": "PulseSoc은 Apple의 비공개 온디바이스 번역을 사용합니다. Apple이 필요한 언어를 이 iPhone에 다운로드할 수 있습니다.",
-    "tryAgain": "다시 시도",
-    "failure": {
-      "unavailable": "번역을 사용할 수 없음",
-      "unsupportedLanguage": "이 기기에서는 이 언어를 번역할 수 없습니다.",
-      "downloadFailed": "언어 다운로드가 완료되지 않았습니다.",
-      "offline": "이 언어를 다운로드하려면 인터넷에 연결하세요.",
-      "preferenceNotSaved": "번역 환경설정을 저장하지 못했습니다."
-    },
-    "a11y": {
-      "controls": "번역 컨트롤. 번역할 언어: {{language}}.",
-      "translateTo": "{{language}}(으)로 번역",
-      "showOriginal": "원문 텍스트 보기",
-      "options": "번역 옵션. 번역된 텍스트를 표시 중입니다.",
-      "alwaysTo": "항상 {{language}}(으)로 번역",
-      "neverTo": "{{language}}(으)로 번역 안 함",
-      "closeOptions": "번역 옵션 닫기",
-      "retry": "번역 다시 시도",
-      "download": "{{language}} 언어를 이 기기에 다운로드"
     }
   }
 }

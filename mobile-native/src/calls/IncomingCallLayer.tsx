@@ -14,9 +14,7 @@ import {
 import { acceptCall, declineCall, getActiveCalls, markRingSeen, PulseCall, PulseCallParticipant } from "../api/calls";
 import { callHaptic, startCallTone, stopCallTone } from "./callSignalMedia";
 import { isIncomingRingingCall } from "./callToneLifecycle";
-import { endCallKitCall, initNativeCallKit, reportIncomingCallKit, setNativeCallKitProvider } from "./callKitBridge";
-import { createNativeCallKitProvider } from "./callKitNativeProvider";
-import { adoptCallSnapshot, beginCallSession } from "./callSessionStore";
+import { endCallKitCall, initNativeCallKit, reportIncomingCallKit } from "./callKitBridge";
 import { navigationRef } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
@@ -51,19 +49,12 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
 
     if (ringing) {
       setIncomingCall(ringing);
-      // `call_uuid` is the server's CallKit identity for this call. When it is absent the
-      // backend predates the VoIP work, and there is no safe local substitute: inventing one
-      // here would be a UUID no push and no other device agrees with. The in-app ringer below
-      // still runs, so the call is not lost — it just does not get the system call UI.
-      if (ringing.call_uuid) {
-        reportIncomingCallKit({
-          callId: ringing.call_id,
-          callUuid: ringing.call_uuid,
-          displayName: callerParticipant(ringing).display_name || callerParticipant(ringing).username || "PulseSoc caller",
-          handle: callerParticipant(ringing).username || ringing.call_id,
-          hasVideo: ringing.call_type === "video"
-        });
-      }
+      reportIncomingCallKit({
+        callId: ringing.call_id,
+        displayName: callerParticipant(ringing).display_name || callerParticipant(ringing).username || "PulseSoc caller",
+        handle: callerParticipant(ringing).username || ringing.call_id,
+        hasVideo: ringing.call_type === "video"
+      });
       setError("");
       if (!ringSeenCalls.current.has(ringing.call_id)) {
         ringSeenCalls.current.add(ringing.call_id);
@@ -96,18 +87,6 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
       const call = await acceptCall(incomingCall.call_id);
       const acceptedCaller = callerParticipant(call);
       setIncomingCall(null);
-      // Same two steps as the CallKit path above, in the same order, so both ways of
-      // answering reach the media room by the same route. This path happened to work
-      // before only because it is foregrounded by construction, which meant the poll that
-      // was doing the real work still ran — the dependency was never intended, just unseen.
-      beginCallSession({
-        callId: call.call_id,
-        conversationId: call.conversation_id,
-        direction: "incoming",
-        callType: call.call_type,
-        title: acceptedCaller.display_name || acceptedCaller.username || "Incoming caller"
-      });
-      adoptCallSnapshot(call, "accept");
       if (navigationRef.isReady()) {
         navigationRef.navigate("Call", {
           callId: call.call_id,
@@ -126,36 +105,14 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
 
   useEffect(() => {
     if (!signedIn) return;
-    // Bind the real pods before init. `initNativeCallKit` is a no-op until a provider is
-    // registered, which is how this whole path stayed inert while it was being built;
-    // registering here is the line that turns it on. `createNativeCallKitProvider` returns
-    // null off iOS and in any binary where the modules are not linked, so the no-op
-    // behaviour is still what non-iOS builds get.
-    setNativeCallKitProvider(createNativeCallKitProvider());
     initNativeCallKit({
       onAnswered: (callId) => {
         callKitAnswered.current.add(callId);
         stopCallTone().catch(() => undefined);
         setIncomingCall(null);
-        // The call SESSION joins the media room; the Call screen is only a consumer of it.
-        // Opening the session here, rather than leaving it to CallScreen's mount effect, is
-        // what makes a lock-screen answer connect:
-        //
-        //  - a backgrounded answer may never mount the screen at all, and
-        //  - that effect is mount-only, so a second call answered while a Call screen is
-        //    already on the stack reuses the existing route and never re-runs it. That is
-        //    how call 464 was answered into a session still pinned to the ended call 463,
-        //    leaving the device polling a call that was already over.
-        beginCallSession({ callId, direction: "incoming" });
         if (navigationRef.isReady()) {
           navigationRef.navigate("Call", { callId, direction: "incoming", title: "Incoming caller" });
         }
-      },
-      // `/accept` returns join credentials and a `connecting` status, so adopting it starts
-      // the Agora join immediately instead of waiting for a status poll the backgrounded
-      // app will not run.
-      onAccepted: (call) => {
-        adoptCallSnapshot(call, "accept");
       },
       onEnded: (callId) => {
         callKitAnswered.current.delete(callId);

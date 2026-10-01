@@ -35,34 +35,6 @@ def test_mux_live_asset_is_not_final_vod(monkeypatch):
     assert mux_live_service.create_mux_asset_from_live_recording(recording_asset_id="asset")["mux_status"] == "preparing"
 
 
-def test_public_playback_id_wins_over_signed(monkeypatch):
-    """A signed id picked ahead of an available public one yields no URL without keys."""
-    monkeypatch.delenv("MUX_SIGNING_KEY_ID", raising=False)
-    monkeypatch.delenv("MUX_SIGNING_PRIVATE_KEY", raising=False)
-    monkeypatch.setattr(mux_live_service, "_request", lambda *a, **kw: {"ok": True, "data": {"id": "asset", "status": "ready", "playback_ids": [{"id": "signed-one", "policy": "signed"}, {"id": "public-one", "policy": "public"}]}})
-    asset = mux_live_service.create_mux_asset_from_live_recording(recording_asset_id="asset")
-    assert asset["mux_recording_playback_id"] == "public-one"
-    assert asset["playback_url"] == "https://stream.mux.com/public-one.m3u8"
-
-
-def test_signed_only_asset_still_selects_its_playback_id(monkeypatch):
-    """Preferring public must not strand an asset that only ever had a signed id."""
-    monkeypatch.setattr(mux_live_service, "_request", lambda *a, **kw: {"ok": True, "data": {"id": "asset", "status": "ready", "playback_ids": [{"id": "only-signed", "policy": "signed"}]}})
-    assert mux_live_service.create_mux_asset_from_live_recording(recording_asset_id="asset")["mux_recording_playback_id"] == "only-signed"
-
-
-def test_live_stream_playback_id_prefers_public(monkeypatch):
-    monkeypatch.setattr(mux_live_service, "_request", lambda *a, **kw: {"ok": True, "data": {"id": "live", "status": "active", "playback_ids": [{"id": "sig", "policy": "signed"}, {"id": "pub", "policy": "public"}]}})
-    stream = mux_live_service.get_mux_live_stream("live")
-    assert stream["mux_playback_id"] == "pub"
-    assert stream["playback_url"] == "https://stream.mux.com/pub.m3u8"
-
-
-@pytest.mark.parametrize("playback_ids", [None, [], [{"policy": "public"}]])
-def test_playback_id_absent_returns_empty(playback_ids):
-    assert mux_live_service._preferred_playback_id(playback_ids) == ""
-
-
 def test_signed_replay_never_falls_back_to_unsigned(monkeypatch):
     monkeypatch.delenv("MUX_SIGNING_KEY_ID", raising=False)
     monkeypatch.delenv("MUX_SIGNING_PRIVATE_KEY", raising=False)
@@ -78,43 +50,6 @@ def test_private_asset_uses_signed_policy_and_recovery_marker(monkeypatch):
     assert calls[0]["payload"]["playback_policies"] == ["signed"]
     assert calls[0]["payload"]["inputs"] == [{"url": "https://private/input"}]
     assert calls[0]["payload"]["passthrough"] == "pulse_replay:1:sid"
-
-
-def test_public_playback_id_wins_over_a_signed_sibling(monkeypatch):
-    """Signing keys are unset in production, so picking the signed sibling of a
-    public ID silently yields an empty replay URL."""
-    monkeypatch.delenv("MUX_SIGNING_KEY_ID", raising=False)
-    monkeypatch.delenv("MUX_SIGNING_PRIVATE_KEY", raising=False)
-    asset = {"id": "asset", "status": "ready", "playback_ids": [{"id": "sig", "policy": "signed"}, {"id": "pub", "policy": "public"}]}
-    monkeypatch.setattr(mux_live_service, "_request", lambda *a, **kw: {"ok": True, "data": asset})
-
-    result = mux_live_service.create_mux_asset_from_live_recording(recording_asset_id="asset")
-
-    assert result["mux_recording_playback_id"] == "pub"
-    assert result["playback_url"] == "https://stream.mux.com/pub.m3u8"
-
-
-def test_signed_only_asset_still_resolves_its_signed_id(monkeypatch):
-    """A private replay asset has no public ID; preferring public must not drop it."""
-    asset = {"id": "asset", "status": "ready", "playback_ids": [{"id": "sig", "policy": "signed"}]}
-    monkeypatch.setattr(mux_live_service, "_request", lambda *a, **kw: {"ok": True, "data": asset})
-    monkeypatch.setattr(mux_live_service, "signed_playback_url", lambda playback_id: f"https://stream.mux.com/{playback_id}.m3u8?token=t")
-
-    result = mux_live_service.create_mux_asset_from_live_recording(recording_asset_id="asset")
-
-    assert result["mux_recording_playback_id"] == "sig"
-    assert result["playback_url"] == "https://stream.mux.com/sig.m3u8?token=t"
-
-
-def test_live_stream_playback_id_prefers_the_public_policy(monkeypatch):
-    """Live playback URLs are never signed, so a signed ID here plays back as a 403."""
-    stream = {"id": "stream", "status": "active", "playback_ids": [{"id": "sig", "policy": "signed"}, {"id": "pub", "policy": "public"}]}
-    monkeypatch.setattr(mux_live_service, "_request", lambda *a, **kw: {"ok": True, "data": stream})
-
-    result = mux_live_service.get_mux_live_stream("stream")
-
-    assert result["mux_playback_id"] == "pub"
-    assert result["playback_url"] == "https://stream.mux.com/pub.m3u8"
 
 
 def test_signed_playback_token_is_valid_and_stable(monkeypatch):
@@ -214,7 +149,7 @@ def test_webhook_duplicate_and_late_connection_preserve_ended(tmp_path, monkeypa
     with sqlite3.connect(database) as conn:
         for name, definition in [("mux_recording_duration_seconds", "REAL"), ("mux_live_status", "TEXT"), ("publish_state", "TEXT"), ("provider", "TEXT"), ("is_live", "INTEGER")]:
             conn.execute(f"ALTER TABLE pulse_live_sessions ADD COLUMN {name} {definition}")
-        conn.executescript("CREATE TABLE pulse_live_streams (mux_recording_asset_id TEXT, mux_recording_playback_id TEXT, mux_live_stream_id TEXT, updated_at TEXT,status TEXT,mux_live_status TEXT); CREATE TABLE pulse_live_events(event_type TEXT,actor_user_id INTEGER,post_id INTEGER,payload_json TEXT,created_at TEXT); CREATE TABLE chat_media_uploads(id INTEGER PRIMARY KEY AUTOINCREMENT,context_type TEXT,context_id TEXT,mux_asset_id TEXT,mux_status TEXT,mux_playback_id TEXT,playback_url TEXT,processing_status TEXT,is_available INTEGER,error_message TEXT,updated_at TEXT); CREATE TABLE pulse_media_assets(mux_asset_id TEXT,mux_status TEXT,mux_playback_id TEXT,playback_url TEXT,processing_status TEXT,updated_at TEXT);")
+        conn.executescript("CREATE TABLE pulse_live_streams (mux_recording_asset_id TEXT, mux_recording_playback_id TEXT, mux_live_stream_id TEXT, updated_at TEXT,status TEXT,mux_live_status TEXT); CREATE TABLE pulse_live_events(event_type TEXT,actor_user_id INTEGER,post_id INTEGER,payload_json TEXT,created_at TEXT); CREATE TABLE chat_media_uploads(mux_asset_id TEXT,mux_status TEXT,mux_playback_id TEXT,playback_url TEXT,processing_status TEXT,is_available INTEGER,error_message TEXT,updated_at TEXT); CREATE TABLE pulse_media_assets(mux_asset_id TEXT,mux_status TEXT,mux_playback_id TEXT,playback_url TEXT,processing_status TEXT,updated_at TEXT);")
     monkeypatch.setattr(media_worker.bot, "db", lambda: sqlite3.connect(database))
     monkeypatch.setattr(mux_live_service, "verify_mux_webhook_signature", lambda *a: {"ok": True})
     app = media_worker.bot.webhook_app

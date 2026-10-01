@@ -301,7 +301,7 @@ export function buildContextChip(link: CommerceLink, now: number): ContextChipDa
           line: `Offer accepted · ${item} · ${amount}`,
           a11yLabel: `Accepted offer: ${amount} for ${item}`,
           target: offer.listingId
-            ? { screen: "MarketplaceProduct", params: { listingId: Number(offer.listingId) } }
+            ? { screen: "MarketplaceDetail", params: { listingId: Number(offer.listingId) } }
             : null
         };
       }
@@ -312,7 +312,7 @@ export function buildContextChip(link: CommerceLink, now: number): ContextChipDa
           line: `Offer ${offer.state} · ${item}`,
           a11yLabel: `Offer ${offer.state} for ${item}`,
           target: offer.listingId
-            ? { screen: "MarketplaceProduct", params: { listingId: Number(offer.listingId) } }
+            ? { screen: "MarketplaceDetail", params: { listingId: Number(offer.listingId) } }
             : null
         };
       }
@@ -322,7 +322,7 @@ export function buildContextChip(link: CommerceLink, now: number): ContextChipDa
         line: `Offer ${amount} · ${item} · expires ${remaining}`,
         a11yLabel: `Linked offer: ${amount} for ${item}, expires in ${remaining}`,
         target: offer.listingId
-          ? { screen: "MarketplaceProduct", params: { listingId: Number(offer.listingId) } }
+          ? { screen: "MarketplaceDetail", params: { listingId: Number(offer.listingId) } }
           : null
       };
     }
@@ -352,7 +352,7 @@ export function buildContextChip(link: CommerceLink, now: number): ContextChipDa
           line: `Sold · ${link.listing}`,
           a11yLabel: `Question about ${link.listing}, which has sold`,
           target: link.listingId
-            ? { screen: "MarketplaceProduct", params: { listingId: link.listingId } }
+            ? { screen: "MarketplaceDetail", params: { listingId: link.listingId } }
             : null
         };
       }
@@ -361,7 +361,7 @@ export function buildContextChip(link: CommerceLink, now: number): ContextChipDa
         line: `Asking about · ${link.listing} · ${price}`,
         a11yLabel: `Question about ${link.listing}, ${price}`,
         target: link.listingId
-          ? { screen: "MarketplaceProduct", params: { listingId: link.listingId } }
+          ? { screen: "MarketplaceDetail", params: { listingId: link.listingId } }
           : null
       };
     }
