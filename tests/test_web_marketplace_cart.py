@@ -56,6 +56,7 @@ os.environ.setdefault("COINPILOTX_DB_INIT_STARTUP_MODE", "sync")
 
 import bot  # noqa: E402
 from services import app_links  # noqa: E402
+from services import pulse_runtime_assets  # noqa: E402
 
 CART_API = "/api/pulse/marketplace/cart"
 STOREFRONT_SCRIPT = "/static/js/pulse_marketplace.js"
@@ -142,9 +143,18 @@ class WebCartTestCase(unittest.TestCase):
         anonymous = self.app.test_client().get(f"/pulse/marketplace/{self.listing_id}")
         public_body = anonymous.get_data(as_text=True)
         self.assertEqual(anonymous.status_code, 200)
-        self.assertIn("Sign in to add to cart", public_body)
         self.assertNotIn("Sign in to buy", public_body,
                          "the old promise is back, and nothing on the web completes a purchase")
+        # This used to assert "Sign in to add to cart" was present, and that was
+        # the right assertion while signing in was what the page could honestly
+        # offer. The promise has got shorter: the add is the promise now, and it
+        # is kept on this page without an account. Both halves still have to
+        # agree -- the failure mode the file exists for is one surface
+        # advertising what the other does not do -- so the member's control is
+        # asserted below, and the visitor's is asserted to be that same control.
+        self.assertNotIn("Sign in to add to cart", public_body)
+        self.assertTrue(has_add_button(public_body, self.listing_id),
+                        "the visitor is shown a product page with no way to buy")
 
         member_body = self.client.get(f"/pulse/marketplace/{self.listing_id}").get_data(as_text=True)
         self.assertTrue(has_add_button(member_body, self.listing_id),
@@ -179,11 +189,255 @@ class WebCartTestCase(unittest.TestCase):
 
     # -- the cart page ------------------------------------------------------
 
-    def test_the_cart_requires_a_signed_in_member(self):
+    def test_the_cart_opens_for_a_visitor_and_is_never_shared_cached(self):
+        """The inverse of what stood here, which asserted a 302 to ``/login``.
+
+        That redirect was the last wall on the road from a product page to a
+        purchase: a visitor could add a line and then could not look at it. A
+        visitor has a cart of their own server-side
+        (``services/marketplace_guest_customer``), so the page that reads it has
+        to open.
+
+        The header assertions are why this is not simply ``assertEqual(200)``.
+        ``/pulse/cart`` renders in ``marketplace_storefront.public_document`` --
+        the same frame as pages that *are* indexable and shared-cached for five
+        minutes -- and it is the first anonymous-reachable marketplace URL whose
+        body is one browser's rather than everyone's. A cart served from a shared
+        cache is one shopper's basket shown to another, and ``Vary: Cookie``
+        alone would not save it, because the guest cookie is what distinguishes
+        two carts.
+        """
         response = self.app.test_client().get("/pulse/cart")
-        self.assertEqual(response.status_code, 302)
-        self.assertIn("/login", response.headers.get("Location", ""))
-        self.assertIn("next=/pulse/cart", response.headers.get("Location", ""))
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("data-cart-root", body)
+        self.assertIn("/static/js/pulsesoc_cart.js", body)
+
+        cache = response.headers.get("Cache-Control", "")
+        self.assertIn("no-store", cache)
+        self.assertNotIn("public", cache)
+        self.assertIn("Cookie", response.headers.get("Vary", ""))
+        self.assertIn('content="noindex', body)
+
+    def test_the_visitors_cart_is_the_members_cart_page(self):
+        """One page, not a stripped-down public imitation of one.
+
+        Asserted over the body inside the frame rather than the whole document,
+        because the frames genuinely differ -- a member gets the social shell's
+        masthead and its sidebar of cards, a visitor the storefront's. What must
+        not differ is the cart: a second, simpler guest cart page is exactly the
+        thing this work exists to not build.
+
+        The slice runs from the cart root to its own script tag, which is the
+        rendered template end to end, so a line, a control or a data attribute
+        added for one viewer and not the other fails here.
+        """
+        def inner(html):
+            start = html.index('<div class="cart" data-cart-root')
+            end = html.index("</script>", html.index("pulsesoc_cart.js", start))
+            return html[start:end]
+
+        self.assertEqual(
+            inner(self.app.test_client().get("/pulse/cart").get_data(as_text=True)),
+            inner(self.client.get("/pulse/cart").get_data(as_text=True)),
+        )
+
+    def test_both_frames_define_the_globals_the_cart_script_calls(self):
+        """A page that loads its script and not the script's runtime is dead.
+
+        ``pulsesoc_cart.js`` calls ``pulseApi()`` and ``toast()`` by bare name.
+        Both were defined inline by ``pulse_social_shell`` and by nothing else,
+        which was correct while the shell was the only frame that ever wrapped
+        a page script -- and stopped being correct the moment the visitor's
+        cart went out through ``public_document``. The symptom is nasty because
+        the page looks right: 200, correct markup, script tag present, and then
+        the first ``load()`` throws ``ReferenceError`` and the cart is
+        permanently and silently empty. Every other test in this file passed
+        while that was true, including the one directly above comparing the two
+        bodies -- the bodies *were* identical. What differed was the frame.
+
+        Asserted as one shared file rather than "each frame defines them",
+        because two definitions is the other way to pass this, and these two
+        encode a wire contract with the server (``pulseApi`` reads
+        ``error_code``, and treats ``ok:false`` on a 200 as a failure) that
+        only stays one contract while it is one file.
+
+        Not deferred, and that is load-bearing: the cart script is deferred and
+        so runs after parsing, but the shell's inline page code runs during it.
+        A ``defer`` here would define these after that code had already called
+        them.
+        """
+        src = pulse_runtime_assets.RUNTIME_SRC
+        tag = pulse_runtime_assets.runtime_html()
+        for who, client in (("a visitor", self.app.test_client()),
+                            ("a member", self.client)):
+            with self.subTest(who=who):
+                body = client.get("/pulse/cart").get_data(as_text=True)
+                self.assertIn(tag, body)
+                self.assertNotIn(f'<script src="{src}" defer', body)
+                self.assertEqual(body.count(src), 1, "loaded twice")
+                self.assertNotIn("function pulseApi", body,
+                                 "a frame went back to defining its own")
+
+    def test_a_hidden_panel_is_actually_hidden(self):
+        """``hidden`` is only a UA rule, and this page outranks it.
+
+        ``pulsesoc_cart.js`` picks which panel is up by toggling the ``hidden``
+        attribute on each one. That attribute is nothing but a user-agent
+        ``display:none``, so *any* author rule setting ``display`` on the same
+        element beats it -- and ``.cart .lines{display:flex}`` is exactly such
+        a rule, at matching specificity and later in source order. The result
+        was that removing the last item in a cart painted "Nothing in your cart
+        yet" *underneath the line that had just been removed*: the empty state
+        and the content on screen together, which is the one thing the standing
+        rule about empty states forbids.
+
+        Nothing caught it because nothing was wrong with the markup or the
+        script -- ``show()`` set the attribute correctly every time. The defect
+        was that the attribute had been overruled, which is only observable by
+        resolving the cascade.
+
+        Asserted as a reset over ``.cart [hidden]`` rather than as a fix to the
+        one clashing rule, because the next panel to gain a ``display`` is the
+        next time this returns. There is no app-wide ``[hidden]`` reset in this
+        codebase to inherit -- every component declares its own -- so the cart
+        has to declare it, and it needs ``!important`` because equal
+        specificity is precisely what let the clash happen.
+        """
+        css = self._cart_style_block(self.client.get("/pulse/cart").get_data(as_text=True))
+        rule = re.search(r"\.cart\s+\[hidden\]\s*\{([^}]*)\}", css)
+        self.assertIsNotNone(rule, "no [hidden] reset scoped to the cart")
+        self.assertRegex(rule.group(1), r"display\s*:\s*none\s*!important")
+
+        # And the rule it has to beat is still there, so this stays a live
+        # assertion rather than one guarding a clash that no longer exists.
+        self.assertRegex(css, r"\.cart\s+\.lines\s*\{[^}]*display\s*:")
+
+    def test_the_toast_does_not_eat_the_next_click(self):
+        """An announcement parked over the buttons must not be a target.
+
+        The toast is ``position:fixed`` at the bottom centre for 3.2 seconds,
+        which is directly over the Add-to-cart buttons of the grid beneath it.
+        Without ``pointer-events:none`` a shopper who adds one product has the
+        click on the *next* product silently swallowed by the confirmation of
+        the first -- the worst possible place to lose an interaction, because
+        the buyer believes they added two things and the cart disagrees.
+
+        Safe to make inert because every writer of this node sets
+        ``textContent``, so it never holds anything clickable to begin with.
+
+        Checked in both copies. The runtime builds its own node when the
+        document did not ship one, and the member shell ships a styled
+        ``#toast`` of its own; fixing either alone leaves the two frames
+        behaving differently, which is the divergence this branch exists to
+        remove.
+        """
+        # The assignment, not the file. The comment above that line explains
+        # the rule in the same words it is written in, so a search of the whole
+        # source goes green on a copy of this file with the declaration deleted
+        # and the prose left behind -- which is what a first draft of this test
+        # did, and the mutant walked straight through it.
+        runtime = open(os.path.join(REPO, "static/js/pulse_runtime.js")).read()
+        assignment = re.search(
+            r"node\.style\.cssText\s*=\s*((?:\s*\"[^\"]*\"\s*\+?)+);", runtime
+        )
+        self.assertIsNotNone(assignment, "the runtime stopped styling its toast node")
+        css_text = "".join(re.findall(r"\"([^\"]*)\"", assignment.group(1)))
+        self.assertIn("pointer-events:none", css_text,
+                      "the runtime's own toast node is still a click target")
+
+        shell = self.client.get("/pulse/cart").get_data(as_text=True)
+        rule = re.search(r"\.toast\{([^}]*)\}", shell)
+        self.assertIsNotNone(rule, "the member shell stopped shipping a .toast rule")
+        self.assertIn("pointer-events:none", rule.group(1),
+                      "the shell's toast is still a click target")
+
+    def test_the_frame_supplies_the_palette_its_body_class_promises(self):
+        """``mkt-public`` without the stylesheet that defines it is a lie.
+
+        ``public_document`` sets ``body class="mkt-public"`` unconditionally,
+        and the ``--store-*`` palette that class names is declared in exactly
+        one place: ``pulse_marketplace.css``. That file arrived only when a
+        page passed ``assets_html()``. The cart is the first body to arrive
+        without it, so every token resolved to nothing -- the document still
+        *looked* light because ``_PUBLIC_BASE_CSS`` spells its own fallbacks
+        inline, which is what hid the gap, but a wrapped body asking for
+        ``--store-text-primary`` got silence and fell back to its own dark
+        value: near-white text on a near-white page, for the one audience with
+        no app to escape to.
+
+        A frame declares what every page it wraps may assume. That is already
+        the rule ``assets_html`` states for the ``pulseApi``/``toast`` runtime,
+        and a palette named by a class this function sets is the same kind of
+        thing.
+
+        Both halves are asserted, because supplying it twice is the other way
+        to pass: a page that brings the bundle must still link it once.
+        """
+        from services import marketplace_storefront as ms
+
+        visitor = self.app.test_client().get("/pulse/cart").get_data(as_text=True)
+        self.assertIn('class="mkt-public"', visitor)
+        self.assertEqual(visitor.count(ms.CSS_HREF), 1,
+                         "the visitor's cart does not get the palette exactly once")
+
+        grid = self.app.test_client().get("/pulse/marketplace").get_data(as_text=True)
+        self.assertIn('class="mkt-public"', grid)
+        self.assertEqual(grid.count(ms.CSS_HREF), 1,
+                         "a page that brings the bundle now links it twice")
+
+    def test_the_cart_reads_its_colours_off_the_frame(self):
+        """One body, two documents, and it must be legible in both.
+
+        The cart's palette was eight literals chosen for the dark member shell.
+        Wrapped in the light public document those produced invisible text, and
+        the fix is not a second stylesheet for visitors -- that is the
+        two-marketplaces split this branch exists to close. The body asks the
+        document what colour it is.
+
+        The fallback slot is doing the compatibility work: the member shell
+        declares no ``--store-*`` anywhere, so each ``var()`` there resolves to
+        the literal that was already in place and the signed-in cart is
+        unchanged. This pins those fallbacks, so a later edit cannot quietly
+        restyle the member cart while making the visitor's look right.
+        """
+        css = self._cart_style_block(self.client.get("/pulse/cart").get_data(as_text=True))
+        expected = {
+            "--ink": ("--store-text-primary", "#f4f7f5"),
+            "--dim": ("--store-text-muted", "#8d9a92"),
+            "--line": ("--store-border-hairline", "rgba(255,255,255,.12)"),
+            "--go": ("--store-text-link", "#2ecc71"),
+            "--warn": ("--store-status-warning", "#e8c468"),
+            "--card": ("--store-bg-card", "#0a0a0a"),
+            "--well": ("--store-bg-page", "#070707"),
+            "--sunken": ("--store-bg-skeleton", "#141414"),
+        }
+        for name, (token, fallback) in expected.items():
+            with self.subTest(token=name):
+                self.assertRegex(
+                    css,
+                    r"%s\s*:\s*var\(\s*%s\s*,\s*%s\s*\)"
+                    % (re.escape(name), re.escape(token), re.escape(fallback)),
+                )
+
+        # The point of the exercise: no colour is left spelled as a bare dark
+        # literal outside a fallback slot, because that is the one kind that
+        # cannot follow the frame.
+        stripped = re.sub(r"var\([^)]*\)", "", css)
+        leftover = set(re.findall(r"#[0-9a-fA-F]{3,8}\b", stripped))
+        self.assertEqual(leftover, set(), "a colour the frame cannot reach")
+
+    @staticmethod
+    def _cart_style_block(body):
+        """The cart's own ``<style>``, picked out of whichever frame wrapped it.
+
+        Keyed on a declaration only this block has, because both documents ship
+        several ``<style>`` elements and the shell's is far larger.
+        """
+        for block in re.findall(r"<style>(.*?)</style>", body, re.S):
+            if "--sunken" in block:
+                return block
+        raise AssertionError("the cart stopped shipping its stylesheet")
 
     def test_the_cart_page_renders_and_loads_its_own_script(self):
         """The lines are drawn by JS from the API, so the script is the page.

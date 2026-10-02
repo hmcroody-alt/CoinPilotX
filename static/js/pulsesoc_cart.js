@@ -296,6 +296,20 @@
   function groupFootHtml(group, options) {
     var sellerId = group.seller_user_id;
 
+    // First, matching the order the checkout lane refuses in: `_require_user()`
+    // is its opening statement. A guest is not short of a device, they are
+    // short of an account, and the app would ask them for the same one -- so
+    // this refusal gets a sign-in link and never the app handoff. `next`
+    // returns them to this cart, which still holds their lines: the guest cart
+    // is merged into the member's server-side at sign-in.
+    if (group.sign_in_required) {
+      return "<div class='group-foot'>" + subtotalRow(group) +
+        "<p class='why'>" + esc(group.reason) + "</p>" +
+        "<div class='pay'><a class='button primary' href='/login?next=" +
+        encodeURIComponent(window.location.pathname) +
+        "'>Sign in to check out</a></div></div>";
+    }
+
     // The seller's own card verdict, not the platform's. `checkout-options`
     // answers per seller when asked with one, and the two disagree for every
     // seller who has not finished Connect onboarding -- exactly the case where a

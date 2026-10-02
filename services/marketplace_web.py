@@ -924,7 +924,6 @@ def stock_line(listing: Mapping[str, Any], variants: Sequence[Mapping[str, Any]]
 #: ``POST /api/pulse/marketplace/cart`` would have answered with, so the reason a
 #: button is missing can be read against the lane that would have refused it
 #: rather than against this module's own vocabulary.
-CART_HIDDEN_ANONYMOUS = "anonymous"      # the route answers 401
 CART_HIDDEN_OWN_LISTING = "own_listing"  # OWN_LISTING
 CART_HIDDEN_UNAVAILABLE = "unavailable"  # SELLER_UNAVAILABLE / OUT_OF_STOCK, 409
 CART_HIDDEN_NO_PRICE = "no_price"        # ITEM_UNAVAILABLE, 400, price_minor <= 0
@@ -1009,7 +1008,6 @@ def cart_affordance(
     payload: Mapping[str, Any],
     *,
     price: PriceView,
-    signed_in: bool,
     viewer_user_id: Any = 0,
     variants: Sequence[Mapping[str, Any]] = (),
     chosen_variant: Optional["VariantView"] = None,
@@ -1019,8 +1017,6 @@ def cart_affordance(
     Each test below is a *mirror of a specific server refusal*, and deliberately
     not a judgement of its own:
 
-    * Not signed in — the cart route's ``_require_user()`` answers 401. A button
-      that always 401s is a button that never works.
     * The viewer is the seller — ``OWN_LISTING``. Nobody buys their own listing,
       and the refusal arrives as an error toast rather than as a cart line.
     * The listing is not buyer-reachable, or is out of stock — 409
@@ -1056,6 +1052,17 @@ def cart_affordance(
     that 409s costs them their trust in the page. Withholding is also why every
     check reads a fail-closed source — ``buyer_visible`` is ``False`` for a row
     whose seller status was never projected, and that is the answer this wants.
+
+    There is no longer a refusal for *not being signed in*. There used to be,
+    and it was the correct mirror of the route at the time: ``POST
+    /api/pulse/marketplace/cart`` began with ``_require_user()`` and answered
+    401, so the button could only ever have failed. The route now allocates a
+    guest cart owner instead (``services/marketplace_guest_customer``), so the
+    add succeeds, and withholding the control would be this module refusing
+    something the server is willing to do. Every refusal that remains is a
+    property of the listing or of the choice, not of who is asking — which is
+    the point: authentication decides whose cart it is, not whether there is
+    one.
     """
     try:
         listing_id = int(payload.get("listing_id") or payload.get("id") or 0)
@@ -1064,8 +1071,6 @@ def cart_affordance(
     if listing_id <= 0:
         # Not a reason a buyer needs told; a card with no id cannot post anything.
         return None, CART_HIDDEN_UNAVAILABLE
-    if not signed_in:
-        return None, CART_HIDDEN_ANONYMOUS
     try:
         seller_user_id = int(payload.get("seller_user_id") or 0)
     except (TypeError, ValueError):

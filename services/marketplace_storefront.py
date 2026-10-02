@@ -60,6 +60,7 @@ from services import app_links
 from services import marketplace_listing_lifecycle
 from services import marketplace_seller_identity as seller_identity
 from services import marketplace_web as mw
+from services import pulse_runtime_assets
 from services import search_visibility
 
 #: Canonical, stable, human-readable product and listing URLs. These are the
@@ -895,8 +896,8 @@ def render_discovery(
     badge_map = {int(r.get("id") or 0): mw.classify_badges(r) for r in page.items}
     badge_map = mw.suppress_uninformative_badges(badge_map)
 
-    # Derived per row rather than once for the page, because three of the four
-    # reasons to withhold the button are properties of the individual listing.
+    # Derived per row rather than once for the page, because every reason to
+    # withhold the button is a property of the individual listing.
     # `cart_count is None` is the caller's opt-out and suppresses every button,
     # which is what keeps a call site that never wired up the cart API from
     # sprouting controls that post to it.
@@ -907,7 +908,6 @@ def render_discovery(
             affordance, hidden_reason = mw.cart_affordance(
                 row,
                 price=row["price"],
-                signed_in=viewer.signed_in,
                 viewer_user_id=viewer.user_id,
                 variants=row.get("_variants") or (),
             )
@@ -920,8 +920,8 @@ def render_discovery(
             # on this page and the only image reliably above the fold.
             eager=(index == 0),
             cart=affordance,
-            # The one withheld reason that still renders something. The other
-            # four mean "this cannot be bought"; this one means "not in one tap",
+            # The one withheld reason that still renders something. The others
+            # mean "this cannot be bought"; this one means "not in one tap",
             # and sending the buyer to the picker is the correct answer to it.
             choose_options=(hidden_reason == mw.CART_HIDDEN_NEEDS_CHOICE),
         ))
@@ -1072,6 +1072,15 @@ def _crumbs_html(crumbs: Sequence[tuple[str, str]], filters: Filters) -> str:
 
 
 def assets_html() -> str:
+    """The stylesheet and script this module's own bodies depend on.
+
+    Deliberately *not* the `pulseApi`/`toast` runtime, even though
+    `pulse_marketplace.js` wants `window.toast`. That pair belongs to whichever
+    document wraps this body -- `pulse_social_shell` and `public_document` both
+    emit it -- and putting it here too meant a member viewing the grid fetched
+    and ran it twice, once from each. A page declares its own assets; a frame
+    declares the runtime every page it wraps can assume.
+    """
     return (
         f'<link rel="stylesheet" href="{CSS_HREF}">'
         f'<script src="{JS_SRC}" defer></script>'
@@ -1639,7 +1648,6 @@ def render_product(
         affordance, hidden_reason = mw.cart_affordance(
             listing,
             price=price,
-            signed_in=viewer.signed_in,
             viewer_user_id=viewer.user_id,
             variants=variants,
             # The selection this page resolved, which is the whole difference
@@ -1713,16 +1721,22 @@ def render_product(
                 f'<button class="{contact_class}" type="button" data-mkt-contact="{seller_id}"'
                 f" hidden>Message seller</button>"
             )
-    elif not viewer.signed_in:
-        # The verb has to be the one the next page actually offers. Signing in
-        # lands on this same renderer with `data-mkt-add`, which adds to a cart
-        # -- it does not complete a purchase -- so "Sign in to buy" would be a
-        # promise broken *after* the reader had made an account. This branch
-        # was unreachable while anonymous readers got their own template, and
-        # that template had already been corrected to this wording.
+    elif not viewer.signed_in and seller_id:
+        # Not "Sign in to add to cart". That was the correct label while the
+        # cart route answered 401 to anyone without a session; it is a lie now
+        # that a visitor gets a cart of their own, and it is the exact shape
+        # this work exists to remove -- a sign-in wall standing between a
+        # shopper and a purchase they could have completed.
+        #
+        # Messaging is a different matter and genuinely needs an account: a
+        # conversation has two named sides and a visitor has no name. So the
+        # sign-in link survives here, pointed at the thing it actually unlocks.
+        # `contact_class` keeps it secondary whenever there is a buy action, so
+        # it cannot outrank Add to cart; when the listing cannot be bought at
+        # all there is no action for it to outrank.
         actions.append(
-            f'<a class="mkt-cta" href="/login?next={esc(canonical)}">'
-            f"Sign in to add to cart</a>"
+            f'<a class="{contact_class}" href="/login?next={esc(canonical)}">'
+            f"Sign in to message seller</a>"
         )
     elif viewer.owns(seller_id):
         actions.append(
@@ -2124,6 +2138,28 @@ def public_document(
     footer_links = "".join(
         f'<a href="{esc(href)}">{esc(label)}</a>' for href, label in _PUBLIC_FOOTER_LINKS
     )
+    # Setting `mkt-public` below is a promise that the `--store-*` palette is
+    # readable on this document, and until now only pages that happened to pass
+    # `assets_html()` kept it: the class was set unconditionally, the stylesheet
+    # declaring it was not. `/pulse/cart` is the first body to arrive without
+    # that bundle and it found every token undefined -- the page still looked
+    # light only because `_PUBLIC_BASE_CSS` spells its own fallbacks inline, and
+    # a wrapped body reading `var(--store-text-primary)` got nothing.
+    #
+    # A frame declares what every page it wraps may assume -- the same rule
+    # `assets_html` states for the runtime -- and a palette named by a class
+    # this function sets is the frame's, not the page's. Linking the whole
+    # stylesheet rather than copying the tokens inline keeps one declaration
+    # site, which is what `tests/test_marketplace_light_parity.py` scans and
+    # what stops a second copy drifting from `storeLight.ts`. Nothing else in
+    # that file can reach a non-storefront body: every selector in it is scoped
+    # under `.mkt`.
+    #
+    # Skipped when the page already brought it, so a grid or product document
+    # is unchanged rather than carrying the link twice.
+    palette_html = (
+        "" if CSS_HREF in page.assets_html else f'<link rel="stylesheet" href="{CSS_HREF}">'
+    )
     return (
         "<!doctype html>"
         f'<html lang="{lang}">'
@@ -2135,6 +2171,16 @@ def public_document(
         f"{head_extra}"
         '<link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=storefront-20260926a">'
         f"<style>{_PUBLIC_BASE_CSS}</style>"
+        # The frame's job, not the page's: bodies here call `pulseApi()` and
+        # `toast()` by bare name, and the other wrapper these same bodies go
+        # out through defines both. A page that had to remember to ask would
+        # eventually forget, and the failure is a silent ReferenceError.
+        f"{pulse_runtime_assets.runtime_html()}"
+        # Ahead of the page's own assets and never both: a page that declares
+        # the stylesheet keeps it in exactly the position it had, so the
+        # cascade order between it and the inline base rules does not depend
+        # on which document a body was wrapped in.
+        f"{palette_html}"
         f"{page.assets_html}"
         "</head>"
         '<body class="mkt-public">'

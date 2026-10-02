@@ -47,10 +47,11 @@ import os
 import secrets
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
 
 from services import marketplace_cart_web
 from services import marketplace_cart_schema as cart_schema
+from services import marketplace_guest_customer as guest_customer
 from services import marketplace_fulfillment
 from services import marketplace_order_fulfillment
 from services import marketplace_listing_lifecycle as listing_lifecycle
@@ -67,6 +68,7 @@ from services import marketplace_price_authority as price_authority
 from services import marketplace_reservation_policy as reservation_policy
 from services import marketplace_reservation_schema as reservation_schema
 from services import marketplace_supplier_checkout as supplier_checkout
+from services.route_auth import auth_required, public_route
 
 LOGGER = logging.getLogger(__name__)
 
@@ -121,7 +123,12 @@ def _error(message: str, status: int = 400, *, code: str = "", **extra):
         CART_FULL, PRICE_CHANGED, ADDRESS_REQUIRED, PAYMENT_UNAVAILABLE,
         PAYMENT_CONFIGURATION_ERROR, PAYMENT_FAILED, NETWORK_ERROR,
         ORDER_TOTAL_BELOW_MINIMUM, FULFILLMENT_REQUIRED, LOGIN_REQUIRED,
-        NOT_FOUND
+        NOT_FOUND, CART_UNAVAILABLE
+
+    ``CART_UNAVAILABLE`` is the one of those a signed-in buyer can never see: it
+    means a guest could not be given a cart to add to. It is distinct from
+    ``LOGIN_REQUIRED`` on purpose -- the buyer is not being asked for an account,
+    the server failed -- and the client must not turn it into a sign-in prompt.
 
     ``message`` stays human because web and admin surfaces render it directly.
     """
@@ -143,6 +150,89 @@ def _require_user():
     if not user:
         return None, _error("Login required.", 401, code="LOGIN_REQUIRED")
     return user, None
+
+
+def _signed_in_user():
+    """The account behind this request, or ``None``. Never an error.
+
+    The same lookup :func:`_require_user` makes, minus the refusal, so the
+    endpoints that now serve a guest can ask *who* without deciding that an
+    answer of nobody is a failure.
+    """
+    try:
+        return _bot().api_account_user()
+    except Exception:
+        LOGGER.exception("CART_AUTH_LOOKUP_FAILED")
+        return None
+
+
+def _cart_owner(cur, *, allocate: bool):
+    """The id whose rows are this request's cart. ``0`` means no cart at all.
+
+    One integer for both audiences, because the cart is one table and
+    ``_serialize_lines`` reads it with one predicate. A member gets their
+    ``user_id``; a guest gets the owner id their cookie resolves to, allocated
+    from a space that cannot collide with it -- see
+    ``services/marketplace_guest_customer``.
+
+    ``allocate`` is the read/write split and it is the whole reason this takes
+    an argument. A page load must never mint a guest customer: every crawler
+    hit and every bounced visit would leave a row, and the overwhelming
+    majority would never hold a line. So reads resolve an existing token or
+    answer ``0``, which falls through the cart query as an empty cart -- the
+    right answer for a stale, revoked or forged token. Only an add allocates.
+
+    A member is never allocated a guest id even when they arrive holding a
+    cookie. Their cart is the one attached to their account; the cookie's lines
+    are merged in at sign-in by ``marketplace_guest_cart_merge`` and the token
+    is spent there, so honouring it here would be reading a cart that is no
+    longer anyone's.
+    """
+    user = _signed_in_user()
+    if user:
+        return int(user["user_id"])
+    token = str(request.cookies.get(guest_customer.COOKIE_NAME) or "").strip()
+    owner_id = guest_customer.owner_id_for_token(cur, token)
+    if owner_id or not allocate:
+        return owner_id
+    new_token, owner_id = guest_customer.allocate(cur, _now())
+    if new_token:
+        # Stashed for the after-request hook rather than handed back here: the
+        # token is only worth anything if this row survives, and whether it
+        # does is not settled until `_with_db` has committed or rolled back.
+        g._pulse_guest_cart_token = new_token
+    return owner_id
+
+
+@cart_blueprint.after_request
+def _attach_guest_cart_cookie(response):
+    """Hand a newly allocated guest their cart key.
+
+    Reuses the session cookie's own `Secure` and `SameSite` settings rather
+    than introducing a second pair: there is one correct answer per deployment
+    and two knobs would eventually disagree. `HttpOnly` because nothing in the
+    page needs to read it -- the token is a cart key, not a session, and
+    keeping it out of JavaScript keeps it out of an XSS's reach.
+    """
+    token = getattr(g, "_pulse_guest_cart_token", "")
+    # The status check is about the rollback, not about refusals: `cart_add`
+    # already resolves the owner downstream of every refusal it can return, so
+    # no 4xx reaches here holding a fresh token. What can is a *raised*
+    # exception -- `_with_db` rolls the allocation back and Flask still runs
+    # this hook on the 500 it builds. Setting the cookie then would leave the
+    # browser naming a row that no longer exists.
+    if token and response.status_code < 400:
+        bot = _bot()
+        response.set_cookie(
+            guest_customer.COOKIE_NAME,
+            token,
+            max_age=guest_customer.COOKIE_MAX_AGE_SECONDS,
+            httponly=True,
+            secure=bot.COINPILOTX_SESSION_COOKIE_SECURE,
+            samesite=bot.PERSISTENT_SESSION_SAMESITE,
+            path="/",
+        )
+    return response
 
 
 def _with_db(handler):
@@ -197,6 +287,9 @@ def _ensure_schema(cur) -> None:
         """
     )
     reservation_schema.ensure_reservation_schema(cur, force=True)
+    # Here rather than inside `_cart_owner`, which runs on every cart request a
+    # guest makes. This block is behind a process-level flag; that one is not.
+    guest_customer.ensure_schema(cur)
     _SCHEMA_READY = True
 
 
@@ -670,7 +763,41 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
 # Routes
 # --------------------------------------------------------------------------
 
+#: Why five of these seven routes are declared public, written once because the
+#: argument is one argument.
+#:
+#: They were all `gates:_require_user` and the gate was real. What changed is
+#: not the gate's strength but its subject: `_require_user` was answering the
+#: question "whose cart is this?" by refusing everyone who had no answer, and a
+#: visitor now *has* an answer -- an owner id from
+#: `services/marketplace_guest_customer`, disjoint from `users` by construction
+#: and held only by an HttpOnly cookie the server minted.
+#:
+#: So ownership is still enforced on every one of them; `_cart_owner` is what
+#: enforces it. A request with no cookie resolves to owner `0`, which matches no
+#: row, and a line id belonging to someone else 404s exactly as it did when the
+#: someone else was always a member. No read is opened that a member did not
+#: already have: a cart contains only what its own owner put there.
+#:
+#: `/checkout` is the deliberate exception and keeps `@auth_required`. It takes
+#: money, and that is the point at which PulseSoc wants a name.
+_GUEST_CART_REASON = (
+    "A visitor's cart. Ownership is enforced by services/marketplace_guest_customer "
+    "via _cart_owner(), not by having a session: a guest owner id is disjoint from "
+    "users, is held only by an HttpOnly cookie the server minted, and a request "
+    "without one matches no row. Opens no read a member did not already have -- a "
+    "cart contains only what its owner added. /checkout still requires an account."
+)
+
+
 @cart_blueprint.route(f"{API_PREFIX}/checkout-options", methods=["GET"])
+@public_route(reason=(
+    "Deployment facts about what the checkout form may offer -- which rails are "
+    "configured, which countries ship. Constant for the whole site, about the "
+    "server and not about the caller, and already unauthenticated before guest "
+    "carts existed. Declared rather than left as `unknown` because a guest "
+    "checkout form reads it."
+))
 def cart_checkout_options():
     """What the checkout form may offer, as the server defines it.
 
@@ -758,15 +885,18 @@ def cart_checkout_options():
 
 
 @cart_blueprint.route(API_PREFIX, methods=["GET"])
+@public_route(reason=_GUEST_CART_REASON)
 def cart_list():
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
-    if err:
-        return err
 
     def handler(cur, conn):
-        lines = _serialize_lines(bot, cur, int(user["user_id"]))
+        # No allocation on a read. A guest with no cookie has an owner id of 0,
+        # which this query answers with an empty cart -- the same thing a member
+        # with an empty cart gets, and the right answer for a token that has
+        # been revoked or made up.
+        owner_id = _cart_owner(cur, allocate=False)
+        lines = _serialize_lines(bot, cur, owner_id)
         checkoutable = [l for l in lines if l["state"] == "available"]
         return _json({
             "ok": True,
@@ -776,7 +906,8 @@ def cart_list():
             # than by each caller because every refusal in it is a refusal this
             # module makes, and a client deriving them would be deriving them
             # from a copy of these rules. See `marketplace_cart_web`.
-            "groups": marketplace_cart_web.group_lines(lines),
+            "groups": marketplace_cart_web.group_lines(
+                lines, can_pay=not guest_customer.is_guest_owner(owner_id)),
             "badge_count": badge_count(lines),
             "checkoutable_count": len(checkoutable),
         })
@@ -785,12 +916,14 @@ def cart_list():
 
 
 @cart_blueprint.route(API_PREFIX, methods=["POST"])
+@public_route(reason=_GUEST_CART_REASON)
 def cart_add():
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
-    if err:
-        return err
+    # Not `_require_user`. A cart is an intention, not an account, and the only
+    # thing an add needs to know about the caller is which owner id to write --
+    # resolved inside the handler, once every refusal below has passed.
+    user = _signed_in_user()
     payload = request.get_json(silent=True) or {}
     listing_id = int(payload.get("listing_id") or 0)
     qty = max(1, min(int(payload.get("qty") or 1), MAX_QTY_PER_LINE))
@@ -813,7 +946,9 @@ def cart_add():
         listing = dict(cur.fetchone() or {})
         if not listing:
             return _error("Listing not found.", 404, code="ITEM_UNAVAILABLE")
-        if int(listing.get("seller_user_id") or 0) == int(user["user_id"]):
+        # Only a member can be the seller. A guest has no account for a listing
+        # to belong to, so there is nobody for this rule to be about.
+        if user and int(listing.get("seller_user_id") or 0) == int(user["user_id"]):
             return _error("You cannot add your own listing.", 400, code="OWN_LISTING")
         seller = bot.approved_marketplace_seller_for_user(cur, listing.get("seller_user_id"))
         listing["seller_status"] = (seller or {}).get("status") or ""
@@ -865,9 +1000,18 @@ def cart_add():
         price_minor, currency = _line_price_minor(bot, listing, variant)
         if price_minor <= 0:
             return _error("This item is not priced for checkout.", 400, code="ITEM_UNAVAILABLE")
+        # Allocated here and not a line earlier: every refusal above has now
+        # passed, so a guest is only given a cart key at the moment they
+        # actually acquire a cart. `_with_db` commits whatever the handler
+        # leaves behind, and handing out a token for a cart the next statement
+        # declines to fill would leave a browser holding a key to nothing.
+        owner_id = _cart_owner(cur, allocate=True)
+        if not owner_id:
+            return _error("Your cart could not be opened. Please try again.", 503,
+                          code="CART_UNAVAILABLE")
         cur.execute(
             "SELECT COUNT(*) AS n FROM marketplace_cart_items WHERE user_id=?",
-            (int(user["user_id"]),),
+            (owner_id,),
         )
         if int(dict(cur.fetchone() or {}).get("n") or 0) >= MAX_LINES:
             return _error("Cart is full.", 409, code="CART_FULL")
@@ -905,32 +1049,35 @@ def cart_add():
                 updated_at=excluded.updated_at
             """,
             (
-                int(user["user_id"]), listing_id,
+                owner_id, listing_id,
                 int((variant or {}).get("id") or cart_schema.NO_VARIANT),
                 qty, price_minor, currency, now, now,
                 MAX_QTY_PER_LINE, MAX_QTY_PER_LINE,
             ),
         )
-        lines = _serialize_lines(bot, cur, int(user["user_id"]))
+        lines = _serialize_lines(bot, cur, owner_id)
         return _json({"ok": True, "lines": lines, "badge_count": badge_count(lines)})
 
     return _with_db(handler)
 
 
 @cart_blueprint.route(f"{API_PREFIX}/<int:line_id>", methods=["PATCH", "POST"])
+@public_route(reason=_GUEST_CART_REASON)
 def cart_update(line_id: int):
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
-    if err:
-        return err
     payload = request.get_json(silent=True) or {}
     qty = max(1, min(int(payload.get("qty") or 1), MAX_QTY_PER_LINE))
 
     def handler(cur, conn):
+        # `AND user_id=?` was already the ownership check; it now carries a
+        # guest owner id as readily as a member's. A caller holding no token
+        # resolves to 0, which matches no line, so an unowned request gets the
+        # same 404 as a request for somebody else's line -- the two must not be
+        # distinguishable or the response enumerates line ids.
         cur.execute(
             "UPDATE marketplace_cart_items SET qty=?, updated_at=? WHERE id=? AND user_id=?",
-            (qty, _now(), line_id, int(user["user_id"])),
+            (qty, _now(), line_id, _cart_owner(cur, allocate=False)),
         )
         if not cur.rowcount:
             return _error("Cart line not found.", 404, code="NOT_FOUND")
@@ -940,17 +1087,15 @@ def cart_update(line_id: int):
 
 
 @cart_blueprint.route(f"{API_PREFIX}/<int:line_id>", methods=["DELETE"])
+@public_route(reason=_GUEST_CART_REASON)
 def cart_remove(line_id: int):
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
-    if err:
-        return err
 
     def handler(cur, conn):
         cur.execute(
             "DELETE FROM marketplace_cart_items WHERE id=? AND user_id=?",
-            (line_id, int(user["user_id"])),
+            (line_id, _cart_owner(cur, allocate=False)),
         )
         if not cur.rowcount:
             return _error("Cart line not found.", 404, code="NOT_FOUND")
@@ -960,15 +1105,15 @@ def cart_remove(line_id: int):
 
 
 @cart_blueprint.route(f"{API_PREFIX}/<int:line_id>/confirm-price", methods=["POST"])
+@public_route(reason=_GUEST_CART_REASON)
 def cart_confirm_price(line_id: int):
     """The buyer has seen the new price and accepted it: re-snapshot."""
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
-    if err:
-        return err
 
     def handler(cur, conn):
+        # The ownership predicate is this SELECT; the UPDATE below is keyed on
+        # the line id alone and is only reached once this row has matched.
         cur.execute(
             """
             SELECT c.id, c.listing_id, l.price_label, l.currency
@@ -976,7 +1121,7 @@ def cart_confirm_price(line_id: int):
             LEFT JOIN marketplace_listings l ON l.id = c.listing_id
             WHERE c.id=? AND c.user_id=? LIMIT 1
             """,
-            (line_id, int(user["user_id"])),
+            (line_id, _cart_owner(cur, allocate=False)),
         )
         row = dict(cur.fetchone() or {})
         if not row:
@@ -996,15 +1141,13 @@ def cart_confirm_price(line_id: int):
 
 
 @cart_blueprint.route(f"{API_PREFIX}/validate", methods=["POST"])
+@public_route(reason=_GUEST_CART_REASON)
 def cart_validate():
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
-    if err:
-        return err
 
     def handler(cur, conn):
-        lines = _serialize_lines(bot, cur, int(user["user_id"]))
+        lines = _serialize_lines(bot, cur, _cart_owner(cur, allocate=False))
         blocking = [l for l in lines if l["state"] in {"sold", "removed", "restricted"}
                     or l.get("goods_policy", {}).get("decision") != "ALLOWED"]
         needs_confirmation = [l for l in lines if l["state"] == "price_changed"]
@@ -1020,6 +1163,7 @@ def cart_validate():
 
 
 @cart_blueprint.route(f"{API_PREFIX}/checkout", methods=["POST"])
+@auth_required
 def cart_checkout():
     """Check out one seller's group of available lines as a single Stripe
     session. Sold / removed / restricted lines block; price-changed lines block

@@ -301,34 +301,51 @@ class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
         self.assertRegex(body, r'data-app-link="app-store"',
                          "no way to install the app from this page")
 
-    def test_the_page_offers_sign_in_rather_than_a_dead_buy_button(self):
+    def test_the_page_offers_no_control_the_next_click_would_refuse(self):
         """Contact Seller / Save / Report are each a POST needing a session.
 
         Rendering them would either fail on click or bounce to /login after the
         reader had already committed to an action, so the requirement is stated
         before the click instead.
+
+        Add to cart used to be in that company and no longer is: a visitor has a
+        cart of their own, so the button works where it stands. What is left
+        here is the set of verbs that genuinely need two named parties or a
+        place to save to -- and messaging is offered as an honest sign-in link
+        rather than as a control that fails.
         """
-        body = self.get(self.make_listing()).get_data(as_text=True)
-        self.assertIn("Sign in to add to cart", body)
+        listing_id = self.make_listing()
+        body = self.get(listing_id).get_data(as_text=True)
         self.assertNotIn("Contact Seller", body)
+        self.assertNotIn("Sign in to add to cart", body)
+        self.assertIn("Sign in to message seller", body)
+        self.assertRegex(body, r'<button\b[^>]*\bdata-mkt-add="%d"' % listing_id)
 
-    def test_the_sign_in_promise_is_one_the_next_page_keeps(self):
-        """The CTA used to read "Sign in to buy" and lead nowhere near buying.
+    def test_the_buy_control_is_the_same_one_on_both_renderings(self):
+        """This test has now contradicted itself twice, and both reversals were
+        the same bug receding.
 
-        Signing in landed on the member product page, whose only verbs were
-        Contact Seller, Save and Report -- a promise broken *after* the reader
-        had created an account, which is the most expensive place to break one.
+        It began as "Sign in to buy", which led nowhere near buying: signing in
+        landed on a member page whose only verbs were Contact Seller, Save and
+        Report. A promise broken *after* the reader had created an account,
+        which is the most expensive place to break one. The repair was to make
+        the promise true -- a member got a cart -- and the assertion became
+        "Sign in to add to cart" present on the public page, pinned against the
+        member page's button so the wording could not outlive the capability.
 
-        So the wording is pinned against the thing that makes it true rather
-        than on its own: the member rendering of the same URL must carry the
-        add-to-cart control. Asserting the string alone would go green again the
-        moment someone removed the button, which is exactly the state this test
-        exists to make impossible.
+        What is left is the last of it. The promise has not been made truer, it
+        has been made unnecessary: the visitor gets the button, not a coupon for
+        one. So the pairing survives and the direction flips -- both renderings
+        must carry the same control, and asserting it on either side alone would
+        be the mismatch this test exists to catch.
         """
         listing_id = self.make_listing()
         anonymous = self.get(listing_id).get_data(as_text=True)
-        self.assertIn("Sign in to add to cart", anonymous)
-        self.assertNotIn("data-mkt-add", anonymous)
+        self.assertNotIn("Sign in to add to cart", anonymous)
+        self.assertRegex(anonymous, r'<button\b[^>]*\bdata-mkt-add="%d"' % listing_id,
+                         "a visitor is shown a product page with no way to buy")
+        self.assertIn("/static/js/pulse_marketplace.js", anonymous,
+                      "the visitor's add-to-cart control is wired to nothing")
 
         self.login()
         member = self.get(listing_id).get_data(as_text=True)

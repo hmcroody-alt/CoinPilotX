@@ -63,13 +63,57 @@
   written here, because it differs per fulfilment kind and per listing.
 #}
 <style>
-  .cart{--ink:#f4f7f5;--dim:#8d9a92;--line:rgba(255,255,255,.12);--go:#2ecc71;--warn:#e8c468}
+  {#
+    Every colour this page uses, resolved from the frame around it with the
+    dark value as the fallback.
+
+    These were flat literals, which was right while the member shell was the
+    only thing that wrapped this body. `/pulse/cart` now also answers a visitor
+    through `marketplace_storefront.public_document`, whose page surface is
+    light, and a hard-coded `--ink:#f4f7f5` put near-white text on #eaeded --
+    the "Your cart" heading and every title, price and total effectively
+    invisible to exactly the audience that has no app to fall back to.
+
+    So the cart asks the document what colour it is instead of assuming. The
+    `--store-*` tokens are the storefront palette, declared on `body.mkt-public`
+    and transcribed from the native app's `storeLight.ts`; the public document
+    guarantees them. The member shell sets no such class, so there every `var()`
+    below falls through to the literal that was there before and the signed-in
+    cart is unchanged to the byte -- which is the point of putting the old value
+    in the fallback slot rather than picking a palette per frame.
+
+    Mapped by role, not by resemblance: `--card` is a panel the page lifts off
+    its background, `--well` is the group those panels sit in (a step back in
+    both directions -- darker in the shell, the page surface in the light
+    document), `--sunken` is a surface recessed below a card, which is both the
+    image placeholder and the quantity field.
+  #}
+  .cart{
+    --ink:var(--store-text-primary,#f4f7f5);
+    --dim:var(--store-text-muted,#8d9a92);
+    --line:var(--store-border-hairline,rgba(255,255,255,.12));
+    --go:var(--store-text-link,#2ecc71);
+    --warn:var(--store-status-warning,#e8c468);
+    --card:var(--store-bg-card,#0a0a0a);
+    --well:var(--store-bg-page,#070707);
+    --sunken:var(--store-bg-skeleton,#141414)
+  }
   .cart{color:var(--ink)}
+  /* `show()` decides which panel is up by toggling the `hidden` attribute, which
+     is nothing but a UA `display:none` and loses to any author rule that sets
+     `display` on a panel. `.cart .lines` sets one, at equal specificity and
+     later in source order, so a hidden lines panel stayed on screen: removing
+     the last item painted the empty state *underneath the group that was just
+     removed*. There is no app-wide `[hidden]` reset to inherit -- every
+     component here declares its own -- so this covers every panel the cart has
+     or gains, not just the one that clashes today, and uses `!important`
+     because matching specificity is what let the clash happen. */
+  .cart [hidden]{display:none !important}
   .cart .lede{color:var(--dim);max-width:62ch;margin:0 0 20px}
   .cart .needsjs{border:1px solid var(--line);border-radius:12px;padding:14px 16px;
-    color:var(--dim);background:#0a0a0a;margin:0 0 18px}
+    color:var(--dim);background:var(--card);margin:0 0 18px}
   .cart .lines{display:flex;flex-direction:column;gap:18px;margin:0 0 22px}
-  .cart .group{border:1px solid var(--line);border-radius:16px;padding:14px;background:#070707;
+  .cart .group{border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--well);
     display:flex;flex-direction:column;gap:12px}
   .cart .group-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
   .cart .group-head h2{margin:0;font-size:16px;letter-spacing:.01em}
@@ -105,9 +149,9 @@
     min-content, so the longest unbreakable word in a title can still force the
     column wider than its share and squeeze whatever shares the row with it.
   #}
-  .cart .line{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:#0a0a0a;
+  .cart .line{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--card);
     display:grid;grid-template-columns:72px minmax(0,1fr);gap:12px 14px;align-items:start}
-  .cart .line img{width:72px;height:72px;object-fit:cover;border-radius:10px;background:#141414}
+  .cart .line img{width:72px;height:72px;object-fit:cover;border-radius:10px;background:var(--sunken)}
   .cart .line .ident{min-width:0}
   {#
     Two lines and then an ellipsis, which is the same budget
@@ -166,13 +210,13 @@
     .cart .line .each{margin-top:2px}
     .cart .line .controls{margin-left:0;margin-top:8px;justify-content:flex-end}
   }
-  .cart .line .controls input{width:56px;background:#141414;color:var(--ink);border:1px solid var(--line);
+  .cart .line .controls input{width:56px;background:var(--sunken);color:var(--ink);border:1px solid var(--line);
     border-radius:8px;padding:5px 7px;font:inherit;text-align:center}
   .cart .line .controls button{background:none;border:1px solid var(--line);color:var(--dim);
     border-radius:8px;padding:5px 9px;font:inherit;cursor:pointer}
   .cart .line .controls button:hover{color:var(--ink);border-color:var(--go)}
   .cart .line .controls button.confirm{color:var(--warn);border-color:rgba(232,196,104,.5)}
-  .cart .totals{border:1px solid var(--line);border-radius:14px;padding:16px 18px;background:#0a0a0a}
+  .cart .totals{border:1px solid var(--line);border-radius:14px;padding:16px 18px;background:var(--card)}
   {#
     `subtotalRow` emits `.row.grand` into `.group-foot` as well as into
     `.totals`, so scoping these to `.totals` alone left the per-seller subtotal
@@ -190,11 +234,12 @@
   .cart .group-foot .row.grand b{color:var(--go)}
   .cart .pay{margin:16px 0 0}
   .cart .pay .note{color:var(--dim);font-size:13px;margin:10px 0 0;max-width:58ch}
-  .cart .empty{border:1px solid var(--line);border-radius:14px;padding:26px 18px;background:#0a0a0a;
+  .cart .empty{border:1px solid var(--line);border-radius:14px;padding:26px 18px;background:var(--card);
     color:var(--dim);text-align:center}
   .cart .empty a{color:var(--go)}
-  .cart .fail{border:1px solid rgba(232,104,104,.5);border-radius:14px;padding:16px 18px;
-    background:#160a0a;color:#f0c5c5}
+  .cart .fail{border:1px solid var(--store-border-warning,rgba(232,104,104,.5));border-radius:14px;
+    padding:16px 18px;background:var(--store-bg-warning,#160a0a);
+    color:var(--store-status-error,#f0c5c5)}
 </style>
 
 {#
@@ -253,4 +298,4 @@
   promotions bundle the same way. `defer` runs it after parsing, so the shell's
   own inline script has already defined `pulseApi` and `toast`.
 #}
-<script src="/static/js/pulsesoc_cart.js?v=web-cart-lines-20260930a" defer></script>
+<script src="/static/js/pulsesoc_cart.js?v=guest-cart-signin-20261001a" defer></script>
