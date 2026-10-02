@@ -968,6 +968,77 @@ def test_option_groups_are_derived_from_the_variant_rows():
     assert by_label["Color"] == ["Blue"], "one value appearing twice is one control"
 
 
+def test_a_group_is_only_called_color_when_every_value_is_one():
+    """The real production shape behind "Color: Chuck air outlet accessories".
+
+    Suppliers name every group `option1`, so the label is inferred from the
+    values -- and inferring it by majority let eighteen colourways vote a
+    workwear description into being a colour. The values here are a verbatim
+    slice of listing 174 in production, which rendered "Color: Denim Unlined
+    Long Gown" on the live product page.
+    """
+    values = [
+        "Police Blue Tweed", "Rose Red Tweed", "Bright Blue Thickened",
+        "Gray Polyester Card", "Purplish Blue Polyester Card",
+        "Denim Unlined Long Gown",
+    ]
+    variants = [
+        {"id": i, "status": "active", "price_cents": 1200, "variant_key": str(i),
+         "options_json": opts(("option1", value))}
+        for i, value in enumerate(values, start=1)
+    ]
+    group = mw.build_option_groups(variants)[0]
+    assert group.kind == "option"
+    assert group.label == "Option", "vague beats wrong: a gown is not a colour"
+    assert [o.value for o in group.options] == values, "every choice is still offered"
+    assert all(o.swatch == "" for o in group.options), (
+        "a demoted group must not keep drawing colour chips"
+    )
+
+
+def test_a_run_of_real_colours_still_gets_the_colour_treatment():
+    """Strictness must not cost shoppers the label when the values earn it.
+
+    Lilac and caramel are the interesting ones: both are ordinary colour words
+    that the vocabulary did not know, and under an all-must-match rule a single
+    gap like that silently demotes the whole group.
+    """
+    values = ["Lilac", "Caramel", "Sapphire Blue", "Charcoal Gray"]
+    variants = [
+        {"id": i, "status": "active", "price_cents": 1200, "variant_key": str(i),
+         "options_json": opts(("option1", value))}
+        for i, value in enumerate(values, start=1)
+    ]
+    group = mw.build_option_groups(variants)[0]
+    assert group.label == "Color"
+    assert [o.value for o in group.options] == values
+
+
+def test_one_non_size_in_a_size_run_demotes_the_whole_group():
+    values = ["S", "M", "L", "Gift Wrap"]
+    variants = [
+        {"id": i, "status": "active", "price_cents": 1200, "variant_key": str(i),
+         "options_json": opts(("option1", value))}
+        for i, value in enumerate(values, start=1)
+    ]
+    assert mw.build_option_groups(variants)[0].label == "Option"
+
+
+def test_a_size_run_starting_at_1xl_is_still_a_size():
+    """`1XL` is a size every supplier ships and the pattern used to reject it.
+
+    Under a majority vote one unrecognised token was outvoted and invisible.
+    Requiring every value to match turns that same gap into a lost label, so
+    the vocabulary has to actually be right.
+    """
+    variants = [
+        {"id": i, "status": "active", "price_cents": 1200, "variant_key": str(i),
+         "options_json": opts(("option1", value))}
+        for i, value in enumerate(["1XL", "2XL", "3XL"], start=1)
+    ]
+    assert mw.build_option_groups(variants)[0].label == "Size"
+
+
 def test_a_listing_with_no_variants_has_no_option_controls():
     assert mw.build_option_groups([]) == []
     assert sf.options_html([], {}) == "", "an empty fieldset is still a visible box"

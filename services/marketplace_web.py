@@ -106,13 +106,24 @@ _SIZE_TOKENS = frozenset({
     "2xl", "3xl", "4xl", "5xl", "6xl", "7xl", "8xl",
     "one size", "onesize", "free size", "os",
 })
-_SIZE_PATTERN = re.compile(r"^(?:\d{1,2}(?:\.\d)?|[2-8]xl|x{0,3}[sml]|eu\s?\d{2}|uk\s?\d{1,2}|us\s?\d{1,2})$")
+_SIZE_PATTERN = re.compile(r"^(?:\d{1,2}(?:\.\d)?|[1-8]xl|x{0,3}[sml]|eu\s?\d{2}|uk\s?\d{1,2}|us\s?\d{1,2})$")
+# Every entry is a colour in ordinary English. Because a group is only labelled
+# "Color" when this vocabulary vouches for all of its values, a word missing here
+# costs a whole group its label -- so the list is kept wide. It is still a list
+# of colours and not of things that come in colours: "denim" and "camouflage"
+# are deliberately absent, since admitting them would let "Denim Unlined Long
+# Gown" back in as a colour, which is the defect this guards.
 _COLOR_WORDS = frozenset({
     "black", "white", "red", "blue", "green", "grey", "gray", "navy", "beige",
     "pink", "purple", "violet", "yellow", "orange", "brown", "khaki", "burgundy",
     "ivory", "gold", "silver", "olive", "teal", "cream", "apricot", "wine",
     "coffee", "camel", "rose", "mint", "lavender", "turquoise", "maroon",
     "champagne", "charcoal", "transparent", "multicolor", "colorful",
+    "lilac", "claret", "caramel", "cyan", "magenta", "indigo", "amber",
+    "bronze", "copper", "coral", "crimson", "emerald", "fuchsia", "jade",
+    "lime", "mustard", "peach", "plum", "sapphire", "scarlet", "tan", "taupe",
+    "aqua", "azure", "sand", "blush", "chocolate", "mauve", "pearl", "rouge",
+    "platinum", "ruby", "sky", "slate", "smoke", "steel",
 })
 _QUANTITY_PATTERN = re.compile(r"^\d+\s*(?:pcs?|pairs?|sets?|packs?|boxes|bags?|rolls?)$", re.IGNORECASE)
 _STYLE_PATTERN = re.compile(r"^(?:style|model|type|pattern)\s*\d*$", re.IGNORECASE)
@@ -403,23 +414,24 @@ class OptionGroup:
 
 
 def _looks_like_size(values: Sequence[str]) -> bool:
-    hits = sum(1 for v in values if v.strip().lower() in _SIZE_TOKENS or _SIZE_PATTERN.match(v.strip().lower()))
-    return bool(values) and hits / len(values) >= 0.6
+    return bool(values) and all(
+        v.strip().lower() in _SIZE_TOKENS or _SIZE_PATTERN.match(v.strip().lower())
+        for v in values
+    )
 
 
 def _looks_like_color(values: Sequence[str]) -> bool:
-    hits = sum(1 for v in values if any(word in v.lower().split() for word in _COLOR_WORDS))
-    return bool(values) and hits / len(values) >= 0.6
+    return bool(values) and all(
+        any(word in v.lower().split() for word in _COLOR_WORDS) for v in values
+    )
 
 
 def _looks_like_quantity(values: Sequence[str]) -> bool:
-    hits = sum(1 for v in values if _QUANTITY_PATTERN.match(v.strip()))
-    return bool(values) and hits / len(values) >= 0.6
+    return bool(values) and all(_QUANTITY_PATTERN.match(v.strip()) for v in values)
 
 
 def _looks_like_style(values: Sequence[str]) -> bool:
-    hits = sum(1 for v in values if _STYLE_PATTERN.match(v.strip()))
-    return bool(values) and hits / len(values) >= 0.6
+    return bool(values) and all(_STYLE_PATTERN.match(v.strip()) for v in values)
 
 
 def _option_kind(values: Sequence[str]) -> str:
@@ -431,6 +443,19 @@ def _option_kind(values: Sequence[str]) -> str:
     answerable from the data: a group is "Size" because its members are sizes.
     When the values do not clearly belong to any vocabulary the group keeps its
     positional name rather than being guessed into one.
+
+    Why every value must match, and not merely most
+    -----------------------------------------------
+    The label is a claim about each option sitting under it, so a vote lets the
+    majority make that claim on the minority's behalf. Production had a group of
+    twenty colourways plus "Denim Unlined Long Gown": eighteen matched, the vote
+    carried, and the page told shoppers a gown was a colour. The swatch beside
+    each value already refuses to guess for exactly this reason -- see
+    :func:`_swatch_for` -- and the label it sits next to now refuses too.
+
+    The cost is a group that falls back to "Option" because one member is
+    outside the vocabulary, which is vague rather than wrong, and the direction
+    to err in when the alternative is telling a shopper something untrue.
     """
     if _looks_like_size(values):
         return "size"
