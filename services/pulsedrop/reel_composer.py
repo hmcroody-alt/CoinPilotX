@@ -54,6 +54,23 @@ routinely outlive its own lease and hand a second instance the same tick — the
 one failure the lease exists to prevent. So the curator enqueues and returns, and
 :func:`run_pending` drains the queue from the media worker with its own per-row
 claim.
+
+## Why a finished encode is not yet a finished render
+
+PulseSoc does not serve video from the bucket CDN. Every reel belonging to a
+member plays from ``stream.mux.com/<playback_id>.m3u8``, and PulseDrop was the
+one producer writing a ``cdn.`` URL into ``pulse_reels.video_url`` -- which
+Cloudflare answers with a bot challenge for an ``.mp4`` while returning 200 for
+the poster ``.jpg`` beside it. The visible result was thirty-four reels that
+showed a still frame and never played.
+
+So the encode is only the first half. The file is uploaded to the bucket, which
+is now purely a durable origin for Mux to ingest from, handed to Mux over a
+*presigned* URL (the CDN would challenge Mux's fetcher exactly as it challenged
+curl), and the render parks in :data:`TRANSCODING` until Mux reports the asset
+ready. :func:`promote_transcoding` is the second half. Every reader of a render
+already gates on ``state == READY and video_url``, so the waiting state needs no
+cooperation from the publisher or the curator -- it simply is not ready yet.
 """
 
 from __future__ import annotations
@@ -99,6 +116,16 @@ _VIDEO_BUFSIZE = "5200k"
 
 PENDING = "pending"
 RENDERING = "rendering"
+#: Encoded and uploaded, handed to Mux, waiting for Mux to finish ingesting.
+#:
+#: A distinct state rather than a flag on ``pending`` because the two want
+#: opposite things from the next sweep: a pending render needs ffmpeg to run, a
+#: transcoding one must *not* run ffmpeg again -- the file is already made and
+#: re-encoding it would create a second Mux asset for the same bytes every
+#: sweep. :func:`find_or_enqueue` returns this row unchanged and its callers
+#: already treat anything that is not READY as "come back next tick", so no
+#: publisher needs to learn about it.
+TRANSCODING = "transcoding"
 READY = "ready"
 FAILED = "failed"
 
@@ -280,10 +307,20 @@ def _claim_render(owner: str, *, now: datetime | None = None) -> dict:
 
 
 def _settle_render(render_id: int, state: str, *, video_url: str = "", poster_url: str = "",
-                   duration: float = 0.0, reason: str = "", now: datetime | None = None) -> None:
+                   duration: float = 0.0, reason: str = "", mux_asset_id: str = "",
+                   mux_playback_id: str = "", now: datetime | None = None) -> None:
+    """Write a render's terminal (or waiting) state. Never raises.
+
+    ``frame_width``/``frame_height`` are stamped for TRANSCODING as well as for
+    READY. The encode is finished by the time either state is written -- the
+    frame really is 1080x1920 -- and zeroing them while Mux ingests would make
+    the admin render list show a dimensionless row for the one minute a render
+    is most likely to be looked at.
+    """
     from services import db as db_service
 
     stamp = (now or datetime.utcnow()).isoformat(timespec="seconds")
+    encoded = state in (READY, TRANSCODING)
     conn = None
     try:
         conn = db_service.connect()
@@ -292,7 +329,8 @@ def _settle_render(render_id: int, state: str, *, video_url: str = "", poster_ur
             """
             UPDATE pulsedrop_renders
             SET state=?, video_url=?, poster_url=?, duration_seconds=?,
-                frame_width=?, frame_height=?, failure_reason=?, claimed_by='', updated_at=?
+                frame_width=?, frame_height=?, failure_reason=?, claimed_by='',
+                mux_asset_id=?, mux_playback_id=?, updated_at=?
             WHERE id=?
             """,
             (
@@ -300,9 +338,11 @@ def _settle_render(render_id: int, state: str, *, video_url: str = "", poster_ur
                 video_url,
                 poster_url,
                 float(duration or 0),
-                FRAME_WIDTH if state == READY else 0,
-                FRAME_HEIGHT if state == READY else 0,
+                FRAME_WIDTH if encoded else 0,
+                FRAME_HEIGHT if encoded else 0,
                 str(reason or "")[:300],
+                str(mux_asset_id or ""),
+                str(mux_playback_id or ""),
                 stamp,
                 int(render_id),
             ),
@@ -324,12 +364,23 @@ def run_pending(limit: int = 1, *, now: datetime | None = None) -> dict:
     Returns the counters the run log wants. One at a time by default: an encode
     saturates a core, and a worker that took four would starve the cover
     generation sharing the same container.
+
+    Polling Mux happens first and unconditionally. It is an HTTP GET, not an
+    encode, so it is not what the ``limit`` is rationing; and running it before
+    the claim means a render whose asset went ready a minute ago is published on
+    this tick rather than waiting behind an encode that may not even be due.
+    It also runs when ``_ffmpeg()`` is missing -- an already-finished encode
+    needs no encoder, and returning early would strand it.
     """
     from services.pulsedrop import lease
 
     counters = {"started": 0, "succeeded": 0, "failed": 0}
     if not config.reels_enabled():
         return counters
+    # Flat ``mux_*`` keys rather than a nested dict: the curator's _record reads
+    # scalar counters and logs the rest, so nesting would bury the ingest outcome
+    # at exactly the moment an operator is asking why a reel has not appeared.
+    counters.update({f"mux_{k}": v for k, v in promote_transcoding(now=now).items()})
     if not _ffmpeg():
         return counters
     owner = lease.owner_id()
@@ -383,10 +434,32 @@ def _execute_render(row: dict, *, now: datetime | None = None) -> tuple[bool, st
             if not video_url:
                 return fail("video_upload_failed")
             poster_url = _publish(poster_path, f"{key_base}.jpg", "image/jpeg") if poster_path else ""
+            asset_id, playback_id = _to_mux(f"{key_base}.mp4", listing_id=listing_id)
     except Exception:
         log.exception("pulsedrop_render_raised id=%s", render_id)
         return fail("render_exception")
 
+    if asset_id and playback_id:
+        # Not READY yet: the playback URL is only valid once Mux reports the
+        # asset ready, and a reel row written before then is a reel that 404s
+        # for the first seconds of its life. promote_transcoding finishes it.
+        _settle_render(
+            render_id, TRANSCODING, video_url="", poster_url=poster_url,
+            duration=duration, mux_asset_id=asset_id, mux_playback_id=playback_id,
+            now=now,
+        )
+        return True, ""
+
+    if _mux_required():
+        # Durable storage is configured, so this reel was always going to be
+        # served from a URL a machine fetch cannot read. Fail the render instead
+        # of publishing it: a product that sits out a cycle is recoverable, a
+        # reel in a member's feed that shows a poster and never plays is what
+        # this whole path exists to stop happening again.
+        return fail("mux_ingest_unavailable")
+
+    # Local and CI: no object storage, so _publish returned a path under the
+    # public upload root and serving it directly is correct.
     _settle_render(
         render_id, READY, video_url=video_url, poster_url=poster_url,
         duration=duration, now=now,
@@ -678,12 +751,189 @@ def _render_from_images(listing: dict, work: Path) -> tuple[Path, Path | None, f
     return output, _poster(output, work / "poster.jpg"), duration
 
 
+def _to_mux(storage_key: str, *, listing_id: int = 0) -> tuple[str, str]:
+    """Hand the uploaded mp4 to Mux. ``("", "")`` when that is not possible.
+
+    PulseSoc does not serve video from the bucket CDN. Every reel belonging to a
+    real member plays from ``stream.mux.com/<playback_id>.m3u8``; PulseDrop was
+    the only producer writing a ``cdn.`` URL into ``pulse_reels.video_url``, and
+    Cloudflare answers those mp4 requests with a 403 bot challenge -- confirmed
+    with a browser User-Agent and with a Range request, while the poster .jpg
+    beside it returns 200. So every PulseDrop reel ever published rendered its
+    poster frame and then failed to play. The fix is not a Cloudflare rule, it
+    is using the pipeline the rest of the platform already uses.
+
+    The input is a *presigned* S3 URL, not the public one, for the same reason:
+    Mux's fetcher would be challenged exactly as curl was. The object is
+    reachable over the S3 API and unreachable over the CDN, which is the whole
+    asymmetry. This mirrors ``agora_cloud_recording_service``, which already
+    presigns an R2 key to feed Mux.
+
+    Returns ids only. The playback URL is not written here because the asset
+    ingests asynchronously and a URL stored before Mux reports ``ready`` is a
+    URL that 404s for the first few seconds of its life.
+    """
+    from services import media_storage
+
+    try:
+        status = media_storage.storage_status()
+        bucket = str(status.get("bucket") or "")
+        if status.get("provider") not in {"r2", "s3"} or not bucket:
+            return "", ""
+        client = media_storage.object_client()
+        if not client:
+            return "", ""
+        source = client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": storage_key},
+            ExpiresIn=int(config.reel_mux_input_ttl_seconds()),
+        )
+    except Exception:
+        log.warning("pulsedrop_mux_presign_failed key=%s", storage_key, exc_info=True)
+        return "", ""
+
+    try:
+        from services import media_service
+
+        created = media_service.create_mux_asset_from_url(
+            source, trace_id=f"pulsedrop-reel-{listing_id}"
+        )
+    except Exception:
+        log.warning("pulsedrop_mux_create_raised key=%s", storage_key, exc_info=True)
+        return "", ""
+
+    if not created.get("ok"):
+        log.warning(
+            "pulsedrop_mux_create_failed key=%s status=%s",
+            storage_key, created.get("status"),
+        )
+        return "", ""
+    return str(created.get("asset_id") or ""), str(created.get("playback_id") or "")
+
+
+def _mux_required() -> bool:
+    """Whether a reel on this deployment must go through Mux to be playable.
+
+    True exactly when media lives in a bucket behind the CDN. That is the
+    condition under which a bucket URL is unreadable by anything but a browser
+    that has passed a Cloudflare challenge, so it is also the condition under
+    which falling back to one would republish the original bug. A local
+    checkout serves media off disk and has no such problem.
+    """
+    from services import media_storage
+
+    try:
+        return media_storage.storage_status().get("provider") in {"r2", "s3"}
+    except Exception:
+        log.warning("pulsedrop_storage_status_unreadable", exc_info=True)
+        return False
+
+
+def mux_state(asset_id: str) -> str:
+    """Mux's own word for an asset: ``ready``, ``errored``, or something else.
+
+    ``""`` when the asset cannot be read at all, which is deliberately *not*
+    treated as an error by the caller: a Mux outage or an expired token would
+    otherwise retire a perfectly good render.
+    """
+    from services import media_service
+
+    try:
+        return str((media_service.get_mux_asset(asset_id) or {}).get("mux_status") or "")
+    except Exception:
+        log.warning("pulsedrop_mux_status_failed asset=%s", asset_id, exc_info=True)
+        return ""
+
+
+def promote_transcoding(limit: int = 6, *, now: datetime | None = None) -> dict:
+    """Move finished Mux ingests to READY. The other half of :func:`run_pending`.
+
+    Separate from the render sweep because it is a cheap HTTP poll rather than
+    an encode, so it is not worth rationing to one per tick, and because a
+    render that is waiting on Mux must never be handed back to ffmpeg.
+
+    An asset Mux reports ``errored`` falls back to FAILED rather than to the
+    bucket URL. Publishing the CDN URL is what produced thirty-four unplayable
+    reels; a product that silently skips a cycle is a far smaller fault than a
+    reel in a member's feed that shows a poster and then stops.
+    """
+    from services import db as db_service
+    from services.pulsedrop import campaigns
+
+    counters = {"checked": 0, "ready": 0, "errored": 0, "waiting": 0, "requeued": 0}
+    moment = now or datetime.utcnow()
+    # Long enough that a slow ingest of a 15s clip is never mistaken for a stuck
+    # one, short enough that a render lost to a Mux-side disappearance rejoins
+    # the queue the same day. Bounded anyway: re-queuing lands on PENDING with
+    # ``attempts`` already spent, so a row that cannot ingest retires on its own.
+    stuck = timedelta(seconds=max(600, config.reel_render_timeout_seconds() * 10))
+    conn = None
+    try:
+        conn = db_service.connect()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, listing_id, mux_asset_id, mux_playback_id, poster_url,"
+            " duration_seconds, updated_at FROM pulsedrop_renders"
+            " WHERE state=? ORDER BY updated_at ASC LIMIT ?",
+            (TRANSCODING, max(1, int(limit))),
+        )
+        rows = [dict(row) for row in cur.fetchall() or []]
+    except Exception:
+        log.warning("pulsedrop_transcoding_scan_failed", exc_info=True)
+        return counters
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    for row in rows:
+        counters["checked"] += 1
+        asset_id = str(row.get("mux_asset_id") or "")
+        playback_id = str(row.get("mux_playback_id") or "")
+        render_id = int(row.get("id") or 0)
+        if not asset_id or not playback_id:
+            # Nothing to poll and nothing to wait for. Back to PENDING so the
+            # next sweep re-encodes and re-submits, which is the only way out.
+            _settle_render(render_id, PENDING, reason="mux_ids_missing", now=now)
+            counters["errored"] += 1
+            continue
+        state = mux_state(asset_id)
+        if state == "ready":
+            _settle_render(
+                render_id, READY,
+                video_url=f"https://stream.mux.com/{playback_id}.m3u8",
+                poster_url=str(row.get("poster_url") or ""),
+                duration=float(row.get("duration_seconds") or 0),
+                mux_asset_id=asset_id, mux_playback_id=playback_id, now=now,
+            )
+            counters["ready"] += 1
+        elif state == "errored":
+            _settle_render(render_id, FAILED, reason="mux_ingest_errored", now=now)
+            counters["errored"] += 1
+        elif campaigns._is_stale(row.get("updated_at"), moment, stuck):
+            # Still not ready long after any real ingest would have finished, or
+            # unreadable for that long. Without this the row waits forever: a
+            # transcoding render is invisible to _claim_render by design, so
+            # nothing else in the system would ever touch it again.
+            _settle_render(render_id, PENDING, reason="mux_ingest_stalled", now=now)
+            counters["requeued"] += 1
+        else:
+            counters["waiting"] += 1
+    return counters
+
+
 def _publish(local: Path, storage_key: str, content_type: str) -> str:
     """Store the finished file where the CDN serves it. ``""`` on failure.
 
     Reuses ``media_storage`` rather than writing a second uploader, so PulseDrop
     lands in the same bucket, behind the same CDN, with the same public-URL rule
     as every other piece of media on the platform.
+
+    For the poster that is the whole story. For the video this is only the
+    durable copy -- see :func:`_to_mux` for why the URL a member plays is a Mux
+    one, and why the bucket copy still has to exist for Mux to ingest from.
     """
     from services import media_storage
 
