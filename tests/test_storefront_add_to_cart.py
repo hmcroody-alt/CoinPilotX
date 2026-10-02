@@ -1292,7 +1292,7 @@ def test_exactly_one_filled_call_to_action_exists_in_the_panel(label, kw):
 
 
 @pytest.mark.parametrize("label,viewer,expected", [
-    ("anonymous gets the sign-in", ANON, "Sign in to buy"),
+    ("anonymous gets the sign-in", ANON, "Sign in to add to cart"),
     ("the seller gets neither", OWNER, "This is your listing"),
 ])
 def test_the_one_filled_action_is_the_right_one_for_the_viewer(label, viewer, expected):

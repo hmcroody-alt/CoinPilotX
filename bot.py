@@ -59378,7 +59378,8 @@ def _marketplace_member_storefront_reply(page, status=200, extra_html=""):
     return response
 
 
-def _marketplace_public_storefront_reply(page, listings_by_id=None, status=200):
+def _marketplace_public_storefront_reply(
+        page, listings_by_id=None, status=200, extra_html=""):
     """The same `RenderedPage`, wrapped for a reader with no session.
 
     The entire difference between this and the member reply is the frame. The
@@ -59400,6 +59401,12 @@ def _marketplace_public_storefront_reply(page, listings_by_id=None, status=200):
     unfiltered URL as its `@id`, so emitting it there would publish one document
     describing a different URL -- a self-contradiction a validator reports and a
     crawler resolves by ignoring the page's own canonical.
+
+    `extra_html` matches the member reply's parameter of the same name and is
+    passed straight to `public_document`. Both wrappers need it for the same
+    reason: the delivery estimate's stylesheet and script belong to the page but
+    not inside the purchase panel, and the page says the same thing about
+    delivery to both readers.
     """
 
     rendered = []
@@ -59426,6 +59433,7 @@ def _marketplace_public_storefront_reply(page, listings_by_id=None, status=200):
         # forbids a barrier between a visitor and the catalogue, and iOS draws
         # this one above the page rather than over it.
         head_extra=app_promotion.smart_app_banner_meta(request.path),
+        extra_html=extra_html,
     ))
     response.headers["Content-Type"] = "text/html; charset=utf-8"
     response.status_code = status
@@ -59765,7 +59773,22 @@ def pulse_marketplace_page():
 
 
 def _marketplace_public_product_response(listing_id, listing):
-    """The product page for a reader with no session -- including Googlebot.
+    """The previous product page for a reader with no session.
+
+    No callers. Retained for one release, with
+    `templates/marketplace_product_public.html`, as the rollback for the
+    unification in `pulse_marketplace_listing_page`: that route now renders one
+    `RenderedPage` for both audiences and differs only in the wrapper. This is
+    the twin of `_marketplace_public_index_response` above and is kept for the
+    same reason -- the two pages a crawler reads should not both lose their way
+    back in one change.
+
+    Do not reach for it as an alternative renderer. It states a price through
+    `marketplace_seo.public_price`, which is a second opinion about the same
+    product: the price pill and the `Offer` are now both `marketplace_web`'s
+    `PriceView`, and that is what guarantees they agree. It also cannot render
+    a price range at all, which is why it answered a two-variant row by
+    printing no price rather than the span the row actually sells across.
 
     Everything rendered here comes out of ``listing``, which is
     ``pulse_marketplace_listing_payload``'s output -- the same dict the mobile
@@ -60021,29 +60044,38 @@ def pulse_marketplace_listing_page(listing_id):
         # Unreadable variants leave the page on its label, which is the answer
         # it gave before this read existed. Degraded, not wrong.
         app.logger.warning("marketplace product variants unavailable", exc_info=True)
-    # The rest stays member-only: a cart count and a related rail are things an
-    # anonymous crawl has no use for, and three extra queries per crawl is a
-    # cost with nothing on the other side of it.
+    # The related rail is read for both too. The comment here used to call it
+    # something "an anonymous crawl has no use for", which had the reader
+    # backwards twice over: the rail is how a shopper who is not ready to buy
+    # this one keeps shopping, and its links are how a crawler reaches the rest
+    # of a catalogue whose only other entry point is a paginated grid. The three
+    # queries are also not per crawl -- this response carries
+    # `public, max-age=300`, so they are amortised across five minutes of every
+    # reader rather than paid per visit.
+    try:
+        related, related_variants, seller_listing_count = (
+            marketplace_storefront_product_context(cur, row)
+        )
+    except Exception:
+        # Not the product. A related rail that could not be read is an absent
+        # rail, and the listing itself is in hand, so there is nothing here
+        # worth turning into an error page.
+        app.logger.warning("marketplace product context unavailable", exc_info=True)
     if user:
         try:
             cart_count = marketplace_storefront_cart_count(cur, user.get("user_id"))
-            related, related_variants, seller_listing_count = (
-                marketplace_storefront_product_context(cur, row)
-            )
         except Exception:
-            # None of these is the product. A related rail that could not be
-            # read is an absent rail; a cart that could not be read is a page
-            # with no cart link, which `render_product` already treats as the
-            # caller's opt-out. The listing itself is in hand, so there is
-            # nothing here worth turning into an error page.
-            app.logger.warning("marketplace product context unavailable", exc_info=True)
+            # A cart that could not be read is a page with no cart link, which
+            # `render_product` already treats as the caller's opt-out. Kept
+            # separate from the read above so one failing does not blank the
+            # other -- when they shared a `try` an unreadable cart silently cost
+            # the member the related rail as well.
+            app.logger.warning("marketplace cart count unavailable", exc_info=True)
     conn.close()
     listing = pulse_marketplace_listing_payload(row, media_by_listing.get(listing_id, []))
     listing["variants"] = variants
 
-    if not user:
-        return _marketplace_public_product_response(listing_id, listing)
-    owned = seller_id == int(user.get("user_id") or 0)
+    owned = bool(user) and seller_id == int(user.get("user_id") or 0)
 
     # Promote stays exactly where it was -- owner-only, same three data
     # attributes, same modal, same bundle -- because `pulsesoc_promotions.js`
@@ -60061,10 +60093,13 @@ def pulse_marketplace_listing_page(listing_id):
     # silently: a page missing a rule still renders a correct sentence, just
     # unstyled, so nothing fails.
     #
-    # Bump the `?v=` here AND in `marketplace_product_public.html` together.
-    # /static is served with a one-year immutable cache, so a one-sided bump
-    # ships two different versions of this file to the two product pages;
-    # `tests/delivery/test_delivery_web.py` fails if the tokens diverge.
+    # Rendered for both readers now, which is the point: the estimate is on the
+    # public page too and an unstyled, never-resolving sentence is worse than
+    # none. Bump the `?v=` here AND in `marketplace_product_public.html`
+    # together -- that template no longer serves anyone (it is the retained
+    # rollback for this route), but `tests/delivery/test_delivery_web.py` pins
+    # the two tokens to each other, and a rollback that ships a stale script is
+    # not a rollback.
     extra_html = (
         f"{delivery_web.style_tag()}"
         f"<script src='/static/js/pulse_delivery.js?v=1' defer></script>"
@@ -60087,23 +60122,31 @@ def pulse_marketplace_listing_page(listing_id):
             f"<script src='/static/js/pulsesoc_promotions.js?v=bare-asset-tokens-20260930a' defer></script>"
         )
 
-    # The delivery line, and this is the one product surface that may print a
-    # window resolved from the reader.
+    # The delivery line, and this is the one storefront surface that may print a
+    # window resolved from the reader -- but only for the reader it can resolve
+    # one *for*.
     #
     # `_marketplace_member_storefront_reply` sets `private, no-store` and
-    # `Vary: Cookie` on this response, so one rendering reaches exactly one
-    # member. That is why `buyer_user_id` and `headers` are passed here and
-    # deliberately are *not* passed by `_marketplace_public_product_response`,
-    # which answers the same URL with `public, max-age=300` and so may only state
-    # the corridor the platform's own checkout configuration implies. Same
-    # estimate, same sentences, different destination tier -- and the tier is a
-    # property of the response's cacheability rather than of the page.
+    # `Vary: Cookie`, so one member rendering reaches exactly one member and may
+    # name that member's own corridor. The public reply answers the same URL with
+    # `public, max-age=300`: one rendering is served to everyone behind the
+    # cache, so a window resolved from the first reader's country would be handed
+    # to the rest as though it were theirs. `shared_cache=True` makes
+    # `delivery.web` refuse a per-visitor destination -- it raises if handed one
+    # -- and fall back to the corridor PulseSoc's own checkout configuration
+    # implies, which is a fact about the platform rather than about the reader.
+    #
+    # Same estimate, same sentences, different destination tier, and the tier is
+    # a property of the response's cacheability rather than of the page.
     #
     # `cache_only` is set inside `delivery.web`, so this costs no supplier call
     # and no part of it is on this render's critical path: a cold product ships
     # the pending sentence and `pulse_delivery.js` fills it in from the endpoint.
-    delivery_line = delivery_web.context(
-        str(listing_id), buyer_user_id=user.get("user_id"), headers=request.headers)
+    if user:
+        delivery_line = delivery_web.context(
+            str(listing_id), buyer_user_id=user.get("user_id"), headers=request.headers)
+    else:
+        delivery_line = delivery_web.context(str(listing_id), shared_cache=True)
 
     # The storefront renderer, the same one the grid runs through. It was built
     # with this page in it and shipped without a caller, which is why following a
@@ -60128,7 +60171,13 @@ def pulse_marketplace_listing_page(listing_id):
         # exist in a real variant row, so a crafted query cannot inject one.
         selected_options=request.args,
         viewer=marketplace_storefront_viewer(user),
-        app_cta_html=marketplace_storefront_app_cta("product", listing_id),
+        # The App Store badge only for the reader who may not have the app.
+        # A member reading this page on the web is already an account holder
+        # and the contextual "open this product in PulseSoc" link is the whole
+        # of what they need; the badge is for the stranger who arrived from
+        # search. Same rule as the grid.
+        app_cta_html=marketplace_storefront_app_cta(
+            "product", listing_id, store_badge=not user),
         promote_html=promote_html,
         # Rendered markup rather than the estimate itself, for the same reason
         # `app_cta_html` is: the renderer stays unable to hold a second opinion
@@ -60143,7 +60192,42 @@ def pulse_marketplace_listing_page(listing_id):
         # "0" over an order in progress.
         cart_count=cart_count,
     )
-    return _marketplace_member_storefront_reply(page, extra_html=extra_html)
+
+    if user:
+        return _marketplace_member_storefront_reply(page, extra_html=extra_html)
+
+    # `render_product` hardcodes `indexable=True` and says why: the flag states
+    # that the page *shape* is the storefront's indexable unit. Whether this
+    # particular row has earned a ranking is a different question and it is the
+    # route's, because the answer has to be the same one the sitemap gives --
+    # `marketplace_public_listings` filters on this very verdict, and a product
+    # the sitemap submits while the page itself says `noindex` is a crawl budget
+    # spent to be told to go away.
+    #
+    # `noindex,follow` rather than `nofollow`: a thin listing's outbound links
+    # are the department, the seller's other products and the help pages, all
+    # real crawl paths. `search_visibility.robots_disallow_prefixes` only ever
+    # disallows `noindex,nofollow`, so this also keeps the section crawlable.
+    if not marketplace_seo.eligibility(listing).indexable:
+        page.indexable = False
+        page.robots_extra = search_visibility.NOINDEX_FOLLOW
+
+    # `render_product` emits a Product and a BreadcrumbList and nothing else;
+    # it renders a page and has no opinion about the site. The standalone
+    # template this route replaced also declared Organization, WebSite and
+    # WebPage, and dropping them on the one rendering a crawler actually reads
+    # would publish a product belonging to no site and published by nobody.
+    # Wrapped here rather than inside the renderer because the member rendering
+    # of this same URL is `private, no-store` and never indexed, so site
+    # identity on it would be bytes shipped to no reader.
+    page.jsonld = (marketplace_seo.storefront_product_graph(
+        page.jsonld,
+        canonical=f"{search_visibility.CANONICAL_ORIGIN}{page.canonical_path}",
+        title=page.title,
+        description=page.meta_description,
+        image=page.og_image,
+    ),)
+    return _marketplace_public_storefront_reply(page, extra_html=extra_html)
 
 
 def pulse_marketplace_gallery_urls(value):

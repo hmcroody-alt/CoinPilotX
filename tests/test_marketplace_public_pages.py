@@ -201,17 +201,53 @@ class PublicMarketplaceFixture(unittest.TestCase):
         return self.client.get(f"/pulse/marketplace/{listing_id}")
 
     def ld_json(self, response):
-        """The page's one JSON-LD block, parsed."""
+        """The page's *first* JSON-LD block, parsed."""
         body = response.get_data(as_text=True)
         match = re.search(r'<script type="application/ld\+json">(.*?)</script>', body, re.S)
         self.assertIsNotNone(match, "the page carries no ld+json block")
         return json.loads(match.group(1))
 
+    def ld_nodes(self, response):
+        """Every structured-data node the page declares, however it packaged them.
+
+        The two pages package identically-valid structured data differently:
+        the grid emits one block wrapping an ``@graph`` array, while the product
+        page emits one ``<script>`` per node. Google reads both the same way, so
+        pinning either shape would be asserting the wrapper rather than the
+        claim -- and it is the claim (one Product, carrying an Offer, and no
+        app or service node riding alongside it) that these tests exist for.
+        """
+        body = response.get_data(as_text=True)
+        blocks = re.findall(
+            r'<script type="application/ld\+json">(.*?)</script>', body, re.S)
+        self.assertTrue(blocks, "the page carries no ld+json block")
+        nodes = []
+        for block in blocks:
+            parsed = json.loads(block)
+            nodes.extend(parsed["@graph"] if "@graph" in parsed else [parsed])
+        return nodes
+
     def product_node(self, response):
-        graph = self.ld_json(response)["@graph"]
-        nodes = [node for node in graph if node.get("@type") == "Product"]
+        nodes = [node for node in self.ld_nodes(response)
+                 if node.get("@type") == "Product"]
         self.assertEqual(len(nodes), 1, "expected exactly one Product node")
         return nodes[0]
+
+    def assertPricePill(self, response, amount):
+        """The visible price, asserted through the element that carries it.
+
+        A bare substring search for the amount would also match the ``Offer``
+        in the page's structured data, so it would pass on a page that told
+        Google a price and showed the buyer nothing -- which is one of the two
+        halves this file exists to keep in step. ``data-mkt-price`` is the hook
+        the storefront's own script reads, so matching it means the pill is
+        both present and the one the page treats as the price.
+        """
+        self.assertRegex(
+            response.get_data(as_text=True),
+            r"data-mkt-price[^>]*>[^<]*%s" % re.escape(amount),
+            "the price pill does not show %s" % amount,
+        )
 
 
 class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
@@ -251,9 +287,19 @@ class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
         self.assertIn("M&amp;W Store", response.get_data(as_text=True))
 
     def test_the_page_promotes_the_ios_app(self):
-        """Standing product requirement: every public web surface routes to the app."""
+        """Standing product requirement: every public web surface routes to the app.
+
+        Pinned on the two links rather than their wording. The wording is
+        ``services/app_links.py``'s to choose and it changed when this page
+        moved onto the shared storefront renderer; what must not change is that
+        a reader already looking at this product can open *this product* in the
+        app, and that someone without the app can get it.
+        """
         body = self.get(self.make_listing()).get_data(as_text=True)
-        self.assertIn("Open in the PulseSoc app", body)
+        self.assertRegex(body, r'data-app-link="product"',
+                         "no deep link into this listing in the app")
+        self.assertRegex(body, r'data-app-link="app-store"',
+                         "no way to install the app from this page")
 
     def test_the_page_offers_sign_in_rather_than_a_dead_buy_button(self):
         """Contact Seller / Save / Report are each a POST needing a session.
@@ -510,14 +556,27 @@ class PublicProductPriceAuthorityTestCase(PublicMarketplaceFixture):
     different numbers and nothing noticed. Against production on 2026-10-01,
     four of the 35 listings in the live Shopping feed did.
 
-    The refusal is "no price" rather than the variant price because ``Price``
-    holds one amount and two of those four rows are ranges; rendering a range
-    means ``marketplace_web.PriceView``, and standing up a second price
-    renderer on this page is what caused the defect. The pill and the ``Offer``
-    node are asserted together because they are one claim in two formats --
-    Merchant Center reads the second and a buyer reads the first, and a page
-    that dropped the pill while keeping the Offer would still be making the
-    claim to Google.
+    The first fix was a refusal: print no price at all when the label and the
+    variants disagreed. That was a concession to the page's own architecture
+    rather than the answer anyone wanted. ``Price`` held one amount and two of
+    those four rows were ranges, so there was no single number to fall back to;
+    rendering a range needed ``marketplace_web.PriceView``, and standing up a
+    second price renderer on this page was the thing that caused the defect in
+    the first place.
+
+    Unifying this route onto ``marketplace_storefront.render_product`` removed
+    the constraint rather than working around it. There is now one price
+    renderer for both readers, it is ``PriceView``, and it can state a range.
+    So the assertions below are no longer "says nothing" but the stronger
+    property the refusal was standing in for: **the page states the price
+    checkout will charge, and states the same one in both formats.** A
+    contradicted label yields the variant price; two variants yield an
+    ``AggregateOffer`` spanning them.
+
+    The pill and the ``Offer`` node are asserted together throughout, because
+    they are one claim in two formats -- a buyer reads the first and Merchant
+    Center reads the second, and a page that dropped the pill while keeping the
+    Offer would still be making the claim to Google.
     """
 
     def test_a_label_its_variants_agree_with_is_printed_normally(self):
@@ -525,7 +584,7 @@ class PublicProductPriceAuthorityTestCase(PublicMarketplaceFixture):
         self.make_variant(listing_id, 46574)
         response = self.get(listing_id)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("465.74 USD", response.get_data(as_text=True))
+        self.assertPricePill(response, "465.74")
         self.assertEqual(self.product_node(response)["offers"]["price"], "465.74")
 
     def test_a_label_its_variants_contradict_is_not_printed(self):
@@ -536,11 +595,40 @@ class PublicProductPriceAuthorityTestCase(PublicMarketplaceFixture):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("38.00", response.get_data(as_text=True))
 
-    def test_the_refused_price_also_leaves_the_structured_data(self):
-        """The half a visual check cannot see, and the half Google reads."""
+    def test_the_contradicted_label_yields_the_price_checkout_charges(self):
+        """The half a visual check cannot see, and the half Google reads.
+
+        Both halves are asserted here rather than only the structured one.
+        Dropping the label is necessary and not sufficient -- a page that
+        printed nothing would also satisfy the test above while telling a buyer
+        less than it knows, and the row's real price is not a secret: $2.29 is
+        what ``marketplace_cart_routes`` will charge for it.
+        """
         listing_id = self.make_listing(price_label="$38.00")
         self.make_variant(listing_id, 229)
-        self.assertNotIn("offers", self.product_node(self.get(listing_id)))
+        response = self.get(listing_id)
+        self.assertPricePill(response, "2.29")
+        self.assertEqual(self.product_node(response)["offers"]["price"], "2.29")
+
+    def test_two_variants_publish_the_range_rather_than_one_end_of_it(self):
+        """Production listing 112, the row that overcharged by $8.41.
+
+        Naming either end as *the* price is the same class of false claim as
+        the label was -- ``$27.84`` undersells the large and ``$37.72``
+        oversells the small. ``AggregateOffer`` is the construct schema.org
+        provides for exactly this, and the pill says the same thing in words.
+        """
+        listing_id = self.make_listing(price_label="$29.31")
+        self.make_variant(listing_id, 2784)
+        self.make_variant(listing_id, 3772, variant_key="large")
+        response = self.get(listing_id)
+        offer = self.product_node(response)["offers"]
+        self.assertEqual(offer["@type"], "AggregateOffer")
+        self.assertEqual((offer["lowPrice"], offer["highPrice"]), ("27.84", "37.72"))
+        self.assertPricePill(response, "27.84")
+        self.assertPricePill(response, "37.72")
+        # The label was between the two ends, which is why it looked plausible.
+        self.assertNotIn("29.31", response.get_data(as_text=True))
 
     def test_the_page_still_renders_and_stays_indexable(self):
         """Out of the feed, still a real page: the row is otherwise complete,
@@ -552,17 +640,10 @@ class PublicProductPriceAuthorityTestCase(PublicMarketplaceFixture):
         self.assertIn("Linen Duvet Cover Set", response.get_data(as_text=True))
         self.assertNotIn("noindex", response.get_data(as_text=True))
 
-    def test_a_label_inside_a_variant_range_is_still_refused(self):
-        """Production listing 112, the row that overcharged by $8.41."""
-        listing_id = self.make_listing(price_label="$29.31")
-        self.make_variant(listing_id, 2784)
-        self.make_variant(listing_id, 3772, variant_key="large")
-        self.assertNotIn("offers", self.product_node(self.get(listing_id)))
-
     def test_a_listing_with_no_variants_prices_from_its_label_as_before(self):
         """Most of the catalogue, and the regression this must not cause."""
         listing_id = self.make_listing(price_label="$465.74")
-        self.assertIn("465.74 USD", self.get(listing_id).get_data(as_text=True))
+        self.assertPricePill(self.get(listing_id), "465.74")
 
     def test_the_anonymous_branch_is_what_loads_the_variants(self):
         """Names the plumbing: the read used to be inside ``if user:``.

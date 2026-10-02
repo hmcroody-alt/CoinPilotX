@@ -57,7 +57,9 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence
 
 from services import app_links
+from services import marketplace_listing_lifecycle
 from services import marketplace_web as mw
+from services import search_visibility
 
 #: Canonical, stable, human-readable product and listing URLs. These are the
 #: paths the old routes already served, so nothing that was indexable or
@@ -1562,6 +1564,15 @@ def render_product(
         in_stock = any(view.available for view in views)
     elif stock_text:
         in_stock = "out of stock" not in stock_text.lower()
+    else:
+        # `stock_text` is empty for a course, a download or any other type with
+        # nothing to count, and that silence is right on the page -- "In stock"
+        # against a course tells a reader nothing. It is not right in the
+        # `Offer`, where `availability` is a required property and its absence
+        # reads as unknown rather than as not-applicable. So the structured
+        # claim falls back to the lifecycle rule `public_sql` already filtered
+        # this row on, rather than to the sentence a human was shown.
+        in_stock = marketplace_listing_lifecycle.inventory_available(listing)
 
     badges = mw.classify_badges(listing)
     crumbs = mw.category_crumbs(listing.get("category"))
@@ -1697,9 +1708,15 @@ def render_product(
                 f" hidden>Message seller</button>"
             )
     elif not viewer.signed_in:
+        # The verb has to be the one the next page actually offers. Signing in
+        # lands on this same renderer with `data-mkt-add`, which adds to a cart
+        # -- it does not complete a purchase -- so "Sign in to buy" would be a
+        # promise broken *after* the reader had made an account. This branch
+        # was unreachable while anonymous readers got their own template, and
+        # that template had already been corrected to this wording.
         actions.append(
             f'<a class="mkt-cta" href="/login?next={esc(canonical)}">'
-            f"Sign in to buy</a>"
+            f"Sign in to add to cart</a>"
         )
     elif viewer.owns(seller_id):
         actions.append(
@@ -1897,10 +1914,26 @@ def head_html(page: RenderedPage, *, origin: str = mw.PUBLIC_ORIGIN) -> str:
     without a Flask client.
     """
     canonical = f"{origin}{page.canonical_path}"
+    # The positive directive is asked for, not written here.
+    #
+    # This line used to spell out `index,follow,max-image-preview:large`, which
+    # is a shorter directive than `search_visibility.classify` issues for the
+    # same path -- it drops `max-snippet:-1` and `max-video-preview:-1`, the two
+    # that tell Google it may show a full snippet and a full video preview
+    # rather than its conservative defaults. Every other indexable page on the
+    # site gets those through `search_visibility.robots_meta`; the storefront
+    # silently opted out of them by restating the policy from memory. Asking the
+    # module that owns it is the only way the two stay equal.
+    #
+    # `robots_extra` still wins, because a renderer that has decided this
+    # particular page is a soft 404 knows something about the row that a
+    # path-shaped policy cannot. `page.indexable` is the page-shape question and
+    # `robots_extra` the per-row one, which is why both exist.
     robots = (
         page.robots_extra
         if page.robots_extra
-        else ("index,follow,max-image-preview:large" if page.indexable else "noindex,nofollow")
+        else (search_visibility.robots_meta(page.canonical_path)
+              if page.indexable else search_visibility.NOINDEX_NOFOLLOW)
     )
     tags = [
         f'<link rel="canonical" href="{esc(canonical)}">',
@@ -2042,6 +2075,7 @@ def public_document(
     origin: str = mw.PUBLIC_ORIGIN,
     sign_in_href: str = "/login",
     head_extra: str = "",
+    extra_html: str = "",
 ) -> str:
     """The signed-out, indexable document for one storefront page.
 
@@ -2063,12 +2097,22 @@ def public_document(
     Smart App Banner, whose app-id comes from the App Store URL that
     `bot.app_link_context` already treats as the single authority.
 
+    `extra_html` lands after the body, and mirrors the parameter of the same
+    name on `bot._marketplace_member_storefront_reply`. It is for markup that
+    belongs to the page but not inside it — today the delivery estimate's
+    stylesheet and the script that fills the pending sentence in. The renderer
+    cannot place those: `delivery_html` arrives already rendered precisely so
+    this module holds no opinion about delivery, and the assets are the route's
+    to version.
+
     There is deliberately no `app_cta_html` here, though an earlier draft had
     one. `render_discovery` and `render_product` already place that CTA inside
     the body, because the member shell receives nothing but the body and the
     promotion has to reach that reader too. A second slot in this wrapper is
     therefore not a placement choice, it is a second copy — which is what the
-    route hit the first time it passed one.
+    route hit the first time it passed one. `extra_html` is not that case and
+    the difference is worth stating: the renderer never emits those assets for
+    anyone, so this slot is the only one, not the second.
     """
     lang = "en"
     footer_links = "".join(
@@ -2107,5 +2151,6 @@ def public_document(
         f'<nav class="mkt-doc-links" aria-label="PulseSoc">{footer_links}</nav>'
         "</footer>"
         "</div>"
+        f"{extra_html}"
         "</body></html>"
     )

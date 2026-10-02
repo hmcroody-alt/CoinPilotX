@@ -422,6 +422,67 @@ def product_page_meta(listing):
     }
 
 
+def site_nodes(canonical, title, description, image):
+    """The three nodes that say which site a marketplace page belongs to.
+
+    Organization and WebSite are the shared singletons, included by ``@id`` so
+    Google consolidates them rather than minting rivals (see the module
+    docstring). WebPage is the document itself, linked to both.
+
+    Split out of ``product_schema_graph`` so a page that builds its own
+    ``Product`` node can still publish the site identity. A bare ``Product``
+    with nothing around it describes a thing that belongs to no site and is
+    published by nobody, which is what the storefront renderer emits on its
+    own -- it is a page renderer and does not know about the site graph.
+    """
+
+    return [
+        seo_schema.organization_schema(),
+        seo_schema.website_schema(),
+        {
+            "@type": "WebPage",
+            "@id": canonical + "#webpage",
+            "url": canonical,
+            "name": title,
+            "description": description,
+            "isPartOf": {"@id": f"{seo_schema.SITE_URL}/#website"},
+            "publisher": {"@id": f"{seo_schema.SITE_URL}/#organization"},
+            "primaryImageOfPage": image or seo_schema.SHARE_IMAGE_URL,
+            "inLanguage": "en",
+        },
+    ]
+
+
+def storefront_product_graph(nodes, *, canonical, title, description, image):
+    """Wrap a rendered product page's own nodes in the site graph.
+
+    ``nodes`` are what ``marketplace_storefront.render_product`` produced --
+    a Product and a BreadcrumbList, each carrying its own ``@context`` because
+    the renderer expects them to be emitted as separate ``<script>`` blocks.
+    Here they become members of one graph, so the per-node ``@context`` is
+    dropped in favour of the document's: repeating it inside ``@graph`` is
+    legal but says a scoped context applies where none does.
+
+    The Product keeps the price ``render_product`` gave it. That is the whole
+    reason this takes rendered nodes instead of re-deriving them from the row:
+    the visible price pill and this ``Offer`` are one claim in two formats, and
+    building the second from a different source is the defect that let the page
+    advertise an amount checkout would not charge.
+    """
+
+    product_id = canonical + "#product"
+    graph = site_nodes(canonical, title, description, image)
+    for node in nodes:
+        node = {key: value for key, value in node.items() if key != "@context"}
+        if node.get("@type") == "Product":
+            # Cross-linked both ways, which is the only thing a shared graph
+            # buys over separate blocks.
+            node["@id"] = product_id
+            node["mainEntityOfPage"] = {"@id": canonical + "#webpage"}
+        graph.append(node)
+    return {"@context": "https://schema.org", "@graph": graph}
+
+
 def product_schema_graph(listing):
     """The JSON-LD graph for one product page.
 
@@ -486,31 +547,15 @@ def product_schema_graph(listing):
     # any star rating here would be fabricated -- which is the single most
     # heavily penalised structured-data abuse Google names.
 
-    webpage = {
-        "@type": "WebPage",
-        "@id": canonical + "#webpage",
-        "url": canonical,
-        "name": meta["title"],
-        "description": meta["description"],
-        "isPartOf": {"@id": f"{seo_schema.SITE_URL}/#website"},
-        "publisher": {"@id": f"{seo_schema.SITE_URL}/#organization"},
-        "primaryImageOfPage": image or seo_schema.SHARE_IMAGE_URL,
-        "inLanguage": "en",
-    }
-
     breadcrumb = seo_schema.breadcrumb_schema([
         ("Home", seo_schema.SITE_URL + "/"),
         ("Marketplace", seo_schema.SITE_URL + INDEX_PATH),
         (meta["h1"], canonical),
     ])
 
-    return [
-        seo_schema.organization_schema(),
-        seo_schema.website_schema(),
-        webpage,
-        product,
-        breadcrumb,
-    ]
+    return site_nodes(
+        canonical, meta["title"], meta["description"], image,
+    ) + [product, breadcrumb]
 
 
 def product_page_graph(listing):
