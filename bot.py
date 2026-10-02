@@ -327,6 +327,7 @@ from services import (
     intelligence as intelligence_service,
     market_data as market_data_service,
     marketplace_fulfillment as marketplace_fulfillment,
+    marketplace_guest_cart_merge as marketplace_guest_cart_merge,
     marketplace_guest_customer as marketplace_guest_customer,
     pulse_runtime_assets as pulse_runtime_assets,
     marketplace_listing_types as marketplace_listing_types_service,
@@ -3094,6 +3095,12 @@ def add_pwa_headers(response):
         logging.debug("PERF_REQUEST_LOG_SKIPPED path=%s error=%s", request.path, exc)
     if getattr(g, "persistent_session_clear_cookie", False):
         clear_persistent_session_cookie(response)
+    if getattr(g, "pulse_guest_cart_clear_cookie", False):
+        # The guest cart behind this key is now the member's, so the key opens
+        # nothing. Set only after the merge committed -- see
+        # `absorb_guest_cart_into_the_account_that_just_signed_in`. `path` must
+        # match the one it was written with or the delete silently misses.
+        response.delete_cookie(marketplace_guest_customer.COOKIE_NAME, path="/")
     rotated_refresh_token = getattr(g, "persistent_session_refresh_token", "")
     if rotated_refresh_token:
         set_persistent_session_cookie(response, rotated_refresh_token)
@@ -4314,6 +4321,79 @@ def restore_account_from_persistent_cookie():
     if token_payload.get("refresh_token"):
         g.persistent_session_refresh_token = token_payload["refresh_token"]
     return user["user_id"]
+
+
+@webhook_app.before_request
+def absorb_guest_cart_into_the_account_that_just_signed_in():
+    """A shopper who signs in holding a guest cart keeps it.
+
+    Keyed on a *state* -- this browser carries an unclaimed guest cart key and
+    this request is authenticated -- rather than on the sign-in *event*. There
+    are six places that write ``session["account_user_id"]`` (password login,
+    signup, mobile login, mobile signup, session restore, cookie refresh) and a
+    seventh will be added by someone who has never read this module. Hooking the
+    event means being wrong the moment that happens, and being wrong here means
+    a shopper watching their cart empty itself at the exact moment they did what
+    the site asked them to do.
+
+    Keyed on state, it is also self-healing: nothing is cleared until the merge
+    has committed, so a failed attempt simply happens again on the next request.
+
+    Costs an authenticated member nothing. The guard is a cookie lookup, and the
+    cookie is absent for every request that is not within one round trip of a
+    guest signing in -- no session read, no connection taken from a pool this
+    repo has already been bitten by. Even a browser that somehow keeps the
+    cookie pays one indexed lookup on a unique column: a claimed token resolves
+    to nothing and `merge` returns `stale` without writing.
+    """
+    token = request.cookies.get(marketplace_guest_customer.COOKIE_NAME)
+    if not token:
+        return None
+    try:
+        user_id = account_user_id()
+    except Exception:
+        return None
+    if not user_id:
+        return None
+    conn = None
+    try:
+        conn = db()
+        cur = conn.cursor()
+        outcome = marketplace_guest_cart_merge.merge(
+            # `timespec="seconds"` matches `marketplace_cart_routes._now`, which
+            # wrote every other `updated_at` in this table.
+            cur, token, user_id,
+            datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        )
+        if outcome.get("ok"):
+            conn.commit()
+        else:
+            conn.rollback()
+    except Exception:
+        logging.exception("GUEST_CART_MERGE_HOOK_FAILED user_id=%s", user_id)
+        try:
+            if conn is not None:
+                conn.rollback()
+        except Exception:
+            pass
+        return None
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+    # Only once the merge is on disk. Clearing it on a rolled-back attempt would
+    # throw away the only handle on those lines; leaving it costs one more
+    # lookup on the next request, which then finds a claimed token and stops.
+    if outcome.get("ok"):
+        g.pulse_guest_cart_clear_cookie = True
+        if outcome.get("moved") or outcome.get("combined"):
+            logging.info(
+                "GUEST_CART_MERGED user_id=%s moved=%s combined=%s raised=%s",
+                user_id, outcome["moved"], outcome["combined"], outcome["raised"],
+            )
+    return None
 
 
 def _bearer_refused(reason):

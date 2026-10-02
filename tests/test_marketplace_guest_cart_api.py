@@ -58,6 +58,8 @@ os.environ.setdefault("FLASK_SECRET_KEY", "guest-cart-tests")
 
 import bot  # noqa: E402
 from services import marketplace_cart_routes as cart_routes  # noqa: E402
+from services import marketplace_cart_schema as cart_schema  # noqa: E402
+from services import marketplace_guest_cart_merge as cart_merge  # noqa: E402
 from services import marketplace_guest_customer as guest_customer  # noqa: E402
 
 CART = "/api/pulse/marketplace/cart"
@@ -366,6 +368,280 @@ class GuestCartTestCase(unittest.TestCase):
         self.assertFalse(group["sign_in_required"])
         self.assertTrue(group["checkoutable"])
         self.assertEqual(group["reason"], "")
+
+
+class GuestCartMergeTestCase(GuestCartTestCase):
+    """What the cart does at the moment the shopper stops being a visitor.
+
+    Every test here signs in on the *same* client that was shopping, because
+    that is the only arrangement that reproduces the bug this defends against.
+    Two separate clients would each carry one identity and the carts would never
+    have to meet.
+
+    `sign_in` writes the session cookie directly rather than posting to a login
+    route. That is deliberate and it is the point of the design: the merge hangs
+    off a `before_request` that keys on *state* -- this browser holds an
+    unclaimed guest key and this request is authenticated -- not off any of the
+    six places that write `account_user_id`. A test that drove one login route
+    would prove that one route works. This proves the state is what matters, so
+    a seventh sign-in path added next year is covered before it is written.
+    """
+
+    def setUp(self):
+        super().setUp()
+        with self.app.app_context():
+            conn = bot.db()
+            cur = conn.cursor()
+            cur.execute(
+                """INSERT INTO marketplace_listings
+                   (seller_user_id, title, description, category, price_label, currency,
+                    quantity, status, approval_status, delivery_type)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (self.seller_id, "Second Widget", "Also a widget.", "Education",
+                 "$7.50", "USD", 5, "active", "approved", "digital"),
+            )
+            self.other_listing_id = cur.lastrowid
+            conn.commit()
+
+    def sign_in(self, client):
+        with client.session_transaction() as session:
+            session["account_user_id"] = self.member_id
+
+    def guest_view(self, token):
+        """A second browser holding the same key, for asking whether the guest
+        cart is still reachable after a failure. The shopping client cannot
+        answer that once it is signed in -- its reads resolve to the member."""
+        handle = self.app.test_client()
+        handle.set_cookie(COOKIE, token, domain="localhost")
+        return handle
+
+    def owners_of_my_lines(self):
+        """Scoped to this test's own listings. The database is shared across the
+        file and every other test leaves lines in it, so an unscoped scan would
+        report the whole suite's history."""
+        with self.app.app_context():
+            conn = bot.db()
+            cur = conn.cursor()
+            cur.execute(
+                f"SELECT user_id FROM {cart_schema.CART_TABLE} WHERE listing_id IN (?, ?)",
+                (self.listing_id, self.other_listing_id),
+            )
+            return sorted(int(list(row)[0]) for row in cur.fetchall())
+
+    # -- the capability ------------------------------------------------------
+
+    def test_signing_in_brings_the_cart_with_you(self):
+        """The whole mission in one test.
+
+        A shopper who filled a cart, then signed in because the site asked them
+        to, must not watch it empty. Asserted after the sign-in on the same
+        client, which is what the browser does.
+        """
+        self.add(qty=2)
+        self.sign_in(self.visitor)
+
+        lines = self.lines()
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(lines[0]["listing_id"], self.listing_id)
+        self.assertEqual(lines[0]["qty"], 2)
+
+    def test_the_member_cart_is_not_replaced_by_the_guest_one(self):
+        """Both carts are stated intent. A shopper who put a lamp in their
+        account cart on a laptop and a blanket in a guest cart on their phone
+        wants both, and a merge that overwrote either direction would be cart
+        destruction with a 200 on the wire."""
+        member = self.member_client()
+        self.add(client=member, listing_id=self.other_listing_id)
+        self.add(listing_id=self.listing_id)
+        self.sign_in(self.visitor)
+
+        listings = sorted(line["listing_id"] for line in self.lines())
+        self.assertEqual(listings, sorted([self.listing_id, self.other_listing_id]))
+
+    def test_the_same_item_in_both_carts_is_not_doubled(self):
+        """Summing is the obvious answer and it is wrong.
+
+        One of a thing on each device means the shopper wants *a thing*. Handing
+        them two is an invented intent, invented in the direction that takes
+        more of their money, which §2 of the brief forbids by name.
+        """
+        member = self.member_client()
+        self.add(client=member, qty=1)
+        self.add(qty=1)
+        self.sign_in(self.visitor)
+
+        lines = self.lines()
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(lines[0]["qty"], 1)
+
+    def test_the_larger_quantity_wins_whichever_side_holds_it(self):
+        """Both directions, because `max` is only honest if it is symmetric.
+
+        Taking the larger is the one choice that cannot reduce what either side
+        asked for while never exceeding what either side asked for.
+        """
+        member = self.member_client()
+        self.add(client=member, qty=5)
+        self.add(qty=2)
+        self.sign_in(self.visitor)
+        self.assertEqual(self.lines()[0]["qty"], 5)
+
+        other = self.app.test_client()
+        other_member = self.member_client()
+        self.add(client=other_member, listing_id=self.other_listing_id, qty=2)
+        self.add(client=other, listing_id=self.other_listing_id, qty=6)
+        self.sign_in(other)
+        merged = [l for l in self.lines(other) if l["listing_id"] == self.other_listing_id]
+        self.assertEqual(merged[0]["qty"], 6)
+
+    def test_merging_leaves_no_rows_behind_on_the_guest_owner(self):
+        """A line left on the negative owner id is a line nobody can reach: the
+        member's cart will not list it and the guest key is gone. Asserted
+        against the table rather than the API because the API is exactly what
+        cannot see it.
+
+        One item deliberately collides and one does not, so both disposal paths
+        run. They dispose differently -- the disjoint line is re-pointed at the
+        member, the colliding one has its *guest* row deleted and the member's
+        kept -- and a test that exercised only one would leave the other free to
+        strand rows.
+        """
+        member = self.member_client()
+        self.add(client=member, listing_id=self.listing_id, qty=1)
+        self.add(listing_id=self.listing_id, qty=3)
+        self.add(listing_id=self.other_listing_id)
+        self.sign_in(self.visitor)
+        self.lines()
+
+        self.assertEqual(self.owners_of_my_lines(), [self.member_id, self.member_id])
+
+    def test_the_merge_reports_what_it_actually_did(self):
+        """The counts are the only way a deployment can read a merge rather than
+        infer it, and they are what separates "no guest cart" from "a guest cart
+        that turned out to be empty". Both are zero rows moved; only one is
+        worth looking at.
+        """
+        member = self.member_client()
+        self.add(client=member, listing_id=self.listing_id, qty=1)
+        self.add(listing_id=self.listing_id, qty=3)
+        self.add(listing_id=self.other_listing_id)
+        self.sign_in(self.visitor)
+
+        real = cart_merge.merge
+        seen = []
+
+        def recording(*args, **kwargs):
+            result = real(*args, **kwargs)
+            seen.append(result)
+            return result
+
+        with mock.patch.object(cart_merge, "merge", recording):
+            self.visitor.get(CART)
+        self.assertEqual(len(seen), 1)
+        outcome = seen[0]
+
+        self.assertTrue(outcome["ok"])
+        self.assertFalse(outcome["stale"])
+        self.assertEqual(outcome["moved"], 1)
+        self.assertEqual(outcome["combined"], 1)
+        self.assertEqual(outcome["raised"], 1)
+
+    def test_the_guest_key_stops_working_once_it_has_been_spent(self):
+        """The cookie is a bearer credential for a cart. After the merge that
+        cart belongs to an account, so the key must stop opening it -- otherwise
+        anyone who copied the cookie keeps reading a member's cart."""
+        self.add()
+        token = cookie_value(self.visitor)
+        self.sign_in(self.visitor)
+        self.lines()
+
+        self.assertEqual(cookie_value(self.visitor), "")
+        self.assertEqual(self.lines(self.guest_view(token)), [])
+
+    # -- failure must not look like success ----------------------------------
+
+    def test_a_merge_that_fails_partway_keeps_the_guest_cart_reachable(self):
+        """The failure this module exists for.
+
+        Claiming the token and moving the rows are two writes. A failure between
+        them, committed, leaves a spent key above an un-moved cart -- lines
+        nobody can reach, which is cart destruction wearing a clean exit code.
+        So the hook rolls back and leaves the cookie in place, and the shopper's
+        cart is still there to try again from.
+        """
+        self.add(qty=4)
+        token = cookie_value(self.visitor)
+        self.sign_in(self.visitor)
+
+        seen = []
+        real_rows = cart_merge._rows
+
+        def flaky(cur, owner_id):
+            # The second read is the member's side, by which point the token has
+            # already been claimed in this transaction. Exactly the window.
+            seen.append(owner_id)
+            if len(seen) > 1:
+                raise RuntimeError("boom")
+            return real_rows(cur, owner_id)
+
+        with mock.patch.object(cart_merge, "_rows", side_effect=flaky):
+            response = self.visitor.get(CART)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(cookie_value(self.visitor), token)
+        guest_lines = self.lines(self.guest_view(token))
+        self.assertEqual(len(guest_lines), 1)
+        self.assertEqual(guest_lines[0]["qty"], 4)
+
+    def test_the_retry_after_a_failed_merge_succeeds(self):
+        """Self-healing is the reason the hook keys on state. Nothing was
+        cleared, so the next request finds the same conditions and tries
+        again -- no repair step, no stuck shopper."""
+        self.add(qty=4)
+        self.sign_in(self.visitor)
+
+        with mock.patch.object(cart_merge, "_rows", side_effect=RuntimeError("boom")):
+            self.visitor.get(CART)
+
+        lines = self.lines()
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(lines[0]["qty"], 4)
+        self.assertEqual(cookie_value(self.visitor), "")
+
+    def test_a_member_holding_a_dead_guest_key_simply_loses_it(self):
+        """The other way to move zero rows, and it is the opposite of a failure.
+
+        A key that resolves to nothing -- forged, expired, or already spent on a
+        previous device -- is a success with nothing to do, so the cookie goes.
+        Treating it as a failure instead would leave the browser carrying a dead
+        key that re-attempts a merge on every request for the next thirty days.
+        """
+        member = self.member_client()
+        member.set_cookie(COOKIE, "not-a-real-token", domain="localhost")
+        response = member.get(CART)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(cookie_value(member), "")
+
+    # -- what the hook costs everyone else -----------------------------------
+
+    def test_a_member_without_a_guest_cookie_never_reaches_the_merge(self):
+        """This runs on *every* request in the application, so the guard has to
+        be the cookie and nothing more expensive. A member with no guest cookie
+        must not pay a session read or a database connection -- this repo has
+        been bitten by per-request connections before."""
+        member = self.member_client()
+        with mock.patch.object(cart_merge, "merge") as merged:
+            member.get(CART)
+        merged.assert_not_called()
+
+    def test_a_visitor_who_never_signs_in_never_reaches_the_merge(self):
+        """The other half of the guard. Holding a guest cookie is not a reason
+        to merge anything; being authenticated as well is."""
+        self.add()
+        with mock.patch.object(cart_merge, "merge") as merged:
+            self.visitor.get(CART)
+        merged.assert_not_called()
 
 
 if __name__ == "__main__":
