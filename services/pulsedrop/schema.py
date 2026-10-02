@@ -311,6 +311,23 @@ _INDEXES = (
 
 _TABLES = (_LEASES, _SETTINGS, _PUBLICATIONS, _RENDERS, _RUNS, _AUDIO_BEDS, _CAMPAIGNS)
 
+#: Columns added to a table that already exists somewhere.
+#:
+#: Every statement above is ``CREATE TABLE IF NOT EXISTS``, which means editing
+#: a column into one of those definitions has no effect on any database where
+#: the table has already been created -- i.e. on production. There is no
+#: migration framework here, so the additive case needs its own pass, and it has
+#: to be driven by what the table actually has rather than by a version number
+#: nobody updates.
+_ADDED_COLUMNS = (
+    # Mux ingest, added when it was found that PulseDrop was the only producer
+    # of reels on the platform publishing a bucket URL instead of a Mux
+    # playback id. Nullable with an empty default: a render created before this
+    # existed is still a valid render, it simply has no asset recorded.
+    ("pulsedrop_renders", "mux_asset_id", "TEXT DEFAULT ''"),
+    ("pulsedrop_renders", "mux_playback_id", "TEXT DEFAULT ''"),
+)
+
 
 def ensure_schema(conn=None) -> None:
     """Create PulseDrop's tables and indexes. Safe to call repeatedly.
@@ -346,9 +363,52 @@ def ensure_schema(conn=None) -> None:
             connection.close()
 
 
+def _columns(cur, table: str) -> set[str]:
+    """The column names ``table`` currently has, lowercased.
+
+    ``SELECT * ... LIMIT 0`` rather than ``PRAGMA table_info`` or a query against
+    ``information_schema``, because those are the SQLite and Postgres answers to
+    the same question and this module runs on both. A zero-row select fills
+    ``cursor.description`` on either engine and fetches nothing.
+    """
+    try:
+        cur.execute(f"SELECT * FROM {table} LIMIT 0")
+        return {str(item[0]).lower() for item in (cur.description or ())}
+    except Exception:
+        log.warning("pulsedrop_columns_unreadable table=%s", table, exc_info=True)
+        return set()
+
+
+def _add_columns(cur) -> None:
+    """Apply :data:`_ADDED_COLUMNS`, skipping the ones already there.
+
+    Guarded by a read rather than by catching the duplicate-column error,
+    because on Postgres a failed statement aborts the surrounding transaction:
+    the second ``ALTER`` and every ``CREATE INDEX`` after it would fail too, and
+    ``ensure_schema`` would roll back the whole reconciliation on a database
+    whose only problem was being already correct.
+    """
+    for table in {name for name, _, _ in _ADDED_COLUMNS}:
+        have = _columns(cur, table)
+        if not have:
+            continue
+        for candidate, column, spec in _ADDED_COLUMNS:
+            if candidate != table or column.lower() in have:
+                continue
+            try:
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {spec}")
+                log.info("pulsedrop_column_added table=%s column=%s", table, column)
+            except Exception:
+                log.warning(
+                    "pulsedrop_column_add_failed table=%s column=%s", table, column,
+                    exc_info=True,
+                )
+
+
 def _create(cur) -> None:
     for statement in _TABLES:
         cur.execute(statement)
+    _add_columns(cur)
     for statement in _INDEXES:
         try:
             cur.execute(statement)

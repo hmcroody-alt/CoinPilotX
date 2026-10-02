@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -431,14 +432,25 @@ class TestWhenTheEncodeFails:
         assert (ok, reason) == (False, "listing_unavailable")
 
 
+def _encode_counts(counters: dict) -> dict:
+    """The encode counters only, without the ``mux_*`` ingest ones.
+
+    Compared as a projection rather than by whole-dict equality so a test about
+    draining the encode queue does not fail when an ingest counter is added.
+    """
+    return {k: v for k, v in counters.items() if not k.startswith("mux_")}
+
+
 class TestTheWorkerEntryPoint:
     def test_drains_one_render_and_reports_counters(self, composer):
         reel_composer.find_or_enqueue(LISTING, distribution.SOURCE_COMPOSED_IMAGES)
-        assert reel_composer.run_pending(1) == {"started": 1, "succeeded": 1, "failed": 0}
+        counters = reel_composer.run_pending(1)
+        assert _encode_counts(counters) == {"started": 1, "succeeded": 1, "failed": 0}
         assert _row()["state"] == reel_composer.READY
 
     def test_an_empty_queue_is_not_an_error(self, composer):
-        assert reel_composer.run_pending(1) == {"started": 0, "succeeded": 0, "failed": 0}
+        counters = reel_composer.run_pending(1)
+        assert _encode_counts(counters) == {"started": 0, "succeeded": 0, "failed": 0}
 
     def test_the_reels_kill_switch_stops_the_worker_before_it_claims(self, composer, monkeypatch):
         reel_composer.find_or_enqueue(LISTING, distribution.SOURCE_COMPOSED_IMAGES)
@@ -448,3 +460,233 @@ class TestTheWorkerEntryPoint:
         # Still pending, not consumed: flipping the switch back must resume the
         # queue rather than find it drained.
         assert _row()["state"] == reel_composer.PENDING
+
+
+class TestTheMuxHandoff:
+    """What happens to a finished encode on a deployment that has a bucket.
+
+    The bug this guards against shipped and was visible to members: PulseDrop
+    wrote a ``cdn.`` URL into ``pulse_reels.video_url``, Cloudflare answered the
+    .mp4 with a bot challenge, and thirty-four reels showed a poster frame and
+    never played. Every assertion below is about not doing that again.
+
+    ``composer`` leaves storage ``local``, which is the developer and CI case and
+    is tested above. These tests move it to ``r2`` instead, because the whole
+    question only exists when there is a CDN in front of the file.
+    """
+
+    @pytest.fixture()
+    def bucketed(self, composer, monkeypatch):
+        """Storage that looks like R2, with the uploader and Mux both stubbed."""
+        from services import media_storage
+
+        monkeypatch.setattr(media_storage, "provider", lambda: "r2")
+        monkeypatch.setattr(
+            media_storage,
+            "storage_status",
+            lambda: {"provider": "r2", "configured": True, "bucket": "pulse-test"},
+        )
+        monkeypatch.setattr(
+            media_storage, "object_client",
+            lambda: _FakeS3(),
+        )
+        # Upload succeeds and returns the CDN URL, exactly as production does.
+        # The point is that this URL must not end up on the render.
+        monkeypatch.setattr(
+            media_storage, "_upload_to_object_storage",
+            lambda path, key, mime: (True, ""),
+        )
+        monkeypatch.setattr(
+            media_storage, "public_media_url", lambda rel: f"https://cdn.example.com/{rel}"
+        )
+        return composer
+
+    def test_a_finished_encode_waits_on_mux_instead_of_publishing_the_cdn_url(
+        self, bucketed, monkeypatch
+    ):
+        monkeypatch.setattr(
+            reel_composer, "_to_mux", lambda key, listing_id=0: ("asset-1", "play-1")
+        )
+        reel_composer.find_or_enqueue(LISTING, distribution.SOURCE_COMPOSED_IMAGES)
+        ok, reason = reel_composer._execute_render(reel_composer._claim_render("worker-a"))
+        assert (ok, reason) == (True, "")
+
+        row = _row()
+        assert row["state"] == reel_composer.TRANSCODING
+        # The encode is real and its geometry is known, so the dimensions are
+        # stamped; the playback URL is not, because Mux has not finished.
+        assert (row["frame_width"], row["frame_height"]) == (
+            reel_composer.FRAME_WIDTH, reel_composer.FRAME_HEIGHT,
+        )
+        assert row["video_url"] == ""
+        assert (row["mux_asset_id"], row["mux_playback_id"]) == ("asset-1", "play-1")
+        # The poster was never the broken half and is served from the CDN still.
+        assert row["poster_url"].startswith("https://cdn.example.com/")
+
+    def test_a_waiting_render_is_not_ready_so_nothing_publishes_it(self, bucketed, monkeypatch):
+        monkeypatch.setattr(
+            reel_composer, "_to_mux", lambda key, listing_id=0: ("asset-1", "play-1")
+        )
+        reel_composer.find_or_enqueue(LISTING, distribution.SOURCE_COMPOSED_IMAGES)
+        reel_composer._execute_render(reel_composer._claim_render("worker-a"))
+        row = _row()
+        # Every reader — publisher, curator, campaign backfill — gates on this
+        # exact conjunction, which is why TRANSCODING needs no cooperation.
+        assert not (row["state"] == reel_composer.READY and row["video_url"])
+
+    def test_a_waiting_render_is_never_handed_back_to_ffmpeg(self, bucketed, monkeypatch):
+        monkeypatch.setattr(
+            reel_composer, "_to_mux", lambda key, listing_id=0: ("asset-1", "play-1")
+        )
+        reel_composer.find_or_enqueue(LISTING, distribution.SOURCE_COMPOSED_IMAGES)
+        reel_composer._execute_render(reel_composer._claim_render("worker-a"))
+        # Re-encoding would create a second Mux asset for identical bytes on
+        # every sweep, and bill for each one.
+        assert reel_composer._claim_render("worker-a") == {}
+
+    def test_mux_unavailable_fails_the_render_rather_than_publishing_a_dead_url(
+        self, bucketed, monkeypatch
+    ):
+        monkeypatch.setattr(reel_composer, "_to_mux", lambda key, listing_id=0: ("", ""))
+        reel_composer.find_or_enqueue(LISTING, distribution.SOURCE_COMPOSED_IMAGES)
+        ok, reason = reel_composer._execute_render(reel_composer._claim_render("worker-a"))
+        # This is the regression guard. Falling back to the uploaded bucket URL
+        # here is precisely the original bug, and it would look like success.
+        assert (ok, reason) == (False, "mux_ingest_unavailable")
+        assert _row()["video_url"] == ""
+
+    def _waiting(self, monkeypatch, asset="asset-1", playback="play-1"):
+        monkeypatch.setattr(
+            reel_composer, "_to_mux", lambda key, listing_id=0: (asset, playback)
+        )
+        reel_composer.find_or_enqueue(LISTING, distribution.SOURCE_COMPOSED_IMAGES)
+        reel_composer._execute_render(reel_composer._claim_render("worker-a"))
+        return _row()
+
+    def test_a_ready_asset_is_promoted_to_a_mux_playback_url(self, bucketed, monkeypatch):
+        self._waiting(monkeypatch)
+        monkeypatch.setattr(reel_composer, "mux_state", lambda asset_id: "ready")
+        counters = reel_composer.promote_transcoding()
+        assert (counters["checked"], counters["ready"]) == (1, 1)
+
+        row = _row()
+        assert row["state"] == reel_composer.READY
+        assert row["video_url"] == "https://stream.mux.com/play-1.m3u8"
+        # The duration measured at encode time survives the round trip; the
+        # publisher writes it onto the reel row.
+        assert float(row["duration_seconds"]) > 0
+
+    def test_an_errored_asset_fails_the_render_and_leaves_no_url(self, bucketed, monkeypatch):
+        self._waiting(monkeypatch)
+        monkeypatch.setattr(reel_composer, "mux_state", lambda asset_id: "errored")
+        assert reel_composer.promote_transcoding()["errored"] == 1
+        row = _row()
+        assert row["state"] == reel_composer.FAILED
+        assert row["video_url"] == ""
+
+    def test_an_unreadable_status_keeps_waiting_rather_than_retiring_the_render(
+        self, bucketed, monkeypatch
+    ):
+        self._waiting(monkeypatch)
+        # A Mux outage or an expired token answers like this. Treating it as an
+        # error would retire good renders for the duration of someone else's
+        # incident.
+        monkeypatch.setattr(reel_composer, "mux_state", lambda asset_id: "")
+        assert reel_composer.promote_transcoding()["waiting"] == 1
+        assert _row()["state"] == reel_composer.TRANSCODING
+
+    def test_a_render_stuck_in_transcoding_eventually_rejoins_the_queue(
+        self, bucketed, monkeypatch
+    ):
+        self._waiting(monkeypatch)
+        monkeypatch.setattr(reel_composer, "mux_state", lambda asset_id: "preparing")
+        later = datetime.utcnow() + timedelta(
+            seconds=config.reel_render_timeout_seconds() * 10 + 60
+        )
+        assert reel_composer.promote_transcoding(now=later)["requeued"] == 1
+        # Back to PENDING, which is the only state anything will pick up again.
+        # Bounded by attempts, so a row that can never ingest still retires.
+        assert _row()["state"] == reel_composer.PENDING
+
+    def test_the_worker_polls_mux_even_with_no_encoder_present(self, bucketed, monkeypatch):
+        self._waiting(monkeypatch)
+        monkeypatch.setattr(reel_composer, "mux_state", lambda asset_id: "ready")
+        # A finished encode needs no ffmpeg. Returning early on a missing binary
+        # would strand every render already waiting on Mux.
+        monkeypatch.setattr(reel_composer, "_ffmpeg", lambda: "")
+        counters = reel_composer.run_pending(1)
+        assert counters["mux_ready"] == 1
+        assert _row()["state"] == reel_composer.READY
+
+
+class TestWhatMuxIsAskedToFetch:
+    """The input URL, which is the actual substance of the fix.
+
+    Handing Mux the public CDN URL is what a reasonable implementation would do
+    and is exactly what fails: the CDN is behind a bot challenge, so Mux's
+    fetcher is refused like any other non-browser client and the asset errors
+    minutes later with no obvious cause. It has to be a presigned S3 URL.
+    """
+
+    @pytest.fixture()
+    def seen(self, monkeypatch):
+        from services import media_service, media_storage
+
+        monkeypatch.setattr(
+            media_storage,
+            "storage_status",
+            lambda: {"provider": "r2", "configured": True, "bucket": "pulse-test"},
+        )
+        monkeypatch.setattr(media_storage, "object_client", lambda: _FakeS3())
+        captured = {}
+
+        def create(input_url, **kwargs):
+            captured["url"] = input_url
+            captured.update(kwargs)
+            return {"ok": True, "asset_id": "asset-9", "playback_id": "play-9"}
+
+        monkeypatch.setattr(media_service, "create_mux_asset_from_url", create)
+        return captured
+
+    def test_mux_is_given_a_presigned_url_not_the_cdn_one(self, seen):
+        ids = reel_composer._to_mux("pulsedrop/reels/77/abc.mp4", listing_id=77)
+        assert ids == ("asset-9", "play-9")
+        assert seen["url"].startswith("https://s3.example.com/")
+        assert "signed=1" in seen["url"]
+        # The one URL shape that cannot work.
+        assert "cdn." not in seen["url"]
+
+    def test_the_fetch_window_comes_from_the_setting(self, seen, monkeypatch):
+        monkeypatch.setenv("PULSEDROP_REEL_MUX_INPUT_TTL_SECONDS", "900")
+        config.invalidate_cache()
+        reel_composer._to_mux("pulsedrop/reels/77/abc.mp4", listing_id=77)
+        # _FakeS3 echoes the TTL it was handed into the URL it returns.
+        assert "expires=900" in seen["url"]
+
+    def test_a_mux_refusal_is_reported_as_no_ids_rather_than_raising(self, seen, monkeypatch):
+        from services import media_service
+
+        monkeypatch.setattr(
+            media_service, "create_mux_asset_from_url",
+            lambda url, **kw: {"ok": False, "status": "not_configured"},
+        )
+        # _execute_render turns this into a failed render, not a published one.
+        assert reel_composer._to_mux("pulsedrop/reels/77/abc.mp4") == ("", "")
+
+    def test_local_storage_asks_mux_for_nothing(self, monkeypatch):
+        from services import media_storage
+
+        monkeypatch.setattr(
+            media_storage, "storage_status", lambda: {"provider": "local", "configured": True}
+        )
+        assert reel_composer._to_mux("pulsedrop/reels/77/abc.mp4") == ("", "")
+
+
+class _FakeS3:
+    """Just enough boto3 client for ``_to_mux``'s presign call."""
+
+    def generate_presigned_url(self, operation, Params=None, ExpiresIn=0):  # noqa: N803
+        assert operation == "get_object"
+        assert (Params or {}).get("Bucket") == "pulse-test"
+        key = (Params or {}).get("Key", "")
+        return f"https://s3.example.com/{key}?signed=1&expires={int(ExpiresIn)}"

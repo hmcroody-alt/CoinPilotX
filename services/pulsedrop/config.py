@@ -307,6 +307,13 @@ SETTINGS: dict[str, Setting] = {
         "Also how soon the curator comes back to a tick that is waiting on an "
         "encode, so raising it delays the publication as well as the give-up.",
     ),
+    "PULSEDROP_REEL_MUX_INPUT_TTL_SECONDS": Setting(
+        INT, "7200", 600, 86400, "Mux fetch window (s)", "Reel composition",
+        "How long the presigned URL Mux pulls the encode from stays valid. Mux "
+        "fetches within seconds, so this is slack for a retry or a queue, not a "
+        "budget to spend; the URL grants read access to that one object until it "
+        "expires.",
+    ),
     "PULSEDROP_REEL_MIN_IMAGES": Setting(
         INT, "1", 1, 10, "Fewest images to compose", "Reel composition",
         "Below this the listing is not composed at all. One still image plus a "
@@ -586,6 +593,18 @@ def reel_render_max_attempts() -> int:
 
 def reel_render_timeout_seconds() -> int:
     return resolve("PULSEDROP_REEL_RENDER_TIMEOUT_SECONDS")
+
+
+def reel_mux_input_ttl_seconds() -> int:
+    """Lifetime of the presigned URL handed to Mux as an asset input.
+
+    Mux is given a presigned S3 URL rather than the public CDN one because the
+    CDN answers a machine fetch with a Cloudflare challenge -- which is how
+    PulseDrop came to publish reels that showed a poster and never played. The
+    presign is therefore load-bearing, and its expiry is the only thing that
+    bounds it, so it is a setting rather than a constant.
+    """
+    return resolve("PULSEDROP_REEL_MUX_INPUT_TTL_SECONDS")
 
 
 def reel_min_images() -> int:
