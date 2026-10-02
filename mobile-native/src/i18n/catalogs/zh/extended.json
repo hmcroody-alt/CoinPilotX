@@ -4978,8 +4978,13 @@
     "status": {
       "nextCheck": "下次检查约在 {{time}}",
       "nextCheckNone": "简报已暂停。",
+      "generationPremium": "简报是 Premium 功能——在你续订之前，新简报将暂停。你的历史记录会保留在这里。",
+      "generationPushOptOut": "你的账号已关闭推送通知，因此简报已暂停。重新开启推送即可恢复。",
+      "generationPaused": "目前所有用户的简报都已暂停，我们正在处理。",
       "quiet": "免打扰时间：{{start}} – {{end}}",
       "timezone": "时区：{{zone}}",
+      "timezoneDefault": "时区：{{zone}}（默认——设置你的时区可调整免打扰时间）",
+      "timezoneUnknown": "时区：{{zone}}（无法读取你保存的时区）",
       "pushOn": "推送通知已开启。",
       "pushOff": "推送通知已关闭 — 简报仅在此处显示。",
       "pushNoDevice": "本设备尚未设置推送通知 — 简报仅在此处显示。",

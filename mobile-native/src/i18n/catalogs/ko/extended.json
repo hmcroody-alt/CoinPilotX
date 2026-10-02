@@ -4978,8 +4978,13 @@
     "status": {
       "nextCheck": "다음 확인 예정: 약 {{time}}",
       "nextCheckNone": "브리핑이 일시중지되었습니다.",
+      "generationPremium": "브리핑은 Premium 기능입니다. 갱신하기 전까지 새 브리핑이 일시 중지됩니다. 기록은 그대로 보관됩니다.",
+      "generationPushOptOut": "계정의 푸시 알림이 꺼져 있어 브리핑이 일시 중지되었습니다. 다시 받으려면 푸시 알림을 켜세요.",
+      "generationPaused": "현재 모든 사용자의 브리핑이 일시 중지되었습니다. 복구 중입니다.",
       "quiet": "방해 금지 시간: {{start}} – {{end}}",
       "timezone": "시간대: {{zone}}",
+      "timezoneDefault": "시간대: {{zone}} (기본값 — 직접 설정하면 방해 금지 시간이 조정됩니다)",
+      "timezoneUnknown": "시간대: {{zone}} (저장된 시간대를 읽을 수 없습니다)",
       "pushOn": "푸시 알림이 켜져 있습니다.",
       "pushOff": "푸시 알림이 꺼져 있습니다 — 브리핑은 여기에서만 표시됩니다.",
       "pushNoDevice": "이 기기에서 푸시 알림이 설정되지 않았습니다. 브리핑은 여기에서만 확인할 수 있습니다.",

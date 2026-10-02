@@ -5012,8 +5012,13 @@
     "status": {
       "nextCheck": "Nächste Prüfung gegen {{time}}",
       "nextCheckNone": "Briefings sind pausiert.",
+      "generationPremium": "Briefings sind eine Premium-Funktion — neue Briefings sind pausiert, bis du verlängerst. Dein Verlauf bleibt hier.",
+      "generationPushOptOut": "Briefings sind pausiert, weil Push-Benachrichtigungen für dein Konto deaktiviert sind. Aktiviere Push wieder, um sie fortzusetzen.",
+      "generationPaused": "Briefings sind derzeit für alle pausiert — wir arbeiten daran.",
       "quiet": "Ruhezeiten: {{start}} – {{end}}",
       "timezone": "Zeitzone: {{zone}}",
+      "timezoneDefault": "Zeitzone: {{zone}} (Standard — lege deine fest, um die Ruhezeiten anzupassen)",
+      "timezoneUnknown": "Zeitzone: {{zone}} (wir konnten deine gespeicherte Zeitzone nicht lesen)",
       "pushOn": "Push-Benachrichtigungen sind aktiviert.",
       "pushOff": "Push-Benachrichtigungen sind deaktiviert — Briefings erscheinen nur hier.",
       "pushNoDevice": "Push ist auf diesem Gerät nicht eingerichtet – Briefings erscheinen nur hier.",

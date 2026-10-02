@@ -5012,8 +5012,13 @@
     "status": {
       "nextCheck": "Prochaine vérification vers {{time}}",
       "nextCheckNone": "Les briefings sont en pause.",
+      "generationPremium": "Les briefings sont une fonctionnalité Premium : les nouveaux briefings sont suspendus jusqu'au renouvellement. Votre historique reste ici.",
+      "generationPushOptOut": "Les briefings sont suspendus car les notifications push sont désactivées sur votre compte. Réactivez-les pour reprendre.",
+      "generationPaused": "Les briefings sont suspendus pour tout le monde actuellement — nous y travaillons.",
       "quiet": "Heures calmes : {{start}} – {{end}}",
       "timezone": "Fuseau horaire : {{zone}}",
+      "timezoneDefault": "Fuseau horaire : {{zone}} (par défaut — définissez le vôtre pour ajuster les heures silencieuses)",
+      "timezoneUnknown": "Fuseau horaire : {{zone}} (nous n'avons pas pu lire votre fuseau enregistré)",
       "pushOn": "Les notifications push sont activées.",
       "pushOff": "Les notifications push sont désactivées — les briefings n'apparaissent qu'ici.",
       "pushNoDevice": "Les notifications push ne sont pas configurées sur cet appareil — les briefings apparaissent uniquement ici.",
