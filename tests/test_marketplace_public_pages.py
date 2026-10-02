@@ -546,6 +546,198 @@ class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
         self.assertEqual(self.get(listing_id).status_code, 404)
 
 
+class PublicProductStoreIdentityTestCase(PublicMarketplaceFixture):
+    """A buyer is shown the store, never the person who owns it.
+
+    ``tests/test_marketplace_store_identity.py`` already guards the store
+    *name*, and guards it well — but entirely through unit calls and source-text
+    greps, with nothing that renders a page. That is precisely how the picture
+    and the handle got through: ``users.avatar_url`` was selected under a
+    ``seller_avatar_url`` alias with a comment calling it "the store avatar",
+    and ``@roody`` was printed under the shop name. Both read as ordinary
+    seller-card code. Neither was covered by a single assertion, in any suite.
+
+    So these render the real page and read what a buyer would see. The
+    anonymous rendering is the one asserted hardest: it is what a crawler
+    indexes and what a shared link opens, so a personal name or face leaking
+    there leaks furthest.
+    """
+
+    AVATAR = "https://cdn.example/personal-selfie.jpg"
+    LOGO = "https://cdn.example/mw-store-logo.png"
+
+    def set_seller_media(self, *, avatar=None, logo=None):
+        conn = sqlite3.connect(self.db_path)
+        if avatar is not None:
+            conn.execute("UPDATE users SET avatar_url=? WHERE user_id=?", (avatar, SELLER))
+        if logo is not None:
+            conn.execute("UPDATE marketplace_sellers SET logo_url=? WHERE user_id=?", (logo, SELLER))
+        conn.commit()
+        conn.close()
+
+    def test_the_personal_profile_picture_never_reaches_a_buyer(self):
+        """The seller's selfie is set, and must appear nowhere on either page.
+
+        Asserted for the member rendering too. The member page is not indexed,
+        but the leak is a privacy leak rather than an SEO one — the owner never
+        agreed to put their face on a shop sign, and which stranger is looking
+        does not change that.
+        """
+        self.set_seller_media(avatar=self.AVATAR)
+        listing_id = self.make_listing()
+        for label, sign_in in (("anonymous", False), ("member", True)):
+            with self.subTest(label):
+                self.login() if sign_in else self.logout()
+                body = self.get(listing_id).get_data(as_text=True)
+                self.assertNotIn(self.AVATAR, body)
+                self.assertNotIn("personal-selfie", body)
+
+    def test_the_store_logo_is_what_appears_instead(self):
+        """And it is the store's own column that supplies it.
+
+        Both are set, so this distinguishes "renders the logo" from "renders
+        whichever picture it finds first" — a fallback chain from logo to avatar
+        would pass an assertion that only checked the logo was present.
+        """
+        self.set_seller_media(avatar=self.AVATAR, logo=self.LOGO)
+        listing_id = self.make_listing()
+        body = self.get(listing_id).get_data(as_text=True)
+        self.assertIn(self.LOGO, body)
+        self.assertNotIn(self.AVATAR, body)
+
+    def test_a_seller_with_no_logo_gets_a_monogram_not_a_face(self):
+        """The empty state is the one the fallback chain used to fill.
+
+        Every seller has a logo column of NULL today, so this is not an edge
+        case — it is the whole catalogue, and it is the state in which reaching
+        for ``users.avatar_url`` looked most reasonable.
+        """
+        self.set_seller_media(avatar=self.AVATAR, logo=None)
+        listing_id = self.make_listing()
+        body = self.get(listing_id).get_data(as_text=True)
+        self.assertNotIn(self.AVATAR, body)
+        # "M&W Store" escaped, so the monogram is the "M" inside the figure.
+        self.assertRegex(body, r'<figure class="mkt-seller-figure" aria-hidden="true">M</figure>')
+
+    def test_the_handle_is_not_presented_to_an_anonymous_buyer(self):
+        """``@public_page_seller`` used to print under the shop name.
+
+        A handle is the person's identity on the social product, not the
+        store's identity on the commercial one. The anonymous page is also the
+        one where it was most useless: ``/pulse/u/<handle>`` redirects a
+        signed-out visitor to /login, so the handle named a destination this
+        reader could not reach.
+        """
+        listing_id = self.make_listing()
+        body = self.get(listing_id).get_data(as_text=True)
+        self.assertNotIn("@public_page_seller", body)
+        self.assertIn("M&amp;W Store", body)
+
+    def test_the_handle_survives_as_a_route_and_not_as_a_label(self):
+        """Removing it from the page must not break "Message seller".
+
+        That control is a working anchor to ``/pulse/messages/new?q=<handle>``
+        precisely so it functions without JavaScript, so the handle still has
+        to be *selected* — the rule is that it is only ever spent as a URL.
+        Pinning both halves here stops the next person from deleting the column
+        from the projection to make the test above pass.
+        """
+        self.login()
+        listing_id = self.make_listing()
+        body = self.get(listing_id).get_data(as_text=True)
+        self.assertIn("/pulse/messages/new?q=public_page_seller", body)
+        self.assertNotIn("@public_page_seller", body)
+
+
+class StoreLogoWriteRouteTestCase(PublicMarketplaceFixture):
+    """Setting a store logo writes store identity and nothing else.
+
+    Here rather than in a seller-side file because this fixture already is the
+    shape these need: an approved ``marketplace_sellers`` row, a member with no
+    such row, and a Flask client. The tests above prove the buyer never sees the
+    personal avatar; these prove the only route that can fill the column it sees
+    instead cannot reach across into ``users`` or hand anybody a seller account.
+    """
+
+    LOGO = "https://cdn.example/uploaded-store-logo.png"
+
+    def post(self, path, **json_body):
+        return self.client.post(path, json=json_body)
+
+    def seller_row(self, user_id=SELLER):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM marketplace_sellers WHERE user_id=?", (user_id,)).fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def test_a_logo_lands_on_the_column_buyers_read(self):
+        self.login(user_id=SELLER, username="public_page_seller")
+        response = self.post("/api/pulse/marketplace/store-logo", media_url=self.LOGO)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.seller_row()["logo_url"], self.LOGO)
+        # And the buyer page renders it, through the same authority the listing
+        # queries use -- a write that no read can see is not a fix.
+        listing_id = self.make_listing()
+        self.logout()
+        self.assertIn(self.LOGO, self.get(listing_id).get_data(as_text=True))
+
+    def test_setting_a_store_logo_does_not_change_the_personal_avatar(self):
+        """The two pictures are separate identities and this is the seam.
+
+        A seller choosing a shop logo has not chosen a new profile picture, and
+        the reverse is what this whole change undoes. Asserted explicitly
+        because the route was written next to the avatar route and shares four
+        of its validators -- the destination is the only part that differs.
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("UPDATE users SET avatar_url=? WHERE user_id=?",
+                     ("https://cdn.example/selfie.jpg", SELLER))
+        conn.commit()
+        conn.close()
+        self.login(user_id=SELLER, username="public_page_seller")
+        self.post("/api/pulse/marketplace/store-logo", media_url=self.LOGO)
+        conn = sqlite3.connect(self.db_path)
+        avatar = conn.execute(
+            "SELECT avatar_url FROM users WHERE user_id=?", (SELLER,)).fetchone()[0]
+        conn.close()
+        self.assertEqual(avatar, "https://cdn.example/selfie.jpg")
+
+    def test_removing_the_logo_clears_it_and_nothing_else(self):
+        self.login(user_id=SELLER, username="public_page_seller")
+        self.post("/api/pulse/marketplace/store-logo", media_url=self.LOGO)
+        response = self.post("/api/pulse/marketplace/store-logo/remove")
+        self.assertEqual(response.status_code, 200)
+        row = self.seller_row()
+        self.assertFalse(row["logo_url"])
+        self.assertEqual(row["display_name"], "M&W Store")
+        self.assertEqual(row["status"], "approved")
+
+    def test_uploading_a_logo_cannot_mint_a_seller_account(self):
+        """The reason both routes are UPDATE-only.
+
+        ``MEMBER`` has no ``marketplace_sellers`` row because they never applied
+        to sell. An INSERT here -- or an UPSERT, which is the natural way to
+        write this -- would hand them an approved-shaped seller row as a side
+        effect of uploading a picture, bypassing merchant review entirely. The
+        answer to "no row" is to apply, so the route refuses.
+        """
+        self.login(user_id=MEMBER, username="public_page_member")
+        for path in ("/api/pulse/marketplace/store-logo",
+                     "/api/pulse/marketplace/store-logo/remove"):
+            with self.subTest(path):
+                response = self.post(path, media_url=self.LOGO)
+                self.assertEqual(response.status_code, 403)
+                self.assertIsNone(self.seller_row(MEMBER))
+
+    def test_a_signed_out_caller_cannot_set_a_logo(self):
+        self.logout()
+        response = self.post("/api/pulse/marketplace/store-logo", media_url=self.LOGO)
+        self.assertEqual(response.status_code, 401)
+        self.assertFalse(self.seller_row()["logo_url"])
+
+
 class PublicProductPriceAuthorityTestCase(PublicMarketplaceFixture):
     """The logged-out page may not advertise a price checkout will not charge.
 

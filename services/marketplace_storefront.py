@@ -58,6 +58,7 @@ from typing import Any, Mapping, Optional, Sequence
 
 from services import app_links
 from services import marketplace_listing_lifecycle
+from services import marketplace_seller_identity as seller_identity
 from services import marketplace_web as mw
 from services import search_visibility
 
@@ -455,10 +456,10 @@ def product_card(
     seller_block = ""
     if seller_name:
         initial = esc(seller_name[:1].upper())
-        avatar_url = mw._clean(row.get("seller_avatar_url"))
+        logo_url = seller_identity.store_logo_url(row)
         avatar = (
-            f'<img class="mkt-seller-avatar" src="{esc(avatar_url)}" alt="" loading="lazy" decoding="async">'
-            if avatar_url
+            f'<img class="mkt-seller-avatar" src="{esc(logo_url)}" alt="" loading="lazy" decoding="async">'
+            if logo_url
             else f'<span class="mkt-seller-avatar" aria-hidden="true">{initial}</span>'
         )
         if seller_href:
@@ -1301,18 +1302,24 @@ def seller_card(
 
     No rating, no response time, no "Trusted Seller", no join date: there is no
     review table, no response-time metric and no verified-merchant tier that a
-    buyer-facing claim could be drawn from. The seller's store name, their
-    handle, and how many other products they have listed are real, and that is
-    what appears.
+    buyer-facing claim could be drawn from. The seller's store name, their logo,
+    and how many other products they have listed are real, and that is what
+    appears.
+
+    All three are *store* facts. The handle used to appear here too, as
+    "@roody" under the shop name, and the logo used to be the account holder's
+    profile picture; both are personal identity on a commercial surface, which
+    is what ``services/marketplace_seller_identity`` exists to keep out. The
+    handle is still selected -- "Message seller" routes on it -- and is now
+    only ever used as a URL.
     """
     name = mw._clean(row.get("seller_store_name")) or "PulseSoc seller"
-    username = mw._clean(row.get("seller_username"))
     seller_id = int(row.get("seller_user_id") or 0)
     initial = esc(name[:1].upper())
-    avatar_url = mw._clean(row.get("seller_avatar_url"))
+    logo_url = seller_identity.store_logo_url(row)
     figure = (
-        f'<figure class="mkt-seller-figure"><img src="{esc(avatar_url)}" alt="" loading="lazy" decoding="async"></figure>'
-        if avatar_url
+        f'<figure class="mkt-seller-figure"><img src="{esc(logo_url)}" alt="" loading="lazy" decoding="async"></figure>'
+        if logo_url
         else f'<figure class="mkt-seller-figure" aria-hidden="true">{initial}</figure>'
     )
     # The store name links to the seller's profile, but only for a signed-in
@@ -1321,6 +1328,7 @@ def seller_card(
     # visitor who most needs to see products — a login wall instead of a
     # destination. Plain text is the honest treatment when there is nowhere
     # this viewer can actually go.
+    username = mw._clean(row.get("seller_username"))
     href = store_href or (f"/pulse/u/{mw.url_quote(username)}" if username and viewer.signed_in else "")
     name_html = (
         f'<a class="mkt-seller-name" href="{esc(href)}">{esc(name)}</a>'
@@ -1328,8 +1336,6 @@ def seller_card(
         else f'<span class="mkt-seller-name">{esc(name)}</span>'
     )
     meta_bits: list[str] = []
-    if username:
-        meta_bits.append(f"@{username}")
     if listing_count > 1:
         meta_bits.append(f"{listing_count} products listed")
     meta = (

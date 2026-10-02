@@ -59028,12 +59028,19 @@ MARKETPLACE_STOREFRONT_SCAN_LIMIT = 600
 #: The columns the storefront needs on top of `marketplace_listings.*`.
 #:
 #: `seller_username` is what makes "Message seller" work without JavaScript --
-#: it is the query the messenger's people search takes. `seller_avatar_url` is
-#: the store avatar on the seller card. Both come from `users`, whose primary
-#: key is `user_id`, not `id`.
-MARKETPLACE_STOREFRONT_SELLER_COLUMNS = """
+#: it is the query the messenger's people search takes, and it comes from
+#: `users`, whose primary key is `user_id`, not `id`. It is a *routing* value
+#: and is deliberately not rendered: a handle is personal identity and a buyer
+#: is transacting with a store.
+#:
+#: The logo comes from `marketplace_sellers`, not from `u.avatar_url`. This
+#: projection used to alias the account holder's profile picture as
+#: `seller_avatar_url` and call it "the store avatar" -- see
+#: `services/marketplace_seller_identity` for why that was the same leak as the
+#: personal *name*, and why there is no fallback from one to the other.
+MARKETPLACE_STOREFRONT_SELLER_COLUMNS = f"""
                    COALESCE(u.username,'') AS seller_username,
-                   COALESCE(u.avatar_url,'') AS seller_avatar_url,
+                   {marketplace_seller_identity.store_logo_select()},
                    COALESCE(ms.status,'missing') AS seller_status"""
 
 
@@ -115314,6 +115321,88 @@ def api_pulse_profile_avatar_remove():
     return jsonify({"ok": True, "message": "Profile picture removed.", "avatar_url": ""})
 
 
+#: Shares every validator with the profile-picture route directly above, which
+#: is why it lives here rather than beside the other marketplace routes: the
+#: four `_profile_*` helpers are module-private and a caller 55k lines away
+#: would be the kind of distance that invites a hand-copied second validator.
+#: What it does *not* share is the destination. A store logo is store identity
+#: and goes to `marketplace_sellers.logo_url`; it never touches `users`, and
+#: setting one must never change the account holder's profile picture.
+@webhook_app.route("/api/pulse/marketplace/store-logo", methods=["POST"])
+@auth_required
+def api_pulse_marketplace_store_logo():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    logo_url, _thumbnail, _media = _profile_media_payload_url(
+        user["user_id"], payload, "media_id", "media_url")
+    if not logo_url:
+        file_storage = request.files.get("logo")
+        filename = (getattr(file_storage, "filename", "") or "").lower()
+        ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+        if ext not in {"jpg", "jpeg", "png", "webp"}:
+            return api_error("Upload a jpg, png, or webp store logo.", 400)
+        if file_storage and file_storage.mimetype and not file_storage.mimetype.lower().startswith("image/"):
+            return api_error("That store logo type is not supported.", 400)
+        if not _profile_image_upload_signature_allowed(file_storage):
+            return api_error("That store logo file is not a valid image.", 400)
+        result, status = media_service.save_upload(
+            user["user_id"], file_storage,
+            context_type="marketplace_store_logo", context_id=str(user["user_id"]))
+        if not result.get("ok"):
+            return jsonify(result), status
+        uploaded = result.get("media") or {}
+        resolved = media_service.resolve_media(uploaded)
+        logo_url = clean_html(
+            resolved.get("valid_url") or resolved.get("media_url")
+            or uploaded.get("media_url") or "")[:1000]
+    if not _profile_media_is_cdn_safe(logo_url):
+        return api_error("Store logo was not saved to durable CDN media. Please upload again.", 502)
+    conn = db()
+    cur = conn.cursor()
+    # UPDATE only, never INSERT. Minting a `marketplace_sellers` row here would
+    # hand someone a seller account as a side effect of uploading a picture --
+    # the same reason `store_identity_sync.adopt_store_name` refuses to create
+    # one. No row means no approved merchant application, and the answer is to
+    # apply, not to acquire the row sideways.
+    cur.execute(
+        "UPDATE marketplace_sellers SET logo_url=?, updated_at=? WHERE user_id=?",
+        (logo_url, datetime.utcnow().isoformat(timespec="seconds"), user["user_id"]))
+    if not getattr(cur, "rowcount", 0):
+        conn.rollback()
+        conn.close()
+        return api_error("You do not have a seller account yet.", 403)
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Store logo updated.", "logo_url": logo_url})
+
+
+@webhook_app.route("/api/pulse/marketplace/store-logo/remove", methods=["POST"])
+@auth_required
+def api_pulse_marketplace_store_logo_remove():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE marketplace_sellers SET logo_url=NULL, updated_at=? WHERE user_id=?",
+        (datetime.utcnow().isoformat(timespec="seconds"), user["user_id"]))
+    if not getattr(cur, "rowcount", 0):
+        conn.rollback()
+        conn.close()
+        return api_error("You do not have a seller account yet.", 403)
+    conn.commit()
+    conn.close()
+    # Removing the logo is not a downgrade to the personal avatar -- it is a
+    # downgrade to the store-name monogram. See
+    # `services/marketplace_seller_identity`.
+    return jsonify({"ok": True, "message": "Store logo removed.", "logo_url": ""})
+
+
 @webhook_app.route("/api/pulse/profile/cover/remove", methods=["POST"])
 def api_pulse_profile_cover_remove():
     init_db()
@@ -124011,6 +124100,11 @@ def _init_db_impl():
     add_columns_if_missing(cur, "marketplace_sellers", [
         ("seller_type", "TEXT"),
         ("business_name", "TEXT"),
+        # The shop sign's picture, beside the shop sign's name. Buyer surfaces
+        # rendered `users.avatar_url` here until this column existed, which put
+        # the account holder's face on the storefront -- see
+        # `services/marketplace_seller_identity`.
+        ("logo_url", "TEXT"),
         ("website", "TEXT"),
         ("country", "TEXT"),
         ("state_region", "TEXT"),
