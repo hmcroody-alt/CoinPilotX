@@ -213,6 +213,13 @@ class TestWhereAValueCameFrom:
             "PULSEDROP_ENABLED",
             "PULSEDROP_SIGNALS_ENABLED",
             "PULSEDROP_REELS_ENABLED",
+            # Pulse Loop sits with the kill switches rather than with its own
+            # numeric knobs because it is the same kind of control: one flag an
+            # operator flips in an incident. It goes last of the four because it
+            # is the narrowest -- the three above stop PulseDrop or a surface of
+            # it, where this one only changes how the curator chooses what to
+            # publish, and leaves the schedule intact to resume from.
+            "PULSEDROP_LOOP_ENABLED",
         ]
 
 

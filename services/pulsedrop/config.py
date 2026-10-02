@@ -14,13 +14,18 @@ sensibly before anyone has written a settings row, and because
 ``.env.example`` is the contract the protection suite checks. The table is an
 override layer, not a replacement.
 
-## Three switches, not one
+## Several switches, not one
 
 ``enabled()`` is the master. ``signals_enabled()`` and ``reels_enabled()`` gate
 the two surfaces independently, because they fail differently: a bad Signal is a
 bad sentence, a bad Reel is a bad sentence rendered into a video file that cost
 CPU and now sits in object storage. Being able to stop Reels while Signals keep
 running is the difference between pausing a feature and pausing the account.
+
+``loop_enabled()`` is a fourth, and it gates a *mechanism* rather than a
+surface: whether the curator publishes from a schedule or decides tick by tick.
+Turning it off does not stop PulseDrop and does not discard the schedule — it
+falls back to the older behaviour with the queue left intact.
 """
 
 from __future__ import annotations
@@ -154,6 +159,16 @@ SETTINGS: dict[str, Setting] = {
         FLAG, "true", label="Publish Reels", group="Kill switches",
         help="Also stops rendering. A bad Reel costs CPU and an object in storage.",
     ),
+    "PULSEDROP_LOOP_ENABLED": Setting(
+        FLAG, "false", label="Pulse Loop (scheduled campaigns)", group="Kill switches",
+        help="Off, the curator publishes opportunistically: each tick re-reads the "
+             "catalog and decides afresh. On, it works a scheduled queue of "
+             "post-and-Reel pairs instead. Its own switch rather than part of the "
+             "master one so the loop can be turned off without taking PulseDrop "
+             "down with it -- and so turning it on is a reversible step rather "
+             "than a deploy. Turning it off abandons nothing: scheduled rows stay "
+             "where they are and resume when it comes back on.",
+    ),
     "PULSEDROP_EVALUATION_INTERVAL_SECONDS": Setting(
         INT, "7200", 60, 86_400, "Evaluation interval (s)", "Cadence",
         "How often the curator considers publishing. Evaluating is not publishing.",
@@ -175,6 +190,44 @@ SETTINGS: dict[str, Setting] = {
     "PULSEDROP_DAILY_REEL_CAP": Setting(
         INT, "3", 0, 100, "Reels per day", "Cadence",
         "Counted inside the cap above, not in addition to it.",
+    ),
+    "PULSEDROP_LOOP_TARGET_DEPTH": Setting(
+        INT, "240", 1, 5_000, "Scheduled campaigns (fill to)", "Pulse Loop",
+        "How many future pairs the loop keeps on the books. Multiplied by the "
+        "minimum gap above this is the length of the horizon, which is the "
+        "number that actually matters: 240 at 90 minutes apart is a fortnight "
+        "of scheduled content. Raising it does not produce more content, it "
+        "only commits further ahead -- and everything committed is a decision "
+        "made against a catalog that may have changed by the time it runs, "
+        "which is why the publisher re-checks eligibility rather than trusting "
+        "the row.",
+    ),
+    "PULSEDROP_LOOP_MIN_DEPTH": Setting(
+        INT, "48", 0, 5_000, "Replenish at or below", "Pulse Loop",
+        "The low-water mark. The planner stays out of the catalog entirely "
+        "until the queue reaches this, then fills it back to the target "
+        "above. Zero therefore means 'only when empty' rather than 'never'. "
+        "A pair of watermarks rather than a single target because "
+        "topping up one row at a time would mean a catalog read and a full "
+        "ranking pass every time one campaign published -- correct, and a "
+        "query budget spent to schedule a single item.",
+    ),
+    "PULSEDROP_LOOP_MAX_ATTEMPTS": Setting(
+        INT, "3", 1, 10, "Campaign attempts", "Pulse Loop",
+        "How many times a due campaign may be picked up before it is parked as "
+        "failed. Attempts are consumed by waiting on a render as well as by "
+        "errors, which is deliberate: a pair that cannot get its video after "
+        "three tries should publish as a single post rather than hold a slot "
+        "in the horizon indefinitely.",
+    ),
+    "PULSEDROP_LOOP_RENDER_LEAD_SECONDS": Setting(
+        INT, "1800", 60, 86_400, "Render lead time (s)", "Pulse Loop",
+        "How far ahead of its scheduled time a campaign's Reel is queued for "
+        "rendering. This is the whole reason a schedule beats publishing on "
+        "demand: the encode happens while nothing is waiting on it, so the pair "
+        "goes out together instead of the post going out and the Reel arriving "
+        "whenever ffmpeg finishes. Shorter than the renderer's worst case and "
+        "the pair drifts apart again.",
     ),
     "PULSEDROP_PRODUCT_COOLDOWN_HOURS": Setting(
         INT, "336", 0, 8_760, "Product cooldown (h)", "Fairness",
@@ -306,6 +359,22 @@ def reels_enabled() -> bool:
     return resolve("PULSEDROP_REELS_ENABLED")
 
 
+def loop_enabled() -> bool:
+    """Whether the curator works a schedule instead of deciding tick by tick.
+
+    Read together with :func:`enabled`, never instead of it — every Pulse Loop
+    entry point checks both, so the master switch still stops everything. The
+    reverse is the useful direction: this can be turned off to fall back to
+    opportunistic publishing while PulseDrop keeps running, which is what makes
+    enabling the loop a reversible operational step rather than a deploy.
+
+    Off is the shipped default on purpose. A staged rollout means the code
+    arrives in production inert, the schedule is planned and inspected on the
+    ops page while nothing publishes from it, and only then is this flipped.
+    """
+    return resolve("PULSEDROP_LOOP_ENABLED")
+
+
 # ---------------------------------------------------------------------------
 # Cadence
 # ---------------------------------------------------------------------------
@@ -341,6 +410,61 @@ def daily_publication_cap() -> int:
 
 def daily_reel_cap() -> int:
     return resolve("PULSEDROP_DAILY_REEL_CAP")
+
+
+# ---------------------------------------------------------------------------
+# Pulse Loop horizon
+# ---------------------------------------------------------------------------
+
+
+def loop_target_depth() -> int:
+    """How many future campaigns the planner fills the horizon back up to.
+
+    A depth, not a date, because the thing being bounded is rows: §7 of the
+    brief asks for a rolling horizon rather than a pregenerated schedule, and
+    "keep 240 on the books" is a bound that holds whatever the spacing is set
+    to, where "schedule the next fortnight" stops holding the moment someone
+    changes the gap between posts.
+    """
+    return resolve("PULSEDROP_LOOP_TARGET_DEPTH")
+
+
+def loop_min_depth() -> int:
+    """The depth below which the planner goes back to the catalog.
+
+    Paired with :func:`loop_target_depth` as a low and a high watermark. The
+    gap between them is the whole point: it converts "replenish" from something
+    that happens on every tick into something that happens once per several
+    dozen publications, which is the difference between one ranking pass a
+    fortnight and one every ninety minutes.
+
+    The comparison is inclusive — a queue *at* this depth replenishes — so that
+    zero reads as "only when the queue is empty" rather than as a planner that
+    can never run.
+
+    It is also the number the ops page reads to decide whether a shallow queue
+    is worth saying out loud — but a queue below this line is not by itself an
+    incident. It is an incident only if the catalog could have filled it, which
+    is a different question and the one ``campaigns.health`` keeps separate.
+    """
+    return resolve("PULSEDROP_LOOP_MIN_DEPTH")
+
+
+def loop_max_attempts() -> int:
+    """Pickups a due campaign gets before it is parked as failed."""
+    return resolve("PULSEDROP_LOOP_MAX_ATTEMPTS")
+
+
+def loop_render_lead_seconds() -> int:
+    """How long before its due time a campaign's Reel is queued to render.
+
+    Must exceed :func:`reel_render_timeout_seconds` to do its job, or the
+    campaign comes due while its own encode is still legitimately running and
+    the pair separates — which is the exact production failure this schedule
+    exists to fix. The floor here cannot enforce that relationship because both
+    values are operator-settable; the ops page reports the comparison instead.
+    """
+    return resolve("PULSEDROP_LOOP_RENDER_LEAD_SECONDS")
 
 
 # ---------------------------------------------------------------------------
@@ -501,6 +625,11 @@ def snapshot() -> dict[str, Any]:
         "enabled": enabled(),
         "signals_enabled": signals_enabled(),
         "reels_enabled": reels_enabled(),
+        "loop_enabled": loop_enabled(),
+        "loop_target_depth": loop_target_depth(),
+        "loop_min_depth": loop_min_depth(),
+        "loop_max_attempts": loop_max_attempts(),
+        "loop_render_lead_seconds": loop_render_lead_seconds(),
         "evaluation_interval_seconds": evaluation_interval_seconds(),
         "min_publish_interval_seconds": min_publish_interval_seconds(),
         "reel_min_interval_seconds": reel_min_interval_seconds(),

@@ -113499,10 +113499,21 @@ def admin_pulsedrop_page():
         if changed:
             log_admin_audit(admin.get("id"), f"pulsedrop_{action}", "pulsedrop_setting", key, {"value": raw})
 
-    data = pulsedrop_ops.dashboard()
+    # How much of the horizon to draw. The schedule is hundreds deep by design,
+    # and "show me the next hundred" is how an operator satisfies themselves
+    # that a ten-day plan is varied before trusting it to run unattended for ten
+    # days. Clamped in ``ops.loop_view``; parsed leniently here because a
+    # hand-edited query string should not 500 the page.
+    try:
+        schedule_limit = int(request.args.get("next") or 10)
+    except (TypeError, ValueError):
+        schedule_limit = 10
+
+    data = pulsedrop_ops.dashboard(schedule_limit=schedule_limit)
     acct = data["account"]
     health = data["health"]
     schedule = data["schedule"]
+    loop = data["loop"]
     may_edit = admin_has_permission(admin, "settings.edit")
 
     if acct.get("provisioned"):
@@ -113555,6 +113566,99 @@ def admin_pulsedrop_page():
         f"<p class='muted'>{_pulsedrop_cell(health.get('renders_stuck'))} stuck over {pulsedrop_ops.STALL_MINUTES} min</p></div>"
         "</section>"
     )
+
+    # Pulse Loop. Drawn above the settings because it answers the question the
+    # settings only configure: whether there is a schedule, how deep it is, and
+    # what is about to publish.
+    if not loop.get("readable"):
+        loop_cards = (
+            "<section class='card'><h2>Pulse Loop</h2><p class='metric'>Unreadable</p>"
+            "<p class='muted'>The campaign table could not be counted. PulseDrop's"
+            " opportunistic path is unaffected and the switches below still work.</p></section>"
+        )
+    else:
+        depth_now = int(loop.get("depth") or 0)
+        target_depth = int(loop.get("target_depth") or 0)
+        # "Below the low-water mark" is reported, not "unhealthy". A shallow
+        # queue because the catalog is exhausted is a business fact; a shallow
+        # queue because planning is throwing is an incident. Both land here, and
+        # the run log beside it is what tells them apart — so the pill says what
+        # is true and the caption says where to look.
+        depth_pill = (
+            "<span class='pill warn'>below low-water mark</span>"
+            if loop.get("below_min") else "<span class='pill on'>stocked</span>"
+        )
+        loop_pill = (
+            "<span class='pill on'>on</span>" if loop.get("enabled")
+            else "<span class='pill'>off — opportunistic mode</span>"
+        )
+        overdue = int(loop.get("overdue") or 0)
+        loop_cards = (
+            "<section class='grid'>"
+            f"<div class='card'><h2>Pulse Loop</h2><p class='metric'>{depth_now} queued</p>"
+            f"<p>{loop_pill} {depth_pill}</p>"
+            f"<p class='muted'>target {target_depth}, low-water {_pulsedrop_cell(loop.get('min_depth'))}"
+            f" · generation {_pulsedrop_cell(loop.get('cycle'))}</p></div>"
+            f"<div class='card'><h2>Horizon</h2><p class='metric'>{_pulsedrop_cell(loop.get('next_scheduled_for') or 'empty')}</p>"
+            f"<p class='muted'>scheduled through {_pulsedrop_cell(loop.get('horizon_until') or 'nothing')}</p>"
+            # Overdue is its own number rather than folded into depth. A deep
+            # queue with a growing overdue count is a worker that is not
+            # draining it, which looks identical to health in the depth figure.
+            f"<p class='muted'>{overdue} overdue</p></div>"
+            f"<div class='card'><h2>By state</h2><p class='metric'>"
+            + _pulsedrop_cell(
+                ", ".join(f"{k} {v}" for k, v in sorted((loop.get("by_state") or {}).items()))
+                or "nothing yet"
+            )
+            + "</p></div></section>"
+        )
+        # Contradictory settings. Each value is inside its own clamp and each was
+        # a reasonable thing to type; it is the relationship that is wrong, which
+        # no per-field validator can police. Production's own defaults trip one
+        # of these, so this is reported rather than enforced.
+        notes = loop.get("warnings") or []
+        if notes:
+            loop_cards += (
+                "<section class='card'><h3>Settings that contradict each other</h3>"
+                "<ul>"
+                + "".join(f"<li>{_pulsedrop_cell(note)}</li>" for note in notes)
+                + "</ul><p class='muted'>Each of these values is valid on its own. They are"
+                " reported rather than refused because the symptom when they are wrong is not"
+                " an error, it is content that comes out quieter or less paired than asked"
+                " for.</p></section>"
+            )
+
+        shown = int(loop.get("shown") or 0)
+        loop_rows = "".join(
+            f"<tr><td>{_pulsedrop_cell(c.get('scheduled_for'))}</td>"
+            f"<td>{_pulsedrop_cell(c.get('due_in'))}</td>"
+            f"<td>{_pulsedrop_cell(c.get('state'))}</td>"
+            f"<td>{_pulsedrop_cell(c.get('surfaces'))}</td>"
+            f"<td><a href='/pulse/marketplace/{_pulsedrop_cell(c.get('listing_id'))}'>"
+            f"{_pulsedrop_cell(c.get('listing_title') or c.get('listing_id'))}</a></td>"
+            f"<td>{_pulsedrop_cell(c.get('seller_username') or c.get('seller_user_id'))}</td>"
+            f"<td>{_pulsedrop_cell(c.get('category'))}</td>"
+            f"<td>{_pulsedrop_cell(c.get('attempts'))}/{_pulsedrop_cell(c.get('max_attempts'))}</td>"
+            f"<td>{_pulsedrop_cell(c.get('failure_reason') or c.get('claimed_by'))}</td></tr>"
+            for c in loop.get("upcoming") or []
+        )
+        more = " ".join(
+            f"<a href='/admin/pulsedrop?next={n}'>next {n}</a>"
+            for n in (10, 100, 500) if n != schedule_limit
+        )
+        loop_cards += (
+            "<h2>Scheduled campaigns</h2>"
+            "<section class='card'><p class='muted'>Every row is one product and one release"
+            " time, publishing a post and a Reel together. A deep queue of the same few"
+            " products is not a healthy schedule, which is why this is a list and not a"
+            f" number. Showing {shown}. {more}</p>"
+            "<table class='table'><tr><th>Scheduled</th><th>Due</th><th>State</th><th>Surfaces</th>"
+            "<th>Listing</th><th>Seller</th><th>Category</th><th>Attempts</th><th>Note</th></tr>"
+            + (loop_rows or "<tr><td colspan=9>Nothing scheduled. With the loop on, the next"
+               " tick plans the horizon; with it off, this stays empty and PulseDrop publishes"
+               " opportunistically.</td></tr>")
+            + "</table></section>"
+        )
 
     setting_sections = "".join(
         f"<h2>{_pulsedrop_cell(group)}</h2><section class='grid'>"
@@ -113655,6 +113759,7 @@ def admin_pulsedrop_page():
     every post names the merchant and links to their listing.</p>
     <p>{html_escape(clean_html(message))}</p>
     {health_cards}
+    {loop_cards}
     {setting_sections}
     <h2>Run log</h2>
     <section class='card'><p class='muted'>PulseDrop publishing nothing is its normal healthy state — an empty

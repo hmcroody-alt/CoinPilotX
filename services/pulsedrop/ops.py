@@ -211,6 +211,71 @@ def renders(limit: int = 20) -> list[dict]:
     )
 
 
+def loop_view(*, limit: int = 10, now: datetime | None = None) -> dict:
+    """Pulse Loop's own state: depth, generation, contradictions, and what is next.
+
+    Why the schedule is shown as rows and not as a depth number
+    -----------------------------------------------------------
+    "240 campaigns queued" and "240 campaigns queued, all for the same product,
+    all at the same timestamp" are the same number. The depth figure answers
+    whether replenishment is keeping up, which is a question about the planner;
+    the rows answer whether the schedule is *worth* publishing, which is a
+    question about the catalog, and the two fail independently. Before this the
+    only way to see the horizon was a psql session against production.
+
+    ``campaigns.health`` is the source for the counts because it is also what an
+    alert reads, and a page that computed its own would eventually disagree with
+    the alert about whether the loop is in trouble. The join for titles is here
+    rather than there for the opposite reason: ``health`` is called on a cadence
+    and must stay two indexed counts, where this is called when a human opens a
+    page and can afford a join.
+    """
+    _ensure_schema()
+    try:
+        from . import campaigns
+    except Exception:  # pragma: no cover - import-time breakage of a submodule
+        log.warning("pulsedrop_ops_campaigns_unavailable", exc_info=True)
+        return {"readable": False, "upcoming": []}
+
+    try:
+        state = campaigns.health(now=now)
+    except Exception:
+        log.warning("pulsedrop_ops_loop_health_failed", exc_info=True)
+        state = {"readable": False}
+
+    # Open campaigns only, in publish order. The ``LEFT JOIN`` is deliberate: a
+    # campaign whose listing has since been deleted outright must still appear,
+    # because that row is the explanation for a release an operator is looking
+    # at, and an inner join would make it the one row they cannot see.
+    rows = _rows(
+        "SELECT c.id, c.cycle, c.listing_id, c.seller_user_id, c.category, c.state,"
+        " c.scheduled_for, c.rank_score, c.want_signal, c.want_reel, c.attempts,"
+        " c.max_attempts, c.claimed_by, c.failure_reason, c.released_reason,"
+        " l.title AS listing_title, u.username AS seller_username"
+        " FROM pulsedrop_campaigns c"
+        " LEFT JOIN marketplace_listings l ON l.id = c.listing_id"
+        " LEFT JOIN users u ON u.user_id = c.seller_user_id"
+        f" WHERE c.state IN ({', '.join('?' for _ in campaigns.OPEN_STATES)})"
+        " ORDER BY c.scheduled_for ASC, c.id ASC LIMIT ?",
+        (*campaigns.OPEN_STATES, max(1, min(500, int(limit)))),
+    )
+    moment = now or datetime.utcnow()
+    for row in rows:
+        row["due_in"] = _due_in(str(row.get("scheduled_for") or ""), moment)
+        # What the campaign promised, spelled out, because "1/1" is the thing
+        # this whole mission exists to guarantee and a column of two integers
+        # is not something anyone reads as a promise.
+        row["surfaces"] = "+".join(
+            part for part, want in (
+                ("signal", row.get("want_signal")),
+                ("reel", row.get("want_reel")),
+            ) if int(want or 0)
+        ) or "none"
+    state["upcoming"] = rows
+    state["shown"] = len(rows)
+    return state
+
+
 def health(run_log: list[dict], render_log: list[dict], *, now: datetime | None = None) -> dict:
     """The few facts worth putting above the fold, derived from the logs above.
 
@@ -312,14 +377,23 @@ def _due_in(next_run_at: str, now: datetime) -> str:
     return ""
 
 
-def dashboard(*, limit: int = 20, now: datetime | None = None) -> dict:
-    """One call, everything the page draws."""
+def dashboard(*, limit: int = 20, schedule_limit: int = 10, now: datetime | None = None) -> dict:
+    """One call, everything the page draws.
+
+    ``schedule_limit`` is separate from ``limit`` because the two answer
+    different questions at different lengths. Twenty is plenty of history —
+    anything older is a database query, not a glance. The horizon is hundreds
+    deep by design, and "show me the next hundred" is a real request: it is how
+    an operator checks that a ten-day schedule is varied before trusting it to
+    publish unattended for ten days.
+    """
     _ensure_schema()
     run_log = runs(limit)
     render_log = renders(limit)
     view = settings_view()
     return {
         "account": account_state(),
+        "loop": loop_view(limit=schedule_limit, now=now),
         "settings": view,
         "groups": groups(view),
         "runs": run_log,
