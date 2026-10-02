@@ -5012,8 +5012,13 @@
     "status": {
       "nextCheck": "Próxima revisión alrededor de las {{time}}",
       "nextCheckNone": "Los informes están en pausa.",
+      "generationPremium": "Los informes son una función Premium: los informes nuevos están en pausa hasta que renueves. Tu historial permanece aquí.",
+      "generationPushOptOut": "Los informes están en pausa porque las notificaciones push están desactivadas en tu cuenta. Vuelve a activarlas para reanudarlos.",
+      "generationPaused": "Los informes están en pausa para todos en este momento; estamos trabajando en ello.",
       "quiet": "Horas de silencio: {{start}} – {{end}}",
       "timezone": "Zona horaria: {{zone}}",
+      "timezoneDefault": "Zona horaria: {{zone}} (predeterminada: configura la tuya para ajustar las horas de silencio)",
+      "timezoneUnknown": "Zona horaria: {{zone}} (no pudimos leer tu zona guardada)",
       "pushOn": "Las notificaciones push están activadas.",
       "pushOff": "Las notificaciones push están desactivadas: los informes solo aparecen aquí.",
       "pushNoDevice": "Las notificaciones push no están configuradas en este dispositivo: los resúmenes solo aparecen aquí.",

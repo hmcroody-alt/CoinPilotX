@@ -5012,8 +5012,13 @@
     "status": {
       "nextCheck": "Next check around {{time}}",
       "nextCheckNone": "Briefings are paused.",
+      "generationPremium": "Briefings are a Premium feature — new briefings are paused until you renew. Your history stays here.",
+      "generationPushOptOut": "Briefings are paused because push notifications are off for your account. Turn push back on to resume them.",
+      "generationPaused": "Briefings are paused for everyone right now — we're working on it.",
       "quiet": "Quiet hours: {{start}} – {{end}}",
       "timezone": "Timezone: {{zone}}",
+      "timezoneDefault": "Timezone: {{zone}} (default — set yours to move quiet hours)",
+      "timezoneUnknown": "Timezone: {{zone}} (we couldn't read your saved zone)",
       "pushOn": "Push notifications are on.",
       "pushOff": "Push notifications are off — briefings appear here only.",
       "pushNoDevice": "Push isn't set up on this device — briefings appear here only.",

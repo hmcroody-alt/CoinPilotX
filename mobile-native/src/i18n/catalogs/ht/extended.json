@@ -4979,8 +4979,13 @@
     "status": {
       "nextCheck": "Pwochen verifikasyon anviwon {{time}}",
       "nextCheckNone": "Rezime yo an poz.",
+      "generationPremium": "Brifing se yon fonksyon Premium — nouvo brifing kanpe jiskaske ou renouvle. Istorik ou rete la.",
+      "generationPushOptOut": "Brifing kanpe paske notifikasyon push fèmen sou kont ou. Limen push ankò pou rekòmanse yo.",
+      "generationPaused": "Brifing kanpe pou tout moun kounye a — n ap travay sou li.",
       "quiet": "Lè trankil: {{start}} – {{end}}",
       "timezone": "Zòn lè: {{zone}}",
+      "timezoneDefault": "Zòn lè: {{zone}} (pa defo — mete pa w pou chanje lè silans yo)",
+      "timezoneUnknown": "Zòn lè: {{zone}} (nou pa t kapab li zòn lè ou te sere a)",
       "pushOn": "Notifikasyon push yo aktive.",
       "pushOff": "Notifikasyon push yo dezaktive — rezime yo parèt isit la sèlman.",
       "pushNoDevice": "Push pa konfigire sou aparèy sa a — rezime yo parèt isit la sèlman.",

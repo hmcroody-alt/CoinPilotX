@@ -72,6 +72,54 @@ export function pushStatusKey(status: BriefingDeliveryStatus): string {
 }
 
 /**
+ * Why no NEW briefing is coming, or null if one is. The companion to
+ * pushStatusKey on the other axis: push answers "will it reach my phone",
+ * this answers "will there be one at all".
+ *
+ * These are genuinely different failures and the card used to show neither. It
+ * printed "Next check around 18:00" off the briefing preference alone, so a
+ * lapsed Premium member — whose generation the server vetoes before it writes
+ * any row — was promised a briefing every 6 hours, forever, with nothing in the
+ * database to explain the silence.
+ *
+ * Returns null (not a key) when the backend predates generation_ready, so the
+ * caller keeps its old copy rather than asserting a reason it wasn't told.
+ */
+export function generationStatusKey(status: BriefingDeliveryStatus): string | null {
+  if (status.generation_ready === undefined || status.generation_ready) return null;
+  switch (status.generation_blocked_reason) {
+    case "premium_required":
+      return "briefings:status.generationPremium";
+    case "push_opt_out":
+      return "briefings:status.generationPushOptOut";
+    case "feature_disabled":
+      return "briefings:status.generationPaused";
+    default:
+      // "preference_off" is the user's own choice and the master switch right
+      // below already says so — no need to explain their own setting back.
+      return null;
+  }
+}
+
+/**
+ * Which timezone line to show. Nobody in production has ever stored a zone, so
+ * every account resolves to UTC — and printing a bare "Timezone: UTC" presents
+ * that fallback as a deliberate setting, which makes quiet hours landing in the
+ * user's afternoon look like an engine bug instead of a missing preference.
+ */
+export function timezoneStatusKey(status: BriefingDeliveryStatus): string {
+  switch (status.timezone_source) {
+    case "fallback":
+    case "error":
+      return "briefings:status.timezoneDefault";
+    case "unknown_zone":
+      return "briefings:status.timezoneUnknown";
+    default:
+      return "briefings:status.timezone";
+  }
+}
+
+/**
  * Defensive timestamp formatter: never throws, never invents a value.
  *
  * `zone` is the user's canonical briefing timezone and is NOT optional in
@@ -303,17 +351,19 @@ export function BriefingsHubScreen({ navigation }: Props) {
           <Text style={styles.sectionLabel}>{t("briefings:hub.statusTitle")}</Text>
           <Panel>
             <View style={styles.gap}>
-              {status.enabled && status.next_check_local ? (
+              {status.next_check_local ? (
                 <Text style={styles.statusLine}>
                   {t("briefings:status.nextCheck", { time: formatWhen(status.next_check_local, status.timezone) })}
                 </Text>
               ) : (
-                <Text style={styles.statusLine}>{t("briefings:status.nextCheckNone")}</Text>
+                <Text style={styles.statusLine}>
+                  {t(generationStatusKey(status) || "briefings:status.nextCheckNone")}
+                </Text>
               )}
               <Text style={styles.muted}>
                 {t("briefings:status.quiet", { start: status.quiet_start, end: status.quiet_end })}
               </Text>
-              <Text style={styles.muted}>{t("briefings:status.timezone", { zone: status.timezone })}</Text>
+              <Text style={styles.muted}>{t(timezoneStatusKey(status), { zone: status.timezone })}</Text>
               <Text style={styles.muted}>{t(pushStatusKey(status))}</Text>
             </View>
           </Panel>

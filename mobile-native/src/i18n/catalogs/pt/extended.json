@@ -5012,8 +5012,13 @@
     "status": {
       "nextCheck": "Próxima verificação por volta de {{time}}",
       "nextCheckNone": "Os briefings estão pausados.",
+      "generationPremium": "Os briefings são um recurso Premium — novos briefings estão pausados até você renovar. Seu histórico continua aqui.",
+      "generationPushOptOut": "Os briefings estão pausados porque as notificações push estão desativadas na sua conta. Reative o push para retomá-los.",
+      "generationPaused": "Os briefings estão pausados para todos neste momento — estamos resolvendo.",
       "quiet": "Horário de silêncio: {{start}} – {{end}}",
       "timezone": "Fuso horário: {{zone}}",
+      "timezoneDefault": "Fuso horário: {{zone}} (padrão — defina o seu para ajustar as horas de silêncio)",
+      "timezoneUnknown": "Fuso horário: {{zone}} (não conseguimos ler o fuso que você salvou)",
       "pushOn": "As notificações push estão ativadas.",
       "pushOff": "As notificações push estão desativadas — os briefings aparecem apenas aqui.",
       "pushNoDevice": "As notificações push não estão configuradas neste dispositivo — os briefings aparecem apenas aqui.",

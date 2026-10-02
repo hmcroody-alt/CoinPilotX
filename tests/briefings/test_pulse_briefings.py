@@ -2066,6 +2066,149 @@ class HubBackendTests(unittest.TestCase):
         self.assertEqual(status["push_blocked_reason"], "provider_disabled")
         conn.close()
 
+    def test_premium_lock_withholds_the_next_check_it_cannot_honour(self):
+        """The reported silent failure. evaluate_user_briefing vetoes a lapsed
+        member before CLAIM, so nothing is written and nothing is logged -- and
+        the hub went on printing "next check around ..." forever."""
+        conn = _fresh_conn()
+        self._register_device(conn, 45)
+        with mock.patch.object(engine, "_premium_briefings_allowed", return_value=False):
+            status = self._status(conn, 45)
+        self.assertFalse(status["generation_ready"])
+        self.assertEqual(status["generation_blocked_reason"], "premium_required")
+        self.assertIsNone(status["next_check_local"])
+        # Generation and push are independent axes: push here is perfectly
+        # healthy, and merging them would mislabel which half broke.
+        self.assertTrue(status["push_ready"])
+        self.assertIsNone(status["push_blocked_reason"])
+        conn.close()
+
+    def test_global_push_opt_out_blocks_generation_not_just_the_push_leg(self):
+        """push_notifications_allowed is checked BEFORE CLAIM, so a global
+        opt-out costs the user the whole briefing, not only its notification.
+        The hub has to say that rather than promise an in-app briefing."""
+        conn = _fresh_conn()
+        self._register_device(conn, 46)
+        conn.execute(
+            "INSERT INTO notification_preferences (user_id, category, enable_push_notifications) "
+            "VALUES (46,'global',0)"
+        )
+        conn.commit()
+        status = self._status(conn, 46)
+        self.assertFalse(status["generation_ready"])
+        self.assertEqual(status["generation_blocked_reason"], "push_opt_out")
+        self.assertIsNone(status["next_check_local"])
+        conn.close()
+
+    def test_premium_outranks_push_opt_out_as_the_reported_reason(self):
+        """Veto order must match evaluate_user_briefing's. Reporting the second
+        veto would send the user to fix a setting that changes nothing."""
+        conn = _fresh_conn()
+        conn.execute(
+            "INSERT INTO notification_preferences (user_id, category, enable_push_notifications) "
+            "VALUES (47,'global',0)"
+        )
+        conn.commit()
+        with mock.patch.object(engine, "_premium_briefings_allowed", return_value=False):
+            status = self._status(conn, 47)
+        self.assertEqual(status["generation_blocked_reason"], "premium_required")
+        conn.close()
+
+    def test_own_preference_off_is_reported_as_such_not_as_a_block(self):
+        conn = _fresh_conn()
+        engine.update_preferences(48, {"frequency": "off"}, conn=conn)
+        status = self._status(conn, 48)
+        self.assertEqual(status["generation_blocked_reason"], "preference_off")
+        self.assertIsNone(status["next_check_local"])
+        conn.close()
+
+    def test_feature_kill_switch_is_the_first_generation_veto(self):
+        conn = _fresh_conn()
+        self._register_device(conn, 49)
+        with mock.patch.dict(os.environ, {"BRIEFINGS_DISABLED": "1", "PULSE_BRIEFINGS_ENABLED": "false",
+                                          "PUSH_NOTIFICATIONS_ENABLED": "true"}):
+            status = engine.delivery_status(49, conn=conn)
+        self.assertEqual(status["generation_blocked_reason"], "feature_disabled")
+        self.assertIsNone(status["next_check_local"])
+        conn.close()
+
+    def test_generation_ready_still_yields_a_real_next_check(self):
+        conn = _fresh_conn()
+        region_preferences.update_preferences(52, {"time_zone": "America/New_York"}, conn=conn)
+        conn.commit()
+        status = self._status(conn, 52)
+        self.assertTrue(status["generation_ready"])
+        self.assertIsNone(status["generation_blocked_reason"])
+        self.assertIsNotNone(status["next_check_local"])
+        conn.close()
+
+    def test_timezone_source_separates_a_chosen_zone_from_the_utc_default(self):
+        """Nobody in production has ever stored a zone, so every account
+        resolves to UTC -- and a bare "UTC" read as a setting the user picked,
+        making quiet hours in their afternoon look like an engine bug."""
+        conn = _fresh_conn()
+        status = self._status(conn, 53)
+        self.assertEqual(status["timezone"], "UTC")
+        self.assertEqual(status["timezone_source"], "fallback")
+        region_preferences.update_preferences(53, {"time_zone": "Asia/Tokyo"}, conn=conn)
+        conn.commit()
+        status = self._status(conn, 53)
+        self.assertEqual(status["timezone"], "Asia/Tokyo")
+        self.assertEqual(status["timezone_source"], "stored")
+        conn.close()
+
+    def test_timezone_source_flags_a_stored_zone_it_could_not_read(self):
+        conn = _fresh_conn()
+        # Inserted directly: update_preferences validates the zone, so only a
+        # row written before that validation existed can look like this.
+        conn.execute(
+            "INSERT INTO pulse_region_preferences "
+            "(user_id, preferred_timezone, preferred_date_format, updated_at) VALUES (54,?,?,?)",
+            ("Mars/Olympus_Mons", "auto", "2026-08-30T00:00:00+00:00"),
+        )
+        conn.commit()
+        status = self._status(conn, 54)
+        self.assertEqual(status["timezone"], "UTC")
+        self.assertEqual(status["timezone_source"], "unknown_zone")
+        conn.close()
+
+    def test_timezone_source_reports_error_when_the_lookup_itself_fails(self):
+        """Scheduling must survive a missing preferences table, but the screen
+        must not then present the UTC it fell back to as the user's choice."""
+        conn = _fresh_conn(region_prefs=False)
+        status = self._status(conn, 55)
+        self.assertEqual(status["timezone"], "UTC")
+        self.assertEqual(status["timezone_source"], "error")
+        self.assertIsNotNone(status["next_check_local"])
+        conn.close()
+
+    def test_generation_vetoes_mirror_evaluate_user_briefing_in_order(self):
+        """generation_block_reason is a mirror, not a second source of truth.
+        If a veto is added to the engine and not here, the hub resumes promising
+        an evaluation that never runs -- the exact defect this replaced."""
+        import inspect
+        predicates = ("briefings_enabled()", 'prefs["enabled"]',
+                      "_premium_briefings_allowed", "push_notifications_allowed")
+
+        def order(func) -> list[str]:
+            seen: list[str] = []
+            for line in inspect.getsource(func).splitlines():
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    continue
+                for predicate in predicates:
+                    if predicate in stripped and predicate not in seen:
+                        seen.append(predicate)
+            return seen
+
+        engine_order = order(engine.evaluate_user_briefing)
+        mirror_order = order(engine.generation_block_reason)
+        self.assertTrue(engine_order, "no vetoes found -- the probe stopped matching")
+        # The mirror may veto on MORE than the engine does: briefings_enabled()
+        # is enforced upstream in run_scheduled_cycle, never reached per-user.
+        # It must not veto on LESS, and never in a different order.
+        self.assertEqual([p for p in mirror_order if p in engine_order], engine_order)
+
     def test_last_seen_column_upgrade_is_idempotent(self):
         # ensure_schema runs its ALTER on every call; a second pass must not
         # raise and must leave the column usable.

@@ -102,6 +102,13 @@ export type BriefingDeliveryStatus = {
   quiet_end: string;
   /** IANA zone the server schedules against — shown, never silently UTC. */
   timezone: string;
+  /**
+   * Whether `timezone` was chosen or fallen back to. "UTC" alone cannot say:
+   * nobody in production has ever stored a zone, so every account resolves to
+   * UTC and the card presented it as a setting the user picked. Optional — an
+   * older backend omits it, and the screen then says nothing rather than guess.
+   */
+  timezone_source?: "stored" | "fallback" | "unknown_zone" | "error";
   /** The user's push PREFERENCE (global opt-out). Not proof of delivery. */
   push_enabled: boolean;
   /**
@@ -113,6 +120,20 @@ export type BriefingDeliveryStatus = {
   /** Why push cannot arrive, when push_ready is false. */
   push_blocked_reason?: "provider_disabled" | "preference_off" | "no_devices" | null;
   push_device_count?: number;
+  /**
+   * Whether a NEW briefing will be generated at all. Independent of push: a
+   * lapsed Premium member is generation-blocked with push perfectly healthy,
+   * and a member with no device still gets a briefing in-app. Optional for the
+   * same reason push_ready is — an older backend does not send it.
+   */
+  generation_ready?: boolean;
+  /** Why generation is vetoed, when generation_ready is false. */
+  generation_blocked_reason?:
+    | "feature_disabled"
+    | "preference_off"
+    | "premium_required"
+    | "push_opt_out"
+    | null;
   briefings_feature_enabled: boolean;
   last_briefing: {
     id: number;

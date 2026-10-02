@@ -371,8 +371,8 @@ def update_preferences(user_id: int, values: dict[str, Any], *, conn=None) -> di
 
 # --- Scheduling (Stage 13/15/30/52) ----------------------------------------
 
-def _user_zone(conn, user_id: int) -> ZoneInfo:
-    """Resolve a user's zone through the canonical authority, never by guessing.
+def _resolve_zone(conn, user_id: int) -> tuple[ZoneInfo, str]:
+    """Resolve a user's zone AND where it came from.
 
     Order: the user's stored region preference, then UTC. There is no second
     account/region authority in PulseSoc -- pulse_region_preferences is it --
@@ -380,21 +380,31 @@ def _user_zone(conn, user_id: int) -> ZoneInfo:
     spans six zones, so a guess would move quiet hours to a time the user never
     chose. UTC is wrong in a way that is obvious and auditable; a guessed zone
     is wrong in a way that looks right.
+
+    The source is returned because UTC-by-fallback and UTC-by-choice schedule
+    identically but mean opposite things to a user: the hub printing a bare
+    "UTC" to someone who never set a zone reads as a setting they picked, so
+    quiet hours landing in their afternoon looks like an engine bug rather than
+    a missing preference. "stored" | "unknown_zone" | "fallback" | "error".
     """
     try:
         prefs = region_preferences.get_preferences(int(user_id), conn=conn)
     except Exception:  # noqa: BLE001 - timezone must never break a briefing
         logging.exception("BRIEFING_TIMEZONE_LOOKUP_FAILED user_id=%s", user_id)
-        return ZoneInfo("UTC")
+        return ZoneInfo("UTC"), "error"
 
     name = str(prefs.get("preferred_timezone") or "").strip()
     if not name:
-        return ZoneInfo("UTC")
+        return ZoneInfo("UTC"), "fallback"
     try:
-        return ZoneInfo(name)
+        return ZoneInfo(name), "stored"
     except (ZoneInfoNotFoundError, ValueError):
         logging.warning("BRIEFING_TIMEZONE_UNKNOWN user_id=%s zone=%s", user_id, name)
-        return ZoneInfo("UTC")
+        return ZoneInfo("UTC"), "unknown_zone"
+
+
+def _user_zone(conn, user_id: int) -> ZoneInfo:
+    return _resolve_zone(conn, user_id)[0]
 
 
 def _windows_for_frequency(frequency: str) -> tuple[int, ...]:
@@ -468,6 +478,35 @@ def _premium_briefings_allowed(user_id: int) -> bool:
     except Exception:  # noqa: BLE001 — never fail open
         logging.exception("briefing premium gate failed user_id=%s", user_id)
         return False
+
+
+def generation_block_reason(cur, user_id: int, prefs: dict[str, Any]) -> str | None:
+    """Why no NEW briefing will be generated for this user, or None if one will.
+
+    Mirrors evaluate_user_briefing's pre-CLAIM veto chain, in the SAME order, so
+    the hub cannot advertise an evaluation the engine will refuse. Each veto
+    there returns before CLAIM, which means nothing is written and nothing is
+    logged -- so without this the only observable symptom is a briefing that
+    never arrives.
+
+    Generation and push are independent axes and the screen must not merge them:
+    a lapsed member is generation-blocked while push is perfectly ready, and a
+    member with no registered device still gets a briefing that lands in-app
+    with only the push lost. Reporting them separately is what makes "which half
+    broke" answerable.
+    """
+    if not briefings_enabled():
+        return "feature_disabled"
+    if not prefs["enabled"] or prefs["frequency"] == "off":
+        return "preference_off"
+    if not _premium_briefings_allowed(user_id):
+        return "premium_required"
+    if not push_notifications_allowed(cur, user_id):
+        # A global push opt-out vetoes GENERATION, not merely the push leg -- see
+        # evaluate_user_briefing. So this user gets no briefing at all, not a
+        # silent in-app one, and the hub must not promise them a next check.
+        return "push_opt_out"
+    return None
 
 
 def evaluate_user_briefing(conn, user: dict[str, Any], *, now_utc: datetime | None = None,
@@ -926,13 +965,21 @@ def delivery_status(user_id: int, *, conn=None) -> dict[str, Any]:
     next_check_local is an evaluation estimate (window start + the user's own
     deterministic jitter) -- copy built on it must say "around", never promise
     delivery. Quiet hours and timezone come from the same canonical authorities
-    the scheduler uses, so what the screen shows is what the engine does."""
+    the scheduler uses, so what the screen shows is what the engine does.
+
+    It is computed ONLY when generation can actually run. This function used to
+    gate it on the briefing preference alone, so a user whose generation is
+    vetoed earlier -- a lapsed Premium member, or anyone who turned push off
+    globally -- was shown "Briefings on, next check around 18:00" forever while
+    evaluate_user_briefing refused them before CLAIM every cycle. That is the
+    silent failure: a promise on screen and no row in the database to explain
+    it."""
     owns = conn is None
     conn = conn or user_context.connect()
     ensure_schema(conn)
     cur = conn.cursor()
     prefs = get_preferences(user_id, conn=conn)
-    zone = _user_zone(conn, user_id)
+    zone, zone_source = _resolve_zone(conn, user_id)
     local_now = _now().astimezone(zone)
     transport = push_transport_status(cur, user_id)
     push_enabled = transport["preference_allows"]
@@ -943,8 +990,9 @@ def delivery_status(user_id: int, *, conn=None) -> dict[str, Any]:
     )
     row = cur.fetchone()
     last = dict(row) if row else None
+    generation_blocked_reason = generation_block_reason(cur, user_id, prefs)
     next_check = None
-    if prefs["enabled"] and prefs["frequency"] != "off" and briefings_enabled():
+    if generation_blocked_reason is None:
         jitter = _jitter_offset_minutes(user_id)
         candidates = []
         # Two days is not enough once quiet hours can veto a window: a user whose
@@ -975,12 +1023,19 @@ def delivery_status(user_id: int, *, conn=None) -> dict[str, Any]:
         "quiet_start": prefs["quiet_start"],
         "quiet_end": prefs["quiet_end"],
         "timezone": str(zone.key),
+        # Whether that zone was CHOSEN or fallen back to. UTC means two different
+        # things and the screen has to be able to tell them apart.
+        "timezone_source": zone_source,
         # push_enabled is the user's PREFERENCE. push_ready is whether a push can
         # actually be delivered. The screen must not conflate them.
         "push_enabled": push_enabled,
         "push_ready": transport["ready"],
         "push_blocked_reason": transport["reason"],
         "push_device_count": transport["device_count"],
+        # Whether a NEW briefing will be generated at all -- a separate axis from
+        # push, and the one next_check_local depends on.
+        "generation_ready": generation_blocked_reason is None,
+        "generation_blocked_reason": generation_blocked_reason,
         "briefings_feature_enabled": briefings_enabled(),
         "last_briefing": last,
         "next_check_local": next_check,
