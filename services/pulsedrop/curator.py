@@ -59,6 +59,7 @@ from datetime import datetime
 
 from services.pulsedrop import (
     account,
+    campaigns,
     config,
     distribution,
     diversity,
@@ -84,6 +85,16 @@ SKIPPED = "skipped"
 RENDER_PENDING = "render_pending"
 FAILED = "failed"
 ERROR = "error"
+#: Pulse Loop only. One surface of a scheduled pair landed and the other did
+#: not -- distinct from ``PUBLISHED`` because the promise was a pair, and
+#: distinct from ``FAILED`` because something did reach members.
+PARTIAL = "partial"
+#: Pulse Loop only, and the outcome the brief asks for by name: every eligible
+#: product already has a campaign in this generation and it is not yet time to
+#: start another. Its own outcome rather than a flavour of "nothing happened",
+#: because a loop that is working perfectly and has run out of products to talk
+#: about must not look like a loop that is broken.
+SUPPLY_LIMITED = "catalog_supply_limited"
 
 #: Deferrals that are true of the account rather than of a product, and so end
 #: the walk instead of advancing it. See the module docstring.
@@ -162,7 +173,30 @@ def _next_run_seconds(result: dict) -> int:
     """
     if result.get("outcome") == RENDER_PENDING:
         return max(60, int(config.reel_render_timeout_seconds()))
-    return int(config.evaluation_interval_seconds())
+
+    interval = int(config.evaluation_interval_seconds())
+    if not config.loop_enabled():
+        return interval
+
+    # With a schedule, the evaluation interval is the wrong clock. It is a
+    # sampling rate for "go and look at the catalog", and two hours is sensible
+    # for that; a campaign has an exact due time, and sampling every two hours
+    # for events ninety minutes apart publishes everything late by up to the
+    # difference. So wake when there is something to do.
+    #
+    # Capped at the interval, not replaced by it: an unreadable or empty
+    # schedule must not wake the curator every minute forever, and `None` from
+    # `seconds_until_next_due` covers both of those cases on purpose. Floored at
+    # 60 because waking sooner than that cannot publish anything the minimum gap
+    # between posts would allow.
+    try:
+        due_in = campaigns.seconds_until_next_due()
+    except Exception:
+        log.debug("pulsedrop_next_due_failed", exc_info=True)
+        return interval
+    if due_in is None:
+        return interval
+    return max(60, min(due_in, interval))
 
 
 def _execute(now: datetime, render_counters: dict) -> dict:
@@ -181,6 +215,9 @@ def _execute(now: datetime, render_counters: dict) -> dict:
 
     pulsedrop_user_id = account.ensure_account()
     system_ids = set(_BASE_SYSTEM_USER_IDS) | {int(pulsedrop_user_id or 0)}
+
+    if config.loop_enabled():
+        return _execute_loop(run_id, now, started, system_ids, render_counters)
 
     conn = None
     try:
@@ -224,6 +261,176 @@ def _execute(now: datetime, render_counters: dict) -> dict:
         evaluated=len(candidates), eligible=len(eligible),
         rejected=rejected, declines=declines, render_counters=render_counters,
     )
+
+
+def _execute_loop(run_id, now, started, system_ids, render_counters) -> dict:
+    """One tick of Pulse Loop: heal, prepare, publish what is due, replenish.
+
+    The same four phases in the same order every tick, because the order is
+    where the correctness lives:
+
+    1. **Heal.** Reclaim campaigns a crashed instance left mid-publish. First,
+       for the reason the opportunistic path reaps its claims first — a stuck
+       row is indistinguishable from work in progress, and the cheapest moment
+       to notice is before deciding anything.
+    2. **Prepare.** Enqueue Reel encodes for campaigns that are about to come
+       due. This is the phase that makes a *pair* possible: the encode happens
+       while nothing is waiting on it.
+    3. **Publish.** At most one campaign, claimed row-level inside the lease.
+    4. **Replenish, then enroll.** After publishing, so that a campaign
+       released because the catalog withdrew its product frees its slot in the
+       same tick that noticed. Replenishment is cheap when there is nothing to
+       do: two counting queries against an index, and the watermark returns
+       before any catalog read. Enrollment runs only when replenishment
+       declined — a deep queue is the one state in which a product can be in
+       the catalog and in no generation at all, because depth cannot answer
+       "is this product enrolled". See the call site.
+
+    Every phase is wrapped, because a tick that heals and then throws on
+    prewarm should still publish. The run row is written once, at the end, by
+    the same ``_record`` the opportunistic path uses: an operator asking why
+    PulseDrop has not posted should not have to know which mode it was in to
+    know where to look.
+    """
+    try:
+        campaigns.reap_stale_claims(now=now)
+    except Exception:
+        log.warning("pulsedrop_campaign_reap_failed", exc_info=True)
+
+    prepared = {}
+    try:
+        prepared = campaigns.prewarm(now=now)
+    except Exception:
+        log.warning("pulsedrop_campaign_prewarm_failed", exc_info=True)
+
+    published = {"outcome": campaigns.NONE_DUE}
+    try:
+        published = campaigns.execute_due(now=now, system_user_ids=system_ids)
+    except Exception:
+        log.exception("pulsedrop_campaign_execute_failed")
+        published = {"outcome": "ERROR", "reason": "execute_due raised"}
+
+    planned = {}
+    try:
+        planned = campaigns.plan(now=now, system_user_ids=system_ids)
+        if str(planned.get("outcome") or "") == campaigns.QUEUE_SATISFIED:
+            # The watermark declined to top up, which is the one state in which
+            # a product could be in the catalog and in no generation at all --
+            # so ask the narrower question before moving on. `reconcile` writes
+            # only campaigns for products with no campaign this cycle, so a
+            # deep queue is left exactly as it is and this is a no-op unless the
+            # catalog has actually grown.
+            #
+            # Note what this costs, because it is less than it looks. The reads
+            # are the two the watermark just skipped, so the saving is halved
+            # rather than spent; in exchange a newly listed product is enrolled
+            # on the next tick instead of waiting for a ten-day horizon to
+            # drain. And it is reached rarely: a catalog smaller than the target
+            # depth can never satisfy the watermark, so on PulseSoc's actual
+            # supply this branch does not run at all and enrollment is already
+            # prompt by way of ordinary replenishment.
+            enrolled = campaigns.reconcile(now=now, system_user_ids=system_ids)
+            if int(enrolled.get("planned") or 0) > 0:
+                planned = enrolled
+    except Exception:
+        log.warning("pulsedrop_campaign_plan_failed", exc_info=True)
+
+    outcome, reason = _loop_outcome(published, planned)
+    return _record(
+        run_id, outcome, reason, started,
+        evaluated=int(planned.get("evaluated") or 0),
+        eligible=int(planned.get("eligible") or 0),
+        rejected=planned.get("rejected") or {},
+        selected_listing_id=int(published.get("listing_id") or 0),
+        decision=_loop_decision(published, planned),
+        post_id=int(published.get("signal_post_id") or 0),
+        reel_post_id=int(published.get("reel_post_id") or 0),
+        renders_started=int(prepared.get("enqueued") or 0),
+        render_counters=render_counters,
+    )
+
+
+#: How a campaign outcome is reported in the run log. The left side is the
+#: campaign state machine's vocabulary; the right is the curator's, which
+#: predates it and which the admin page and every existing ``GROUP BY outcome``
+#: already speak. Translating here rather than inventing a parallel vocabulary
+#: is what keeps "why has PulseDrop not posted" answerable with one query
+#: regardless of which mode produced the row.
+#:
+#: Two mappings are worth justifying. ``AWAITING_RENDER`` becomes
+#: ``RENDER_PENDING`` because it is the same fact, and because
+#: ``_next_run_seconds`` already shortens the next tick for that outcome — the
+#: behaviour we want, inherited rather than re-implemented. ``PACED`` becomes
+#: ``DEFERRED`` with a reason drawn from ``ACCOUNT_LEVEL_DEFERRALS``, so a cap
+#: that stops the loop counts as the same thing as a cap that stops the walk.
+_LOOP_OUTCOMES: dict[str, str] = {
+    campaigns.PUBLISHED: PUBLISHED,
+    campaigns.PARTIAL: PARTIAL,
+    campaigns.FAILED: FAILED,
+    campaigns.RELEASED: SKIPPED,
+    campaigns.AWAITING_RENDER: RENDER_PENDING,
+    campaigns.PACED: DEFERRED,
+    campaigns.LOST_CLAIM: DEFERRED,
+    campaigns.DISABLED: DISABLED,
+}
+
+#: And the same for the planner, consulted only when nothing was due.
+_PLAN_OUTCOMES: dict[str, str] = {
+    campaigns.PLANNED: NOT_DUE,
+    campaigns.QUEUE_SATISFIED: NOT_DUE,
+    campaigns.NO_CANDIDATES: NO_CANDIDATES,
+    campaigns.SUPPLY_LIMITED: SUPPLY_LIMITED,
+    campaigns.DISABLED: DISABLED,
+}
+
+
+def _loop_outcome(published: dict, planned: dict) -> tuple[str, str]:
+    """``(outcome, reason)`` for the run row, given both phases' results.
+
+    The publication is the headline when there was one. When nothing was due,
+    the planner's answer is the interesting fact — and specifically
+    ``CATALOG_SUPPLY_LIMITED`` is, which is why it gets its own outcome rather
+    than being flattened into "nothing happened". A loop that is working
+    perfectly and has run out of products to talk about looks identical to a
+    broken loop in any log that does not make that distinction.
+    """
+    state = str(published.get("outcome") or "")
+    if state and state != campaigns.NONE_DUE:
+        mapped = _LOOP_OUTCOMES.get(state)
+        if mapped:
+            return mapped, str(published.get("reason") or state)
+        return ERROR, str(published.get("reason") or state)[:120]
+
+    plan_state = str(planned.get("outcome") or "")
+    mapped = _PLAN_OUTCOMES.get(plan_state)
+    if mapped == NOT_DUE:
+        count = int(planned.get("planned") or 0)
+        return NOT_DUE, (f"planned_{count}" if count else "queue_satisfied")
+    if mapped:
+        return mapped, str(planned.get("reason") or plan_state)[:120]
+    return NOT_DUE, plan_state or "idle"
+
+
+def _loop_decision(published: dict, planned: dict) -> str:
+    """The ``decision`` column: which surfaces a published campaign reached.
+
+    Reuses the free-text column the opportunistic path writes its format
+    decision into, so the two modes remain comparable in the run log. For a tick
+    that published nothing it records the horizon depth instead, because that is
+    the one number that makes an idle tick readable: "nothing was due and there
+    are 212 scheduled" and "nothing was due and there are 0" are the same
+    outcome and completely different situations.
+    """
+    state = str(published.get("outcome") or "")
+    if state in (campaigns.PUBLISHED, campaigns.PARTIAL):
+        surfaces = []
+        if published.get("signal_post_id"):
+            surfaces.append("signal")
+        if published.get("reel_post_id"):
+            surfaces.append("reel")
+        return "+".join(surfaces) or "none"
+    depth = planned.get("depth")
+    return f"depth={int(depth)}" if depth is not None else ""
 
 
 def _choose(ranked, history):

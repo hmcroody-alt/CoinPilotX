@@ -197,19 +197,31 @@ class History:
         Separate from the evaluation interval on purpose: several ticks in a row
         can each find a worthy candidate, and without this a backlog of newly
         approved listings becomes a burst.
+
+        The comparison is strict, and the boundary is not academic. The floor
+        says posts must be *at least* N seconds apart, so a gap of exactly N
+        satisfies it; an inclusive test would read exactly-N as too soon. That
+        used to cost nothing, because the opportunistic path samples the catalog
+        on its own interval and never lands on the boundary deliberately. Pulse
+        Loop does: the planner spaces campaigns by this very number, so every
+        campaign in a correctly built schedule arrives at exactly the boundary.
+        Inclusive, each one is deferred on its first attempt and the entire
+        horizon drifts by one interval per campaign -- a loop that looks healthy,
+        publishes forever, and is never once on time.
         """
         seconds = config.min_publish_interval_seconds()
         if seconds <= 0:
             return False
         last = self.last_published_at()
-        return bool(last and last >= (self.now - timedelta(seconds=seconds)).isoformat(timespec="seconds"))
+        return bool(last and last > (self.now - timedelta(seconds=seconds)).isoformat(timespec="seconds"))
 
     def reel_interval_blocked(self) -> bool:
+        """As :meth:`min_interval_blocked`, for Reels alone, and strict for the same reason."""
         seconds = config.reel_min_interval_seconds()
         if seconds <= 0:
             return False
         last = self.last_published_at(REEL)
-        return bool(last and last >= (self.now - timedelta(seconds=seconds)).isoformat(timespec="seconds"))
+        return bool(last and last > (self.now - timedelta(seconds=seconds)).isoformat(timespec="seconds"))
 
     def daily_cap_reached(self, surface: str | None = None) -> bool:
         """Rolling 24 hours, not calendar days.

@@ -4,7 +4,11 @@
 
 ``init_db`` is the schema for the product. PulseDrop's tables are the schema for
 one subsystem that may be switched off entirely, and putting them there would
-mean every boot of every process pays for DDL on five tables nobody is reading.
+mean every boot of every process pays for DDL on every table in :data:`_TABLES`
+whether or not anything is reading them. (That sentence used to name a count.
+The count was wrong twice — once when the audio bed table landed and again when
+campaigns did — which is its own small argument for not writing numbers that a
+later commit has no reason to look for.)
 The precedent for a subsystem owning its own DDL next to the code that queries
 it is ``pulse_ai/automated_image_pipeline._ensure_tables``, and the reason to
 prefer it is the one recorded against ``init_db``: a table added there after
@@ -200,6 +204,89 @@ CREATE TABLE IF NOT EXISTS pulsedrop_audio_beds (
 )
 """
 
+#: One row per product per cycle: the unit Pulse Loop plans, schedules and
+#: publishes.
+#:
+#: ## Why a campaign exists at all, given ``pulsedrop_publications``
+#:
+#: A publication is a record of something that *has happened*, written at the
+#: moment it happens. The whole of PulseDrop before Pulse Loop was that: decide
+#: now, publish now, record now. A campaign is the opposite tense — a row that
+#: says what *will* happen, written before it does — and the two cannot be the
+#: same table, because a publication's identity is its ``idempotency_key`` of
+#: surface plus listing plus *today's date*, which is unknowable for an intent
+#: that will not be acted on until Thursday.
+#:
+#: The campaign is also what makes a Signal and a Reel one act rather than two.
+#: Production shows why that matters: with the two surfaces claiming
+#: independently, the Signals all published in one burst and then sat on a
+#: 14-day product cooldown while the Reels carried on alone, so the account
+#: emitted nothing but ``REEL_ONLY`` for days while an operator who had asked for
+#: pairs believed they were getting them. Both publication ids hang off one
+#: campaign row here, so "did this product get its pair" is a column rather than
+#: an inference across two surfaces and a date range.
+#:
+#: ## Why ``scheduled_for`` is a time and not a position
+#:
+#: A queue position would have to be rewritten every time anything was inserted,
+#: released or reordered, and a crash halfway through that rewrite leaves a
+#: schedule with two sevenths and no sixth. An absolute time needs no
+#: renumbering: planning appends, releasing deletes, and "what is next" is
+#: ``ORDER BY scheduled_for`` over rows nobody else had to touch.
+#:
+#: ## Why the state machine has ``released`` as well as ``failed``
+#:
+#: These are the two different ways a campaign can end without publishing, and
+#: collapsing them would hide the one that matters. ``failed`` is ours — the
+#: encode died, the post call raised, we are out of attempts. ``released`` is the
+#: catalog's: the product went out of stock, lost its price, was unpublished or
+#: was moderated between the moment it was planned and the moment it came due.
+#:
+#: A released campaign is not an error and must not alert, but it *is* a slot
+#: that the replenisher has to refill, and the product has to become re-plannable
+#: later without being treated as recently published — because it was not
+#: published at all. A single ``failed`` state would have made the alert on
+#: failures fire on ordinary catalog churn, which is the fastest way to teach an
+#: operator to ignore it.
+#:
+#: ## Why ``cycle`` is on the row
+#:
+#: "Do not repeat a product until you have worked through the others" is a
+#: statement about generations, and the cheap version of it — order by last
+#: published time — silently degrades into a 37-product carousel the moment the
+#: catalog is smaller than the horizon. Stamping the generation makes exhaustion
+#: *visible*: a cycle with no plannable products left is the signal to either
+#: open the next one or report that supply is the constraint, and those are very
+#: different operational answers that a timestamp cannot distinguish.
+_CAMPAIGNS = """
+CREATE TABLE IF NOT EXISTS pulsedrop_campaigns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_key TEXT UNIQUE,
+    cycle INTEGER DEFAULT 1,
+    listing_id INTEGER DEFAULT 0,
+    seller_user_id INTEGER DEFAULT 0,
+    category TEXT DEFAULT '',
+    state TEXT DEFAULT 'scheduled',
+    scheduled_for TEXT,
+    rank_score REAL DEFAULT 0,
+    want_signal INTEGER DEFAULT 1,
+    want_reel INTEGER DEFAULT 1,
+    render_id INTEGER DEFAULT 0,
+    signal_post_id INTEGER DEFAULT 0,
+    reel_post_id INTEGER DEFAULT 0,
+    attempts INTEGER DEFAULT 0,
+    max_attempts INTEGER DEFAULT 3,
+    claimed_by TEXT DEFAULT '',
+    claimed_at TEXT,
+    failure_reason TEXT DEFAULT '',
+    released_reason TEXT DEFAULT '',
+    planned_at TEXT,
+    published_at TEXT,
+    created_at TEXT,
+    updated_at TEXT
+)
+"""
+
 _INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_pulsedrop_pub_listing ON pulsedrop_publications(listing_id, surface, published_at)",
     "CREATE INDEX IF NOT EXISTS idx_pulsedrop_pub_seller ON pulsedrop_publications(seller_user_id, published_at)",
@@ -209,9 +296,20 @@ _INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_pulsedrop_renders_state ON pulsedrop_renders(state, updated_at)",
     "CREATE INDEX IF NOT EXISTS idx_pulsedrop_runs_started ON pulsedrop_runs(started_at)",
     "CREATE INDEX IF NOT EXISTS idx_pulsedrop_beds_active ON pulsedrop_audio_beds(active, audio_track_id)",
+    # The hot path: "what is due now". Every tick runs it, so it is a covering
+    # order rather than a filter -- `state` first because it is the selective
+    # column (a horizon holds hundreds of 'scheduled' rows and a handful of
+    # anything else), `scheduled_for` second because that is the sort.
+    "CREATE INDEX IF NOT EXISTS idx_pulsedrop_campaigns_due ON pulsedrop_campaigns(state, scheduled_for)",
+    # Queue depth and cycle exhaustion, both of which are counts grouped by
+    # cycle, and the per-cycle enrollment anti-join.
+    "CREATE INDEX IF NOT EXISTS idx_pulsedrop_campaigns_cycle ON pulsedrop_campaigns(cycle, state)",
+    # "has this product ever been in a campaign, and how did it end" -- asked
+    # once per candidate by the planner's cooldown check.
+    "CREATE INDEX IF NOT EXISTS idx_pulsedrop_campaigns_listing ON pulsedrop_campaigns(listing_id, cycle)",
 )
 
-_TABLES = (_LEASES, _SETTINGS, _PUBLICATIONS, _RENDERS, _RUNS, _AUDIO_BEDS)
+_TABLES = (_LEASES, _SETTINGS, _PUBLICATIONS, _RENDERS, _RUNS, _AUDIO_BEDS, _CAMPAIGNS)
 
 
 def ensure_schema(conn=None) -> None:
