@@ -9,7 +9,7 @@
 - Rules that render an HTML page: **420**
   - admin: **188**, user-facing: **232**
 - JSON/API rules: **1232**
-- Jinja templates: **30**
+- Jinja templates: **31**
 
 Most web pages are not Jinja templates; they are assembled by Python HTML
 helpers in `bot.py`. The shell helpers, by route count:
