@@ -1576,12 +1576,12 @@ def test_the_panel_survives_a_row_that_answers_nothing():
 #: Update these *and* the token in the same commit. See the docstring on
 #: `CSS_HREF` for why the pair has to move together.
 ASSET_DIGESTS = {
-    "static/css/pulse_marketplace.css": "fd62405f07d9",
+    "static/css/pulse_marketplace.css": "769bf0e24aff",
     "static/js/pulse_marketplace.js": "d2d20c58cd87",
 }
 
 #: The token those digests were recorded against.
-ASSET_TOKEN = "storefront-20260928b"
+ASSET_TOKEN = "storefront-20261001b"
 
 
 def test_editing_a_storefront_asset_forces_its_cache_token_to_move():

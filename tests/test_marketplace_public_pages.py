@@ -649,11 +649,24 @@ class MarketplacePublicIndexPageTestCase(PublicMarketplaceFixture):
         self.assertNotIn("Request access", body)
 
     def test_the_grid_promotes_the_ios_app_once_rather_than_per_card(self):
-        """Standing product requirement, met without taxing every link."""
-        self.make_listing()
+        """Standing product requirement, met without taxing every link.
+
+        Both halves, because they are different promises and the store link is
+        only ever allowed beside the contextual one: "Open Marketplace in
+        PulseSoc" opens the surface the visitor is already looking at, while
+        the badge tells someone who does not have the app where to get it.
+
+        Counted rather than merely found. The requirement is that the page
+        promotes the app, not that it nags -- one promotion for a whole grid,
+        never one per card -- so three listings are published and the count is
+        still expected to be one.
+        """
+        for _ in range(3):
+            self.make_listing()
         body = self.index().get_data(as_text=True)
-        self.assertIn("Open the marketplace in the app", body)
-        self.assertIn("Download on the App Store", body)
+        self.assertEqual(body.count('data-app-link="marketplace"'), 1)
+        self.assertIn("Open Marketplace in PulseSoc", body)
+        self.assertEqual(body.count("Download on the App Store"), 1)
 
     def test_the_grid_renders_no_buttons_that_need_a_session(self):
         """Contact Seller, Save, Report and Promote are each a POST.
@@ -733,7 +746,7 @@ class MarketplacePublicIndexPageTestCase(PublicMarketplaceFixture):
         """
         body = self.index().get_data(as_text=True)
         self.assertIn('content="noindex,follow"', body)
-        self.assertIn("No products are published right now", body)
+        self.assertIn("No products are listed yet", body)
 
     def test_the_grid_is_cacheable(self):
         self.make_listing()
@@ -778,7 +791,7 @@ class MarketplacePublicIndexPageTestCase(PublicMarketplaceFixture):
         hidden_id = self.make_listing(status="draft")
         body = self.index().get_data(as_text=True)
         self.assertNotIn(f'href="/pulse/marketplace/{hidden_id}"', body)
-        self.assertIn("No products are published right now", body)
+        self.assertIn("No products are listed yet", body)
 
 
 class MarketplaceProductsSitemapTestCase(PublicMarketplaceFixture):

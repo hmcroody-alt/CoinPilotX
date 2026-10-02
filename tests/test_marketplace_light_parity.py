@@ -407,6 +407,95 @@ def _declarations(css):
     return re.findall(r"([a-z-]+)\s*:\s*([^;{}]+);", _strip_comments(css))
 
 
+#: Properties that describe a box rather than paint one. `background`,
+#: `color`, `color-scheme` and the custom properties are deliberately absent:
+#: those are the whole reason the document element shares a block with `.mkt`.
+BOX_PROPERTIES = (
+    "margin", "padding", "width", "height", "display", "gap", "position",
+    "top", "right", "bottom", "left", "inset", "float", "grid", "flex",
+    "border-radius", "columns", "contain",
+)
+
+
+def _rule_blocks(css):
+    """(selector list, declaration body) for every block in the stylesheet.
+
+    An `@media` prelude falls out as a selector of its own, which is harmless
+    here: nothing inside one is spelled `body.mkt-public` as a whole selector,
+    and a block nested in one still matches on its own because declaration
+    bodies contain no braces.
+    """
+    return re.findall(r"([^{}]*)\{([^{}]*)\}", _strip_comments(css))
+
+
+def test_the_public_document_element_inherits_the_palette_and_not_the_layout():
+    """The bug this rule exists for shipped inside this branch.
+
+    `public_document` sets `mkt-public` on `<body>` so the signed-out
+    storefront -- which has no member shell around it, and so no other source
+    for `--store-*` -- resolves the same light palette the cards do. The first
+    arrangement did that by adding the body to `.mkt`'s selector list, and
+    `.mkt` is not only a palette: it is also the content slab, with
+    `padding:16px` and, at the time, `margin-inline:-16px`.
+
+    So the document element picked up a -16px inline margin and started at
+    x=-16. Measured at 390px the slab then landed at left=-4 with 28px of dead
+    space on its right -- and `html,body{overflow-x:hidden}` in the public
+    document's own base rules meant no scrollbar appeared to say so. The page
+    was simply off-centre at every mobile width, which is the failure mode a
+    screenshot shows and a passing suite does not.
+
+    This is deliberately not a check on any particular value. It asserts the
+    separation: a document element and a content slab may share colours and
+    must not share a box.
+    """
+    css = open(CSS_PATH, encoding="utf-8").read()
+    offenders = []
+    for selector, body in _rule_blocks(css):
+        parts = [part.strip() for part in selector.split(",")]
+        if "body.mkt-public" not in parts:
+            continue
+        for prop, value in re.findall(r"([a-z-]+)\s*:\s*([^;{}]+);", body):
+            if prop.startswith("--"):
+                continue
+            if any(prop == name or prop.startswith(name + "-")
+                   for name in BOX_PROPERTIES):
+                offenders.append(f"{selector.strip()} {{ {prop}: {value.strip()} }}")
+
+    assert not offenders, (
+        "body.mkt-public is being given layout, not just a palette: %s. The "
+        "class exists so the public document can resolve the --store-* tokens; "
+        "put box properties on .mkt, which is the slab inside the document, "
+        "and not on the document itself." % "; ".join(offenders))
+
+
+def test_the_public_document_really_does_take_the_palette_from_that_block():
+    """Pairs with the test above so it cannot pass by deleting the selector.
+
+    Dropping `body.mkt-public` from the palette block would satisfy the rule
+    above perfectly -- and would serve every signed-out shopper a storefront
+    with no `--store-*` defined at all, falling back through ~330 `var()`
+    fallbacks to whatever the dark layer left behind.
+    """
+    css = open(CSS_PATH, encoding="utf-8").read()
+    declared = [
+        body for selector, body in _rule_blocks(css)
+        if "body.mkt-public" in [part.strip() for part in selector.split(",")]
+    ]
+    assert declared, (
+        "no block declares anything for body.mkt-public, so the signed-out "
+        "document resolves none of the storefront palette")
+    tokens = {
+        name
+        for body in declared
+        for name in re.findall(r"(--store-[a-z0-9-]+)\s*:", body)
+    }
+    assert len(tokens) == EXPECTED_TOKEN_COUNT, (
+        "body.mkt-public sees %d of the %d --store-* tokens. It has to see the "
+        "whole palette: it is the only declaration the public document gets."
+        % (len(tokens), EXPECTED_TOKEN_COUNT))
+
+
 def test_a_stroke_token_is_never_used_as_a_text_colour():
     """The bug this rule exists for shipped, and only a render caught it.
 

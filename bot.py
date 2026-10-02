@@ -59268,7 +59268,7 @@ def marketplace_storefront_product_context(cur, row):
     return related, related_variants, seller_listing_count
 
 
-def marketplace_storefront_app_cta(destination, resource_id=None):
+def marketplace_storefront_app_cta(destination, resource_id=None, store_badge=False):
     """The "Open in PulseSoc" affordance, as an addition and never a redirect.
 
     The website is the canonical, indexable surface for a product now, so this is
@@ -59297,14 +59297,28 @@ def marketplace_storefront_app_cta(destination, resource_id=None):
     design and the member is offered the choice -- which means this fix needs no
     AASA change, and so cannot disturb the Stripe onboarding paths that share
     that file.
+
+    `store_badge` adds the App Store link beside it, for the signed-out document
+    where the reader may not have the app at all. The two are different promises
+    and the store link is only ever allowed alongside the contextual one, never
+    instead of it -- the same rule `_app_link_cta.html` states for the templates
+    this document replaces. A member already has the app installed often enough
+    that the badge is noise on their page, so it stays off by default.
     """
 
     href = app_links.open_interstitial_url(destination, resource_id, "web")
     label = app_links.destination_label(destination, "Open in PulseSoc")
+    badge = ""
+    if store_badge:
+        badge = (
+            f' <a href="{html_escape(app_links.app_store_url())}" rel="noopener"'
+            f' data-app-link="app-store">{html_escape(app_promotion.APP_STORE_LABEL)}</a>'
+        )
     return (
         '<aside class="mkt-appcta">'
         f'<p>Prefer the app? <a href="{html_escape(href)}"'
-        f' data-app-link="{html_escape(destination)}">{html_escape(label)}</a></p>'
+        f' data-app-link="{html_escape(destination)}">{html_escape(label)}</a>'
+        f"{badge}</p>"
         "</aside>"
     )
 
@@ -59319,16 +59333,22 @@ def _marketplace_member_storefront_reply(page, status=200, extra_html=""):
     positions itself against the viewport is not part of a purchase panel, and
     threading it through `promote_html` would nest it inside one.
 
-    Member-only by design. The anonymous reader never reaches this function --
-    `_marketplace_public_index_response` and `_marketplace_public_product_response`
-    answer that reader, and they are the documents Google and Merchant Center
-    fetch. An earlier draft of this storefront served both audiences from one
-    `RenderedPage` through a public document of its own; that half was withdrawn
-    on integration rather than landed, because the public half already exists, is
-    indexed, and is the page the product feed is compared against. Two
-    implementations of one indexable page is how a feed and a page begin
-    disagreeing about a price, and that disagreement is a Merchant Center
-    misrepresentation finding rather than a rendering bug.
+    Member-only by design, but no longer the only wrapper around a storefront
+    page: `_marketplace_public_storefront_reply` below serves the same
+    `RenderedPage` to the anonymous reader through
+    `marketplace_storefront.public_document`.
+
+    That half was withdrawn once, on the objection that two implementations of
+    one indexable page is how a feed and a page begin disagreeing about a price,
+    and that such a disagreement is a Merchant Center misrepresentation finding
+    rather than a rendering bug. The objection was right about the risk and
+    wrong about which arrangement carried it. Two implementations was the
+    arrangement being *withdrawn to*: the member grid priced through
+    `marketplace_web.derive_price`, which reads variant rows, while the public
+    grid priced through `marketplace_seo.parse_price`, which reads only
+    `price_label` -- and four live listings disagreed between them, one of them
+    by $8.41 in the buyer's disfavour. One renderer for both audiences is what
+    makes that class of disagreement unrepresentable.
     """
 
     # `pulse_social_shell` returns a `Response` already -- wrapping it in a second
@@ -59354,6 +59374,71 @@ def _marketplace_member_storefront_reply(page, status=200, extra_html=""):
     # One URL, two documents, chosen by the session cookie. Without this a shared
     # cache may hand an anonymous reader the member frame -- which for a crawler
     # means being served the `noindex` copy of an indexable page.
+    response.headers["Vary"] = "Cookie"
+    return response
+
+
+def _marketplace_public_storefront_reply(page, listings_by_id=None, status=200):
+    """The same `RenderedPage`, wrapped for a reader with no session.
+
+    The entire difference between this and the member reply is the frame. The
+    body is `page.body_html` byte for byte, so the anonymous visitor and the
+    crawler see the catalogue the member sees -- the same cards, the same
+    derived prices, the same filters, sort and paging -- rather than a reduced
+    page that happens to live at the same URL.
+
+    `listings_by_id` is the payloads this request read, keyed by id. When it is
+    supplied and the page is the canonical unfiltered one, `index_schema_graph`
+    is attached on top of whatever the renderer already produced. The lookup is
+    by `page.listed_ids` rather than over the whole catalogue because the graph
+    must describe *this* document: the renderer filters, sorts and pages, and a
+    graph built from the pre-render list would name products the page does not
+    contain.
+
+    The gate is `canonical_path == BASE_PATH`, not merely `indexable`. A
+    department page is indexable too, but `index_schema_graph` hardcodes the
+    unfiltered URL as its `@id`, so emitting it there would publish one document
+    describing a different URL -- a self-contradiction a validator reports and a
+    crawler resolves by ignoring the page's own canonical.
+    """
+
+    rendered = []
+    for listing_id in page.listed_ids:
+        row = (listings_by_id or {}).get(listing_id)
+        if row:
+            rendered.append(row)
+    if listings_by_id is not None and page.canonical_path == marketplace_storefront.BASE_PATH:
+        # One `@graph` block rather than five loose nodes. `head_html` emits one
+        # <script> per entry in `jsonld`, and a bare `CollectionPage` with no
+        # `@context` of its own is not parseable schema -- the nodes also
+        # cross-reference each other by `@id`, which only resolves inside a
+        # shared graph.
+        page.jsonld = tuple(page.jsonld) + ({
+            "@context": "https://schema.org",
+            "@graph": marketplace_seo.index_schema_graph(rendered),
+        },)
+
+    response = webhook_app.make_response(marketplace_storefront.public_document(
+        page,
+        # The Smart App Banner is Safari's own affordance and costs the page
+        # nothing; `app_promotion` owns the app id so this route cannot name a
+        # second one. Deliberately not a body-level interstitial -- the brief
+        # forbids a barrier between a visitor and the catalogue, and iOS draws
+        # this one above the page rather than over it.
+        head_extra=app_promotion.smart_app_banner_meta(request.path),
+    ))
+    response.headers["Content-Type"] = "text/html; charset=utf-8"
+    response.status_code = status
+    # Shared-cacheable, and the flag is the half that makes it stick:
+    # `add_pwa_headers` stamps `no-store` on every `/pulse/` response unless a
+    # route has declared the body carries nothing personal. Nothing on this page
+    # is read from the session -- that is what `Viewer()` with no fields means.
+    g.pulse_public_cacheable = True
+    response.headers["Cache-Control"] = "public, max-age=300"
+    # One URL, two documents, chosen by the session cookie. Without this an
+    # intermediary may hand a member this frame, or hand a crawler the member
+    # frame -- which for a crawler means being served the `noindex` copy of an
+    # indexable page.
     response.headers["Vary"] = "Cookie"
     return response
 
@@ -59423,7 +59508,19 @@ def _marketplace_storefront_unavailable_response(page, user):
 
 
 def _marketplace_public_index_response(listings):
-    """The marketplace grid for a reader with no session -- including Googlebot.
+    """The previous marketplace grid for a reader with no session.
+
+    No callers. Retained for one release, with
+    `templates/marketplace_index_public.html`, as the rollback for the
+    unification in `pulse_marketplace_page`: that route now renders one
+    `RenderedPage` for both audiences and differs only in the wrapper. Deleting
+    this in the same change would have left no way back from a storefront
+    regression on the one marketplace surface a crawler reads.
+
+    Do not reach for it as an alternative renderer. Serving it to anyone again
+    reinstates the defect the unification closed -- its cards price through
+    `marketplace_seo.parse_price`, which reads `price_label` alone, while the
+    product page it links to prices through the variant rows.
 
     Short for the same reason its product-page twin is short: every value on
     every card comes from ``marketplace_seo.index_card``, which derives it from
@@ -59505,58 +59602,18 @@ def pulse_marketplace_page():
     # `/pulse/marketplace/<id>`, which applies both predicates, so a grid that
     # applied fewer would be rendering its own links as 404s.
     from services.discovery_visibility import discovery_visible_sql
-    if not user:
-        # Scoped to the anonymous branch rather than run for everyone. The member
-        # branch below reads the same two predicates but needs a wider row -- the
-        # seller columns the storefront's seller card and "Message seller" are built
-        # from -- and a higher ceiling than 40, so it issues its own query. Leaving
-        # this one above the branch meant every signed-in visitor paid for a
-        # 40-row read whose result was then discarded.
-        # Guarded for the same reason the member branch below is, and it is the
-        # same failure: an unreadable catalogue answered 500 and rendered the
-        # trace page as the Marketplace's contents. This is the half a crawler
-        # actually fetches, so leaving it bare while the member half answered 503
-        # protected the audience that was not at risk.
-        #
-        # "Empty" is the claim this must not fall back to. `_public_index_response`
-        # treats no rows as an empty catalogue and says so on the page -- true for
-        # a new deployment, and a failed read has not earned it.
-        try:
-            cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
-                FROM marketplace_listings l
-                LEFT JOIN users u ON u.user_id=l.seller_user_id
-                LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-                WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
-                  AND {discovery_visible_sql('u')}
-                ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
-            listings = [dict(row) for row in cur.fetchall()]
-            # The public grid is built from `pulse_marketplace_listing_payload`, the
-            # same shaping function the mobile API and the public product page use,
-            # rather than from raw rows formatted here. That costs one extra query for
-            # the media rows and buys the thing that matters on a page Google reads: a
-            # card cannot disagree with the product page it links to about the title,
-            # the image or the price.
-            listing_ids = [int(row.get("id") or 0) for row in listings]
-            media_by_listing = pulse_marketplace_media_rows_for_listings(cur, listing_ids)
-        except Exception:
-            conn.close()
-            app.logger.exception("marketplace public grid read failed")
-            return _marketplace_storefront_unavailable_response(
-                marketplace_storefront.render_discovery(
-                    listings=[],
-                    variants_by_listing={},
-                    filters=marketplace_storefront.Filters.from_args(request.args),
-                    viewer=marketplace_storefront.Viewer(),
-                    app_cta_html=marketplace_storefront_app_cta("marketplace"),
-                    load_error=True,
-                ),
-                user,
-            )
-        conn.close()
-        return _marketplace_public_index_response([
-            pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), []))
-            for row in listings
-        ])
+    # One query, one renderer, both audiences. The anonymous reader used to get a
+    # narrower 40-row read of its own, shaped into cards by `marketplace_seo` and
+    # rendered by a Jinja template -- a second implementation of this page that
+    # could not filter, sort or page, and that priced its cards from
+    # `price_label` alone while this read prices them from the variant rows. Four
+    # live listings disagreed between the two, one of them by $8.41 against the
+    # buyer. The difference between a member and a visitor belongs in the frame
+    # and in the affordances, not in the catalogue.
+    load_error = False
+    listings = []
+    variants_by_listing = {}
+    cart_count = None
     # The member grid that used to live here is replaced, not extended. It built
     # its own cards from raw rows -- a hand-rolled price pill, a seller line, an
     # empty state reading "Marketplace is warming up." and a caption promising
@@ -59567,10 +59624,6 @@ def pulse_marketplace_page():
     # What replaces it reads the same two visibility predicates and renders through
     # the storefront engine, so the member sees the catalogue the app sees, with
     # the facets in the query string where they can be shared and bookmarked.
-    load_error = False
-    listings = []
-    variants_by_listing = {}
-    cart_count = None
     try:
         cur.execute(
             f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}
@@ -59590,7 +59643,14 @@ def pulse_marketplace_page():
         # closes; safe here because the helper swallows its own failures and
         # answers `None`, so a cart it could not read cannot turn the whole
         # catalogue into an error page.
-        cart_count = marketplace_storefront_cart_count(cur, user.get("user_id"))
+        #
+        # Only for a member. A cart is owned by a user id today, so there is no
+        # cart to count for a visitor and `None` is the honest answer -- it
+        # leaves the header's cart link and the per-card Add to cart buttons off
+        # rather than rendering controls that would 401 on click. Giving the
+        # visitor a real cart is the guest-cart stage, and it is a schema change.
+        if user:
+            cart_count = marketplace_storefront_cart_count(cur, user.get("user_id"))
     except Exception:
         # A failed read is an error state, never an empty one. "No products are
         # listed yet" is a claim about the catalogue, and a page that could not
@@ -59605,42 +59665,48 @@ def pulse_marketplace_page():
     # to a surface that exists, and the wording states the visitor's actual
     # position -- no merchant record, an application under review, or approved --
     # rather than a generic invitation that is wrong for two of the three.
-    # No `if user` guard: the anonymous branch above has already returned, so
-    # every reader reaching this line has an account and all three states below
-    # are reachable.
-    merchant_actions = [
-        f'<a class="mkt-ghost" href="{html_escape(app_first_href("seller_dashboard"))}">'
-        f"Merchant dashboard</a>"
-    ]
-    if seller and seller.get("status") == "approved":
-        merchant_actions.insert(
-            0,
-            f'<a class="mkt-cta" href="{html_escape(app_first_href("marketplace_create"))}">'
-            f"Create a product</a>",
+    #
+    # Member-only, and this is the one part of the page that genuinely depends on
+    # who is asking: all three states are statements about the reader's own
+    # merchant record, and all three link to surfaces that need a session. A
+    # visitor gets no panel rather than a fourth, logged-out variant of it --
+    # which is also what keeps the anonymous document shared-cacheable, since
+    # nothing left on it varies by reader.
+    merchant_html = ""
+    if user:
+        merchant_actions = [
+            f'<a class="mkt-ghost" href="{html_escape(app_first_href("seller_dashboard"))}">'
+            f"Merchant dashboard</a>"
+        ]
+        if seller and seller.get("status") == "approved":
+            merchant_actions.insert(
+                0,
+                f'<a class="mkt-cta" href="{html_escape(app_first_href("marketplace_create"))}">'
+                f"Create a product</a>",
+            )
+            merchant_note = "You are an approved merchant."
+        elif seller:
+            merchant_note = (
+                "Your merchant application is "
+                f"{html_escape(clean_html(seller.get('status') or 'pending_review'))}. "
+                "Products unlock after approval."
+            )
+        else:
+            merchant_actions.insert(
+                0,
+                f'<a class="mkt-cta" href="{html_escape(app_first_href("seller_apply"))}">'
+                f"Apply as a merchant</a>",
+            )
+            merchant_note = (
+                "Sell on PulseSoc. Applications are reviewed before a store can list products."
+            )
+        merchant_html = (
+            '<section class="mkt-merchant" aria-labelledby="mkt-merchant-h">'
+            '<h2 id="mkt-merchant-h">Sell on PulseSoc</h2>'
+            f"<p>{merchant_note}</p>"
+            f'<div class="mkt-actions">{"".join(merchant_actions)}</div>'
+            "</section>"
         )
-        merchant_note = "You are an approved merchant."
-    elif seller:
-        merchant_note = (
-            "Your merchant application is "
-            f"{html_escape(clean_html(seller.get('status') or 'pending_review'))}. "
-            "Products unlock after approval."
-        )
-    else:
-        merchant_actions.insert(
-            0,
-            f'<a class="mkt-cta" href="{html_escape(app_first_href("seller_apply"))}">'
-            f"Apply as a merchant</a>",
-        )
-        merchant_note = (
-            "Sell on PulseSoc. Applications are reviewed before a store can list products."
-        )
-    merchant_html = (
-        '<section class="mkt-merchant" aria-labelledby="mkt-merchant-h">'
-        '<h2 id="mkt-merchant-h">Sell on PulseSoc</h2>'
-        f"<p>{merchant_note}</p>"
-        f'<div class="mkt-actions">{"".join(merchant_actions)}</div>'
-        "</section>"
-    )
 
     page = marketplace_storefront.render_discovery(
         listings=listings,
@@ -59650,7 +59716,11 @@ def pulse_marketplace_page():
         # `Filters.from_args` parses and clamps; it never trusts.
         filters=marketplace_storefront.Filters.from_args(request.args),
         viewer=marketplace_storefront_viewer(user),
-        app_cta_html=marketplace_storefront_app_cta("marketplace"),
+        # The store badge only on the signed-out document: a member reading this
+        # page in a browser may still not have the app, but they have an account,
+        # and `app_promotion` already carries the install prompt on the surfaces
+        # a member sees. A visitor's first and possibly only visit is here.
+        app_cta_html=marketplace_storefront_app_cta("marketplace", store_badge=not user),
         merchant_html=merchant_html,
         load_error=load_error,
         # Turns on the cart link and the per-card Add to cart buttons. `None`
@@ -59661,7 +59731,21 @@ def pulse_marketplace_page():
     # 503, not 200, when the catalogue could not be read. Nothing indexes this
     # page, but a member-facing 200 over an apology is still a page claiming to
     # be the Marketplace, and the browser cache would keep it.
-    response = _marketplace_member_storefront_reply(page, status=503 if load_error else 200)
+    status = 503 if load_error else 200
+    if user:
+        response = _marketplace_member_storefront_reply(page, status=status)
+    else:
+        response = _marketplace_public_storefront_reply(
+            page,
+            # Withheld on a failed read, which suppresses the `ItemList`
+            # entirely. An empty list is a claim that the catalogue holds nothing
+            # worth ranking, and a page that could not read the catalogue has not
+            # earned it.
+            listings_by_id=None if load_error else {
+                int(row.get("id") or 0): row for row in listings
+            },
+            status=status,
+        )
     if load_error:
         # Two headers the success path must not carry and the failure path must.
         # `Retry-After` is the half of a 503 that says "come back" -- without it a
@@ -59670,6 +59754,13 @@ def pulse_marketplace_page():
         # of every visitor who follows the same link for two minutes.
         response.headers["Cache-Control"] = "no-store"
         response.headers["Retry-After"] = "120"
+        # Cleared after the public reply set it. The header above would survive
+        # on its own -- `add_pwa_headers` uses `setdefault` for a page that
+        # declared itself cacheable -- but the flag is the declaration, and a
+        # response that says "come back in two minutes" has withdrawn it. With
+        # it cleared the same hook also adds `Pragma` and `Expires`, which is
+        # what an HTTP/1.0 intermediary reads instead of `Cache-Control`.
+        g.pulse_public_cacheable = False
     return response
 
 

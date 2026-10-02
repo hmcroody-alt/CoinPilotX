@@ -88,8 +88,8 @@ BASE_PATH = "/pulse/marketplace"
 #: browser holding the previous CSS would paint the new light-page markup with
 #: dark-page rules — white text on a white card — so this is precisely the bump
 #: the comment above exists to force.
-CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20260928b"
-JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20260928b"
+CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20261001b"
+JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20261001b"
 
 #: Cards per grid page. Mirrors `marketplace_web.PAGE_SIZE` so pagination maths
 #: has one source.
@@ -211,6 +211,13 @@ class RenderedPage:
     #: and Discord all render a product card differently, and the value is a
     #: fact about the page, so it belongs beside the rest of the metadata.
     og_type: str = "website"
+    #: The listing ids this page actually rendered, in the order it rendered
+    #: them. Reported rather than recomputed because filtering, sorting and
+    #: paging all happen inside `render_discovery`: a caller that wants to
+    #: describe this page's contents in structured data would otherwise have to
+    #: re-derive the result set, and the copy that drifted would be the one
+    #: Google reads. Empty on pages that are not lists.
+    listed_ids: tuple[int, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -1010,7 +1017,21 @@ def render_discovery(
     # catalogue" as the Marketplace's contents, and the department page would rank
     # for its own error message. The URL is still worth crawling later, so this
     # stays `noindex,follow` like the other three rather than becoming `nofollow`.
-    indexable = not filters.q and filters.page == 1 and known_category and not load_error
+    #
+    # ...and a fifth: a catalogue with nothing in it at all. A URL that answers
+    # 200 with no products on it is the soft-404 pattern Google names, and on a
+    # new deployment it is a real state rather than a hypothetical one. Keyed on
+    # `total_all`, the size of the whole eligible catalogue, and deliberately not
+    # on the post-filter result count — an existing department that happens to be
+    # out of stock today is a real page that should keep its ranking, which is
+    # the distinction the `known_category` check above already draws.
+    indexable = (
+        not filters.q
+        and filters.page == 1
+        and known_category
+        and not load_error
+        and total_all > 0
+    )
     robots_extra = "" if indexable else "noindex,follow"
 
     return RenderedPage(
@@ -1031,6 +1052,7 @@ def render_discovery(
             if item
         ),
         assets_html=assets_html(),
+        listed_ids=tuple(int(row.get("id") or 0) for row in page.items),
     )
 
 
@@ -1934,30 +1956,83 @@ def head_html(page: RenderedPage, *, origin: str = mw.PUBLIC_ORIGIN) -> str:
 # one stylesheet and one set of structured data, and puts the entire difference
 # between the two experiences in the frame rather than in the content.
 
+# Light, because the storefront it frames is light.
+#
+# This block used to paint a dark gradient page and dark-theme chrome, which
+# was right when it was written against the rest of the site and wrong for the
+# one subtree it actually wraps: `.mkt` resolves the native app's *light* store
+# palette, so the result was a white content column inset in a near-black page
+# — a dark band down either side at every viewport from 320px up, and the
+# widest at desktop. Painting the document in the storefront's own surface is
+# the fix; colouring the gutters would only have moved the seam.
+#
+# Every colour below is a `--store-*` token rather than a literal. The tokens
+# are declared on `body.mkt-public` by `pulse_marketplace.css`, which this
+# document links, and `var()` resolves against the cascade on the element — so
+# these rules read the same transcription of `storeLight.ts` that the cards do
+# and cannot drift from them. The fallbacks are the matching light values, for
+# the one case that would otherwise paint dark text on dark: the stylesheet
+# failing to load.
+#
+# The masthead stays dark on purpose. A black header over a light catalogue is
+# what the native store does and what the Business surfaces lock to; it is not
+# a leftover of the dark document.
 _PUBLIC_BASE_CSS = (
-    ":root{color-scheme:dark}"
     "*{box-sizing:border-box}"
     "html,body{max-width:100%;overflow-x:hidden}"
-    "body{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),"
-    "linear-gradient(145deg,#050b14,#081421);color:#f2fbff;"
+    "body{margin:0;background:var(--store-bg-page,#eaeded);"
+    "color:var(--store-text-primary,#0f1111);"
     "font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;"
     "-webkit-font-smoothing:antialiased}"
     ".mkt-doc{width:min(100% - 24px,1180px);margin:0 auto;"
-    "padding:max(16px,env(safe-area-inset-top)) 0 calc(56px + env(safe-area-inset-bottom))}"
-    ".mkt-doc-bar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;"
-    "justify-content:space-between;padding:12px 0 18px}"
+    "padding:0 0 calc(56px + env(safe-area-inset-bottom))}"
+    # Full-bleed so the dark masthead reaches both edges of the window rather
+    # than ending where the centred measure does, which is the same seam this
+    # block exists to remove.
+    ".mkt-doc-bar{background:var(--store-bg-header,#0b0b0c);"
+    "margin:0 calc(50% - 50vw) 18px;padding:max(10px,env(safe-area-inset-top)) "
+    "calc(50vw - 50% + 4px) 10px;display:flex;flex-wrap:wrap;align-items:center;"
+    "gap:12px;justify-content:space-between}"
     ".mkt-doc-brand{display:inline-flex;align-items:center;gap:8px;font-weight:900;"
-    "font-size:18px;color:#f2fbff;text-decoration:none;letter-spacing:-.01em}"
+    "font-size:18px;color:var(--store-text-on-dark,#fff);text-decoration:none;"
+    "letter-spacing:-.01em}"
     ".mkt-doc-bar nav{display:flex;flex-wrap:wrap;gap:8px}"
-    ".mkt-doc-bar nav a{font-size:13px;font-weight:700;text-decoration:none;color:#cfe9f5;"
-    "border:1px solid rgba(110,223,246,.22);border-radius:999px;padding:7px 13px}"
-    ".mkt-doc-bar nav a:hover{border-color:rgba(110,223,246,.5)}"
-    ".mkt-doc-bar nav a.is-primary{background:linear-gradient(135deg,#32e6b3,#61d8ff);"
-    "color:#06101b;border-color:transparent}"
-    ".mkt-doc-foot{margin-top:40px;padding-top:18px;border-top:1px solid rgba(110,223,246,.16);"
-    "font-size:13px;color:#9fb5c0;display:grid;gap:8px}"
-    ".mkt-doc-foot a{color:#61d8ff}"
-    ".mkt-doc a:focus-visible,.mkt-doc button:focus-visible{outline:2px solid #61d8ff;outline-offset:2px}"
+    ".mkt-doc-bar nav a{font-size:13px;font-weight:700;text-decoration:none;"
+    "color:var(--store-text-on-dark-muted,#c7cdd3);"
+    "border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:7px 13px}"
+    ".mkt-doc-bar nav a:hover{border-color:rgba(255,255,255,.5);"
+    "color:var(--store-text-on-dark,#fff)}"
+    ".mkt-doc-bar nav a.is-primary{background:linear-gradient("
+    "135deg,var(--store-cta-from,#2ee6a8),var(--store-cta-to,#22c48d));"
+    "color:var(--store-cta-text,#04231a);border-color:transparent}"
+    ".mkt-doc-foot{margin-top:40px;padding-top:18px;"
+    "border-top:1px solid var(--store-border-hairline,#d5d9d9);"
+    "font-size:13px;color:var(--store-text-muted,#565959);display:grid;gap:10px}"
+    ".mkt-doc-foot a{color:var(--store-text-link,#0a7050)}"
+    ".mkt-doc-links{display:flex;flex-wrap:wrap;gap:8px 18px}"
+    ".mkt-doc a:focus-visible,.mkt-doc button:focus-visible{"
+    "outline:2px solid var(--store-select-border,#189669);outline-offset:2px}"
+)
+
+
+#: The four commerce policy pages, plus the company pages a shopper looks for
+#: before handing over a card. Duplicated from `_public_shell.html`'s footer
+#: rather than imported because that is a Jinja template and this is a Python
+#: string builder; `tests/test_marketplace_public_pages.py` asserts the two
+#: carry the same commerce set, which is the part Merchant Center's review
+#: looks for from the landing page. A sitemap is not a path a reviewer follows.
+_PUBLIC_FOOTER_LINKS = (
+    ("/", "Home"),
+    ("/app", "iPhone app"),
+    ("/about", "About"),
+    ("/help", "Help"),
+    ("/terms", "Terms"),
+    ("/privacy", "Privacy"),
+    ("/support", "Support"),
+    ("/returns", "Returns"),
+    ("/refund-policy", "Refunds"),
+    ("/shipping", "Shipping"),
+    ("/contact", "Contact"),
 )
 
 
@@ -1966,7 +2041,7 @@ def public_document(
     *,
     origin: str = mw.PUBLIC_ORIGIN,
     sign_in_href: str = "/login",
-    app_cta_html: str = "",
+    head_extra: str = "",
 ) -> str:
     """The signed-out, indexable document for one storefront page.
 
@@ -1975,8 +2050,30 @@ def public_document(
     not there — nothing else. All commerce markup is `page.body_html`, byte for
     byte the same string the member shell receives, so the two experiences
     cannot drift apart in content and there is no second storefront to maintain.
+
+    `mkt-public` on the body is what stops this document framing the storefront
+    in the wrong colour. The storefront subtree is deliberately light (see the
+    `.mkt` palette block in `pulse_marketplace.css`), this document's base rules
+    are dark, and a light panel inset in a dark page paints a dark band down
+    either side of the content — measured at every viewport from 320px up. The
+    class lets that stylesheet claim the page surface too, scoped so it cannot
+    reach a document that is not a storefront.
+
+    `head_extra` is for tags the route owns rather than the renderer: today the
+    Smart App Banner, whose app-id comes from the App Store URL that
+    `bot.app_link_context` already treats as the single authority.
+
+    There is deliberately no `app_cta_html` here, though an earlier draft had
+    one. `render_discovery` and `render_product` already place that CTA inside
+    the body, because the member shell receives nothing but the body and the
+    promotion has to reach that reader too. A second slot in this wrapper is
+    therefore not a placement choice, it is a second copy — which is what the
+    route hit the first time it passed one.
     """
     lang = "en"
+    footer_links = "".join(
+        f'<a href="{esc(href)}">{esc(label)}</a>' for href, label in _PUBLIC_FOOTER_LINKS
+    )
     return (
         "<!doctype html>"
         f'<html lang="{lang}">'
@@ -1985,11 +2082,12 @@ def public_document(
         '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
         f"<title>{esc(page.title)}</title>"
         f"{head_html(page, origin=origin)}"
+        f"{head_extra}"
         '<link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=storefront-20260926a">'
         f"<style>{_PUBLIC_BASE_CSS}</style>"
         f"{page.assets_html}"
         "</head>"
-        "<body>"
+        '<body class="mkt-public">'
         '<div class="mkt-doc">'
         '<header class="mkt-doc-bar">'
         f'<a class="mkt-doc-brand" href="{esc(BASE_PATH)}">PulseSoc Marketplace</a>'
@@ -1999,7 +2097,6 @@ def public_document(
         f'<a class="is-primary" href="{esc(sign_in_href)}">Sign in</a>'
         "</nav>"
         "</header>"
-        f"{app_cta_html}"
         "<main>"
         f"{page.body_html}"
         "</main>"
@@ -2007,6 +2104,7 @@ def public_document(
         "<p>Products are listed by independent PulseSoc sellers. "
         f'<a href="{esc(BASE_PATH)}">Browse the Marketplace</a> or '
         '<a href="/pulse">join PulseSoc</a> to message a seller.</p>'
+        f'<nav class="mkt-doc-links" aria-label="PulseSoc">{footer_links}</nav>'
         "</footer>"
         "</div>"
         "</body></html>"
