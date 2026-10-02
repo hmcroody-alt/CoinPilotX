@@ -182,6 +182,21 @@ class PublicMarketplaceFixture(unittest.TestCase):
         conn.close()
         return listing_id
 
+    def make_variant(self, listing_id, price_cents, *, status="active", currency="USD",
+                     variant_key="default"):
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO marketplace_listing_variants "
+            "(listing_id, seller_user_id, variant_key, price_cents, currency, status,"
+            " position, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (listing_id, SELLER, variant_key, price_cents, currency, status, 0, NOW, NOW),
+        )
+        variant_id = int(cur.lastrowid)
+        conn.commit()
+        conn.close()
+        return variant_id
+
     def get(self, listing_id):
         return self.client.get(f"/pulse/marketplace/{listing_id}")
 
@@ -483,6 +498,85 @@ class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
         conn.commit()
         conn.close()
         self.assertEqual(self.get(listing_id).status_code, 404)
+
+
+class PublicProductPriceAuthorityTestCase(PublicMarketplaceFixture):
+    """The logged-out page may not advertise a price checkout will not charge.
+
+    This page priced from ``price_label`` while the member page and
+    ``marketplace_cart_routes._line_price_minor`` priced from
+    ``marketplace_listing_variants.price_cents``, and the variants were loaded
+    only for signed-in readers -- so the two pages for one product could name
+    different numbers and nothing noticed. Against production on 2026-10-01,
+    four of the 35 listings in the live Shopping feed did.
+
+    The refusal is "no price" rather than the variant price because ``Price``
+    holds one amount and two of those four rows are ranges; rendering a range
+    means ``marketplace_web.PriceView``, and standing up a second price
+    renderer on this page is what caused the defect. The pill and the ``Offer``
+    node are asserted together because they are one claim in two formats --
+    Merchant Center reads the second and a buyer reads the first, and a page
+    that dropped the pill while keeping the Offer would still be making the
+    claim to Google.
+    """
+
+    def test_a_label_its_variants_agree_with_is_printed_normally(self):
+        listing_id = self.make_listing(price_label="$465.74")
+        self.make_variant(listing_id, 46574)
+        response = self.get(listing_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("465.74 USD", response.get_data(as_text=True))
+        self.assertEqual(self.product_node(response)["offers"]["price"], "465.74")
+
+    def test_a_label_its_variants_contradict_is_not_printed(self):
+        """Production listing 36's shape: advertised $38.00, charged $2.29."""
+        listing_id = self.make_listing(price_label="$38.00")
+        self.make_variant(listing_id, 229)
+        response = self.get(listing_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("38.00", response.get_data(as_text=True))
+
+    def test_the_refused_price_also_leaves_the_structured_data(self):
+        """The half a visual check cannot see, and the half Google reads."""
+        listing_id = self.make_listing(price_label="$38.00")
+        self.make_variant(listing_id, 229)
+        self.assertNotIn("offers", self.product_node(self.get(listing_id)))
+
+    def test_the_page_still_renders_and_stays_indexable(self):
+        """Out of the feed, still a real page: the row is otherwise complete,
+        and the member page prices it correctly from the same variants."""
+        listing_id = self.make_listing(price_label="$38.00")
+        self.make_variant(listing_id, 229)
+        response = self.get(listing_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Linen Duvet Cover Set", response.get_data(as_text=True))
+        self.assertNotIn("noindex", response.get_data(as_text=True))
+
+    def test_a_label_inside_a_variant_range_is_still_refused(self):
+        """Production listing 112, the row that overcharged by $8.41."""
+        listing_id = self.make_listing(price_label="$29.31")
+        self.make_variant(listing_id, 2784)
+        self.make_variant(listing_id, 3772, variant_key="large")
+        self.assertNotIn("offers", self.product_node(self.get(listing_id)))
+
+    def test_a_listing_with_no_variants_prices_from_its_label_as_before(self):
+        """Most of the catalogue, and the regression this must not cause."""
+        listing_id = self.make_listing(price_label="$465.74")
+        self.assertIn("465.74 USD", self.get(listing_id).get_data(as_text=True))
+
+    def test_the_anonymous_branch_is_what_loads_the_variants(self):
+        """Names the plumbing: the read used to be inside ``if user:``.
+
+        Without it the predicate fails open and this whole class passes while
+        the page is still wrong, so the load is asserted through its effect on
+        a request that carries no session.
+        """
+
+        listing_id = self.make_listing(price_label="$38.00")
+        self.make_variant(listing_id, 229)
+        with self.client.session_transaction() as session:
+            session.clear()
+        self.assertNotIn("38.00", self.get(listing_id).get_data(as_text=True))
 
 
 class MarketplacePublicIndexPageTestCase(PublicMarketplaceFixture):

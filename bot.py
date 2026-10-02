@@ -31142,6 +31142,16 @@ def marketplace_public_listings(limit=500):
     sitemap and a feed that are both valid, green and half the size they should
     be.
 
+    Variants are loaded and attached as `listing["variants"]` for a second
+    eligibility question, and only this loader answers it. `price_label` is what
+    the feed publishes; `marketplace_listing_variants.price_cents` is what the
+    product page shows and what checkout charges. When the two disagree the feed
+    is advertising a number the buyer will not be asked to pay, so
+    `marketplace_seo.price_label_contradicts_variants` drops the row from
+    Shopping while leaving it in Search. That check reads the key set here and
+    is inert without it -- which is why the variant load belongs in the one
+    query both surfaces share rather than in the feed route.
+
     Returns `(row, listing)` pairs. The raw row is carried alongside the payload
     because the sitemap needs `updated_at` for its `lastmod` and the payload does
     not preserve it.
@@ -31161,8 +31171,9 @@ def marketplace_public_listings(limit=500):
               AND {discovery_visible_sql('u')}
             ORDER BY l.id DESC LIMIT ?""", (int(limit),))
         rows = [dict(row) for row in cur.fetchall()]
-        media_by_listing = pulse_marketplace_media_rows_for_listings(
-            cur, [int(row.get("id") or 0) for row in rows])
+        listing_ids = [int(row.get("id") or 0) for row in rows]
+        media_by_listing = pulse_marketplace_media_rows_for_listings(cur, listing_ids)
+        variants_by_listing = marketplace_storefront_variants(cur, listing_ids)
         conn.close()
     except Exception:
         # Same reasoning as the posts sitemap: an empty `<urlset>` -- or an empty
@@ -31173,10 +31184,13 @@ def marketplace_public_listings(limit=500):
         logging.exception("MARKETPLACE_PUBLIC_QUERY_FAILED serving an empty list")
         return []
 
-    return [
-        (row, pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), [])))
-        for row in rows
-    ]
+    pairs = []
+    for row in rows:
+        listing_id = int(row.get("id") or 0)
+        listing = pulse_marketplace_listing_payload(row, media_by_listing.get(listing_id, []))
+        listing["variants"] = variants_by_listing.get(listing_id, [])
+        pairs.append((row, listing))
+    return pairs
 
 
 def marketplace_feed_listings(limit=500):
@@ -59685,7 +59699,7 @@ def _marketplace_public_product_response(listing_id, listing):
     robots = (search_visibility.robots_meta(request.path) if verdict.indexable
               else search_visibility.NOINDEX_FOLLOW)
 
-    price = marketplace_seo.parse_price(listing.get("price_label"), listing.get("currency"))
+    price = marketplace_seo.public_price(listing)
     images = [entry.get("media_url") for entry in (listing.get("media") or [])
               if (entry.get("media_type") or "image") == "image" and entry.get("media_url")]
     # Paragraphs, not one blob. Supplier descriptions arrive with blank-line
@@ -59897,19 +59911,30 @@ def pulse_marketplace_listing_page(listing_id):
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [listing_id])
     seller_id = int(row.get("seller_user_id") or 0)
 
-    # Everything the member page needs beyond the row itself, read on this
-    # connection before the `close()` below. Gated on `user` because the
-    # anonymous reader never uses any of it -- that branch renders from
-    # `listing` alone -- and four extra queries per crawl of a public page is a
-    # cost with nothing on the other side of it.
+    # Variants are read for *both* readers, and this is a correction rather
+    # than an extra. The comment here used to say the anonymous branch "never
+    # uses any of it", and that was the defect: the member page prices from
+    # `marketplace_listing_variants.price_cents` and so does checkout, while
+    # the logged-out page and the Shopping feed priced from `price_label`. On
+    # 2026-10-01 four live listings disagreed, so the price Google and an
+    # anonymous visitor saw was not the price anyone would be charged. One
+    # query is what lets this page refuse a label its own variants contradict.
     variants = []
     related = []
     related_variants = {}
     cart_count = None
     seller_listing_count = 0
+    try:
+        variants = marketplace_storefront_variants(cur, [listing_id]).get(listing_id, [])
+    except Exception:
+        # Unreadable variants leave the page on its label, which is the answer
+        # it gave before this read existed. Degraded, not wrong.
+        app.logger.warning("marketplace product variants unavailable", exc_info=True)
+    # The rest stays member-only: a cart count and a related rail are things an
+    # anonymous crawl has no use for, and three extra queries per crawl is a
+    # cost with nothing on the other side of it.
     if user:
         try:
-            variants = marketplace_storefront_variants(cur, [listing_id]).get(listing_id, [])
             cart_count = marketplace_storefront_cart_count(cur, user.get("user_id"))
             related, related_variants, seller_listing_count = (
                 marketplace_storefront_product_context(cur, row)
@@ -59923,6 +59948,7 @@ def pulse_marketplace_listing_page(listing_id):
             app.logger.warning("marketplace product context unavailable", exc_info=True)
     conn.close()
     listing = pulse_marketplace_listing_payload(row, media_by_listing.get(listing_id, []))
+    listing["variants"] = variants
 
     if not user:
         return _marketplace_public_product_response(listing_id, listing)

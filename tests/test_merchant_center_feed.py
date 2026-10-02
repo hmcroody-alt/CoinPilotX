@@ -22,14 +22,20 @@ agree with itself.
 ``.feed_eligible``. A listing with a real description and image but an
 unparseable ``price_label`` belongs in Search and cannot be a Shopping offer.
 
-Production has **no such row today**, and that is why these tests carry the
-whole weight. Counted with the predicates the two surfaces actually select on,
-2026-09-26 had 15 publishable listings, all 15 priced, 13 over the description
-floor -- so the only two exclusions fail on description, which bars them from
-Search too. Nothing live currently distinguishes the two verdicts. A future "fix"
-that collapses them would look like a cleanup, would pass any test that only
-watched production-shaped data, and would either withhold pages from Search or
-put unpriced items into Shopping the moment a seller left a price blank.
+That asymmetry had **no live instance** until 2026-10-01, which is why these
+tests carried the whole weight. Counted on 2026-09-26 with the predicates the
+two surfaces actually select on: 15 publishable listings, all 15 priced, 13
+over the description floor -- so the only two exclusions failed on description,
+which bars them from Search too, and nothing live distinguished the verdicts.
+
+It has one now, and not the shape that was anticipated. Four listings in the
+live feed advertised a ``price_label`` their own variant rows contradict, and
+``FeedPriceMatchesCheckoutTestCase`` below is that case: indexable, because the
+page prices correctly from ``derive_price``; not feedable, because the number
+the feed would send is not the number checkout charges. So the gap is now real
+policy with real rows behind it rather than a hypothetical, and a "fix" that
+collapses the two verdicts would put four misrepresented prices into Shopping
+rather than merely risking it.
 
 Pinning it took three tests rather than one, and the reason is worth recording.
 ``test_a_priced_page_and_an_unpriced_page_split_between_the_two`` reads like
@@ -154,6 +160,21 @@ class FeedFixture(unittest.TestCase):
         conn.commit()
         conn.close()
         return listing_id
+
+    def make_variant(self, listing_id, price_cents, *, status="active", currency="USD",
+                     variant_key="default"):
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO marketplace_listing_variants "
+            "(listing_id, seller_user_id, variant_key, price_cents, currency, status,"
+            " position, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (listing_id, SELLER, variant_key, price_cents, currency, status, 0, NOW, NOW),
+        )
+        variant_id = int(cur.lastrowid)
+        conn.commit()
+        conn.close()
+        return variant_id
 
     def fetch(self):
         return self.client.get(merchant_center_feed.FEED_PATH)
@@ -470,6 +491,95 @@ class FeedEligibilityTestCase(FeedFixture):
         from_feed_source = {int(listing["id"]) for listing in bot.marketplace_feed_listings()}
         self.assertEqual(from_shared, from_feed_source)
         self.assertEqual(len(from_shared), 2)
+
+
+class FeedPriceMatchesCheckoutTestCase(FeedFixture):
+    """The feed may not advertise a price the buyer will not be asked to pay.
+
+    This is the misrepresentation case the file's header describes, caught live.
+    Two authorities read money off a listing: ``price_label``, which is what
+    this feed sends, and ``marketplace_listing_variants.price_cents``, which is
+    what the product page shows and what ``_line_price_minor`` charges. On
+    2026-10-01 four of the 35 items in the production feed disagreed -- listing
+    36 advertised $38.00 against a $2.29 variant, and listing 112 advertised
+    $29.31 against a $27.84-$37.72 range, so a buyer taking the top option paid
+    $8.41 over the advertised price.
+
+    The tests fetch the feed through the route rather than calling
+    ``eligibility`` directly, because the predicate is only half the fix: it
+    reads ``listing["variants"]``, and nothing populated that key until
+    ``marketplace_public_listings`` was taught to. A unit test of the predicate
+    passes with the loader unchanged and the feed still wrong.
+    """
+
+    def test_a_listing_whose_label_matches_its_variants_stays_in_the_feed(self):
+        listing_id = self.make_listing(price_label="$465.74")
+        self.make_variant(listing_id, 46574)
+        self.make_variant(listing_id, 46574, variant_key="second")
+        self.assertEqual(self.only_item()["g:price"], "465.74 USD")
+
+    def test_a_listing_the_page_prices_differently_leaves_the_feed(self):
+        """Production listing 36's shape: advertised $38.00, charged $2.29."""
+        listing_id = self.make_listing(price_label="$38.00")
+        self.make_variant(listing_id, 229)
+        self.assertEqual(self.items(), [], "a price we cannot substantiate is not sent")
+
+    def test_the_withdrawn_listing_keeps_its_page_in_the_sitemap(self):
+        """Out of Shopping, still in Search -- the page itself is correct.
+
+        The page prices from ``derive_price``, so it shows the number checkout
+        charges. Dropping it from the sitemap as well would take a working,
+        honestly-priced product page out of Search to settle a disagreement
+        Search does not have an opinion about.
+        """
+
+        listing_id = self.make_listing(price_label="$38.00")
+        self.make_variant(listing_id, 229)
+        sitemap_paths = {path for path, _lastmod in bot.marketplace_public_entries()}
+        self.assertIn(marketplace_seo.PRODUCT_PATH.format(listing_id=listing_id), sitemap_paths)
+
+    def test_a_label_inside_a_variant_range_still_leaves_the_feed(self):
+        """Production listing 112, and the row that overcharged.
+
+        The advertised $29.31 sits between $27.84 and $37.72, so a check that
+        compared only the cheapest variant would pass exactly the row that cost
+        a buyer money.
+        """
+
+        listing_id = self.make_listing(price_label="$29.31")
+        self.make_variant(listing_id, 2784)
+        self.make_variant(listing_id, 3772, variant_key="large")
+        self.assertEqual(self.items(), [])
+
+    def test_the_shared_loader_is_what_carries_the_variants(self):
+        """Names the plumbing, since the predicate is inert without it.
+
+        ``price_label_contradicts_variants`` fails open on a listing with no
+        ``variants`` key -- a page must not stop rendering because a caller
+        skipped a join -- so the loader populating it *is* the fix. Asserted
+        here rather than left implicit, because removing the join is a change
+        that looks like it only costs a query.
+        """
+
+        listing_id = self.make_listing()
+        self.make_variant(listing_id, 46574)
+        listing, = [row for row in bot.marketplace_feed_listings()
+                    if int(row["id"]) == listing_id]
+        self.assertEqual([int(v["price_cents"]) for v in listing["variants"]], [46574])
+
+    def test_a_variant_the_seller_archived_cannot_withdraw_the_listing(self):
+        """The loader excludes archived rows and ``derive_price`` ignores
+        non-active ones, so neither may create a disagreement that is not real."""
+
+        listing_id = self.make_listing(price_label="$465.74")
+        self.make_variant(listing_id, 46574)
+        self.make_variant(listing_id, 99, status="archived", variant_key="old")
+        self.assertEqual(self.only_item()["g:price"], "465.74 USD")
+
+    def test_a_catalogue_with_no_variants_at_all_is_unaffected(self):
+        """Most of the live catalogue. The label remains the only authority."""
+        self.make_listing(price_label="$465.74")
+        self.assertEqual(self.only_item()["g:price"], "465.74 USD")
 
 
 class FeedEscapingTestCase(FeedFixture):

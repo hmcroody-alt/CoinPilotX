@@ -70,7 +70,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from seo import schema as seo_schema
-from . import marketplace_listing_lifecycle, search_visibility
+from . import marketplace_listing_lifecycle, marketplace_web, search_visibility
 
 #: Where a listing lives on the web. One path, so the canonical, the sitemap,
 #: the feed's ``link`` and the page a buyer shares are all the same URL. A
@@ -178,6 +178,35 @@ def parse_price(price_label, currency=None):
     return Price(amount=f"{amount:.2f}", currency=candidates.pop())
 
 
+def public_price(listing):
+    """What the logged-out page may claim this costs, or ``None``.
+
+    ``parse_price`` with one more refusal in front of it: a label the row's own
+    variants contradict is not a price this page may print. See
+    ``price_label_contradicts_variants`` for the measurement — the member page
+    and checkout read ``price_cents``, so a label that disagrees is a number
+    nobody will ever be charged.
+
+    Refusing rather than rendering the variant price, and the reason is the
+    shape of ``Price``: it holds one amount, and two of the four production
+    rows that disagree are *ranges* ($27.84-$37.72). Teaching this dataclass to
+    hold a range would rebuild ``marketplace_web.PriceView``, which already has
+    ``is_range``, ``display`` and ``as_schema_offer``, and a second price
+    renderer is the thing that produced this defect. So the honest interim
+    claim is no claim, which is the rule this module already follows for a
+    label that does not parse: the page keeps its pill-less layout and its
+    ``Product`` node simply carries no ``Offer``.
+
+    Returns ``None`` only for the refusals; a row with no variants loaded is
+    judged on its label exactly as before.
+    """
+
+    price = parse_price(listing.get("price_label"), listing.get("currency"))
+    if price and price_label_contradicts_variants(listing):
+        return None
+    return price
+
+
 def availability(listing):
     """schema.org availability, from the same rule the catalogue filters on.
 
@@ -259,6 +288,64 @@ class Eligibility:
     reason: str
 
 
+def price_label_contradicts_variants(listing):
+    """Whether this row's two price authorities name different numbers.
+
+    There are two, and that is the fact this function exists to contain.
+    ``parse_price`` above reads ``price_label`` -- a display string a human
+    typed at publish time -- and it is what this module and the Merchant Center
+    feed publish. ``marketplace_web.derive_price`` prefers
+    ``marketplace_listing_variants.price_cents``, which is what the supplier
+    sync writes, what the product page renders, and -- via
+    ``marketplace_cart_routes._line_price_minor`` -- **what checkout actually
+    charges**.
+
+    When those disagree, the feed advertises a number the buyer will not be
+    asked to pay. Measured against production on 2026-10-01 across the 35 items
+    the live feed was serving: four rows disagreed. Listing 36 advertised $38.00
+    against a $2.29 variant; listing 112 advertised $29.31 against a
+    $27.84-$37.72 range, so a buyer choosing the top option paid $8.41 over the
+    advertised price. That direction -- page dearer than feed -- is a Merchant
+    Center misrepresentation finding, not a rounding complaint.
+
+    Asks ``derive_price`` rather than re-filtering the variant rows here. The
+    question is literally "will the page show the number the feed published",
+    and the only way to answer it without inviting drift is to call the function
+    that decides what the page shows. A reimplementation of its ``status`` and
+    ``price_cents`` handling would agree today and be the next instance of this
+    same bug.
+
+    Needs ``listing["variants"]``. Callers that do not load variants get
+    ``False`` and the pre-existing behaviour, which is a deliberate fail-open:
+    this is a narrowing check layered onto a feed that already shipped, and a
+    listing page must not stop rendering because a caller skipped a join.
+    ``bot.marketplace_public_listings`` -- the single loader behind both the
+    sitemap and the feed -- is the caller that populates it.
+    """
+
+    variants = listing.get("variants") or ()
+    if not variants:
+        return False
+    label = parse_price(listing.get("price_label"), listing.get("currency"))
+    if not label:
+        # No label claim to contradict. `eligibility` has already refused this
+        # row for the feed on its own terms.
+        return False
+    derived = marketplace_web.derive_price(listing, variants)
+    if derived.source != "variants":
+        # `derive_price` fell back to the same label we just read, so there is
+        # only one authority in play and nothing can disagree.
+        return False
+
+    label_cents = int((Decimal(label.amount) * 100).to_integral_value())
+    if derived.min_cents != label_cents or derived.max_cents != label_cents:
+        return True
+    # A matching number in the wrong denomination is still two different claims
+    # about how much money the buyer owes -- the same refusal `parse_price`
+    # makes when a symbol contradicts the currency column.
+    return (derived.currency or "").upper() != (label.currency or "").upper()
+
+
 def eligibility(listing):
     """Content-level indexability for one listing.
 
@@ -292,6 +379,13 @@ def eligibility(listing):
         # The page is a real page and stays indexable -- it simply makes no
         # price claim. The feed cannot accept it, because `price` is required.
         return Eligibility(True, False, "price_label does not parse")
+    if price_label_contradicts_variants(listing):
+        # Indexable for the same reason as the branch above: the page is real
+        # and, pricing from `derive_price`, it is correct. It is the *feed's*
+        # number that cannot be substantiated, so the row leaves the feed and
+        # keeps its ranking rather than both surfaces going quiet over one
+        # stale label.
+        return Eligibility(True, False, "price_label disagrees with variant prices")
 
     return Eligibility(True, True, "complete")
 
@@ -342,7 +436,11 @@ def product_schema_graph(listing):
 
     meta = product_page_meta(listing)
     canonical = meta["canonical"]
-    price = parse_price(listing.get("price_label"), listing.get("currency"))
+    # `public_price`, not `parse_price`: the `Offer` below is the page's
+    # machine-readable price claim and Merchant Center compares it against the
+    # feed, so it must make exactly the claim the visible pill makes -- and
+    # neither may state a number the row's own variants contradict.
+    price = public_price(listing)
     image = cover_image(listing)
 
     product = {
