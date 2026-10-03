@@ -4,10 +4,10 @@
 # PulseSoc Web Product Inventory
 
 - Rules in the booted Flask `url_map`: **2083** (authoritative)
-- Rules visible to static analysis: **1820**
+- Rules visible to static analysis: **1826**
   - the difference is blueprint route packs registered inside `except Exception`
-- Rules that render an HTML page: **421**
-  - admin: **188**, user-facing: **233**
+- Rules that render an HTML page: **424**
+  - admin: **188**, user-facing: **236**
 - JSON/API rules: **1236**
 - Jinja templates: **32**
 
@@ -20,7 +20,7 @@ helpers in `bot.py`. The shell helpers, by route count:
 | `pulse_social_shell` | 75 |
 | `arena_page_shell` | 39 |
 | `render_template` | 27 |
-| `render_account_page` | 21 |
+| `render_account_page` | 24 |
 | `arena_simple_page` | 17 |
 | `pulse_page_html` | 10 |
 | `pulse_gateway_card_html` | 9 |

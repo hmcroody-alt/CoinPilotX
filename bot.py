@@ -6936,7 +6936,53 @@ AUTH_EVENT_CLASS = {
     # valid ticket nor a valid bearer is not something a working client does.
     "mobile_legal_acceptance_unauthorised": "security",
     "mobile_legal_acceptance_restricted": "security",
+    # A federated sign-in that did not hold up: a replayed or expired handshake,
+    # a binding cookie that does not match, a handoff minted for another
+    # provider, a Google POST whose state did not verify. Logged with no email
+    # address, so a flood of these cannot put anybody's mail domain on the
+    # suspicious list -- it is the handshake that failed, and we do not know yet
+    # whose it was.
+    "federated_login_refused": "security",
+    # Suspended, disabled, or access-revoked, and the provider did not get them
+    # past it. Same class as the password path's own `login_restricted`.
+    "federated_login_restricted": "security",
+    # Asking a provider to confirm a deletion when that provider is not
+    # connected to this account, or confirming with a provider account that
+    # belongs to somebody else. The delete page only renders a button for a
+    # connected provider, so neither is something a working client does -- the
+    # same reasoning that makes `mobile_legal_acceptance_unauthorised` security.
+    "federated_verify_refused": "security",
+    # The provider answered with nothing an account can be built from: Apple's
+    # relay switched off by the member, or a Workspace token with no email
+    # claim. Nobody did anything wrong and the member cannot sign in.
+    "federated_provider_unusable": "friction",
+    # A document rewritten since this member last agreed, reached through Apple
+    # or Google instead of a password. Friction for the reason the two lines
+    # above it are: a Terms revision is not an attack on the install base.
+    "federated_legal_acceptance_required": "friction",
+    # The account-takeover branch, and the ordinary first federated sign-in of
+    # someone who already has a password account -- which is the same request.
+    # The honest case is overwhelmingly the common one, and it is a member who
+    # owns the account being stopped and told to come back another way, so it
+    # belongs in the signal for people who cannot get in.
+    "federated_link_required": "friction",
+    # Refused to disconnect the only credential the account has, because doing
+    # it would lock the member out. Being stopped from that is the protection
+    # working, and a spike means the unlink copy is not explaining itself.
+    "federated_unlink_refused": "friction",
+    # Our own exception, after the account row already exists. Friction for the
+    # same reason `verification_email_failed` is: this one carries a real email
+    # address, so calling a database blip during a signup wave "security" would
+    # feed every affected member's mail domain to the suspicious-domains list
+    # and lock out the domain our own crash touched.
+    "federated_signup_finalise_failed": "friction",
     # Progress, not a problem.
+    "federated_start": "neutral",
+    "federated_login": "neutral",
+    "federated_signup_completed": "neutral",
+    "federated_linked": "neutral",
+    "federated_unlinked": "neutral",
+    "federated_reasserted": "neutral",
     "mobile_legal_acceptance_recorded": "neutral",
     "mobile_legal_acceptance_noop": "neutral",
     "login_success": "neutral",
@@ -8580,7 +8626,31 @@ def clear_oauth_binding_cookie(response):
     return response
 
 
-def federated_login_refusal(reason, provider="", user_id=0, message=""):
+#: The refused-request event. One declared name, with the specific `reason` in
+#: `details`, rather than a name built per reason.
+#:
+#: Building the event type out of the reason -- `federated_{reason}` -- read
+#: naturally and was wrong, because the reason space is not ours to enumerate.
+#: It is every `StateError` reason, each of them again under a `state_` and a
+#: `handoff_` prefix, plus every refusal `external_identity.resolve` can return:
+#: around twenty-five names today and one more the next time either module
+#: learns a new failure. Every one of them would be `unclassified`, so every one
+#: would be missing from both the blocking surface and the friction signal --
+#: and the guard in tests/test_auth_friction_vs_security.py could not say so,
+#: because it scrapes string literals and an f-string is not one. A gate that
+#: cannot see the thing it guards reports green while the hole widens.
+FEDERATED_REFUSED_EVENT = "federated_login_refused"
+
+#: Not a refusal of the request -- the request was fine and the provider
+#: answered with something no account can be built from (Apple's relay switched
+#: off, a Workspace token with no email claim). The member is stuck and holds
+#: the account; classifying that as security would make a provider-side
+#: misconfiguration look like an attack coming from the member's own domain.
+FEDERATED_UNUSABLE_EVENT = "federated_provider_unusable"
+
+
+def federated_login_refusal(reason, provider="", user_id=0, message="",
+                            event=FEDERATED_REFUSED_EVENT):
     """One refusal shape for every way a federated sign-in can fail.
 
     `reason` is recorded; the member is told something deliberately vague. The
@@ -8590,7 +8660,7 @@ def federated_login_refusal(reason, provider="", user_id=0, message=""):
     """
 
     log_auth_event(
-        f"federated_{reason}",
+        event,
         "",
         user_id,
         status="blocked",
@@ -8841,6 +8911,7 @@ def federated_authorise(provider, row):
             return federated_login_refusal(
                 reason, provider,
                 message=f"{external_identity.PROVIDER_LABELS.get(provider, provider.title())} did not share an email address with PulseSoc, so an account cannot be created. Sign in with your email and password instead.",
+                event=FEDERATED_UNUSABLE_EVENT,
             )
         return federated_login_refusal(reason, provider)
 

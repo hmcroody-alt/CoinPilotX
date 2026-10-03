@@ -75,6 +75,7 @@ from services import db as db_service  # noqa: E402
 
 CSRF = "federated-routes-test-token"
 PASSWORD = "FederatedRoutes!123"
+_BOT_SOURCE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bot.py")
 
 
 def _use_module_database():
@@ -1051,6 +1052,77 @@ class AFederatedAccountCanStillBeDeleted(FederatedRouteCase):
         self.assertFalse(ok)
         self.assertNotIn("did not match", message)
         self.assertIn("pulsesoc.com/account/delete", message)
+
+
+class EveryEventThisFlowEmitsIsClassified(FederatedRouteCase):
+    """The half of the classification guard that cannot guard itself.
+
+    tests/test_auth_friction_vs_security.py scrapes `log_auth_event` call sites
+    for string literals, which is why the refusal path no longer builds its
+    event name out of the reason: `f"federated_{reason}"` minted one name per
+    reason -- around twenty-five of them, every one unclassified -- and an
+    f-string is not a literal, so that scraper read them as no event name at
+    all and stayed green. The fix trades that blind spot for a much smaller
+    one, because a *constant* is not a literal either. The two names the
+    scraper still cannot see are therefore pinned here.
+    """
+
+    def _refusal_rows(self):
+        conn = db_service.connect()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT event_type, details, email, email_domain FROM auth_events "
+                "WHERE event_type LIKE 'federated%' ORDER BY id"
+            )
+            return [db_service.row_values(row) for row in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def test_a_refused_handshake_is_a_declared_security_event(self):
+        self.assertEqual(bot.auth_event_class(bot.FEDERATED_REFUSED_EVENT), "security")
+        self.assertIn(bot.FEDERATED_REFUSED_EVENT, bot.AUTH_SECURITY_EVENTS)
+
+    def test_an_unusable_provider_answer_is_declared_friction(self):
+        # The member switched Apple's relay off, or their Workspace token
+        # carries no email claim. They cannot get in and nobody attacked us.
+        self.assertEqual(bot.auth_event_class(bot.FEDERATED_UNUSABLE_EVENT), "friction")
+        self.assertIn(bot.FEDERATED_UNUSABLE_EVENT, bot.AUTH_FRICTION_EVENTS)
+
+    def test_no_refusal_event_name_is_built_from_its_reason(self):
+        # The regression this exists to catch, read off the source because the
+        # whole problem is that it is invisible at runtime until it is logged.
+        source = open(_BOT_SOURCE, encoding="utf-8").read()
+        body = source[source.index("def federated_login_refusal("):]
+        body = body[:body.index("@webhook_app.route")]
+        self.assertNotIn('f"federated_{', body)
+
+    def test_a_refusal_still_records_which_reason_it_was(self):
+        # One event name is only acceptable because the reason survives into
+        # the details column, where the Security Center can still show it.
+        self.client.post("/auth/google/callback", data={"state": "nonsense"})
+        rows = self._refusal_rows()
+        self.assertEqual(len(rows), 1, f"expected one refusal row, got {rows}")
+        event_type, details = rows[0][0], rows[0][1] or ""
+        self.assertEqual(event_type, bot.FEDERATED_REFUSED_EVENT)
+        self.assertIn("google_missing_assertion", details)
+
+    def test_a_flood_of_refusals_cannot_make_a_mail_domain_suspicious(self):
+        # A refused handshake is logged with no email address, so it has no
+        # domain to blame -- which is what keeps a replay storm against this
+        # endpoint from putting somebody's mail provider on the block list.
+        # Six, not thirteen: `setUp` has already cleared the abuse guard and
+        # the callback is in `ABUSE_GUARD_PROTECTED` at twelve per five
+        # minutes, so a longer storm would be measuring the rate limiter
+        # instead. Clearing the guard again mid-loop is not an option -- that
+        # helper empties `auth_events`, which is the evidence being counted.
+        for _ in range(6):
+            self.client.post("/auth/google/callback", data={"state": "nonsense"})
+        rows = self._refusal_rows()
+        self.assertEqual(len(rows), 6, "the refusals were not all recorded")
+        for _event, _details, email, domain in rows:
+            self.assertFalse((email or "").strip(), "a refusal recorded an address")
+            self.assertNotIn(".", (domain or ""), f"a refusal blamed a domain: {domain!r}")
 
 
 if __name__ == "__main__":
