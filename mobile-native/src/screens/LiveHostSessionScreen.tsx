@@ -22,7 +22,6 @@ import * as Haptics from "expo-haptics";
 import {
   endLive,
   confirmHostLivePublish,
-  banViewer,
   getLiveRtcToken,
   getLiveState,
   liveWebUrl,
@@ -38,6 +37,7 @@ import {
   type LiveStageCapacity,
   type PulseLiveChatMessage
 } from "../api/live";
+import { banViewer } from "../api/liveModeration";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { elapsedLabel, formatViewerCount, type LiveGuest, type LiveGuestRequest } from "../live/liveSession";
 import { useLiveBroadcastRoom, type LiveParticipant } from "../live/useLiveBroadcastRoom";
