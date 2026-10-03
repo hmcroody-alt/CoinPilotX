@@ -23,7 +23,7 @@ APP_FIRST_RELEASED = "2026-07-01"
 APP_CONTENT_RATING = "4+"
 
 
-def serialise_graph(payload):
+def serialise_graph(payload, indent=None):
     """The one place a graph becomes the string a template writes out.
 
     Every caller's output lands in a raw-text ``script`` element through
@@ -39,9 +39,13 @@ def serialise_graph(payload):
     restate text that is also visible on the page, and escaping its typographic
     punctuation would leave the structured copy subtly different from the visible
     one.
+
+    ``indent`` exists so the two node renderers that pretty-print into a page's
+    own ``@graph`` can use this instead of keeping a second serialiser for the
+    sake of whitespace.
     """
 
-    return json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c")
+    return json.dumps(payload, ensure_ascii=False, indent=indent).replace("<", "\\u003c")
 
 
 def organization_schema():

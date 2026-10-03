@@ -2146,7 +2146,7 @@ def organization_ld():
     nothing.
     """
 
-    return json.dumps(seo_schema.organization_schema(), indent=2)
+    return seo_schema.serialise_graph(seo_schema.organization_schema(), indent=2)
 
 
 def mobile_app_ld():
@@ -2157,7 +2157,7 @@ def mobile_app_ld():
     truthful version of that claim and `seo.schema` owns it.
     """
 
-    return json.dumps(seo_schema.mobile_app_schema(), indent=2)
+    return seo_schema.serialise_graph(seo_schema.mobile_app_schema(), indent=2)
 
 
 @webhook_app.route("/privacy", methods=["GET"])
