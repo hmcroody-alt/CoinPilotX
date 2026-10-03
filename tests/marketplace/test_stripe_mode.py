@@ -292,29 +292,51 @@ def test_the_mode_is_read_per_call(monkeypatch):
 
 # --- the consumers -----------------------------------------------------------
 
-def test_the_payout_worker_will_not_pay_into_an_unreadable_stripe(monkeypatch):
-    """The owner's three switches record that a payout run was authorised. They
-    cannot record that the owner knew which Stripe it would reach."""
+def _every_gate_open(monkeypatch):
+    """Both owner switches and the Postgres precondition, so the only gate left
+    standing is the Stripe one.
+
+    Opening the Postgres gate explicitly matters more than it looks. These tests
+    run on SQLite, where `_mutation_preconditions` returns
+    `no_leader_lock_off_postgres` before it ever reads a Stripe key -- so a test
+    that merely asserted "some reason was returned" would pass with the Stripe
+    check deleted outright. That is what it did, and a mutation run is what
+    found it.
+    """
+    from services import db
     from services import marketplace_payout_worker as worker
 
     monkeypatch.setenv(worker.ENABLED_ENV_VAR, "true")
     monkeypatch.setenv(worker.DRY_RUN_ENV_VAR, "false")
     monkeypatch.setenv(worker.OWNER_AUTHORIZED_ENV_VAR, "true")
+    monkeypatch.setattr(db, "IS_POSTGRES", True)
+    return worker
+
+
+def test_the_payout_worker_will_not_pay_into_an_unreadable_stripe(monkeypatch):
+    """The owner's three switches record that a payout run was authorised. They
+    cannot record that the owner knew which Stripe it would reach."""
+    worker = _every_gate_open(monkeypatch)
     _key(monkeypatch, "not-a-recognisable-key")
-    assert worker._mutation_preconditions() != ""
+    assert worker._mutation_preconditions() == "stripe_mode_unrecognized"
 
 
 def test_the_payout_worker_will_not_pay_into_a_mismatched_pair(monkeypatch):
     """Two keys naming different Stripes is not something anyone configured on
     purpose, so the three switches cannot be read as consent to it."""
-    from services import marketplace_payout_worker as worker
-
-    monkeypatch.setenv(worker.ENABLED_ENV_VAR, "true")
-    monkeypatch.setenv(worker.DRY_RUN_ENV_VAR, "false")
-    monkeypatch.setenv(worker.OWNER_AUTHORIZED_ENV_VAR, "true")
+    worker = _every_gate_open(monkeypatch)
     _key(monkeypatch, "sk_test_abc")
     _pk(monkeypatch, "pk_live_abc")
-    assert worker._mutation_preconditions() != ""
+    assert worker._mutation_preconditions() == "stripe_mode_mixed"
+
+
+def test_the_payout_worker_pays_when_the_pair_agrees(monkeypatch):
+    """The other half of the gate. Without this, deleting every Stripe check
+    would still leave the two tests above green via some other refusal."""
+    worker = _every_gate_open(monkeypatch)
+    _key(monkeypatch, "sk_test_abc")
+    _pk(monkeypatch, "pk_test_abc")
+    assert worker._mutation_preconditions() == ""
 
 
 def test_the_status_surface_says_which_half_is_live(monkeypatch):
