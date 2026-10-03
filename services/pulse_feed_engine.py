@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import db, embed_service, media_service, music_authority, premium_identity_engine, profile_viewer_permissions, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulse_mutation_audit, pulse_reactions, pulsesoc_notification_system, user_context
-from .discovery_visibility import REQUIRED_USER_COLUMNS, discovery_visible_sql
+from .discovery_visibility import REQUIRED_USER_COLUMNS, discovery_visible_sql, public_author_sql
 from .pulse_ai.content_policy import AUTOMATED_ACCOUNT_TYPE, sanitize_automated_text
 from .schema_guard import run_once_per_process
 
@@ -2430,23 +2430,60 @@ def safe_intelligence_panel(topic=""):
 
 
 def intelligence_panel(topic=""):
+    """The platform-wide rail. It has no viewer, so it is built for strangers.
+
+    Every query below reads one audience: what an anonymous visitor may see.
+    They did not, and the panel ships on *every* `/api/pulse/feed` response, so
+    the leaks were platform-wide rather than profile-scoped -- a private
+    account named in `active_creators` with a count of its private posts, and
+    private post titles under `scam_warnings` and `trending_topics`.
+    """
     conn = user_context.connect()
+    # Joined the other five callers of this guard the moment the queries below
+    # started reading `hidden_from_discovery` and `profile_visibility`. Without
+    # it a missing column raises, `safe_intelligence_panel` swallows it, and the
+    # whole rail silently renders empty instead of reporting anything.
+    _ensure_home_safety_tables(conn)
     cur = conn.cursor()
-    cur.execute("SELECT tags_json FROM pulse_posts WHERE deleted_at IS NULL AND moderation_status='approved' ORDER BY created_at DESC LIMIT 200")
+    author_is_public = public_author_sql("u")
+    cur.execute(
+        f"""
+        SELECT p.tags_json
+        FROM pulse_posts p
+        JOIN users u ON u.user_id=p.user_id
+        WHERE p.deleted_at IS NULL AND p.moderation_status='approved'
+          AND COALESCE(p.visibility,'public')='public' AND {author_is_public}
+        ORDER BY p.created_at DESC LIMIT 200
+        """
+    )
     counts = {}
     for row in cur.fetchall():
         for tag in _json(row["tags_json"], []):
             counts[tag] = counts.get(tag, 0) + 1
     today_cutoff = datetime.utcnow().date().isoformat()
-    cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE created_at>=? AND deleted_at IS NULL", (today_cutoff,))
+    # Counted every row, so "Posts today" was partly a tally of posts the reader
+    # could not reach. Same audience as everything else on the rail.
+    cur.execute(
+        f"""
+        SELECT COUNT(*) AS total
+        FROM pulse_posts p
+        JOIN users u ON u.user_id=p.user_id
+        WHERE p.created_at>=? AND p.deleted_at IS NULL
+          AND p.moderation_status='approved'
+          AND COALESCE(p.visibility,'public')='public' AND {author_is_public}
+        """,
+        (today_cutoff,),
+    )
     posts_today = int((_row(cur.fetchone()) or {}).get("total") or 0)
     cur.execute("SELECT COUNT(*) AS total FROM pulse_reports WHERE status='open'")
     open_reports = int((_row(cur.fetchone()) or {}).get("total") or 0)
     cur.execute(
-        """
+        f"""
         SELECT p.id, p.title, p.body, p.post_type, p.engagement_score
         FROM pulse_posts p
+        JOIN users u ON u.user_id=p.user_id
         WHERE p.deleted_at IS NULL AND p.visibility='public' AND p.moderation_status='approved'
+          AND {author_is_public}
         ORDER BY COALESCE(p.engagement_score,0) DESC, p.created_at DESC
         LIMIT 5
         """
@@ -2461,13 +2498,18 @@ def intelligence_panel(topic=""):
         }
         for row in cur.fetchall()
     ]
+    # The `LEFT JOIN` this replaced meant the author row was optional, so the
+    # name was published without anything having checked who it belonged to, and
+    # the count was of *every* approved post including private ones. Both halves
+    # now answer to the same audience as the name.
     cur.execute(
-        """
+        f"""
         SELECT COALESCE(u.display_name, u.username, 'PulseSoc Creator') AS name,
                COUNT(*) AS total
         FROM pulse_posts p
-        LEFT JOIN users u ON u.user_id=p.user_id
+        JOIN users u ON u.user_id=p.user_id
         WHERE p.deleted_at IS NULL AND p.moderation_status='approved'
+          AND COALESCE(p.visibility,'public')='public' AND {author_is_public}
         GROUP BY p.user_id, u.display_name, u.username
         ORDER BY total DESC
         LIMIT 5
@@ -2475,18 +2517,24 @@ def intelligence_panel(topic=""):
     )
     active_creators = [{"name": row["name"], "posts": int(row["total"] or 0)} for row in cur.fetchall()]
     cur.execute(
-        """
-        SELECT id, title, body, risk_score
-        FROM pulse_posts
-        WHERE deleted_at IS NULL AND moderation_status='approved'
-          AND (post_type='scam_report' OR risk_score>=50 OR tags_json LIKE ?)
-        ORDER BY created_at DESC
+        f"""
+        SELECT p.id, p.title, p.body
+        FROM pulse_posts p
+        JOIN users u ON u.user_id=p.user_id
+        WHERE p.deleted_at IS NULL AND p.moderation_status='approved'
+          AND COALESCE(p.visibility,'public')='public' AND {author_is_public}
+          AND (p.post_type='scam_report' OR p.risk_score>=50 OR p.tags_json LIKE ?)
+        ORDER BY p.created_at DESC
         LIMIT 4
         """,
         ("%scam%",),
     )
+    # `risk_score` selects rows here but is no longer published. It is an
+    # internal moderation signal, the same column 078329545 took off the wire,
+    # and no reader of this payload -- server-rendered rail, shell runtime, or
+    # `static/js/pulse_home_core.js` -- ever read it.
     scam_warnings = [
-        {"id": row["id"], "title": row["title"] or (row["body"] or "Scam warning")[:80], "risk_score": int(row["risk_score"] or 0), "permalink": f"/pulse/post/{row['id']}"}
+        {"id": row["id"], "title": row["title"] or (row["body"] or "Scam warning")[:80], "permalink": f"/pulse/post/{row['id']}"}
         for row in cur.fetchall()
     ]
     conn.close()

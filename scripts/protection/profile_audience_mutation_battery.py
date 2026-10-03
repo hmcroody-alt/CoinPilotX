@@ -235,6 +235,65 @@ MUTATIONS = [
     return dict(DENY_ALL, can_report=True, can_block=True)""",
         expect=["viewer_permissions_is_a_projection_of_profile_access"],
     ),
+    Mutation(
+        name="rail_author_filter_drops_private",
+        defect="Folding `public_author_sql` back into `discovery_visible_sql` "
+               "puts a private account back on the platform-wide rail, which "
+               "has no viewer to resolve it against.",
+        path="services/discovery_visibility.py",
+        anchor='''    return (
+        f"({discovery_visible_sql(alias)} "
+        f"AND COALESCE({alias}.profile_visibility, 'public') <> 'private')"
+    )''',
+        replacement="    return discovery_visible_sql(alias)",
+        # Not the suspended test: `discovery_visible_sql` still covers that, so
+        # naming it here would credit this clause with a kill it did not earn.
+        expect=["the_rail_does_not_name_a_private_account",
+                "a_private_accounts_post_count_is_not_published",
+                "posts_today_counts_only_what_a_stranger_can_reach"],
+    ),
+    Mutation(
+        name="rail_counts_private_posts_per_creator",
+        defect="Counting every approved post per creator publishes the size of "
+               "what a stranger cannot see, even for an account whose name is "
+               "fair to show.",
+        path="services/pulse_feed_engine.py",
+        anchor="""          AND COALESCE(p.visibility,'public')='public' AND {author_is_public}
+        GROUP BY p.user_id, u.display_name, u.username""",
+        replacement="""          AND {author_is_public}
+        GROUP BY p.user_id, u.display_name, u.username""",
+        expect=["a_public_accounts_published_count_is_only_its_public_posts"],
+    ),
+    Mutation(
+        name="rail_quotes_private_posts",
+        defect="`scam_warnings` titles a post from its body, so an unfiltered "
+               "query publishes the first 80 characters of a private one.",
+        path="services/pulse_feed_engine.py",
+        anchor="""          AND COALESCE(p.visibility,'public')='public' AND {author_is_public}
+          AND (p.post_type='scam_report' OR p.risk_score>=50 OR p.tags_json LIKE ?)""",
+        replacement="          AND (p.post_type='scam_report' OR p.risk_score>=50 OR p.tags_json LIKE ?)",
+        expect=["the_rail_does_not_quote_a_private_post"],
+    ),
+    Mutation(
+        name="rail_republishes_risk_score",
+        defect="`risk_score` is an internal moderation signal. It shipped on "
+               "every feed response beside the post it judged, and no client "
+               "ever read it.",
+        path="services/pulse_feed_engine.py",
+        anchor="""        SELECT p.id, p.title, p.body
+        FROM pulse_posts p
+        JOIN users u ON u.user_id=p.user_id
+        WHERE p.deleted_at IS NULL AND p.moderation_status='approved'""",
+        replacement="""        SELECT p.id, p.title, p.body, p.risk_score
+        FROM pulse_posts p
+        JOIN users u ON u.user_id=p.user_id
+        WHERE p.deleted_at IS NULL AND p.moderation_status='approved'""",
+        extra=(
+            '''        {"id": row["id"], "title": row["title"] or (row["body"] or "Scam warning")[:80], "permalink": f"/pulse/post/{row['id']}"}''',
+            '''        {"id": row["id"], "title": row["title"] or (row["body"] or "Scam warning")[:80], "permalink": f"/pulse/post/{row['id']}", "risk_score": row["risk_score"]}''',
+        ),
+        expect=["the_rail_never_publishes_a_risk_score"],
+    ),
 ]
 
 

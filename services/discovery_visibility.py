@@ -37,6 +37,10 @@ HIDDEN_ACCOUNT_STATUSES: tuple[str, ...] = (
 REQUIRED_USER_COLUMNS: tuple[tuple[str, str], ...] = (
     ("hidden_from_discovery", "INTEGER DEFAULT 0"),
     ("account_status", "TEXT DEFAULT 'active'"),
+    # Read by ``public_author_sql`` below. The DDL matches the one in
+    # ``dashboard_account_command_center``, which owns the setting, so a row
+    # reaching the column by either path reads the same default.
+    ("profile_visibility", "TEXT DEFAULT 'public'"),
 )
 
 _IDENTIFIER_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
@@ -62,4 +66,24 @@ def discovery_visible_sql(alias: str = "u") -> str:
     return (
         f"(COALESCE({alias}.hidden_from_discovery, 0) = 0 "
         f"AND COALESCE({alias}.account_status, 'active') NOT IN ({statuses}))"
+    )
+
+
+def public_author_sql(alias: str = "u") -> str:
+    """``discovery_visible_sql`` plus "and this account is not private".
+
+    The stricter predicate for a surface that has no viewer to resolve against:
+    a platform-wide rail, a trending list, a "most active creators" aggregate.
+    Those are read by strangers by definition, so the only safe audience to
+    build them for is the anonymous one.
+
+    It is deliberately *not* folded into :func:`discovery_visible_sql`. That
+    predicate has callers which pair it with ``OR u.user_id = <viewer>`` so a
+    private account still sees its own rows; widening it in place would both
+    change those surfaces and let a private author back in through the ``OR``.
+    """
+    alias = _safe_alias(alias)
+    return (
+        f"({discovery_visible_sql(alias)} "
+        f"AND COALESCE({alias}.profile_visibility, 'public') <> 'private')"
     )

@@ -44,11 +44,13 @@ Runs against a temp sqlite file, so nothing here touches coinpilotx.db.
 Run: python3 -m pytest tests/test_profile_audience_matrix.py
 """
 
+import json
 import os
 import re
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -92,6 +94,8 @@ ALL_USERS = (SUBJECT, STRANGER, FOLLOWER, FRIEND, BLOCKED_BY, BLOCKER)
 
 PUBLIC_POST = 9963001
 PRIVATE_POST = 9963002
+SUBJECT_RISKY_POST = 9963003
+STRANGER_RISKY_POST = 9963004
 
 #: Deliberately unlike each other and unlike anything else the page carries.
 #: See the module docstring: identical placeholders are how a sibling suite
@@ -103,6 +107,13 @@ SUBJECT_EMAIL = "subject-3b9d71@audience-fixture.invalid"
 SUBJECT_BIO = "Bibliographer of tidal ferry timetables since the Polperro refit"
 PUBLIC_POST_BODY = "Dredging moved the jetty berth by eleven metres this winter"
 PRIVATE_POST_BODY = "Draft notes nobody but me should be reading at this point"
+# The platform-wide rail has no viewer, so its sentinels are a pair: one post
+# only the subject may read, and one a stranger genuinely may. The second is the
+# positive control -- `safe_intelligence_panel` turns any SQL error into an empty
+# payload, so without it every absence below would pass on a broken rail.
+SUBJECT_RISKY_BODY = "Private ledger of the wire transfer scam I am still tracing"
+STRANGER_RISKY_BODY = "Public warning about the dockside deposit scam doing rounds"
+RISK_SCORE_SENTINEL = 77
 
 NOW = "2026-09-01T00:00:00"
 
@@ -163,16 +174,18 @@ class AudienceFixture(unittest.TestCase):
                  f"audience-{user_id}@audience-fixture.invalid",
                  1, "not-a-real-hash", "active", "public"),
             )
-        for post_id, body, visibility in (
-            (PUBLIC_POST, PUBLIC_POST_BODY, "public"),
-            (PRIVATE_POST, PRIVATE_POST_BODY, "private"),
+        for post_id, author, body, visibility, risk in (
+            (PUBLIC_POST, SUBJECT, PUBLIC_POST_BODY, "public", 0),
+            (PRIVATE_POST, SUBJECT, PRIVATE_POST_BODY, "private", 0),
+            (SUBJECT_RISKY_POST, SUBJECT, SUBJECT_RISKY_BODY, "private", RISK_SCORE_SENTINEL),
+            (STRANGER_RISKY_POST, STRANGER, STRANGER_RISKY_BODY, "public", RISK_SCORE_SENTINEL),
         ):
             cur.execute(
                 "INSERT INTO pulse_posts (id, user_id, post_type, body, title, visibility,"
                 " moderation_status, deleted_at, status, risk_score, created_at, updated_at,"
                 " engagement_score) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (post_id, SUBJECT, "text", body, "", visibility, "approved", None,
-                 "published", 0, NOW, NOW, 0),
+                (post_id, author, "text", body, "", visibility, "approved", None,
+                 "published", risk, NOW, NOW, 0),
             )
         cur.execute(
             "INSERT INTO pulse_follows (follower_user_id, followed_user_id, created_at)"
@@ -253,6 +266,13 @@ class AudienceFixture(unittest.TestCase):
         return self.client.get(
             f"/api/pulse/feed?profile={SUBJECT_USERNAME}&feed=for_you"
         )
+
+    def rail(self, viewer_user_id):
+        """The platform-wide `intelligence` panel, which every feed call carries."""
+        self.login_as(viewer_user_id)
+        response = self.client.get("/api/pulse/feed?feed=for_you")
+        self.assertEqual(response.status_code, 200)
+        return response.get_json().get("intelligence") or {}
 
 
 class SentinelHygiene(AudienceFixture):
@@ -476,7 +496,8 @@ class ViewerAwareCounts(AudienceFixture):
         how much the subject was withholding."""
         own = bot.pulse_feed_engine.count_user_posts(SUBJECT, viewer_user_id=SUBJECT)
         seen = bot.pulse_feed_engine.count_user_posts(SUBJECT, viewer_user_id=STRANGER)
-        self.assertEqual(own, 2)
+        # The subject authored three: one public and two private.
+        self.assertEqual(own, 3)
         self.assertEqual(seen, 1)
         body = visible_text(self.page(STRANGER).get_data(as_text=True))
         self.assertRegex(body, r"\b1 posts\b")
@@ -557,6 +578,100 @@ class OneAuthority(AudienceFixture):
                         self.assertEqual(page >= 400, closed)
                         self.assertEqual(api >= 400, closed)
                         self.assertEqual(page, api)
+
+
+class IntelligencePanelExposure(AudienceFixture):
+    """The `intelligence` rail ships on every feed response and has no viewer.
+
+    It is therefore built for the anonymous audience, and anything it names or
+    quotes must be something a stranger may already see. It was not: a private
+    account appeared in `active_creators` with a count of its private posts, a
+    private post's body appeared under `scam_warnings`, and `risk_score` -- the
+    internal moderation signal 078329545 took off the wire elsewhere -- was
+    published beside it.
+    """
+
+    def test_the_rail_is_actually_populated(self):
+        """The positive control. `safe_intelligence_panel` converts any SQL
+        error into an empty payload, so a broken rail would satisfy every
+        absence assertion in this class."""
+        panel = self.rail(STRANGER)
+        titles = [item["title"] for item in panel.get("scam_warnings") or []]
+        self.assertIn(STRANGER_RISKY_BODY[:80], titles)
+        self.assertGreaterEqual(len(panel.get("active_creators") or []), 1)
+
+    def test_the_rail_never_publishes_a_risk_score(self):
+        panel = self.rail(STRANGER)
+        for item in panel.get("scam_warnings") or []:
+            self.assertNotIn("risk_score", item)
+        self.assertNotIn(str(RISK_SCORE_SENTINEL), json.dumps(panel))
+
+    def test_the_rail_does_not_name_a_private_account(self):
+        self.set_subject(profile_visibility="private")
+        panel = self.rail(STRANGER)
+        names = [item["name"] for item in panel.get("active_creators") or []]
+        self.assertNotIn(SUBJECT_DISPLAY_NAME, names)
+        self.assertNotIn(SUBJECT_DISPLAY_NAME, json.dumps(panel))
+
+    def test_the_rail_does_not_name_a_suspended_account(self):
+        """`discovery_visible_sql` already covered this; the private case above
+        is what `public_author_sql` adds. Both are asserted so a later
+        simplification of one predicate into the other has to break a test."""
+        self.set_subject(account_status="suspended")
+        self.assertNotIn(SUBJECT_DISPLAY_NAME, json.dumps(self.rail(STRANGER)))
+
+    def test_the_rail_does_not_quote_a_private_post(self):
+        panel = json.dumps(self.rail(STRANGER))
+        self.assertNotIn(PRIVATE_POST_BODY, panel)
+        self.assertNotIn(SUBJECT_RISKY_BODY, panel)
+
+    def test_a_private_accounts_post_count_is_not_published(self):
+        """The subject has two public-visibility posts' worth of nothing to a
+        stranger once private, so neither the name nor the tally may appear."""
+        self.set_subject(profile_visibility="private")
+        creators = self.rail(STRANGER).get("active_creators") or []
+        self.assertEqual(
+            [item for item in creators if item["name"] == SUBJECT_DISPLAY_NAME], []
+        )
+
+    def test_a_public_accounts_published_count_is_only_its_public_posts(self):
+        """The subject is public here, so the name is fair to publish. The
+        tally beside it is a different question: it was `COUNT(*)` over every
+        approved row, which for this account means 1 public and 2 private, and
+        publishing 3 tells a stranger exactly how much they cannot see."""
+        creators = self.rail(STRANGER).get("active_creators") or []
+        mine = [item for item in creators if item["name"] == SUBJECT_DISPLAY_NAME]
+        self.assertEqual(len(mine), 1, creators)
+        self.assertEqual(mine[0]["posts"], 1)
+
+    def test_posts_today_counts_only_what_a_stranger_can_reach(self):
+        """A tally of every row is a readout of what is being withheld -- the
+        same defect as the profile header's raw `COUNT(*)`.
+
+        The shared fixture is dated `NOW` on purpose, so nothing in it is ever
+        "today" and this is the one assertion that has to seed its own rows.
+        Three go in: one a stranger may read, one private, and one public but
+        privately authored, so both halves of the predicate are load-bearing.
+        """
+        today = datetime.utcnow().date().isoformat() + "T12:00:00"
+        conn = bot.db()
+        cur = conn.cursor()
+        for post_id, author, body, visibility in (
+            (9963101, STRANGER, "Today public from a public author", "public"),
+            (9963102, STRANGER, "Today private from a public author", "private"),
+            (9963103, SUBJECT, "Today public from a private author", "public"),
+        ):
+            cur.execute(
+                "INSERT INTO pulse_posts (id, user_id, post_type, body, title, visibility,"
+                " moderation_status, deleted_at, status, risk_score, created_at, updated_at,"
+                " engagement_score) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (post_id, author, "text", body, "", visibility, "approved", None,
+                 "published", 0, today, today, 0),
+            )
+        conn.commit()
+        conn.close()
+        self.set_subject(profile_visibility="private")
+        self.assertEqual(self.rail(STRANGER).get("posts_today"), 1)
 
 
 if __name__ == "__main__":
