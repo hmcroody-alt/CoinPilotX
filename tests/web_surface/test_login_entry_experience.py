@@ -243,6 +243,20 @@ def test_no_social_sign_in_buttons_are_displayed(client):
         assert claim not in html, f"{claim!r} is offered but no such flow is implemented"
 
 
+def test_every_footer_link_goes_somewhere_that_exists(client):
+    # The panel footer is the one place this page sends a visitor who cannot get
+    # in, so a 404 there is worse than no link. Resolved against the app's own
+    # url_map rather than eyeballed, because /contact and /help are registered
+    # outside bot.py and a grep for their decorators finds nothing.
+    footer = re.search(r"<p class=\"auth-legal\">(.*?)</p>", login_page(client), re.DOTALL)
+    assert footer, "the login panel lost its legal and help footer"
+    hrefs = re.findall(r"href=\"([^\"]+)\"", footer.group(1))
+    assert set(hrefs) == {"/terms", "/privacy", "/help", "/contact"}, hrefs
+    registered = {str(rule.rule) for rule in bot.webhook_app.url_map.iter_rules()}
+    for href in hrefs:
+        assert href in registered, f"the login footer links {href}, which is not a route"
+
+
 # ---------------------------------------------------------------------------
 # The ordinary sign-in no longer demands a tick (§18)
 # ---------------------------------------------------------------------------
