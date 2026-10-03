@@ -4,7 +4,7 @@
 # PulseSoc Native Product Inventory
 
 - Screens registered in navigators: **162**
-- `*Screen.tsx` files: **141**
+- `*Screen.tsx` files: **142**
 - Screens with a `pulsesoc.com` deep link: **64**
 - Master-navigation destinations: **51**
 
