@@ -43,6 +43,7 @@ import os
 import secrets
 import sys
 import tempfile
+import time
 import unittest
 from urllib.parse import parse_qs, urlsplit
 
@@ -760,35 +761,296 @@ class DisconnectingAProviderCannotLockAMemberOut(FederatedRouteCase):
 
 
 class AFederatedAccountCanStillBeDeleted(FederatedRouteCase):
-    def test_a_passwordless_account_is_told_what_actually_unblocks_deletion(self):
-        """App Store 5.1.1(v) requires in-app deletion to be reachable.
+    """App Store 5.1.1(v) requires in-app deletion to be reachable.
 
-        The generic "Password confirmation did not match" answer would send a
-        member who has never had a password into retyping one forever. The
-        proper fix is a federated re-assertion standing in for the password;
-        until then the message has to name the real unblock.
+    A password account confirms with its password. An account created through
+    Apple or Google has none, and the obvious fallback -- "use Forgot password
+    first" -- is unreliable for exactly the members who need it: Apple's
+    Private Email Relay drops mail from a sending address that has not been
+    registered with Apple, and PulseSoc sends as support@pulsesoc.com, which is
+    not registered yet. A member who chose Hide My Email could therefore have no
+    reachable inbox and no route to deletion at all.
+
+    So the provider confirms instead, through a `verify` handshake. The question
+    it asks is narrow on purpose: not "who is this token?" but "is this the
+    credential this account already linked?" -- the account is fixed before the
+    provider is contacted, so the answer can only be yes or no.
+    """
+
+    def _federated_only_member(self, email, *, subject):
+        """A member with a blank password hash and one linked provider.
+
+        Blank rather than absent: `generate_password_hash("")` returns a hash
+        that verifies against an empty form field, so the thing being set up
+        here is the shape production actually stores.
         """
 
-        _, user_id = _make_password_member("deletable@example.com")
+        _, user_id = _make_password_member(email)
+        conn = db_service.connect()
+        try:
+            conn.execute("UPDATE users SET password_hash='' WHERE user_id=?", (user_id,))
+            external_identity.link(
+                conn, user_id, provider="google", subject=subject,
+                email=email, email_verified=True,
+                display_name="Federated Member", source="test",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        self._sign_in_as(user_id)
+        return user_id
+
+    def _sign_in_as(self, user_id):
+        with self.client.session_transaction() as sess:
+            sess["account_user_id"] = user_id
+            sess["csrf_token"] = CSRF
+
+    def _reassert(self, *, subject, email, provider="google"):
+        """Drive a full verify round trip: start, provider POST, same-site GET."""
+
+        with _StubbedGoogle(_claims(subject, email)):
+            handshake = self._handshake(provider, mode="verify", next="/account/delete")
+            callback = self._callback(handshake, provider=provider)
+            self.assertEqual(callback.status_code, 303, "callback did not hand off")
+            return self._complete(callback.headers["Location"])
+
+    def _attempt_delete(self):
+        return self.client.post(
+            "/account/delete", data={"csrf_token": CSRF, "confirm_delete": "on"}
+        )
+
+    def _status_of(self, user_id):
+        conn = db_service.connect()
+        try:
+            row = conn.execute(
+                "SELECT account_status FROM users WHERE user_id=?", (user_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        return db_service.row_values(row)[0] if row else None
+
+    # -- the thing that has to work -----------------------------------------
+
+    def test_a_passwordless_account_is_deleted_after_confirming_with_its_provider(self):
+        """The whole point. Driven over HTTP end to end, not through the helper.
+
+        If this fails, PulseSoc ships a sign-in that can create accounts their
+        owner has no way to delete.
+        """
+
+        user_id = self._federated_only_member("delete-me@example.com", subject="g-delete-me")
+        self._reassert(subject="g-delete-me", email="delete-me@example.com")
+
+        response = self._attempt_delete()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._status_of(user_id), "deleted")
+
+    def test_without_the_confirmation_the_same_request_is_refused(self):
+        """The companion to the test above: it is the re-assertion that did it.
+
+        Same member, same request, nothing else changed. A delete that succeeds
+        here would mean the one above proved only that the route works.
+        """
+
+        user_id = self._federated_only_member("no-confirm@example.com", subject="g-no-confirm")
+
+        response = self._attempt_delete()
+        self.assertNotEqual(self._status_of(user_id), "deleted")
+        self.assertIn("Confirm with", response.get_data(as_text=True))
+
+    # -- what the confirmation must not accept ------------------------------
+
+    def test_confirming_with_a_provider_account_that_is_not_this_members_does_nothing(self):
+        """A real provider sign-in, to the wrong account.
+
+        This is the email-is-not-authorisation rule in a new place: holding the
+        session plus *some* Google account must not be enough, or anyone who
+        picked up a logged-in browser could delete the account with their own
+        Google login.
+        """
+
+        victim = self._federated_only_member("victim@example.com", subject="g-victim")
+        other_email, other_id = _make_password_member("other@example.com")
+        conn = db_service.connect()
+        try:
+            external_identity.link(
+                conn, other_id, provider="google", subject="g-other",
+                email=other_email, email_verified=True,
+                display_name="Other", source="test",
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        self._sign_in_as(victim)
+        self._reassert(subject="g-other", email=other_email)
+
+        self._attempt_delete()
+        self.assertNotEqual(self._status_of(victim), "deleted")
+        self.assertNotEqual(self._status_of(other_id), "deleted")
+
+    def test_a_provider_that_is_not_connected_cannot_be_asked_to_confirm(self):
+        """Refused at the start, before the member is sent anywhere.
+
+        A trip to Google that could not possibly have ended in a confirmation
+        is a dead end dressed up as a flow.
+        """
+
+        _, user_id = _make_password_member("unlinked@example.com")
+        self._sign_in_as(user_id)
+        response = self._start("google", mode="verify")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("not connected", response.get_data(as_text=True))
+
+    def test_an_anonymous_visitor_cannot_open_a_verify_handshake(self):
+        """With no session there is no account to confirm against.
+
+        It must degrade to an ordinary sign-in rather than becoming a verify
+        handshake bound to member zero.
+        """
+
+        with _StubbedGoogle(_claims("g-anon", "anon@example.com")):
+            handshake = self._handshake("google", mode="verify")
+        row = oauth_login_state.consume(handshake["state"], "google")
+        self.assertEqual(row["mode"], "login")
+        self.assertEqual(int(row["link_user_id"]), 0)
+
+    def test_a_confirmation_is_spent_by_the_attempt_that_uses_it(self):
+        """Single-use. One confirmation must not authorise a second deletion.
+
+        Checked by deleting a *different* account on the second attempt, since
+        the first one is gone -- the proof names a member, so the realistic
+        abuse is reusing it, not replaying it against itself.
+        """
+
+        first = self._federated_only_member("spend-once@example.com", subject="g-spend-once")
+        self._reassert(subject="g-spend-once", email="spend-once@example.com")
+        self._attempt_delete()
+        self.assertEqual(self._status_of(first), "deleted")
+
+        second = self._federated_only_member("spend-twice@example.com", subject="g-spend-twice")
+        self._attempt_delete()
+        self.assertNotEqual(self._status_of(second), "deleted")
+
+    def test_a_day_old_confirmation_does_not_authorise(self):
+        """The value of asking is that it was answered a moment ago.
+
+        The age here is a fixed day rather than `TTL + 1`. Deriving it from the
+        constant under test makes the test adapt to its own mutation: widen the
+        window to a year and a `TTL + 1` proof is still expired by construction,
+        so the assertion holds while the protection is gone. A day is the
+        invariant worth stating -- whatever the window is tuned to, it is not
+        that -- and `test_the_confirmation_window_stays_short` pins the rest.
+        """
+
+        user_id = self._federated_only_member("stale@example.com", subject="g-stale")
+        with self.client.session_transaction() as sess:
+            sess[bot.FEDERATED_REASSERTION_SESSION_KEY] = {
+                "user_id": user_id,
+                "provider": "google",
+                "at": time.time() - 86_400,
+            }
+        self._attempt_delete()
+        self.assertNotEqual(self._status_of(user_id), "deleted")
+
+    def test_the_confirmation_window_stays_short(self):
+        """So the test above cannot be satisfied by widening the window.
+
+        Freshness is the entire security property of a re-assertion: a long
+        window means the first confirmation of the day authorises every later
+        deletion in that browser. Fifteen minutes is already generous for a
+        single provider round trip.
+        """
+
+        self.assertLessEqual(bot.FEDERATED_REASSERTION_TTL_SECONDS, 900)
+
+    def test_a_confirmation_minted_for_another_member_does_not_authorise(self):
+        """A proof carries the member it was for, and it is checked."""
+
+        user_id = self._federated_only_member("not-mine@example.com", subject="g-not-mine")
+        with self.client.session_transaction() as sess:
+            sess[bot.FEDERATED_REASSERTION_SESSION_KEY] = {
+                "user_id": user_id + 9999,
+                "provider": "google",
+                "at": time.time(),
+            }
+        self._attempt_delete()
+        self.assertNotEqual(self._status_of(user_id), "deleted")
+
+    def test_signing_out_mid_flow_grants_nothing_and_signs_nobody_in(self):
+        """A verify handshake is not a sign-in that happens to be narrow.
+
+        Completed with no session, it must refuse -- and in particular must not
+        establish one for the member it names, which would turn re-assertion
+        into a way to log in as somebody whose handshake you got hold of.
+        """
+
+        user_id = self._federated_only_member("signed-out@example.com", subject="g-signed-out")
+        with _StubbedGoogle(_claims("g-signed-out", "signed-out@example.com")):
+            handshake = self._handshake("google", mode="verify", next="/account/delete")
+            callback = self._callback(handshake)
+            with self.client.session_transaction() as sess:
+                sess.pop("account_user_id", None)
+            self._complete(callback.headers["Location"])
+
+        self.assertIsNone(self._signed_in_user_id())
+        self._sign_in_as(user_id)
+        self._attempt_delete()
+        self.assertNotEqual(self._status_of(user_id), "deleted")
+
+    # -- the page itself ----------------------------------------------------
+
+    def test_the_form_does_not_demand_a_password_the_member_cannot_have(self):
+        """A `required` field here is not a cosmetic problem.
+
+        The browser refuses to submit a form with an unfilled required input, so
+        a password box on a passwordless account stops the member from reaching
+        the server at all -- including from reaching the message that would have
+        told them what to do instead.
+        """
+
+        self._federated_only_member("form-shape@example.com", subject="g-form-shape")
+        body = self.client.get("/account/delete").get_data(as_text=True)
+        self.assertNotIn('name="password"', body)
+        self.assertIn("Confirm with Google", body)
+
+    def test_a_password_account_still_sees_the_password_field(self):
+        """The branch above must not have removed confirmation for everyone."""
+
+        _, user_id = _make_password_member("keeps-password@example.com")
+        self._sign_in_as(user_id)
+        body = self.client.get("/account/delete").get_data(as_text=True)
+        self.assertIn('name="password"', body)
+
+    def test_a_password_account_still_gets_the_generic_refusal(self):
+        """The federated branch must not have widened into an oracle."""
+
+        _, user_id = _make_password_member("still-generic@example.com")
+        ok, message = bot.permanently_delete_account(bot.load_account_by_id(user_id), "wrong-password")
+        self.assertFalse(ok)
+        self.assertIn("did not match", message)
+
+    def test_the_native_app_is_told_where_it_can_actually_be_done(self):
+        """The proof lives in the Flask session; the app holds a bearer token.
+
+        So the app's refusal has to name the web page rather than a button that
+        is not on its screen.
+        """
+
+        _, user_id = _make_password_member("from-the-app@example.com")
         conn = db_service.connect()
         try:
             conn.execute("UPDATE users SET password_hash='' WHERE user_id=?", (user_id,))
             conn.commit()
         finally:
             conn.close()
-
-        ok, message = bot.permanently_delete_account(bot.load_account_by_id(user_id), "anything")
+        ok, message = bot.permanently_delete_account(
+            bot.load_account_by_id(user_id), "",
+            federated_hint=bot.FEDERATED_DELETE_HINT_APP,
+        )
         self.assertFalse(ok)
         self.assertNotIn("did not match", message)
-        self.assertIn("Forgot password", message)
-
-    def test_a_password_account_still_gets_the_generic_refusal(self):
-        """The branch above must not have widened into an oracle."""
-
-        _, user_id = _make_password_member("still-generic@example.com")
-        ok, message = bot.permanently_delete_account(bot.load_account_by_id(user_id), "wrong-password")
-        self.assertFalse(ok)
-        self.assertIn("did not match", message)
+        self.assertIn("pulsesoc.com/account/delete", message)
 
 
 if __name__ == "__main__":

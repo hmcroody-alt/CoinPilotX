@@ -71,7 +71,18 @@ PROVIDERS = ("apple", "google")
 #: What the member was trying to do. Kept on the row rather than inferred at the
 #: callback, so a flow started as "add Google to my signed-in account" cannot be
 #: completed as "sign me in as whoever this token says", or the reverse.
-MODES = ("login", "link")
+#:
+#: `verify` is re-assertion: the member is already signed in and is proving they
+#: still hold a provider credential this account has *already* linked, standing
+#: in for retyping a password. It grants no session and links nothing -- a flow
+#: opened as `verify` that could be completed as `login` would be a way to enter
+#: whichever account the token happens to name.
+MODES = ("login", "link", "verify")
+
+#: Modes that name their member before the provider is ever contacted. For these
+#: the answer is checked *against* a known account rather than used to find one,
+#: which is what keeps a provider's claim from choosing the subject of the act.
+MEMBER_BOUND_MODES = ("link", "verify")
 
 #: Minutes, not hours. See the module docstring.
 DEFAULT_TTL_SECONDS = 600
@@ -182,8 +193,8 @@ def create(
     mode = str(mode or "").strip().lower()
     if mode not in MODES:
         raise ValueError(f"unknown mode {mode!r}; expected one of {MODES}")
-    if mode == "link" and not link_user_id:
-        raise ValueError("a link handshake needs the member it will link to")
+    if mode in MEMBER_BOUND_MODES and not link_user_id:
+        raise ValueError(f"a {mode} handshake needs the member it acts on")
     if mode == "login" and link_user_id:
         raise ValueError("a login handshake must not name a member in advance")
 

@@ -6580,6 +6580,10 @@ def render_account_page(page, title, **context):
     # keeps the buttons from appearing before the secrets exist.
     context.setdefault("federated_providers", federated_sign_in_options())
     context.setdefault("federated_connections", federated_connections(context.get("current_user")))
+    # So no template has to branch on a password hash to find out whether asking
+    # for a password makes sense. A federated-only account answers False here,
+    # and the delete page uses it to drop a `required` field it could never fill.
+    context.setdefault("has_password", bool((context.get("current_user") or {}).get("password_hash")))
     return render_template("account.html", page=page, title=title, **context)
 
 
@@ -7623,25 +7627,50 @@ def update_account_settings(user_id, full_name, phone, country, email_opt_in, sm
     sync_brevo_contact_safe({**(user or {}), "source": "account_settings"}, entity_type="user", entity_id=user_id)
 
 
-def permanently_delete_account(user, password):
+#: What actually unblocks deletion for a federated-only account, which differs
+#: by surface: the web page carries the provider buttons, the native app cannot
+#: (the proof is written into the Flask session by a browser GET, and the app
+#: holds a bearer token). One shared message would name a button that is not
+#: there on one of the two.
+FEDERATED_DELETE_HINT_WEB = (
+    "Use the Confirm with Apple or Confirm with Google button below to continue."
+)
+FEDERATED_DELETE_HINT_APP = (
+    "Open pulsesoc.com/account/delete in a browser and confirm with Apple or Google."
+)
+
+
+def permanently_delete_account(user, password, *, reasserted=False,
+                               federated_hint=FEDERATED_DELETE_HINT_WEB):
+    """Erase the account. `reasserted` is a completed federated re-assertion.
+
+    Confirmation is satisfied by either proof of the password or `reasserted`.
+    The caller owns the second one -- it is single-use and session-scoped, so
+    validating it here would mean this function could not be called twice in a
+    test, and the freshness window would be measured from the wrong place.
+    """
+
     user_id = int((user or {}).get("user_id") or 0)
     if not user_id:
         return False, "Account could not be identified."
-    if not user.get("password_hash"):
+    if reasserted:
+        # The member proved a moment ago that they still hold a provider
+        # credential this account has linked. At least as strong as retyping a
+        # password, and for a federated-only account it is the only proof there
+        # is -- see `federated_confirm_identity`.
+        pass
+    elif not user.get("password_hash"):
         # A federated-only account -- signed up through Apple or Google and
         # never given a password. The blank hash refuses every input, so the
         # generic answer below would tell this member their password did not
         # match a password they have never had, and they would retype it
         # forever. Deletion must stay reachable, so say what actually unblocks
-        # it. (The better fix is a federated re-assertion standing in for the
-        # password here; this is the accurate message in the meantime, not the
-        # end state.)
+        # it: confirming with the provider.
         return False, (
             "This account signs in with Apple or Google and has no password to confirm. "
-            "Use Forgot password to set one — the link goes to your verified email address — "
-            "then return here to delete your account."
+            + federated_hint
         )
-    if not check_password_hash(user["password_hash"], password or ""):
+    elif not check_password_hash(user["password_hash"], password or ""):
         return False, "Password confirmation did not match."
     now = datetime.utcnow().isoformat(timespec="seconds")
     deleted_handle = f"deleted-user-{user_id}-{secrets.token_hex(4)}"
@@ -8494,6 +8523,16 @@ FEDERATED_ADAPTERS = {
 PENDING_FEDERATED_SESSION_KEY = "pulse_pending_federated"
 PENDING_FEDERATED_TTL_SECONDS = 900
 
+#: A completed re-assertion, standing in for a retyped password on a destructive
+#: action. Written on the same-site completing GET for the same reason as above.
+#:
+#: Short-lived and single-use. It is proof that the member held a linked provider
+#: credential *a moment ago*, which is the whole value of asking: a long-lived or
+#: reusable one would make the first confirmation authorise every later deletion
+#: in that browser session.
+FEDERATED_REASSERTION_SESSION_KEY = "pulse_federated_reasserted"
+FEDERATED_REASSERTION_TTL_SECONDS = 300
+
 FEDERATED_UNAVAILABLE_MESSAGE = "That sign-in option is not available yet."
 FEDERATED_FAILED_MESSAGE = "That sign-in could not be completed. Please try again."
 
@@ -8582,13 +8621,32 @@ def federated_start(provider):
     if not adapter.configured():
         return render_account_page("login", "Login", error=FEDERATED_UNAVAILABLE_MESSAGE), 503
 
-    # "Link this provider to the account I am already signed into" is a
-    # different operation from "sign me in", and which one it is must be fixed
-    # now rather than inferred at the callback -- otherwise a flow started as a
-    # link can be completed as a login, or the reverse.
+    # "Link this provider to the account I am already signed into" and "prove I
+    # still hold the provider I already linked" are both different operations
+    # from "sign me in", and which one it is must be fixed now rather than
+    # inferred at the callback -- otherwise a flow started as a link or a
+    # re-assertion can be completed as a login, or the reverse.
     signed_in = require_account()
-    mode = "link" if (signed_in and request.form.get("mode") == "link") else "login"
-    link_user_id = int(signed_in["user_id"]) if mode == "link" else 0
+    requested = str(request.form.get("mode") or "").strip().lower()
+    mode = requested if (signed_in and requested in oauth_login_state.MEMBER_BOUND_MODES) else "login"
+    link_user_id = int(signed_in["user_id"]) if mode != "login" else 0
+
+    if mode == "verify":
+        # Re-assertion can only confirm a credential this account already holds.
+        # Refused here rather than at the callback so the member is not sent out
+        # to a provider on a trip that could not have ended in a confirmation.
+        linked = {row.get("provider") for row in external_identity.for_user(link_user_id)}
+        if provider not in linked:
+            label = external_identity.PROVIDER_LABELS.get(provider, provider.title())
+            log_auth_event(
+                "federated_verify_refused", signed_in.get("email") or "", link_user_id,
+                status="blocked",
+                details={"provider": provider, "reason": "provider_not_linked", "db_engine": db_service.ENGINE_NAME},
+            )
+            return render_account_page(
+                "delete_account", "Delete Account", current_user=signed_in,
+                error=f"{label} is not connected to this account, so it cannot confirm anything.",
+            ), 400
 
     try:
         handshake = oauth_login_state.create(
@@ -8765,6 +8823,9 @@ def federated_authorise(provider, row):
 
     if row["mode"] == "link":
         return federated_link_provider(provider, row, profile)
+
+    if row["mode"] == "verify":
+        return federated_confirm_identity(provider, row, profile)
 
     decision = external_identity.resolve(provider, profile)
     outcome = decision.get("decision")
@@ -9262,6 +9323,87 @@ def federated_link_provider(provider, row, profile):
     return clear_oauth_binding_cookie(
         webhook_app.make_response(redirect(f"/account/settings?connected={provider}"))
     )
+
+
+def federated_confirm_identity(provider, row, profile):
+    """Finish a re-assertion. Grants no session and links nothing.
+
+    This exists because App Store 5.1.1(v) requires in-app account deletion to
+    be reachable, and an account created through Apple or Google has no password
+    to confirm. The obvious fallback -- "use Forgot password first" -- is not
+    reliable for the exact members who need it: Apple's Private Email Relay
+    drops mail from a sending address that has not been registered with Apple,
+    so a member who chose Hide My Email could have no reachable inbox and
+    therefore no route to deletion at all.
+
+    So the provider confirms instead. The question asked here is deliberately
+    narrow: not "who is this token?" but "is this token the credential this
+    account already linked?" -- the account is fixed before the provider is
+    contacted, so the answer can only be yes or no and can never nominate a
+    different member.
+    """
+
+    label = external_identity.PROVIDER_LABELS.get(provider, provider.title())
+    signed_in = require_account()
+    if not signed_in or int(signed_in["user_id"]) != int(row["link_user_id"]):
+        # Signed out, or into a different account, since the handshake opened.
+        oauth_login_state.discard(row["id"])
+        return federated_login_refusal(
+            "verify_session_mismatch", provider, user_id=int(row["link_user_id"] or 0),
+            message=f"Sign in again, then confirm with {label}.",
+        )
+
+    user_id = int(signed_in["user_id"])
+    subject = str(profile.get("subject") or "")
+    identity = external_identity.lookup(provider, subject)
+    oauth_login_state.discard(row["id"])
+
+    if not identity or int(identity.get("user_id") or 0) != user_id:
+        # A real provider sign-in, but to some other account -- or to one this
+        # member has never linked. Accepting it would let anyone holding the
+        # session confirm with any Apple or Google account they happen to own,
+        # which is the same email-is-not-authorisation mistake in a new place.
+        log_auth_event(
+            "federated_verify_refused", signed_in.get("email") or "", user_id, status="blocked",
+            details={"provider": provider, "reason": "subject_not_this_account", "db_engine": db_service.ENGINE_NAME},
+        )
+        return federated_login_refusal(
+            "verify_subject_mismatch", provider, user_id=user_id,
+            message=f"That {label} account is not the one connected to this PulseSoc account.",
+        )
+
+    session[FEDERATED_REASSERTION_SESSION_KEY] = {
+        "user_id": user_id,
+        "provider": provider,
+        "at": time.time(),
+    }
+    log_auth_event(
+        "federated_reasserted", signed_in.get("email") or "", user_id, status="success",
+        details={"provider": provider, "db_engine": db_service.ENGINE_NAME},
+    )
+    return clear_oauth_binding_cookie(
+        webhook_app.make_response(
+            redirect(safe_next_value() or row.get("next_path") or "/account/delete")
+        )
+    )
+
+
+def consume_federated_reassertion(user_id):
+    """True exactly once, for this member, within the TTL. Always clears.
+
+    Popped before it is validated so a stale or wrong-account proof cannot be
+    retried, and so the window does not quietly stay open after a refusal.
+    """
+
+    proof = session.pop(FEDERATED_REASSERTION_SESSION_KEY, None)
+    if not isinstance(proof, dict):
+        return False
+    try:
+        if int(proof.get("user_id") or 0) != int(user_id or 0):
+            return False
+        return (time.time() - float(proof.get("at") or 0)) <= FEDERATED_REASSERTION_TTL_SECONDS
+    except (TypeError, ValueError):
+        return False
 
 
 def federated_sign_in_options():
@@ -10539,7 +10681,14 @@ def account_delete_page():
             return render_account_page("delete_account", "Delete Account", current_user=user, error="Security check failed. Please try again.")
         if request.form.get("confirm_delete") != "on":
             return render_account_page("delete_account", "Delete Account", current_user=user, error="Confirm that you understand account deletion is permanent.")
-        deleted, error = permanently_delete_account(user, request.form.get("password", ""))
+        # Deliberately after the checkbox and CSRF refusals above, so a member
+        # who forgot to tick the box does not have to make the whole provider
+        # round trip again. The proof is still single-use and still expires on
+        # its own clock; what is spent here is spent on a real attempt.
+        reasserted = consume_federated_reassertion(user["user_id"])
+        deleted, error = permanently_delete_account(
+            user, request.form.get("password", ""), reasserted=reasserted,
+        )
         if not deleted:
             return render_account_page("delete_account", "Delete Account", current_user=user, error=error)
         session.clear()
@@ -10561,7 +10710,12 @@ def api_account_delete():
     payload = request.get_json(silent=True) or {}
     if payload.get("confirm_delete") is not True:
         return jsonify({"ok": False, "message": "Permanent deletion confirmation is required."}), 400
-    deleted, error = permanently_delete_account(user, payload.get("password") or "")
+    # No re-assertion on this leg -- see FEDERATED_DELETE_HINT_WEB. A
+    # federated-only member deleting from the app is pointed at the web page,
+    # which 5.1.1(v) accepts as long as the app is where they start.
+    deleted, error = permanently_delete_account(
+        user, payload.get("password") or "", federated_hint=FEDERATED_DELETE_HINT_APP,
+    )
     if not deleted:
         return jsonify({"ok": False, "message": error}), 400
     session.clear()

@@ -960,7 +960,13 @@
             <p>This removes your PulseSoc profile, signs you out on this device, revokes notification access, and removes or anonymizes content tied to your identity.</p>
             <form method="post">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-              <input name="password" type="password" autocomplete="current-password" placeholder="Confirm your password" required />
+              {# Rendered only when there is a password to confirm. A `required`
+                 field on a federated-only account is not merely unhelpful: the
+                 browser refuses to submit the form at all, so the member cannot
+                 reach the server to be told what to do instead. #}
+              {% if has_password %}
+                <input name="password" type="password" autocomplete="current-password" placeholder="Confirm your password" required />
+              {% endif %}
               <label class="consent-row">
                 <input type="checkbox" name="confirm_delete" required />
                 <span>I understand this action is permanent and I want to delete my PulseSoc account.</span>
@@ -970,6 +976,33 @@
                 <a class="button primary" href="/account/settings">Cancel</a>
               </div>
             </form>
+            {# Separate forms, after the one above rather than inside it: nested
+               forms are invalid HTML and the browser drops the inner one. #}
+            {% set confirmable = federated_connections | selectattr("linked") | list %}
+            {% if confirmable %}
+              <div class="settings-row">
+                <span>
+                  {% if has_password %}
+                    <small class="muted">Or confirm with a connected sign-in method instead of your password.</small>
+                  {% else %}
+                    <small class="muted">This account has no password. Confirm with your connected sign-in method to delete it.</small>
+                  {% endif %}
+                </span>
+                {% for connection in confirmable %}
+                  <form method="post" action="/auth/{{ connection.provider }}/start">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                    <input type="hidden" name="mode" value="verify" />
+                    <input type="hidden" name="next" value="/account/delete" />
+                    <button class="button" type="submit">Confirm with {{ connection.label }}</button>
+                  </form>
+                {% endfor %}
+              </div>
+            {% elif not has_password %}
+              {# No password and no linked provider is a member with no way to
+                 prove anything. Unreachable through the flows that exist, but
+                 silence here would be a dead end, so name the escape hatch. #}
+              <p class="muted">This account has no password and no connected sign-in method. Use <a href="/forgot-password">Forgot password</a> to set one, then return here.</p>
+            {% endif %}
           </div>
 
         {% elif page == "admin_users" %}
