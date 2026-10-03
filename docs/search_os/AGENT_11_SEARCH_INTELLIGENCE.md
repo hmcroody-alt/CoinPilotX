@@ -1,8 +1,16 @@
 # Agent 11 — Search Intelligence, Exposure Ledger, Admin Search OS
 
-Measured 2026-10-03 against production at deployed SHA `5bdf4e431`
-(`GET /api/service/health`), which is also this branch's merge base — so every
-number below describes the same bytes as the code in this checkout.
+First measured 2026-10-03 against production at deployed SHA `5bdf4e431`
+(`GET /api/service/health`), which is also this branch's merge base — so the
+fixtures below describe the same bytes as the code in this checkout.
+
+**By the final verification pass the same day, production had already moved to
+`6e9b64110`** — main takes dozens of commits a day from parallel sessions. The
+wire baseline was re-probed against that newer deployment and was unchanged: 41
+products, 0 faults, 0 UNKNOWN. That is the single most useful fact in this
+document about its own shelf life: every number here is a reading with a
+timestamp, the deployment it was read from is already gone, and the re-probe is
+one command (§4.4). Do not treat any figure below as a property of the system.
 
 This document answers one question: **what can PulseSoc actually prove about its
 own search exposure, and where does it only believe things?**
@@ -85,6 +93,14 @@ not checked (UNKNOWN, not clean):
 **41 and not 42 is correct and explained:** the 42nd `<loc>` is the storefront
 index `/pulse/marketplace`, which has no listing id and no per-listing claims to
 compare. It is excluded deliberately, not dropped silently.
+
+**41 is a measurement, not a constant.** It is frozen here as a snapshot —
+origin `https://pulsesoc.com`, captured 2026-10-03, first at deployed SHA
+`5bdf4e431` and re-confirmed hours later at `6e9b64110` —
+and nothing in the engine, the runner or the suite hardcodes it. The count comes
+from the live sitemap on every run, so a catalogue of 300 products needs no code
+change. Anyone who later writes `41` into an assertion has converted today's
+weather into a law; the number to compare against is the sitemap, not this page.
 
 Read "0 faults" as exactly what it says: *no contradiction was found among the
 surfaces that could be read*, and on these 41 pages every surface could be read.
@@ -216,13 +232,13 @@ degrades to "no contradiction found" when the thing it reads stops being read.
 a mutation in real source.
 
 ```
-baseline  GREEN  (52 passed, 27 subtests passed)
-killed 10/10
+baseline  GREEN  (56 passed, 45 subtests passed)
+killed 12/12
 ```
 
-All ten mutants die, including `AGGREGATE_OFFER_IGNORED`,
+All twelve mutants die, including `AGGREGATE_OFFER_IGNORED`,
 `STOCK_LABEL_MATCHED_AS_SUBSTRING`, `UNKNOWN_READS_AS_KNOWN` and
-`ROW_BLAME_COLLAPSED`. Two things the harness found that the tests had missed:
+`ROW_BLAME_COLLAPSED`. Four things the harness found that the tests had missed:
 
 * **A real blind spot.** The engine originally read only `offers.price`, so the
   three ranged products (listings 15, 89, 112 — 7% of the catalogue) reported
@@ -235,11 +251,35 @@ All ten mutants die, including `AGGREGATE_OFFER_IGNORED`,
   comparing it. A real test was added
   (`test_the_same_number_in_a_different_currency_is_a_disagreement`). A mutant
   killed by an unrelated assertion is a survivor with good manners.
+* **A guard reading prose as behaviour.** The first version of
+  `test_the_comparison_engine_cannot_reach_a_connection` scanned raw source for
+  `import bot` and failed — on the engine's own docstring, which says it never
+  imports `bot`. That is the `route_auth` mistake in this repo exactly: a
+  sentence about code counted as code. The scanner now blanks docstrings and
+  comments via `ast` + `tokenize`, and deliberately keeps every other string
+  literal, because SQL lives in those and excluding them would make the guard
+  unfailable.
+* **A kill it could not attribute.** The two source-scanning mutants reported
+  `KILLED (0 test(s))`: `failing_tests()` read only `FAILED` lines, and a test
+  using `subTest` reports `SUBFAILED`. A kill whose killer cannot be named is
+  not much better than a survivor, since it is indistinguishable from an
+  unrelated failure. The parser now reads both and deduplicates.
 
 The harness reports `HARNESS_ERROR` separately from `KILLED` and aborts on a red
-baseline. Its own first run proved why: the sandbox omitted the `seo` package,
-the suite could not collect, and a cruder harness would have read that as ten
-kills. "Could not run" and "caught it" are different answers.
+baseline. Two of its own runs proved why. The first omitted the `seo` package,
+so the suite could not collect, and a cruder harness would have read that as ten
+kills. The run that added the read-only guards omitted
+`scripts/search_os/`, so the test that reads the runner raised `FileNotFound`
+instead of asserting — the fix was to copy the file, **not** to skip the test
+when it is missing, which would have made the guard evaporate in precisely the
+environment built to prove it works. "Could not run" and "caught it" are
+different answers.
+
+The two newest mutants are deliberately inert at runtime — nothing calls the
+function one adds, nothing uses the import the other adds. A mutation with a
+runtime effect can be killed by any test that happens to touch the same line,
+which only proves the suite noticed *something*. These can be killed by nothing
+except the guard being measured, and each is caught by exactly one test.
 
 ## 5. Source authority map
 
@@ -484,6 +524,12 @@ dies when it is broken.
 12. Every fault code declared in the engine is covered by a test — asserted by
     scraping `Fault("CODE"` out of the engine source, so adding a code without a
     test fails the suite.
+13. **The engine never writes, and cannot reach a connection to write
+    through.** No `INSERT`/`UPDATE`/`DELETE`/`UPSERT`/`ON CONFLICT`/`commit(`/
+    `executemany` in the engine or the runner; no `import bot`, no
+    `from . import db`, no `sqlite3` in the engine. Asserted over source with
+    docstrings and comments stripped, and killed by two mutants that are inert
+    at runtime so nothing but these guards can catch them.
 
 **The specific attack I expect to work:** point the sentinel at an origin that
 serves a login wall or an error page with HTTP 200. Every surface reads absent,
@@ -511,23 +557,249 @@ is precisely why it prints unconditionally. If you can get a clean verdict whose
 * **Agent 7** — §6.5 (your feed test's containment gap) and the two DB price
   authorities. `DB_PRICE_AUTHORITIES_DISAGREE` is yours alone; the page is
   innocent when it fires.
-* **Agent 9** — §6.4: two empty media sitemaps, submitted.
-* **Agent 12** — §12.
+* **Agent 9** — §6.4: two empty media sitemaps, submitted. Also §14.5 row 9.
+* **Agent 10** — §14.5 row 10; nothing of yours is compared yet.
+* **Agent 12** — §12 for the invariants, §14.9 for the twelve required
+  mutations and which six are executable today.
 
-## 14. Definition of done, honestly
+The durable version of all of this, written to survive without me, is §14.
+
+## 14. Durable fleet contracts
+
+Agent 11's implementation lane is closed. This section exists so the contracts
+survive without me — it is the part to read if you are picking this up cold.
+
+### 14.1 The sentinel is frozen as an observer
+
+```
+      CANONICAL DB / COMMERCE AUTHORITIES
+                      |
+                      v
+                  PROJECTIONS
+          +-----------+-----------+
+          v           v           v
+         PDP       JSON-LD     MERCHANT
+          +-----------+-----------+
+                      |
+                      v
+              AGENT 11 COMPARES
+                      |
+                      v
+                 FAULT / PASS
+```
+
+It must never become an authority for price, availability, canonical URL,
+publication state, variant identity, Merchant eligibility or indexability. It
+observes disagreement; it does not resolve disagreement by inventing a third
+value.
+
+This is not a stylistic preference. PulseSoc already has two price authorities
+that disagree (`price_label` vs `marketplace_listing_variants`, §5). A third
+one, owned by the module whose job is to audit the first two, would be the
+version of this mistake that is hardest to unwind — and it would be
+*self-concealing*, because the faults would stop firing precisely because the
+auditor had silenced them. Invariant 13 makes that structural rather than
+cultural, and two mutants prove the guard works.
+
+### 14.2 The evidence lifecycle, and what each transition costs
+
+```
+ELIGIBLE -> SITEMAPPED -> SUBMITTED -> PROVIDER ACCEPTED -> CRAWLED
+  -> INDEXED -> IMPRESSION -> CLICK -> SESSION -> CART -> CHECKOUT -> ORDER
+```
+
+Every arrow requires its own evidence. The forbidden promotions, each of which
+is a real mistake available today:
+
+| Do not read | as | because |
+| --- | --- | --- |
+| sitemapped | submitted | we serve the file; nobody fetched it on our instruction |
+| IndexNow payload exists | submitted | `/api/indexnow` previews, and says so (§1) |
+| provider HTTP 202 | indexed | acceptance is receipt, not inclusion |
+| indexed | impression | inclusion is not display |
+| impression | click | and a click is not a session |
+| Google referrer | organic | cannot exclude paid — §6.2, §14.3 |
+| checkout start | paid order | two different tables |
+| Merchant feed generated | ingested / approved / shown | §14.5 |
+| 200 + robots.txt + sitemap | Bing indexed | §14.6 |
+| UNKNOWN | zero | §14.4 |
+| "traffic rose after deploy" | causation | no control, n=45 users |
+
+The local Merchant feed can legitimately be measured as GENERATED, ELIGIBLE and
+CONSISTENT. None of those three is evidence of INGESTED, APPROVED, SHOWN or
+CLICKED.
+
+### 14.3 Attribution contract
+
+Routed to Agent 0, Agent 12, and whoever owns analytics.
+
+`organic_visits` (`bot.py:32015`) classifies by referrer hostname against an
+event table that has no `utm_*` and no `gclid` column (`bot.py:125193`); only
+`sessions` carries those, and the query never joins it. With Google Ads live at
+$10/day, the number is inflated by paid clicks **by construction**. Do not
+surface it labelled "Google organic visits" without remediation or an explicit
+caveat.
+
+Any eventual model must distinguish, where evidence permits: organic search,
+paid search, social organic, social paid, direct, referral, email, unknown. And
+must keep `unknown` rather than guessing — a referrer of `google.com` is not
+evidence of organic, it is evidence of Google.
+
+### 14.4 `/admin/search` — on hold, and its state contract for later
+
+Still not built, for five reasons: no provider evidence source is connected;
+several fleet contracts are still on specialist branches; Agent 0 has not
+integrated the truth model; admin auth needs separate attention (§6.3); and a UI
+built now would invite fake zeros.
+
+A panel reading `0 impressions / 0 clicks / 0 indexed pages` would be
+*materially misleading* when the true state is UNKNOWN. When Agent 0 authorises
+it, it must render these states distinctly and never collapse any of them to a
+number:
+
+`PASS` · `FAULT` · `UNKNOWN` · `NO_EVIDENCE` · `STALE` · `NOT_CONFIGURED` ·
+`DISABLED`
+
+It must also not be built on top of §6.3 — an admin surface authenticated by a
+secret in `request.args` should not be extended before that is addressed.
+
+### 14.5 Expansion order for the sentinel
+
+Price is done. Do **not** rush the rest; each one consumes a contract that must
+freeze upstream first, and a comparison against a moving definition produces
+noise that teaches people to ignore the sentinel.
+
+| # | Comparison | Blocked on |
+| --- | --- | --- |
+| 1 | **Price** | **done** |
+| 2 | Availability | final lifecycle/publication semantics |
+| 3 | Canonical URL | Agent 2 |
+| 4 | Product / variant identity | Agent 3 |
+| 5 | Structured data | Agent 5 |
+| 6 | Sitemap membership | Agent 6 |
+| 7 | Merchant | Agent 7 |
+| 8 | IndexNow / Bing | Agent 8 |
+| 9 | Media | Agent 9 |
+| 10 | Social × commerce | Agent 10 |
+
+### 14.6 Provider handoffs
+
+* **Agent 8 — IndexNow and Bing.** You own outbound distribution. When it is
+  real, I consume: candidate generated, batch created, submission attempted,
+  provider response, retry, permanent failure, last successful submission. I
+  will never infer any of those from the existence of `/api/indexnow`. Bing
+  stays UNKNOWN until a Bing evidence source exists; 200s, robots.txt and
+  sitemap membership are not it.
+* **Agent 7 — Google and Merchant.** Crawl, index, impression, click and
+  Merchant ingestion status stay `NO_EVIDENCE` until a real integration exists.
+  Do not build placeholder telemetry; a zero that looks like data is worse than
+  a blank that looks like a blank.
+
+### 14.7 Fixture governance
+
+`tests/fixtures/search_truth/` holds two real production pages. Real fixtures
+are why the parser works — a hand-written one would have used double quotes for
+the single-quoted, `&quot;`-escaped `data-mkt-variants` attribute and the
+richest price surface on the page would have gone silently unread. But a real
+fixture is a photograph, and photographs age.
+
+| | |
+| --- | --- |
+| Captured | 2026-10-03, Googlebot UA |
+| Production SHA | `5bdf4e431d1fd9164706962d7610d287a1f3092b` — recorded in the suite as `FIXTURE_DEPLOYED_SHA`. **A provenance note, not an enforced gate:** nothing reads it, and nothing can, since the suite runs offline and cannot know what production serves now. Treat it as the date stamp on a photograph. **It was already out of date before this document was committed** — production moved to `6e9b64110` the same afternoon. That is the normal case here, not an incident. |
+| Surfaces represented | `pdp_163_point_price.html` — one variant, point price, `Offer.price`; `pdp_15_range_price.html` — 42 variants over 6 prices, `AggregateOffer` |
+| Scrubbed | nothing; both are anonymous public PDPs with no personal data |
+| Re-probe when | the PDP template changes, a price surface is added or removed, or `marketplace_web.derive_price` changes |
+
+Do not treat these as current production truth indefinitely. The live check is
+the runner against the live origin; the fixtures only pin the parser.
+
+### 14.8 Ownership map
+
+| Agent | Owns |
+| --- | --- |
+| 0 | Integration, activation, admin surface, deployment |
+| 2 | Canonical / indexability authority |
+| 3 | Product and variant semantics |
+| 5 | Structured-data projection |
+| 6 | Sitemap and crawl-distribution truth |
+| 7 | Google / Merchant projection and eventual provider evidence |
+| 8 | IndexNow / Bing distribution |
+| 9 | Media search eligibility |
+| 10 | Social-commerce relationships |
+| 11 | Cross-surface measurement and provider evidence |
+| 12 | Adversarial Search OS verification |
+
+### 14.9 Required mutations for Agent 12
+
+Twelve attacks. Six are executable against code that exists today and are named
+with the test that already catches them; six are contracts on code that does not
+exist yet, and the correct time to write them is the day someone starts building
+that code.
+
+**Live today — all pass:**
+
+| # | Attack | Must | Caught by |
+| --- | --- | --- | --- |
+| 1 | DB 30.50, PDP 30.50, JSON-LD 29.99 | fault | `test_price_surfaces_disagree_when_the_structured_data_drifts` |
+| 2 | DB 20–30, `AggregateOffer` 20–30, page prints 20 only | fault | `test_a_visible_pill_showing_only_the_low_end_of_a_span_is_a_fault` — and its mirror, `test_an_aggregate_offer_span_that_drifts_from_the_printed_span` |
+| 3 | 19.99 and 29.99 both in authoritative prose | ambiguity must not vanish | `test_a_second_contradictory_price_in_one_sentence_is_a_fault`, `test_a_contradictory_prose_price_is_never_recorded_as_an_absence` |
+| 4 | currency differs, number matches | fault | `test_the_same_number_in_a_different_currency_is_a_disagreement` |
+| 5 | one surface missing | UNKNOWN, never fabricated agreement | `test_price_absent_on_wire_is_a_different_code_from_a_wrong_price` |
+| 6 | HTML fetch fails | UNKNOWN fetch failure, never a product fault | `test_a_page_we_could_not_fetch_produces_no_faults` |
+| 12 | sentinel rewrites commerce truth | impossible | `test_the_comparison_engine_contains_no_write`, `test_the_comparison_engine_cannot_reach_a_connection`, `test_the_runner_contains_no_write` |
+
+**Contracts on code that does not exist yet — write the test with the code:**
+
+| # | Attack | Must fail |
+| --- | --- | --- |
+| 7 | Merchant feed generated ⇒ provider ingestion true | yes |
+| 8 | IndexNow payload exists ⇒ submission true | yes |
+| 9 | Google referrer ⇒ organic, with no paid/organic evidence | yes |
+| 10 | provider telemetry unavailable ⇒ dashboard renders 0 | yes |
+| 11 | a new authoritative price surface is added to the PDP and the sentinel ignores it forever | yes |
+
+Number 11 deserves its detection recipe, because it is the one that rots
+quietly: compare the surface list in §4.1 against Agent 5's generator output and
+the rendered PDP, and fail when the page states a price the engine does not
+read. The analogous guard already exists one level down —
+`test_every_declared_fault_code_is_covered_by_a_test_above` scrapes the engine
+for fault codes so a new code without a test fails the suite. Surface coverage
+needs the same treatment once Agent 5's output is a declared contract rather
+than a template.
+
+### 14.10 Harness properties to preserve
+
+Whatever the harness grows into, keep: a verified-green baseline before any
+result is believed; proof the mutation actually applied (an unmatched anchor is
+a harness error, not a kill); an import or collection failure reported as
+`COULD_NOT_RUN` and never as a kill; a `TemporaryDirectory` copy with no restore
+step; designed survivors counted apart from kills; and every kill attributed to
+a named test. Agent 1 reached the same conclusion independently from the other
+direction — a measurement harness that writes to real source creates the
+production change it was built to detect.
+
+## 15. Definition of done, honestly
 
 Done: observability reality map; provider inventory; source authority map;
-ledger contract; the sentinel, tested (52 tests) and mutation-proven (10/10);
-production baseline; incident model; privacy model; rollout/rollback;
-invariants; handoffs.
+ledger contract; the sentinel, tested (56 tests, 45 subtests) and
+mutation-proven (12/12); production baseline frozen as a dated snapshot;
+incident model; privacy model; rollout/rollback; 13 invariants; fleet contracts
+and handoffs.
 
 Not done, and deliberately: `/admin/search` (Phase 38 — one branch of backend
-truth is not enough); any provider integration (no credentials, and that is
-Agent 0's call); any fix to §6.1–§6.5 (not mine to fix).
+truth is not enough, and §14.4 lists four more reasons); any provider
+integration (no credentials, and that is Agent 0's call); any fix to §6.1–§6.5
+(not mine to fix); comparisons 2–10 in §14.5 (each blocked on an upstream
+contract).
 
 The one-sentence state of the system:
 
-> PulseSoc can now prove that the 41 product pages it submits for indexing tell
-> one consistent story about their own prices, availability, canonical identity
-> and robots posture — and can prove nothing whatsoever about what any search
-> engine did with them.
+> PulseSoc can now prove that the product pages it submits for indexing tell one
+> consistent story about their own prices, availability, canonical identity and
+> robots posture — and can prove nothing whatsoever about what any search engine
+> did with them.
+
+**Agent 11 — complete / pushed / standby.** Reactivate when Agent 0 integrates
+upstream contracts, Agent 7 or Agent 8 provides real provider evidence, Agent 12
+breaks an invariant, or production develops a Search Truth disagreement.

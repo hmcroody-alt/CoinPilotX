@@ -49,8 +49,10 @@ number *and also* a different one somewhere else. Closing that is
 
 from __future__ import annotations
 
+import ast
 import os
 import sys
+import tokenize
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -320,9 +322,33 @@ class EveryFaultCodeCanFireTestCase(unittest.TestCase):
 
     def test_an_aggregate_offer_span_that_drifts_from_the_printed_span(self):
         page = RANGE_PAGE.replace('"highPrice": "51.74"', '"highPrice": "61.74"')
+        self.assertNotEqual(page, RANGE_PAGE)
         self.assert_fires(
             search_truth.compare_page(RANGE_ID, page), "PRICE_SURFACES_DISAGREE", search_truth.P0
         )
+
+    def test_a_visible_pill_showing_only_the_low_end_of_a_span_is_a_fault(self):
+        """The mirror of the test above, and the likelier bug of the two.
+
+        A template that prints `min(prices)` instead of the span is an ordinary
+        mistake, and it is the direction that costs money: the structured data
+        and the feed keep saying 15.92-51.74 while the buyer reads 15.92 and
+        gets charged more at checkout. Nothing about the page looks broken.
+
+        Asserted separately from the `AggregateOffer` drift because they fail in
+        opposite directions, and a comparison that caught one could plausibly be
+        written so it missed the other -- the narrowed value is a *subset* of
+        the span rather than a different number.
+        """
+
+        old = '<span class="mkt-price-value" data-mkt-price>$15.92 – $51.74</span>'
+        self.assertEqual(RANGE_PAGE.count(old), 1, "fixture markup moved; this test is vacuous")
+        page = RANGE_PAGE.replace(old, '<span class="mkt-price-value" data-mkt-price>$15.92</span>')
+        verdict = search_truth.compare_page(RANGE_ID, page)
+        self.assert_fires(verdict, "PRICE_SURFACES_DISAGREE", search_truth.P0)
+        detail = {f.code: f.detail for f in verdict.faults}["PRICE_SURFACES_DISAGREE"]
+        self.assertIn("visible_pill=15.92 USD", detail)
+        self.assertIn("jsonld_offer=15.92-51.74 USD", detail)
 
     def test_canonical_mismatch_on_a_trailing_slash(self):
         page = POINT_PAGE.replace(
@@ -559,6 +585,110 @@ class NoDatabaseOnTheWireOnlyPathTestCase(unittest.TestCase):
         self.assertNotIn("bot", sys.modules, "precondition: bot must not be imported already")
         search_truth.compare_page(POINT_ID, POINT_PAGE)
         self.assertNotIn("bot", sys.modules)
+
+
+class ObserverNeverBecomesAnAuthorityTestCase(unittest.TestCase):
+    """The engine reports disagreement. It must never resolve one.
+
+    This is the failure mode that would quietly destroy the thing being
+    measured: the sentinel notices the page and the row disagree, decides which
+    one is right, and writes. From then on the two surfaces agree because the
+    sentinel made them agree, and the comparison is a feedback loop reporting on
+    its own output. Every fault it had been catching disappears, and the report
+    goes green at the exact moment it stops meaning anything.
+
+    No fault output can reveal that -- a silenced catalogue and a correct one
+    print the same thing -- so the guarantee has to be structural.
+
+    PulseSoc already has two price authorities that disagree
+    (``price_label`` vs ``marketplace_listing_variants``). A third one, owned by
+    the module whose job is to audit the first two, is the version of this
+    mistake that would be hardest to unwind.
+    """
+
+    #: Substring checks over the source. They cannot catch SQL assembled at
+    #: runtime, and are not meant to: they catch the way this would actually
+    #: arrive -- a later contributor "fixing" the drift at the point the engine
+    #: detects it, which is the most natural place to put it and the one place
+    #: it must never go.
+    WRITE_TOKENS = ("INSERT", "UPDATE ", "DELETE", "UPSERT", "ON CONFLICT", "commit(", "executemany")
+
+    #: Not just "no write" -- no connection to write *through*. `services/db.py`
+    #: is the accessor and `bot` owns the schema; the engine is handed its rows
+    #: by the caller. Adding a write means adding one of these imports first, so
+    #: this is the line someone would have to delete to do it.
+    REACH_TOKENS = ("from . import db", "from services import db", "import bot", "sqlite3")
+
+    def source_of(self, path):
+        """The module's *code*, with comments and docstrings blanked out.
+
+        Scanning raw source would make this guard read prose as behaviour --
+        which is how `route_auth` in this repo counts a commented-out call as a
+        call, and is exactly what happened on the first run of this test: the
+        engine's own docstring explains that it never does `import bot`, and the
+        scan read that sentence as the import.
+
+        Other string literals are deliberately kept: SQL lives in them, so
+        excluding strings wholesale would turn this into a guard that cannot
+        fail. Only the docstrings go, because they are the only strings that
+        describe the code instead of being it.
+        """
+
+        with open(path, encoding="utf-8") as handle:
+            source = handle.read()
+        lines = source.splitlines()
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(
+                node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+            ):
+                continue
+            if ast.get_docstring(node, clean=False) is None:
+                continue
+            doc = node.body[0]
+            for index in range(doc.lineno - 1, doc.end_lineno):
+                lines[index] = ""
+        kept = []
+        readline = iter(lines).__next__
+        comments = {
+            token.start[0]: token.start[1]
+            for token in tokenize.generate_tokens(lambda: readline() + "\n")
+            if token.type == tokenize.COMMENT
+        }
+        for number, line in enumerate(lines, 1):
+            kept.append(line[: comments[number]] if number in comments else line)
+        return "\n".join(kept)
+
+    def test_the_comparison_engine_contains_no_write(self):
+        source = self.source_of(search_truth.__file__)
+        for token in self.WRITE_TOKENS:
+            with self.subTest(token=token):
+                self.assertNotIn(token, source)
+
+    def test_the_comparison_engine_cannot_reach_a_connection(self):
+        source = self.source_of(search_truth.__file__)
+        for token in self.REACH_TOKENS:
+            with self.subTest(token=token):
+                self.assertNotIn(token, source)
+
+    def test_the_runner_contains_no_write(self):
+        """The runner is the half that gets aimed at production.
+
+        It may import `bot` for the row-level mode -- that is why the mode is
+        documented local/CI-only -- but importing the schema owner in order to
+        *read* a row is not permission to change one.
+        """
+
+        source = self.source_of(
+            os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "scripts",
+                "search_os",
+                "search_truth_sentinel.py",
+            )
+        )
+        for token in self.WRITE_TOKENS:
+            with self.subTest(token=token):
+                self.assertNotIn(token, source)
 
 
 if __name__ == "__main__":

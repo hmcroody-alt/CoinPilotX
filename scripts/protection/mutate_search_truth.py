@@ -54,6 +54,11 @@ SUITE = "tests/test_search_truth.py"
 #: the first run of this harness omitted it and the sandbox could not collect
 #: the suite at all. That showed up as COULD_NOT_RUN rather than as ten kills,
 #: which is the whole reason that outcome is kept separate.
+#: `scripts/search_os/` is here because the suite asserts the *runner* contains
+#: no write, and a test that reads a file the sandbox does not copy would
+#: FileNotFound rather than assert. Skipping the test when the file is missing
+#: would have been worse: the guard would silently evaporate in exactly the
+#: environment built to prove it works.
 COPY = (
     "services",
     "seo",
@@ -61,6 +66,7 @@ COPY = (
     "tests/conftest.py",
     SUITE,
     "tests/fixtures/search_truth",
+    "scripts/search_os/search_truth_sentinel.py",
 )
 
 
@@ -143,6 +149,34 @@ MUTATIONS = (
         'return (Decimal(claim.low), Decimal(claim.high), (claim.currency or "").upper())',
         'return (Decimal(claim.low), Decimal(claim.high), "")',
     ),
+    # The last two are deliberately inert at runtime: nothing calls the function
+    # they add and nothing uses the import they add. That is the point. A
+    # mutation with a runtime effect can be killed by any test that happens to
+    # touch the same line, which only proves the suite noticed *something*.
+    # These can be killed by nothing except the guard that reads the source, so
+    # they measure that guard instead of its neighbours.
+    Mutation(
+        "SENTINEL_WRITES_THE_TRUTH_IT_MEASURES",
+        "the observer becomes a third price authority: it resolves the "
+        "disagreement it exists to report, the surfaces then agree because it "
+        "made them agree, and every fault it was catching disappears while the "
+        "report goes green",
+        'SKU_TEMPLATE = "pulsesoc-listing-{listing_id}"',
+        'SKU_TEMPLATE = "pulsesoc-listing-{listing_id}"\n\n\n'
+        "def reconcile_price_label(conn, listing_id, winner):\n"
+        "    conn.execute(\n"
+        '        "UPDATE marketplace_listings SET price_label = ? WHERE id = ?",\n'
+        "        (winner, listing_id),\n"
+        "    )",
+    ),
+    Mutation(
+        "SENTINEL_REACHES_A_CONNECTION",
+        "the engine acquires the means to write -- this is how the previous "
+        "mutation arrives, and the line a reviewer would have to wave through "
+        "first",
+        "import json",
+        "import json\nimport sqlite3",
+    ),
 )
 
 
@@ -166,7 +200,14 @@ def sandbox(into):
 
 
 def run_suite(root):
-    """``(ok, tail)``. ``ok`` only when pytest itself ran and everything passed."""
+    """``(ok, output)``. ``ok`` only when pytest itself ran and everything passed.
+
+    Returns the **whole** output, not a tail. It used to return ``out[-800:]``
+    and the attribution was parsed from that, so a mutant caught by enough tests
+    had its earliest killers silently trimmed off the front -- the one mutation
+    here that six tests catch reported five. Truncating is a display concern and
+    now happens at the print sites instead.
+    """
 
     proc = subprocess.run(
         [sys.executable, "-m", "pytest", SUITE, "-q", "--no-header", "-p", "no:cacheprovider"],
@@ -179,16 +220,28 @@ def run_suite(root):
     # failure mode this harness most needs to avoid, so the distinction is made
     # on the summary line rather than on the exit code alone.
     if "no tests ran" in out or "error" in out.splitlines()[-1].lower():
-        return False, "COULD_NOT_RUN: " + out[-800:]
-    return proc.returncode == 0, out[-800:]
+        return False, "COULD_NOT_RUN: " + out
+    return proc.returncode == 0, out
 
 
 def failing_tests(output):
-    return tuple(
-        line.split("::")[-1].split()[0]
-        for line in output.splitlines()
-        if line.startswith("FAILED")
-    )
+    """Names of the tests that caught it, deduplicated, in report order.
+
+    ``SUBFAILED`` is read as well as ``FAILED``. A test using ``subTest`` only
+    ever reports the former, so a parser reading ``FAILED`` alone printed
+    "KILLED (0 test(s))" for the two source-scanning mutants -- a kill whose
+    killer it could not name, which is not meaningfully better than a survivor.
+    One test can also emit many ``SUBFAILED`` lines, hence the dedupe.
+    """
+
+    found = []
+    for line in output.splitlines():
+        if not line.startswith(("FAILED", "SUBFAILED")):
+            continue
+        name = line.split("::")[-1].split()[0]
+        if name not in found:
+            found.append(name)
+    return tuple(found)
 
 
 def apply_mutation(root, mutation):
@@ -259,7 +312,7 @@ def main(argv=None):
     if broken:
         print(f"\nHARNESS ERRORS -- these prove nothing either way:")
         for r in broken:
-            print(f"  {r.name}: {r.detail}")
+            print(f"  {r.name}: {r.detail[-800:]}")
     if survived:
         print("\nSURVIVED -- the suite does not test these comparisons:")
         for r in survived:
