@@ -2,7 +2,7 @@
 
 ## Findings log (published as found, not held for the final report)
 
-Status: **OPEN — 6 material findings, 1 fleet blocker, 1 gate landed (red)**
+Status: **OPEN — 7 findings (1 low), 3 attacks passed, 1 fleet blocker, 1 gate landed (red)**
 Branch: `search-os/agent-12-quality-sentinel`
 Measured against: `origin/main` @ `5bdf4e431`
 Method: Flask test client over `app.url_map`, against a scratch copy of the dev DB
@@ -38,7 +38,7 @@ yet. Any "PASS" I returned today would be a pass over empty space.
 
 What is genuinely unblocked, and what I therefore pivoted to:
 1. Attacking the **already-shipped production** search engine — the substrate
-   every other agent builds on. All four findings below come from that.
+   every other agent builds on. Every finding below comes from that.
 2. The threat model and the cross-agent invariant matrix, which Agent 0 needs to
    freeze and which do not depend on Agents 3–11 existing.
 3. The CI gate Agent 2 explicitly assigned me in its §6.3.
@@ -304,6 +304,58 @@ is explicit: publish evidence → owner fixes root architecture → verify → *
 add permanent regression coverage. Merging it now would instead turn the shared
 protection suite red for twelve other agents over defects none of them
 introduced.
+
+---
+
+## Attacks that found nothing — recorded as passes
+
+Negative results are results. I am not going to inflate these into findings,
+and the next agent should not re-spend the time.
+
+**URL-shape duplication: PASS.** 12 variants × 5 indexable pages = 60 probes,
+**0 indexable duplicates with a wrong or missing canonical.** Trailing slash,
+upper-case, title-case, `/.`, `/../`, `/index.html`, `;jsessionid=` and
+`%2F` all 404 rather than minting a second copy. Tracking parameters
+(`?utm_source=`, `?fbclid=`) and unknown parameters (`?sortby=`, `?ref=`)
+correctly return 200 *with the canonical pointing back at the clean URL* —
+which is the right call, since 404ing on a tracking parameter would break
+inbound links.
+
+**Host-header canonical injection: PASS.** 8 header combinations × 2 pages,
+**0 poisoned canonicals.** `canonical` and `og:url` are built from a hardcoded
+base, so `X-Forwarded-Host`, `X-Original-Host`, `X-Host` and `Forwarded` are all
+ignored. A spoofed `Host` gets a 301 from the *application*, not just from
+Railway's edge — worth knowing, because "the edge would catch it" is a
+deployment detail and the edge is not in front of the test client. This is the
+highest-severity SEO attack there is and it is properly closed.
+
+**Double-slash reachability: PASS.** 0 host-relative double-slash URLs emitted
+across four sitemaps, `robots.txt`, and five rendered pages.
+
+---
+
+## A12-07 — LOW/latent: two slash-merge redirects 301 into a 404
+
+The slash-merge handler drops the first path segment instead of collapsing the
+slashes:
+
+```
+//help                301 -> https://pulsesoc.com/              -> 200   (page lost, lands on root)
+//terms //privacy //enterprise   301 -> https://pulsesoc.com/   -> 200   (same)
+//pulse/marketplace   301 -> https://pulsesoc.com/marketplace   -> 404   DEAD END
+//pulse/cart          301 -> https://pulsesoc.com/cart          -> 404   DEAD END
+```
+
+`//X/Y` becomes `/Y` and `//X` becomes `/`. The correct target is `/X/Y`.
+
+**Severity is low and I want to be explicit about why:** nothing we emit
+contains a double-slash self-path (0 across four sitemaps, `robots.txt` and five
+pages), so no crawler reaches these from our own markup. It needs a malformed
+external inbound link. Listed because a 301 landing on a 404 destroys whatever
+equity the source had, and because `//help → /` is a soft-404 pattern — but it
+should not jump any queue.
+
+**Owner: Agent 2.** Invariant: #7.
 
 ---
 
