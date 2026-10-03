@@ -403,6 +403,17 @@ def webpage_schema(page):
 # pages offers, named from the page's own `h1`, and `tests/test_app_schema.py`
 # holds the floor for putting a price back -- a reader of the page has to be able
 # to see the same number.
+#
+# The invariant, which outlives this particular node:
+#
+#     UNKNOWN OR CONTRADICTORY PRICE TRUTH -> NO PRICE STRUCTURED-DATA CLAIM.
+#
+# Substituting 999, or 1900, or whatever `PULSE_PREMIUM_PRICE_CENTS` happens to
+# hold, or "starting at", or a number converted from one of the above, does not
+# satisfy it. Those are all the same move -- choosing between disagreeing
+# authorities -- and the disagreement is the finding. See
+# `docs/seo/04_premium_price_authority.md` for what has to be true before a
+# price node is correct again.
 
 
 def article_schema(page):

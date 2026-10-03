@@ -1399,6 +1399,32 @@ def test_product_structured_data_carries_no_rating_and_no_review():
     assert "brand" not in data, "there is no brand column"
 
 
+def test_product_structured_data_claims_nobody_elses_identifier():
+    """A GTIN is a registered identifier belonging to a manufacturer, and
+    `variant_key` is the tempting thing to reach for -- it is a local option
+    string, not an identifier anyone else would recognise.
+
+    Asserted here as well as in `test_marketplace_seo.py` because the two
+    modules are not the same renderer: that one covers `marketplace_seo`, and
+    this one covers `marketplace_web.product_jsonld`, which is what the live
+    product page actually emits. Before this test the live path had no
+    assertion against identifier invention at all, so a `gtin13` added here
+    would have shipped green.
+
+    `sku` is deliberately excluded: the live node carries
+    `pulsesoc-listing-<id>`, which is PulseSoc's own identifier for its own
+    record and claims nothing about the manufacturer.
+    """
+
+    data = _jsonld()
+    for field in ("gtin", "gtin8", "gtin12", "gtin13", "gtin14", "mpn",
+                  "productID", "isbn"):
+        assert field not in data, (
+            f"{field} is not derivable from a marketplace_listings row; "
+            "supplier snapshots carry no brand, GTIN or MPN"
+        )
+
+
 def test_product_structured_data_carries_what_it_can_prove():
     """The positive half: absence tests must not pass by emitting nothing."""
     data = _jsonld(media=[mw.MediaItem(url="https://cdn/a.jpg", kind="image")])
