@@ -1603,6 +1603,33 @@ def app_cta_html(destination, resource_id=None, source="web", label=None, classe
 
 
 @webhook_app.context_processor
+def inject_search_policy():
+    """The robots directive for the current path, from the policy table.
+
+    Exposed as a context processor rather than passed per render so that a
+    template cannot be left behind. `support.html` is rendered from four call
+    sites in `support_page()` alone -- three of them error and success
+    branches -- and wiring `robots=` into each is a change that works until
+    someone adds a fifth.
+
+    The literal it replaces had drifted: `support.html` said
+    `index, follow, max-image-preview:large` while the table declares
+    `max-snippet:-1` and `max-video-preview:-1` as well, so `/help`,
+    `/support`, `/pulse/help` and `/pulse/support` were capping their own
+    snippets and video previews in results they were otherwise eligible for.
+    That is the same defect the four ads landing pages had, in a second file,
+    and it is the reason this value now comes from one function.
+
+    Query string included, because `robots_meta` reads it: the marketplace hub
+    is indexable at `?category=`, and dropping the query would hand back the
+    bare hub's directive for a different page.
+    """
+    path = request.path + (f"?{request.query_string.decode()}"
+                           if request.query_string else "")
+    return {"policy_robots": search_visibility.robots_meta(path)}
+
+
+@webhook_app.context_processor
 def inject_app_link_helpers():
     """Canonical app-link helpers for templates.
 
