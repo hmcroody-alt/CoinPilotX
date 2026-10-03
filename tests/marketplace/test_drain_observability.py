@@ -153,11 +153,32 @@ def bind(cur, *, listing_id=DROPSHIP, mode=None, sync_state=None,
         fulfillment_mode=mode or schema.MODE_DROPSHIP, sync_state=sync_state)
 
 
-def add_variant(cur, *, listing_id=DROPSHIP, stock_state=None, value="S"):
+def add_variant(cur, *, listing_id=DROPSHIP, stock_state=None, value="S",
+                provider_variant_id=None, price_cents=2000, cost_cents=800):
+    """One variant, carrying by default the same provider id ``bind`` binds to.
+
+    That default is load-bearing and it used to be absent. ``bind`` stores
+    ``f"v{listing_id}"`` in ``provider_variant_id``; this helper stored NULL. For
+    as long as the gate asked "is *any* active variant orderable?" the mismatch
+    was invisible, because no code read the column. The CATALOG SAFETY GATE asks
+    "is the *bound* variant orderable?" — so every fixture here was a listing
+    bound to a variant that did not exist, and every classification test started
+    reporting ``SUPPLIER_FULFILLMENT_IMPOSSIBLE`` regardless of what it was
+    about.
+
+    Pass an explicit, *different* id to build that case on purpose; see
+    ``test_a_listing_bound_to_no_supplier_variant_cannot_be_fulfilled``.
+
+    ``price_cents``/``cost_cents`` are parameters because the loss check reads
+    them. The defaults are profitable ($20.00 against $8.00) so that a test about
+    stock or freshness is not also a test about money.
+    """
     return variants.upsert_variant(
         cur, listing_id=listing_id, seller_user_id=SELLER,
         options=[{"name": "Size", "value": value}], sku=f"SKU-{listing_id}-{value}",
-        price_cents=2000, cost_cents=800, currency="USD",
+        provider_variant_id=(provider_variant_id if provider_variant_id is not None
+                             else f"v{listing_id}"),
+        price_cents=price_cents, cost_cents=cost_cents, currency="USD",
         stock_state=stock_state or schema.STOCK_IN_STOCK, stock_quantity=5)
 
 
@@ -357,6 +378,104 @@ def test_an_unreadable_confirmation_is_an_affirmative_block(cur):
 
 
 # ---------------------------------------------------------------------------
+# §22/§23 — the two refusals that wait on a person, not on a supplier
+# ---------------------------------------------------------------------------
+
+def test_a_listing_bound_to_no_supplier_variant_cannot_be_fulfilled(cur):
+    """Production listing 35, as a unit test. The §22 P0 sentinel.
+
+    42 active variants and ``provider_variant_id`` naming none of them, so
+    ``gateway.get_product_binding`` has nothing to resolve and the order dies with
+    ``product_binding_required`` — *after* the charge. Before the gate existed
+    this listing was published, in stock, priced, and reported by every surface as
+    healthy; there was no state anywhere that said otherwise.
+
+    Reported under its own name rather than as ``AFFIRMATIVE_NEGATIVE_BLOCK``
+    because nothing the supplier or the reconciler does will clear it. A human has
+    to choose which physical item this listing sells.
+    """
+    bind(cur, provider_variant_id="v-the-seller-picked-this")
+    add_variant(cur, provider_variant_id="v-but-only-this-one-exists")
+    confirm(cur, age_seconds=60)
+    name, verdict = name_for(cur, draining(cur))
+    assert verdict["decision"] == gate.DECISION_REFUSE
+    assert verdict["reason"] == gate.REASON_UNBOUND
+    assert verdict["bound"] is False
+    assert name == obs.SUPPLIER_FULFILLMENT_IMPOSSIBLE
+    # Not filed with the refusals that clear themselves, and not reported as a
+    # healthy reconciler that has not looked yet -- the fallthrough it used to hit.
+    assert name != obs.AFFIRMATIVE_NEGATIVE_BLOCK
+    assert name not in obs.UNVERIFIED_STATES
+    assert name in obs.DECISION_PENDING_STATES
+
+
+def test_a_sale_below_landed_cost_is_a_decision_pending_refusal(cur):
+    """The §23 sentinel: five production listings, charging less than they cost.
+
+    Asserted through the real gate so the number an owner reads comes from the
+    same arithmetic the checkout refuses on. $5.00 retail against $9.00 of cost is
+    a loss on every unit sold, and no amount of supplier traffic makes it not one.
+    """
+    bind(cur)
+    add_variant(cur, price_cents=500, cost_cents=900)
+    confirm(cur, age_seconds=60)
+    name, verdict = name_for(cur, draining(cur))
+    assert verdict["decision"] == gate.DECISION_REFUSE
+    assert verdict["reason"] == gate.REASON_NEGATIVE_MARGIN
+    assert verdict["charged_minor"] == 500 and verdict["basis_cost_minor"] == 900
+    assert name == obs.SUPPLIER_NEGATIVE_MARGIN
+    assert name in obs.DECISION_PENDING_STATES
+    assert name != obs.AFFIRMATIVE_NEGATIVE_BLOCK
+
+
+def test_a_profitable_sale_below_the_sellers_target_is_not_a_negative_margin(cur):
+    """§5's central distinction, held at the reporting layer too.
+
+    Production has 112 variants above cost and below the seller's 68% target. If
+    this module reported them as ``SUPPLIER_NEGATIVE_MARGIN`` the owner would read
+    a loss count of 117 instead of 5 and act on it — and the brief is explicit that
+    confusing the seller's *target* with a *loss* is how profitable listings get
+    taken off sale. $10.00 against $9.00 is a 10% margin: well under 68%, and a
+    sale PulseSoc makes money on.
+    """
+    bind(cur)
+    add_variant(cur, price_cents=1000, cost_cents=900)
+    confirm(cur, age_seconds=60)
+    name, verdict = name_for(cur, draining(cur))
+    assert verdict["decision"] == gate.DECISION_ALLOW
+    assert name == obs.CONFIRMED
+    assert name not in obs.REFUSING_STATES
+
+
+def test_the_two_decision_pending_refusals_are_counted_separately(cur):
+    """One of each in one snapshot, because the remedies differ.
+
+    An unbound listing needs a variant chosen; a below-cost listing needs a price
+    changed. A single combined counter would tell an operator that two listings
+    need attention without telling them which of two unrelated jobs to do, and
+    the brief asks for the two sentinels by name for that reason.
+    """
+    bind(cur, listing_id=DROPSHIP, provider_variant_id="v-missing")
+    add_variant(cur, listing_id=DROPSHIP, provider_variant_id="v-other")
+    confirm(cur, listing_id=DROPSHIP, age_seconds=60)
+
+    bind(cur, listing_id=DROPSHIP_B)
+    add_variant(cur, listing_id=DROPSHIP_B, price_cents=500, cost_cents=900)
+    confirm(cur, listing_id=DROPSHIP_B, age_seconds=60)
+    draining(cur)
+
+    out = obs.snapshot(cur, now=NOW)
+    assert out["states"][obs.SUPPLIER_FULFILLMENT_IMPOSSIBLE] == 1
+    assert out["states"][obs.SUPPLIER_NEGATIVE_MARGIN] == 1
+    assert out["refusing"] == 2
+    assert out["decision_pending"] == 2
+    # Both refusals, so neither is counted as exposure, and the rates still sum
+    # over a denominator that adds up.
+    assert out["unverified"] == 0
+    assert sum(out["states"].values()) == out["examined"]
+
+
+# ---------------------------------------------------------------------------
 # §2 — the seventh fact, and why it is not folded into one of the six
 # ---------------------------------------------------------------------------
 
@@ -426,24 +545,64 @@ def test_every_branch_of_evaluate_has_a_name():
     got around to this listing. That is the worst available default to inherit a
     new failure mode, and a count is the cheapest thing that notices.
 
-    The nine, and where each is named above: two ``_not_applicable("no_supplier")``
-    (a rejected reference and a listing with no source row — the first is a
-    programmer-error path no lane can reach), ``_not_applicable("merchant_stocked")``,
+    The eleven, and where each is named above: two
+    ``_not_applicable("no_supplier")`` (a rejected reference and a listing with no
+    source row — the first is a programmer-error path no lane can reach),
+    ``_not_applicable("merchant_stocked")``, ``_refuse(UNBOUND)``,
     ``_refuse(SOLD_OUT)``, three ``_refuse(STALE_CONFIRMATION)`` (failed sync,
     unreadable stamp, overdue age — the first two are affirmative blocks here and
-    only the third is ``SUPPLIER_UNCONFIRMED``), ``_allow(unverified=True)`` and
-    ``_allow(unverified=False)``. The one unverified allow is what fans out into
-    four reported states, by ``evidence_state``.
+    only the third is ``SUPPLIER_UNCONFIRMED``), ``_refuse(NEGATIVE_MARGIN)``,
+    ``_allow(unverified=True)`` and ``_allow(unverified=False)``. The one
+    unverified allow is what fans out into four reported states, by
+    ``evidence_state``.
+
+    It went from nine to eleven once, which is this test earning its keep: the
+    CATALOG SAFETY GATE added ``UNBOUND`` and ``NEGATIVE_MARGIN``, and until they
+    were named in ``classify`` both were being counted as a healthy reconciler
+    that had not got around to the listing yet — i.e. the two refusals that most
+    need an operator were reported as the state that needs nobody.
     """
     src = inspect.getsource(gate)
     evaluate = next(n for n in ast.parse(src).body
                     if isinstance(n, ast.FunctionDef) and n.name == "evaluate")
     returns = [n for n in ast.walk(evaluate) if isinstance(n, ast.Return) and n.value]
-    assert len(returns) == 9, (
-        "`evaluate` now has %d return statements, not the 9 this module was "
+    assert len(returns) == 11, (
+        "`evaluate` now has %d return statements, not the 11 this module was "
         "written against. A new outcome falls through `classify` into "
         "UNVERIFIED_NOT_YET_REACHED and is reported as a healthy reconciler. "
         "Name it in `classify` and add its test above." % len(returns))
+
+
+def test_every_refusal_reason_the_gate_can_return_is_named_by_classify():
+    """The same guarantee as the count above, but by name rather than by arity.
+
+    A return-statement count notices a *new* branch; it does not notice an
+    existing reason being re-pointed, nor a reason added to ``REFUSAL_CODES``
+    that reaches ``classify`` through an existing return. This drives ``classify``
+    with each declared reason and asserts none of them lands on the
+    ``UNVERIFIED_NOT_YET_REACHED`` fallthrough.
+
+    The verdicts here are literals, which every other classification test in this
+    file is forbidden from doing — the file docstring explains why. The exemption
+    is deliberate and narrow: this test is not asserting that a *situation*
+    classifies correctly, it is asserting that a *vocabulary* is covered, and the
+    vocabulary is read from the gate rather than typed out here. Its behavioural
+    counterpart is the per-state tests above, each of which drives the real gate.
+    """
+    for reason in gate.REFUSAL_CODES:
+        name = obs.classify({"decision": gate.DECISION_REFUSE, "reason": reason})
+        assert name in obs.REFUSING_STATES, (
+            "gate reason %r classifies as %r, which is not a refusing state"
+            % (reason, name))
+        assert name != obs.UNVERIFIED_NOT_YET_REACHED
+    # And the two that need a human are distinguished from the two that clear
+    # themselves -- the distinction the states exist for.
+    assert obs.classify({"decision": gate.DECISION_REFUSE,
+                         "reason": gate.REASON_UNBOUND}) in obs.DECISION_PENDING_STATES
+    assert obs.classify({"decision": gate.DECISION_REFUSE,
+                         "reason": gate.REASON_NEGATIVE_MARGIN}) in obs.DECISION_PENDING_STATES
+    assert obs.classify({"decision": gate.DECISION_REFUSE,
+                         "reason": gate.REASON_SOLD_OUT}) not in obs.DECISION_PENDING_STATES
 
 
 def test_the_state_vocabulary_is_partitioned_not_overlapping():
@@ -728,13 +887,86 @@ def test_the_catalogue_wide_drain_behind_does_not_page_anyone():
 
 
 def test_a_single_refused_buyer_is_news_once_it_persists():
-    """Refusals were zero in production, which is what makes any value a change."""
+    """Any refusal is a sale not being made, and a sustained one is a condition."""
     bad = _snap(applicable=44, states={obs.SUPPLIER_UNCONFIRMED: 1,
                                        obs.UNVERIFIED_DRAIN_BEHIND: 43})
     assert obs.alert_conditions([bad] * 3)["refusing"] is True
     # One snapshot is not a condition — a listing mid-revision can refuse for a
     # single tick and recover on the next.
     assert obs.alert_conditions([bad])["refusing"] is False
+
+
+def test_an_unfulfillable_buyable_listing_raises_its_own_sentinel():
+    """§22, the P0. ``refusing`` alone would not have identified it.
+
+    Production's six refusals mean ``refusing`` is now true in the steady state —
+    the same trap ``UNVERIFIED_DRAIN_BEHIND`` set and this module already learned
+    from once. So the condition an operator can act on has to be the specific
+    one, and the assertion that matters is the pair: a catalogue refusing only
+    for *unconfirmed* reasons must leave this sentinel false, or it is just
+    ``refusing`` under a second name.
+    """
+    unfulfillable = _snap(applicable=44,
+                          states={obs.SUPPLIER_FULFILLMENT_IMPOSSIBLE: 1,
+                                  obs.UNVERIFIED_DRAIN_BEHIND: 43})
+    alerts = obs.alert_conditions([unfulfillable] * 3)
+    assert alerts["fulfillment_impossible"] is True
+    assert alerts["negative_margin"] is False
+    assert alerts["refusing"] is True
+
+    merely_unconfirmed = _snap(applicable=44, states={obs.SUPPLIER_UNCONFIRMED: 2,
+                                                      obs.UNVERIFIED_DRAIN_BEHIND: 42})
+    quiet = obs.alert_conditions([merely_unconfirmed] * 3)
+    assert quiet["fulfillment_impossible"] is False
+    assert quiet["negative_margin"] is False
+    assert quiet["refusing"] is True
+
+
+def test_a_below_cost_listing_raises_the_margin_sentinel_and_not_the_other():
+    """§23. Production's five, and they must not read as unfulfillable.
+
+    The two are separated here as well as in ``classify`` because an alert that
+    fires for both conditions sends whoever is on call to the wrong screen: one
+    is a pricing decision, the other is a variant choice.
+    """
+    losing = _snap(applicable=44, states={obs.SUPPLIER_NEGATIVE_MARGIN: 5,
+                                          obs.UNVERIFIED_DRAIN_BEHIND: 39})
+    alerts = obs.alert_conditions([losing] * 3)
+    assert alerts["negative_margin"] is True
+    assert alerts["fulfillment_impossible"] is False
+
+    # And the production shape as measured: one of each kind, both sentinels on.
+    both = _snap(applicable=44, states={obs.SUPPLIER_NEGATIVE_MARGIN: 5,
+                                        obs.SUPPLIER_FULFILLMENT_IMPOSSIBLE: 1,
+                                        obs.UNVERIFIED_DRAIN_BEHIND: 38})
+    measured = obs.alert_conditions([both] * 3)
+    assert measured["negative_margin"] is True
+    assert measured["fulfillment_impossible"] is True
+    # Still not an outage, and still not a stopped worker — the gate refusing six
+    # listings is it working.
+    assert measured["worker_stopped"] is False
+
+
+def test_the_sentinels_need_the_same_sustained_window_as_everything_else():
+    """One observation is never a condition, including for a P0.
+
+    A listing is unbound for a few hundred milliseconds in the middle of a
+    rebinding, and a sentinel that fired on a single snapshot would page during
+    the operator action that fixes it.
+    """
+    bad = _snap(applicable=44, states={obs.SUPPLIER_FULFILLMENT_IMPOSSIBLE: 1,
+                                       obs.SUPPLIER_NEGATIVE_MARGIN: 1})
+    for history in ([bad], [bad] * 2):
+        alerts = obs.alert_conditions(history)
+        assert alerts["fulfillment_impossible"] is False
+        assert alerts["negative_margin"] is False
+    settled = obs.alert_conditions([bad] * 3)
+    assert settled["fulfillment_impossible"] is True
+    assert settled["negative_margin"] is True
+    # And a resolved listing clears it rather than latching.
+    recovered = obs.alert_conditions([bad, bad, _snap(applicable=44, states={})])
+    assert recovered["fulfillment_impossible"] is False
+    assert recovered["negative_margin"] is False
 
 
 def test_a_stopped_worker_alerts_but_being_behind_does_not():

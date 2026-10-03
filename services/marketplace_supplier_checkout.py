@@ -128,6 +128,44 @@ last read told us the product is gone".
 The effect is that deploying the worker makes this gate strict as confirmations
 arrive, listing by listing, rather than all at once on a latch, and until a
 listing is covered it says out loud that it cannot vouch for it.
+
+Two facts this gate did not check, and the money it cost
+-------------------------------------------------------
+Everything above is about *availability*: can the supplier still ship this. Two
+other things can be known-false before a buyer is charged, and neither was asked.
+
+**Nothing bound.** A drop-shipped listing sells exactly the variant named by
+``marketplace_product_sources.provider_variant_id``; ``fulfillment.create_intent``
+resolves every line through ``gateway.get_product_binding``, which raises
+``product_binding_required`` (409) when that column is NULL and, failing that,
+``create_intent`` raises ``product_binding_mismatch`` (400) when the line's
+``vid`` is not the bound one. Both run *after* the charge, so a live, priced,
+in-stock, unbound listing took the buyer's money and only then failed.
+Production listing 35 is exactly that listing — publicly purchasable, with no
+binding — and it is the reason :data:`REASON_UNBOUND` exists. Checking it here
+moves a refusal that already existed to the side of the payment where it is still
+free, which is the same argument the module is built on.
+
+(``shop_binding_required``, raised a few lines earlier in ``create_intent``, is a
+different and coarser fact: the *connection* has no CJ shop bound, which stops
+every order on it rather than one listing. It is not what listing 35 hits.)
+
+**Known loss.** Nothing on any checkout path compared a sale price to a supplier
+cost. Measured in production 2026-10-01: 477 of 3797 variants are priced below
+their landed cost, across 20 listings that the supplier reconciler had *already*
+flagged ``SELLING_BELOW_COST`` in ``attention_json`` — so the system knew, wrote
+it down, and sold anyway. :data:`REASON_NEGATIVE_MARGIN` closes that, and the
+check is deliberately narrow: it refuses a loss, not a disappointing margin. The
+store's 68% target is a commercial preference, and a gate that enforced a
+preference would have taken profitable listings off sale.
+
+Both are tier 1 by the same test the tier was built on. They are affirmative
+statements that something is wrong rather than an absence of reassurance; neither
+expires; neither depends on a reconciler having run. And neither is keyed to a
+listing id — they are properties re-derived per checkout from the listing's own
+binding and the supplier's own stored cost, so a listing that is fixed starts
+selling again with nothing to un-deploy, and the next listing to break is caught
+without anybody noticing it broke.
 """
 from __future__ import annotations
 
@@ -136,6 +174,7 @@ from typing import Any, Mapping, Sequence
 
 from services import marketplace_supplier_schema as supplier_schema
 from services import marketplace_variants as variants
+from services.business_os.suppliers import pricing, store_policy
 from services.business_os.suppliers.fulfillment import DRAIN_STALL_SECONDS
 
 __all__ = [
@@ -148,8 +187,10 @@ __all__ = [
     "DECISION_REFUSE",
     "DRAIN_BEHIND",
     "NOT_APPLICABLE",
+    "REASON_NEGATIVE_MARGIN",
     "REASON_SOLD_OUT",
     "REASON_STALE_CONFIRMATION",
+    "REASON_UNBOUND",
     "REFUSAL_CODES",
     "WIRE_CODES",
     "reconciliation_evidence",
@@ -208,9 +249,50 @@ NOT_APPLICABLE = "NOT_APPLICABLE"
 REASON_SOLD_OUT = "SUPPLIER_SOLD_OUT"
 REASON_STALE_CONFIRMATION = "SUPPLIER_UNCONFIRMED"
 
-#: The only two codes a lane may return from this gate. Enumerated so the client
+#: No supplier variant is bound to this listing, so no order could name a
+#: physical item even if the buyer paid.
+#:
+#: This is not a new rule, it is an existing rule moved to the only side of the
+#: payment where it can still help. ``fulfillment.create_intent`` already refuses
+#: an unbound line — ``gateway.get_product_binding`` raises
+#: ``product_binding_required`` (409) on a NULL ``provider_variant_id``, and a
+#: line naming any other variant then fails ``product_binding_mismatch`` (400)
+#: — but both run *after*
+#: the charge. So the pre-change behaviour of a live, priced, in-stock, unbound
+#: drop-shipped listing was: take the money, then discover nobody can ship it.
+#: Production listing 35 is that listing, and it is why this reason exists.
+#:
+#: Tier 1, and the first check of the tier. An absent binding does not expire, is
+#: not a fact about a reconciler, and cannot be fixed by asking the supplier
+#: again — only the seller can fix it by choosing a variant. It is also checked
+#: *above* the sold-out comparison on purpose: that comparison reads every active
+#: variant, and ``drafts._sold_variant`` is explicit that an unbound listing's
+#: other rows are "catalogue -- what the supplier offers -- not stock this listing
+#: can sell". Asking whether catalogue rows are in stock cannot tell you anything
+#: about a listing that has not chosen one of them.
+REASON_UNBOUND = "SUPPLIER_VARIANT_UNBOUND"
+
+#: The money is known to run the wrong way: the amount this checkout would
+#: charge is below what the supplier currently costs to fulfil it.
+#:
+#: Tier 1 for the same reason the others are. A cost that exceeds the price is an
+#: affirmative, already-recorded fact rather than an absence of reassurance, it
+#: does not become false because no reconciler has re-read it, and no freshness
+#: window applies: the most recent thing the supplier told us is that this sale
+#: loses money.
+#:
+#: Deliberately not a margin *target*. This refuses only a loss — ``price <
+#: cost`` — and has nothing to say about a sale that is merely thinner than the
+#: seller would like. The store's 68% target is a commercial preference and
+#: enforcing it here would take roughly a hundred profitable listings off sale to
+#: satisfy a number nobody asked checkout to defend. See ``catalog_readiness``'s
+#: ``below_target``, which reports that distinction instead of acting on it.
+REASON_NEGATIVE_MARGIN = "SUPPLIER_NEGATIVE_MARGIN"
+
+#: The only codes a lane may return from this gate. Enumerated so the client
 #: strings and the tests are written against one list.
-REFUSAL_CODES = (REASON_SOLD_OUT, REASON_STALE_CONFIRMATION)
+REFUSAL_CODES = (REASON_SOLD_OUT, REASON_STALE_CONFIRMATION, REASON_UNBOUND,
+                 REASON_NEGATIVE_MARGIN)
 
 #: The code that goes on the wire, which is not the same as the reason recorded
 #: internally. ``marketplace_cart_routes._error`` documents a fixed vocabulary
@@ -228,17 +310,44 @@ REFUSAL_CODES = (REASON_SOLD_OUT, REASON_STALE_CONFIRMATION)
 #: relies on ``buyerErrorCopy``'s documented fallback to server prose for a handled
 #: 4xx. That is why :data:`MESSAGES` has to be buyer-complete on its own, including
 #: saying that no charge was made.
+#:
+#: :data:`REASON_UNBOUND` and :data:`REASON_NEGATIVE_MARGIN` are unmapped for the
+#: mirror-image reason. ``OUT_OF_STOCK`` would be a lie — the supplier has plenty
+#: — and ``ITEM_UNAVAILABLE``'s "no longer available" is wrong in a subtler way:
+#: it says the item used to be purchasable and has stopped, whereas an unbound
+#: listing was never fulfillable and its own seller has not finished setting it
+#: up. Rather than pick the least-wrong existing string, both travel as themselves
+#: on the same documented server-prose fallback.
 WIRE_CODES = {REASON_SOLD_OUT: "OUT_OF_STOCK"}
 
 #: What the buyer reads. Neither names the supplier, the provider or the
 #: connection — §27 applies to a refusal as much as to a success, and "our
 #: supplier CJ is down" tells a buyer something about the merchant's business
 #: that the merchant did not choose to publish.
+#:
+#: :data:`REASON_UNBOUND` and :data:`REASON_NEGATIVE_MARGIN` share one sentence,
+#: and that is not laziness. To the buyer they are the same event — the seller has
+#: this listed but cannot sell it to them right now — and the buyer's next move is
+#: identical in both. Writing two sentences would differentiate them for the only
+#: audience that cannot act on the difference, while telling that audience which
+#: of the two it was: one of them is "this seller priced below their own cost",
+#: which is a fact about the merchant's margins that the merchant did not choose
+#: to publish. The two stay distinguishable where it matters — ``reason`` on the
+#: decision, and therefore the ops signal and the audit trail.
+#:
+#: Neither says "try again shortly". That is true of a stale confirmation and
+#: false of these two: nothing a buyer does clears them, only the seller binding a
+#: variant or fixing a price does, so forecasting a retry would be a promise this
+#: gate cannot keep.
 MESSAGES = {
     REASON_SOLD_OUT: "This item just went out of stock. You have not been charged.",
     REASON_STALE_CONFIRMATION: (
         "We can't confirm this item is still available right now. "
         "You have not been charged — please try again shortly."),
+    REASON_UNBOUND: (
+        "This item isn't available to buy right now. You have not been charged."),
+    REASON_NEGATIVE_MARGIN: (
+        "This item isn't available to buy right now. You have not been charged."),
 }
 
 #: Latch states from ``business_os.suppliers.fulfillment.drain_status`` that mean
@@ -434,8 +543,114 @@ def _orderable(rows: Sequence[Mapping[str, Any]]) -> list[dict]:
             if str(row.get("status") or "active").strip().lower() == "active"]
 
 
+def _bound_variant(rows: Sequence[Mapping[str, Any]],
+                   source: Mapping[str, Any]) -> dict | None:
+    """The one variant this listing can actually ship, or None if there isn't one.
+
+    Mirrors :func:`services.business_os.suppliers.drafts._sold_variant`, which is
+    the authority on what a binding is and why only one variant counts:
+    ``marketplace_product_sources.provider_variant_id`` names it, and
+    ``fulfillment.create_intent`` will accept no other. The agreement between the
+    two implementations is pinned by a test rather than left to inspection,
+    because a predicate that is copied and not compared is a predicate that
+    drifts.
+
+    It is reimplemented here rather than imported for one reason: ``drafts``
+    pulls in the supplier feature-flag surface and the whole draft/publish
+    pipeline, and a checkout should not be able to fail because an import three
+    modules deep raised. The two callers want different inputs anyway — ``drafts``
+    passes variants that have already been through ``pricing.quote``, and this
+    wants the raw rows, which is the same reason ``listing_readiness`` takes raw
+    rows too.
+
+    Returns ``None`` in both of the cases ``_sold_variant`` does: nothing bound,
+    and a bound id naming a variant this listing no longer has. The second is
+    drift rather than absence, and the consequence is identical — there is no
+    variant anybody can prove will ship — so it is reported as the same problem.
+    """
+    bound = str((source or {}).get("provider_variant_id") or "").strip()
+    if not bound:
+        return None
+    for row in rows:
+        if str(row.get("provider_variant_id") or "").strip() == bound:
+            return dict(row)
+    return None
+
+
+def _shipping_allowance(cur, source: Mapping[str, Any]) -> int | None:
+    """This store's declared per-unit freight, by plain read. ``None`` if undeclared.
+
+    A ``SELECT`` on the caller's cursor rather than
+    ``store_policy.resolve_shipping_allowance``, for exactly the reason
+    :func:`reconciliation_evidence` does not call ``fulfillment.drain_status``:
+    that function routes through ``get_policy``, which calls ``ensure_schema``
+    first. That is DDL, issued from inside a request already holding a write
+    transaction open, which is a known way to hang a route on PostgreSQL — and a
+    checkout is the worst place in the product to discover it.
+
+    The value goes through ``pricing.normalize_shipping`` rather than ``int()`` so
+    that this reader and ``get_policy`` cannot disagree about what a stored
+    allowance means, and the table name is imported rather than spelled so they
+    cannot disagree about where it lives.
+
+    ``None`` on a missing table, a missing row or an unreadable value. All three
+    mean the store has not declared freight, which is not the same as declaring it
+    free — see ``store_policy``'s "No platform default" note. The caller must fall
+    back to the item basis explicitly, and :func:`pricing.basis` is what does it.
+    """
+    try:
+        cur.execute(
+            f"SELECT shipping_allowance_cents FROM {store_policy.TABLE} "
+            "WHERE business_id=? AND store_id=? LIMIT 1",
+            (str(source.get("business_id") or ""), str(source.get("store_id") or "")))
+        row = cur.fetchone()
+    except Exception:
+        return None
+    if row is None:
+        return None
+    return pricing.normalize_shipping(dict(row).get("shipping_allowance_cents"))
+
+
+def _economics(cur, source: Mapping[str, Any], bound: Mapping[str, Any],
+               price_minor: Any) -> tuple[int | None, int | None]:
+    """What this sale charges per unit, and what the unit costs. ``None`` for unknown.
+
+    **Which price.** ``price_minor`` when the lane supplied it, the bound variant's
+    stored ``price_cents`` otherwise. The lane's figure wins because it is the
+    money: the cart charges ``price_snapshot_minor``, captured when the line was
+    added, so a cost that rose afterwards is invisible to the catalogue price and
+    visible only here. That is §24's stale-cart case and it is the whole reason
+    this takes a parameter instead of reading one number.
+
+    Deliberately *not* the lower of the two. A snapshot above the current retail
+    is not a loss on this sale even if the catalogue price is underwater, and
+    refusing it would block a buyer over somebody else's future purchase. The
+    catalogue being underwater is a real problem and it has its own reporting —
+    ``catalog_readiness``'s ``below_landed_cost`` — rather than a refusal here.
+
+    **Which cost.** :func:`pricing.basis`, which is landed cost where freight was
+    declared and item cost where it was not. Calling it rather than adding the two
+    numbers keeps §4's formula in one place; and its fallback is the honest one,
+    because a store that has not declared freight has not declared it to be zero.
+    The consequence is that an undeclared allowance makes this gate *more*
+    permissive, never less: the bar drops to the item cost, and a sale below even
+    that is still unambiguously a loss. Leniency on absent evidence, strictness on
+    present evidence, which is the same asymmetry :func:`_queue_overdue_by`
+    documents.
+    """
+    stored = bound.get("price_cents")
+    charged = price_minor if price_minor is not None else stored
+    try:
+        charged_minor = int(charged) if charged is not None else None
+    except (TypeError, ValueError):
+        charged_minor = None
+    _, basis_cost = pricing.basis(bound.get("cost_cents"),
+                                  _shipping_allowance(cur, source))
+    return charged_minor, basis_cost
+
+
 def evaluate(cur, *, listing_id: Any, evidence: Mapping[str, Any] | None = None,
-             now: Any = None) -> dict:
+             price_minor: Any = None, now: Any = None) -> dict:
     """May this listing be charged for right now?
 
     Returns ``{"decision", "reason", "message", "code", "unverified", ...}``.
@@ -449,14 +664,21 @@ def evaluate(cur, *, listing_id: Any, evidence: Mapping[str, Any] | None = None,
     same question. What is asked here is different and narrower: does the
     supplier's own reported state still permit a sale at all.
 
-    Which variant is likewise not asked, because no lane knows: PulseSoc has no
-    buyer-side variant selection yet, so a multi-variant listing arrives here
-    with nothing chosen. A sell-out therefore has to mean *every* active variant
-    is out of stock — if one is still orderable then something on this listing can
-    be sold, and refusing would be a guess about which one the buyer wanted. That
-    is the same asymmetry ``normalize`` applies across warehouses, and for the
-    same reason: out-of-stock is the claim nobody escalates, so it needs the
-    strongest evidence.
+    Which variant is likewise not asked of the *caller*, and no longer has to be:
+    the listing's own binding answers it. This paragraph used to say a sell-out
+    had to mean *every* active variant was out of stock, because no lane knows
+    which variant a buyer wanted and refusing on one row would be a guess. The
+    premise was right and the scope was wrong. It holds for a listing with nothing
+    bound — which is now refused outright, see :data:`REASON_UNBOUND` — and it
+    collapses the moment a binding exists, because the binding *is* the answer to
+    "which variant", recorded by the seller and enforced by
+    ``fulfillment.create_intent``. So the stock and cost questions below are asked
+    of the one row an order can actually name, and the all-variants reading is gone
+    rather than retained next to it: it had become a way for a sold-out bound
+    variant to pass on the strength of a sibling nobody can buy.
+
+    ``price_minor`` is the per-unit amount this checkout will charge, when the lane
+    knows it. See :func:`_economics`.
     """
     now_dt = _clock(now)
     try:
@@ -491,8 +713,27 @@ def evaluate(cur, *, listing_id: Any, evidence: Mapping[str, Any] | None = None,
             "confirmation_age_seconds": age, "sync_state": sync_state}
 
     rows = _orderable(variants.variants_for(cur, int(source["listing_id"])))
-    states = [str(row.get("stock_state") or "").strip().upper() for row in rows]
-    if states and all(state == supplier_schema.STOCK_OUT_OF_STOCK for state in states):
+    bound = _bound_variant(rows, source)
+    seen["bound"] = bound is not None
+
+    if bound is None:
+        # Nothing to ship, and nothing a buyer or a supplier can do about it. The
+        # first tier-1 check because the ones below it all reason about a specific
+        # variant's stock or cost, and there is no specific variant yet; see
+        # :data:`REASON_UNBOUND`.
+        return _refuse(REASON_UNBOUND, **seen)
+
+    # The bound variant's stock, not the catalogue's. A multi-variant listing
+    # whose bound variant is sold out while a *different* variant is in stock used
+    # to pass here — `states` was computed across every active row and `all()` is
+    # False as soon as one row disagrees — and then `create_intent` demanded the
+    # bound variant and the supplier could not fill it. The original all-variants
+    # reading was correct for its own premise, stated in this function's docstring:
+    # no lane knows which variant, so refusing would be a guess about which one the
+    # buyer wanted. Once a binding exists there is no guess left to make, because
+    # the binding *is* the answer to "which variant", so the question narrows to
+    # the one row an order can actually name.
+    if str(bound.get("stock_state") or "").strip().upper() == supplier_schema.STOCK_OUT_OF_STOCK:
         # Positively bad, and true regardless of freshness. A supplier that said
         # "none left" has not become less sold out by nobody asking again since.
         return _refuse(REASON_SOLD_OUT, **seen)
@@ -516,6 +757,17 @@ def evaluate(cur, *, listing_id: Any, evidence: Mapping[str, Any] | None = None,
         # through. Ordering it by the kind of evidence removes that dependency
         # rather than documenting it.
         return _refuse(REASON_STALE_CONFIRMATION, **seen)
+
+    charged, basis_cost = _economics(cur, source, bound, price_minor)
+    seen["charged_minor"] = charged
+    seen["basis_cost_minor"] = basis_cost
+    if charged is not None and basis_cost is not None and charged < basis_cost:
+        # The last tier-1 refusal, and the only one that is about money rather
+        # than about stock. Both sides have to be known: an unreadable cost is not
+        # evidence of a loss, and refusing on one would take every listing with a
+        # missing cost off sale — the catalogue-wide refusal this module's
+        # docstring exists to argue against, arriving by a third route.
+        return _refuse(REASON_NEGATIVE_MARGIN, **seen)
 
     if not running or confirmation == CONFIRMATION_NEVER:
         # Two different situations, one correct answer, and the reason is the same
@@ -577,9 +829,16 @@ def _state_of(evidence: Mapping[str, Any] | None) -> str:
 
 
 def _base(decision: str) -> dict:
+    #: Every key every answer carries. ``bound``, ``charged_minor`` and
+    #: ``basis_cost_minor`` are here rather than only on the decisions that looked
+    #: at them, for the reason the original four were: a caller that has to ask
+    #: whether a key exists before reading it will eventually read a missing key as
+    #: a meaningful value. ``False``/``None`` here means "this decision did not get
+    #: far enough to find out", which is exactly true of a NOT_APPLICABLE answer.
     return {"decision": decision, "reason": "", "message": "", "code": "",
             "unverified": False, "evidence_state": "", "sync_state": "",
-            "confirmation": "", "confirmation_age_seconds": None}
+            "confirmation": "", "confirmation_age_seconds": None,
+            "bound": False, "charged_minor": None, "basis_cost_minor": None}
 
 
 def _not_applicable(reason: str) -> dict:
@@ -595,12 +854,51 @@ def _refuse(reason: str, **extra) -> dict:
             "message": MESSAGES[reason], **extra}
 
 
-def screen(cur, listing_ids: Sequence[Any], *, now: Any = None) -> dict:
+def _key(listing_id: Any) -> int | None:
+    try:
+        return int(listing_id)
+    except (TypeError, ValueError):
+        return None
+
+
+def _by_listing(prices: Mapping[Any, Any] | None) -> dict[int, Any]:
+    """Re-key a lane's price map by integer listing id.
+
+    The lanes hold listing ids in whatever type their own query returned —
+    PostgreSQL gives ints, SQLite can give strings, and a route that round-tripped
+    one through JSON has a string either way. A map keyed by ``"35"`` that is
+    looked up with ``35`` misses silently, and the consequence of a silent miss
+    here is that the gate falls back to the catalogue price and never sees the
+    stale snapshot it was handed. So the coercion happens once, at the boundary,
+    rather than being assumed at the lookup.
+
+    Unreadable keys are dropped rather than raised on: a lane that passes junk
+    should lose the precision this parameter buys, not the checkout.
+    """
+    out: dict[int, Any] = {}
+    for listing_id, amount in (prices or {}).items():
+        key = _key(listing_id)
+        if key is not None:
+            out[key] = amount
+    return out
+
+
+def screen(cur, listing_ids: Sequence[Any], *,
+           prices: Mapping[Any, Any] | None = None, now: Any = None) -> dict:
     """The whole basket, one answer. The only entry point a checkout lane calls.
 
     Returns ``{"refusal", "refused_listing_id", "decisions"}``. ``refusal`` is None
     when every line may be charged for; otherwise it is the first refusing
     decision, already carrying the buyer's message and wire code.
+
+    ``prices`` maps listing id to the per-unit amount this checkout is about to
+    charge, and is how the loss check sees the number that matters. Optional, and
+    the fallback is safe rather than absent: a lane that passes nothing is judged
+    against the bound variant's stored retail, so a new lane that forgets this
+    parameter is still covered — it just cannot catch the case where a cart's
+    snapshot has drifted from the catalogue. Supplying it is strictly better and
+    costs the lane nothing, since every lane already holds the figure it is about
+    to charge.
 
     This exists so the three lanes do not each grow their own copy of the loop.
     The cart settles many lines, the offers and buy-now lanes settle one, and the
@@ -619,9 +917,11 @@ def screen(cur, listing_ids: Sequence[Any], *, now: Any = None) -> dict:
     to report, and continuing would only collect reasons nobody will read.
     """
     evidence = reconciliation_evidence(cur, now=now)
+    quoted = _by_listing(prices)
     decisions: dict[int, dict] = {}
     for listing_id in listing_ids:
-        decision = evaluate(cur, listing_id=listing_id, evidence=evidence, now=now)
+        decision = evaluate(cur, listing_id=listing_id, evidence=evidence, now=now,
+                            price_minor=quoted.get(_key(listing_id)))
         try:
             decisions[int(listing_id)] = decision
         except (TypeError, ValueError):

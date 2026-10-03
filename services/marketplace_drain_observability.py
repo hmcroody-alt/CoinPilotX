@@ -32,6 +32,20 @@ The owner named six canonical states. Five map exactly. The sixth case —
 ``UNVERIFIED_NOT_YET_REACHED`` — is a seventh fact that the six cannot express,
 and it is reported under its own name rather than folded into a neighbour. See
 :data:`CANONICAL_STATES` for why that matters.
+
+Two more were added with the CATALOG SAFETY GATE's tier-1 refusals, for the same
+reason and by the same rule. ``SUPPLIER_FULFILLMENT_IMPOSSIBLE`` and
+``SUPPLIER_NEGATIVE_MARGIN`` are both affirmative — something is wrong with the
+*item*, and waiting will not fix it — so ``AFFIRMATIVE_NEGATIVE_BLOCK`` is where
+they would naturally be filed. They are not filed there, because that bucket's
+three existing members all clear themselves: a supplier restocks, a failed sync
+succeeds, a corrupt stamp gets rewritten. These two never do. An unbound listing
+is waiting on a **commercial decision** nobody has made (which physical variant
+the seller intends to sell) and a below-cost listing is waiting on a **pricing
+decision**. Counting them alongside a sell-out would produce one number whose
+remedy is "nothing, it will clear" mixed with one whose remedy is "an operator
+must choose something", and the brief asks for the two as separate sentinels
+precisely so neither hides inside the other.
 """
 from __future__ import annotations
 
@@ -51,6 +65,31 @@ UNVERIFIED_DRAIN_BEHIND = "UNVERIFIED_DRAIN_BEHIND"
 SUPPLIER_UNCONFIRMED = "SUPPLIER_UNCONFIRMED"
 AFFIRMATIVE_NEGATIVE_BLOCK = "AFFIRMATIVE_NEGATIVE_BLOCK"
 
+#: The gate refused because the listing names no supplier variant it could
+#: order — ``gate.REASON_UNBOUND``. The owner's §22 sentinel, and a P0: a
+#: listing in this state was buyable, took money, and discovered after the
+#: charge that ``gateway.get_product_binding`` has nothing to resolve.
+#:
+#: Its own name rather than ``AFFIRMATIVE_NEGATIVE_BLOCK`` because it is the one
+#: refusal no amount of supplier traffic will clear. Restocking does not fix it,
+#: a successful sync does not fix it, and the reconciler running faster does not
+#: fix it. Somebody has to choose a variant.
+SUPPLIER_FULFILLMENT_IMPOSSIBLE = "SUPPLIER_FULFILLMENT_IMPOSSIBLE"
+
+#: The gate refused because the price a buyer would be charged is below the
+#: variant's landed cost — ``gate.REASON_NEGATIVE_MARGIN``. The owner's §23
+#: sentinel.
+#:
+#: Separate from :data:`SUPPLIER_FULFILLMENT_IMPOSSIBLE` even though both are
+#: unclearable-by-waiting, because the decisions differ: this one is a price the
+#: seller can change, that one is a variant the seller must pick. Separate from
+#: ``AFFIRMATIVE_NEGATIVE_BLOCK`` for the reason given in the module docstring.
+#:
+#: Note this is *loss* safety, not the seller's 68% target. A listing above cost
+#: and below target is not in this state and must not be — the brief is explicit
+#: that confusing the two takes profitable listings off sale.
+SUPPLIER_NEGATIVE_MARGIN = "SUPPLIER_NEGATIVE_MARGIN"
+
 #: The reconciler is running *and keeping up*, and this particular listing has
 #: simply not been reached yet — ``CONFIRMATION_NEVER`` with a healthy latch.
 #:
@@ -68,11 +107,14 @@ UNVERIFIED_NOT_YET_REACHED = "UNVERIFIED_NOT_YET_REACHED"
 #: catalogue and a reader can see the denominator they are reasoning about.
 NOT_APPLICABLE = "NOT_APPLICABLE"
 
-#: Ordered worst-understood-last, which is the order a reader wants: the two
+#: Ordered worst-understood-last, which is the order a reader wants: the
 #: refusals first because they cost a sale right now, then the unverified
 #: allows, which cost nothing today and are the ones that will surprise someone
-#: later.
+#: later. Within the refusals, the two that need a human decision lead, because
+#: they are the only ones that stay true until somebody acts.
 CANONICAL_STATES = (
+    SUPPLIER_FULFILLMENT_IMPOSSIBLE,
+    SUPPLIER_NEGATIVE_MARGIN,
     AFFIRMATIVE_NEGATIVE_BLOCK,
     SUPPLIER_UNCONFIRMED,
     UNVERIFIED_DRAIN_BEHIND,
@@ -94,9 +136,16 @@ UNVERIFIED_STATES = (
     UNVERIFIED_NOT_YET_REACHED,
 )
 
-#: States that refuse a buyer. Both cost a sale; they differ in whether anything
+#: States that refuse a buyer. All cost a sale; they differ in whether anything
 #: is wrong with the *item* (affirmative) or with our *knowledge* of it.
-REFUSING_STATES = (AFFIRMATIVE_NEGATIVE_BLOCK, SUPPLIER_UNCONFIRMED)
+REFUSING_STATES = (SUPPLIER_FULFILLMENT_IMPOSSIBLE, SUPPLIER_NEGATIVE_MARGIN,
+                   AFFIRMATIVE_NEGATIVE_BLOCK, SUPPLIER_UNCONFIRMED)
+
+#: The subset a human has to resolve. The other two refusals clear themselves
+#: when the supplier or the reconciler catches up; these stay until an operator
+#: binds a variant or changes a price, which makes them the only refusals whose
+#: count is a work queue rather than a weather report.
+DECISION_PENDING_STATES = (SUPPLIER_FULFILLMENT_IMPOSSIBLE, SUPPLIER_NEGATIVE_MARGIN)
 
 
 def classify(verdict: Mapping[str, Any]) -> str:
@@ -128,7 +177,19 @@ def classify(verdict: Mapping[str, Any]) -> str:
 
     # A refusal. Which kind matters more than the fact: one is the supplier
     # telling us something is wrong, the other is us not knowing.
-    if verdict.get("reason") == gate.REASON_SOLD_OUT:
+    reason = verdict.get("reason")
+    if reason == gate.REASON_UNBOUND:
+        # Read off the reason rather than re-asked of the rows. `classify` could
+        # look up the source's `provider_variant_id` itself and reach the same
+        # answer today, and that is exactly the second authority this module
+        # refuses to become: the gate's question is whether a *bound and still
+        # present* variant exists, which is not the same as whether the column
+        # is populated, and a reader that asked the easier question would
+        # disagree with the decider on every drifted binding.
+        return SUPPLIER_FULFILLMENT_IMPOSSIBLE
+    if reason == gate.REASON_NEGATIVE_MARGIN:
+        return SUPPLIER_NEGATIVE_MARGIN
+    if reason == gate.REASON_SOLD_OUT:
         return AFFIRMATIVE_NEGATIVE_BLOCK
     if str(verdict.get("sync_state") or "").strip().upper() in gate.FAILED_SYNC_STATES:
         return AFFIRMATIVE_NEGATIVE_BLOCK
@@ -393,8 +454,33 @@ def alert_conditions(observations: Sequence[Mapping[str, Any]],
 
     What is alertable is a condition that is *new information*:
 
-    ``refusing`` — a buyer is being turned away right now. Zero in production
-    today, so any non-zero value is a change.
+    ``refusing`` — a buyer is being turned away right now, for any reason.
+
+    Note what this one is no longer: it used to be documented as "zero in
+    production today, so any non-zero value is a change", and that stopped being
+    true the moment the CATALOG SAFETY GATE shipped. Production carries six
+    listings it refuses on arrival — one unbound, five below landed cost — and
+    those refusals are the gate working, not an incident. Left as a condition
+    because a *rise* still matters, but the two sentinels below are the ones with
+    a specific owner action attached, and `refusing` alone would have been a
+    permanently-on siren for the second time in this module's life.
+
+    ``fulfillment_impossible`` — §22, and a P0. A listing a buyer can reach that
+    the gate must refuse because no supplier variant is bound. Non-zero means a
+    listing went on sale that could never have been shipped; before this gate
+    existed, the discovery happened after the charge. This is the sentinel that
+    would have caught listing 35.
+
+    ``negative_margin`` — §23. A listing a buyer can reach whose price is below
+    its landed cost. Non-zero means money is being refused at the door that
+    would otherwise have been lost on fulfilment, and it stays non-zero until
+    somebody reprices. Not a margin *target* alert: see
+    :data:`SUPPLIER_NEGATIVE_MARGIN`.
+
+    Both sentinels are deliberately **not** gated on a rise or a delta. They are
+    small absolute counts describing a stuck decision, so the sustained-window
+    rule is the only smoothing they get — a condition that persists for three
+    observations is one nobody has acted on.
 
     ``worker_stopped`` — nothing is reconciling at all. Distinct from behind:
     behind still produces confirmations, just too slowly.
@@ -412,6 +498,12 @@ def alert_conditions(observations: Sequence[Mapping[str, Any]],
     """
     def _refusing(snap):
         return sum(snap.get("states", {}).get(s, 0) for s in REFUSING_STATES) > 0
+
+    def _in(state):
+        # One closure per state rather than one parameterised predicate reused
+        # across both, so a future third sentinel cannot be added by widening an
+        # existing one by accident.
+        return lambda snap: snap.get("states", {}).get(state, 0) > 0
 
     def _stopped(snap):
         states = snap.get("states", {})
@@ -434,6 +526,10 @@ def alert_conditions(observations: Sequence[Mapping[str, Any]],
 
     return {
         "refusing": sustained(observations, _refusing, required=required),
+        "fulfillment_impossible": sustained(
+            observations, _in(SUPPLIER_FULFILLMENT_IMPOSSIBLE), required=required),
+        "negative_margin": sustained(
+            observations, _in(SUPPLIER_NEGATIVE_MARGIN), required=required),
         "worker_stopped": sustained(observations, _stopped, required=required),
         "exposure_complete": sustained(observations, _complete_exposure, required=required),
         "backlog_growing": growing,
@@ -491,6 +587,12 @@ def snapshot(cur, *, listing_ids: Sequence[Any] | None = None,
     applicable = examined - states[NOT_APPLICABLE]
     unverified = sum(states[s] for s in UNVERIFIED_STATES)
     refusing = sum(states[s] for s in REFUSING_STATES)
+    # Reported next to `refusing` rather than left for a caller to re-sum,
+    # because the two answer different questions and the difference is the whole
+    # point of splitting the states: `refusing` is how many sales are being lost
+    # right now, `decision_pending` is how many of those will still be lost
+    # tomorrow unless somebody does something.
+    decision_pending = sum(states[s] for s in DECISION_PENDING_STATES)
 
     def _rate(count):
         # None, not 0.0, when there is no denominator. A rate of zero reads as
@@ -506,6 +608,7 @@ def snapshot(cur, *, listing_ids: Sequence[Any] | None = None,
         "states": states,
         "unverified": unverified,
         "refusing": refusing,
+        "decision_pending": decision_pending,
         # The two headline rates, over the applicable denominator only.
         "drain_behind_rate": _rate(states[UNVERIFIED_DRAIN_BEHIND]),
         "unverified_rate": _rate(unverified),

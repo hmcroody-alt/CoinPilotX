@@ -1416,8 +1416,15 @@ def cart_checkout():
         # `created` transaction behind for `settle_failed_transactions` to clean up,
         # and a refusal above it would reject carts that were going to fail the
         # cheaper checks anyway.
+        # `price_snapshot_minor` and not the listing's current price, because the
+        # snapshot is what the charge below is built from — `line_quotes` above
+        # passes it as `unit_price_minor` and the Stripe line reads it again. A cost
+        # that rose after this line was added is invisible to the catalogue price
+        # and visible only in the comparison between these two numbers.
         screened = supplier_checkout.screen(
-            cur, [l["listing_id"] for l in lines], now=now)
+            cur, [l["listing_id"] for l in lines],
+            prices={l["listing_id"]: l["price_snapshot_minor"] for l in lines},
+            now=now)
         if screened["refusal"]:
             refusal = screened["refusal"]
             return _error(refusal["message"], 409,

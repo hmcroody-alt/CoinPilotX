@@ -103242,9 +103242,19 @@ def api_pulse_payments_checkout():
     # subscriptions and tips, whose `item_id` counts in a different table — handing
     # one to a lookup keyed on `marketplace_listings.id` would be asking about
     # whichever listing happens to share that number.
+    #
+    # `price_decision.unit_price_minor` and explicitly not `amount_cents`: that
+    # name holds the unit price where it is first assigned, and is reassigned to
+    # `commercial_quote["buyer_total_minor"]` before this line. Passing it would
+    # compare a quantity-multiplied total against a per-unit supplier cost, which
+    # clears the loss check on the multi-unit orders that lose the most. The price
+    # authority's per-unit answer is what the Stripe line is built from, so it is
+    # the number this check has to be about.
     if item_type == "marketplace_product":
         from services import marketplace_supplier_checkout
-        supplier_screened = marketplace_supplier_checkout.screen(cur, [item_id], now=now)
+        supplier_screened = marketplace_supplier_checkout.screen(
+            cur, [item_id], prices={item_id: price_decision.unit_price_minor},
+            now=now)
         if supplier_screened["refusal"]:
             supplier_refusal = supplier_screened["refusal"]
             conn.close()

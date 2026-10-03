@@ -74,7 +74,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from services import marketplace_supplier_checkout as gate
 from services import marketplace_supplier_schema as schema
 from services import marketplace_variants as variants
-from services.business_os.suppliers import fulfillment, revisions, worker
+from services.business_os.suppliers import (fulfillment, revisions, store_policy,
+                                            worker)
 
 SELLER = 1001
 
@@ -147,11 +148,31 @@ def bind(cur, *, listing_id=DROPSHIP, mode=None, sync_state=None,
 
 
 def add_variant(cur, *, listing_id=DROPSHIP, stock_state=None, stock_quantity=5,
-                value="S", status=None):
+                value="S", status=None, provider_variant_id="20001",
+                price_cents=2000, cost_cents=800):
+    """One variant row, carrying the provider id that makes it identifiable.
+
+    ``provider_variant_id`` defaults to ``bind``'s default, so the default
+    ``bind`` + ``add_variant`` pair is a listing whose binding names a variant it
+    actually has — which is what every live production listing is. It used to
+    default to NULL, which made the default fixture a listing bound to a variant
+    that did not exist: harmless while the gate only counted stock states across
+    all rows, and invisible, because nothing in the suite asked the one question
+    that can tell those two shapes apart.
+
+    Pass a distinct id for a *sibling* variant. A listing is bound to exactly one
+    supplier variant, so two rows sharing an id is drift, not a multi-variant
+    product, and ``_bound_variant`` would resolve it by position.
+
+    ``price_cents``/``cost_cents`` are parameters because the margin check reads
+    them. The defaults are deliberately profitable ($20.00 against $8.00) so that
+    a test about stock or sync is not silently also a test about money.
+    """
     variant_id = variants.upsert_variant(
         cur, listing_id=listing_id, seller_user_id=SELLER,
         options=[{"name": "Size", "value": value}], sku=f"SKU-{value}",
-        price_cents=2000, cost_cents=800, currency="USD",
+        provider_variant_id=provider_variant_id,
+        price_cents=price_cents, cost_cents=cost_cents, currency="USD",
         stock_state=stock_state or schema.STOCK_IN_STOCK,
         stock_quantity=stock_quantity)
     if status:
@@ -279,17 +300,48 @@ def test_a_sell_out_refuses_even_though_nothing_has_reconciled(cur):
     assert decision["reason"] == gate.REASON_SOLD_OUT
 
 
-def test_one_orderable_variant_is_enough_to_allow_the_sale(cur):
-    """A sell-out means *every* active variant, because no lane names one.
+def test_a_sibling_in_stock_does_not_rescue_a_sold_out_bound_variant(cur):
+    """The stock question is about the bound variant, not the catalogue.
 
-    PulseSoc has no buyer-side variant selection, so a multi-variant listing
-    arrives here with nothing chosen. Refusing because one variant sold out would
-    be a guess about which the buyer wanted, and it would take a sellable listing
-    off sale.
+    This test used to assert the opposite, on the premise that "PulseSoc has no
+    buyer-side variant selection, so a multi-variant listing arrives here with
+    nothing chosen". That premise was wrong in both directions. The lanes do name
+    a variant — the cart line carries ``variant_id`` and ``price_authority``
+    says a named variant "wins outright" — and more fundamentally it does not
+    matter whether anyone names one, because ``drafts._sold_variant`` is explicit
+    that a drop-shipped listing "does not sell its variants. It sells exactly the
+    variant named by ``provider_variant_id``", the other rows being "catalogue --
+    what the supplier offers -- not stock this listing can sell".
+
+    So allowing the sale here let a listing through on the strength of stock
+    nobody could order, and ``create_intent`` would then refuse the only line it
+    was willing to place — after the charge. Production measurement of this exact
+    shape on 2026-10-03: zero listings, so the correction costs no live sales and
+    closes the hole before it is first hit.
     """
     bind(cur)
-    add_variant(cur, stock_state=schema.STOCK_OUT_OF_STOCK, stock_quantity=0, value="S")
-    add_variant(cur, stock_state=schema.STOCK_IN_STOCK, stock_quantity=4, value="M")
+    add_variant(cur, stock_state=schema.STOCK_OUT_OF_STOCK, stock_quantity=0,
+                value="S", provider_variant_id="20001")
+    add_variant(cur, stock_state=schema.STOCK_IN_STOCK, stock_quantity=4,
+                value="M", provider_variant_id="20002")
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_REFUSE
+    assert decision["reason"] == gate.REASON_SOLD_OUT
+
+
+def test_a_sold_out_sibling_does_not_block_the_bound_variant(cur):
+    """The same rule in the direction that keeps a listing selling.
+
+    The converse of the test above, and the reason the rule is variant-exact
+    rather than merely stricter: a catalogue row selling out must not take a
+    listing off sale when the variant that would actually ship is in stock.
+    """
+    bind(cur)
+    add_variant(cur, stock_state=schema.STOCK_IN_STOCK, stock_quantity=4,
+                value="S", provider_variant_id="20001")
+    add_variant(cur, stock_state=schema.STOCK_OUT_OF_STOCK, stock_quantity=0,
+                value="M", provider_variant_id="20002")
     confirm(cur)
     decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
     assert decision["decision"] == gate.DECISION_ALLOW
@@ -321,12 +373,36 @@ def test_an_archived_variant_does_not_keep_a_sold_out_listing_on_sale(cur):
     sold-out listing open for charges.
     """
     bind(cur)
-    add_variant(cur, stock_state=schema.STOCK_OUT_OF_STOCK, stock_quantity=0, value="S")
+    add_variant(cur, stock_state=schema.STOCK_OUT_OF_STOCK, stock_quantity=0,
+                value="S", provider_variant_id="20001")
     add_variant(cur, stock_state=schema.STOCK_IN_STOCK, stock_quantity=9, value="M",
-                status="archived")
+                status="archived", provider_variant_id="20002")
     decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
     assert decision["decision"] == gate.DECISION_REFUSE
     assert decision["reason"] == gate.REASON_SOLD_OUT
+
+
+def test_archiving_the_bound_variant_refuses_rather_than_falling_back(cur):
+    """A binding that names a retired row proves nothing will ship.
+
+    ``_orderable`` drops archived rows before the binding is resolved, so the
+    bound id matches nothing and the listing is refused as unbound even though
+    the column is set. That is deliberate, and it is ``drafts._sold_variant``'s
+    stated contract: ``None`` "both when nothing is bound and when the bound id
+    names a variant this listing does not have, which is drift rather than
+    absence and is reported as the same problem".
+
+    The alternative — falling back to any other active variant — is the guess
+    this whole mission exists to refuse, and it would place an order for an item
+    the seller never chose.
+    """
+    bind(cur)
+    add_variant(cur, value="S", provider_variant_id="20001", status="archived")
+    add_variant(cur, value="M", provider_variant_id="20002")
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_REFUSE
+    assert decision["reason"] == gate.REASON_UNBOUND
 
 
 def test_a_listing_with_no_variants_at_all_is_not_refused_as_sold_out(cur):
@@ -956,7 +1032,7 @@ def test_a_basket_is_refused_whole_on_its_first_bad_line(cur):
     """The lanes charge per basket, so there is no partial outcome to report."""
     bind(cur, listing_id=DROPSHIP_B, provider_variant_id="20002")
     add_variant(cur, listing_id=DROPSHIP_B, stock_state=schema.STOCK_OUT_OF_STOCK,
-                stock_quantity=0)
+                stock_quantity=0, provider_variant_id="20002")
     bind(cur)
     add_variant(cur)
     confirm(cur)
@@ -1121,3 +1197,358 @@ def test_the_audit_separates_a_queued_listing_from_a_broken_reconciler(cur):
     assert queued["supplier_unverified"] != dark["supplier_unverified"], (
         "both unverified cases produce the same annotation, so a post-mortem "
         "cannot tell a queued listing from a reconciler that never ran")
+
+
+# ---------------------------------------------------------------------------
+# §1/§2/§3/§24 — the two facts that were known before the charge and not asked
+# ---------------------------------------------------------------------------
+
+def policy(cur, *, allowance_cents, business_id="biz", store_id="store"):
+    """A store import policy row, for the freight half of landed cost.
+
+    Written with a plain INSERT rather than through ``store_policy.save``: that
+    writer calls ``ensure_schema`` on its own ``db.connect()``, which would leave
+    this suite's in-memory cursor and touch the real database. The columns are
+    taken from ``store_policy``'s own DDL, and
+    ``test_the_policy_columns_this_gate_reads_are_the_ones_store_policy_declares``
+    is what keeps the copy honest.
+    """
+    cur.execute(
+        f"CREATE TABLE IF NOT EXISTS {store_policy.TABLE} ("
+        "business_id TEXT NOT NULL, store_id TEXT NOT NULL, "
+        "pricing_type TEXT, pricing_value REAL, "
+        "shipping_allowance_cents INTEGER, auto_publish INTEGER, "
+        "marketplace_autolist INTEGER, created_at TEXT, updated_at TEXT, "
+        "PRIMARY KEY (business_id, store_id))")
+    cur.execute(
+        f"INSERT INTO {store_policy.TABLE} (business_id, store_id, pricing_type, "
+        "pricing_value, shipping_allowance_cents, auto_publish, "
+        "marketplace_autolist, created_at, updated_at) "
+        "VALUES (?, ?, 'TARGET_MARGIN', 68.0, ?, 0, 0, '', '')",
+        (business_id, store_id, allowance_cents))
+
+
+def bind_in_store(cur, *, listing_id=DROPSHIP, provider_variant_id="20001"):
+    """A binding that also names the store, so the policy row is reachable."""
+    return variants.link_source(
+        cur, listing_id=listing_id, seller_user_id=SELLER, provider="cj",
+        provider_product_id="10001", provider_variant_id=provider_variant_id,
+        business_id="biz", store_id="store",
+        fulfillment_mode=schema.MODE_DROPSHIP)
+
+
+def test_an_unbound_listing_is_refused_before_the_charge(cur):
+    """§1. Production listing 35, and the whole reason this reason exists.
+
+    Live, approved, priced, in stock, and bound to nothing. Every availability
+    question this gate used to ask returns "fine", so it charged the buyer and
+    then ``gateway.get_product_binding`` raised ``product_binding_required``
+    (409) because there was no variant to order. Refusing here is the same
+    refusal, moved to the side of the payment where it is still free.
+    """
+    bind(cur, provider_variant_id=None)
+    add_variant(cur)
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_REFUSE
+    assert decision["reason"] == gate.REASON_UNBOUND
+    assert decision["bound"] is False
+
+
+def test_a_bound_listing_is_not_refused_as_unbound(cur):
+    """The control for the test above: the refusal is about the binding, not the shape."""
+    bind(cur)
+    add_variant(cur)
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_ALLOW
+    assert decision["bound"] is True
+
+
+def test_selling_below_landed_cost_is_refused(cur):
+    """§2/§3. A sale that is known to lose money must not reach payment.
+
+    Measured in production 2026-10-01: 477 of 3797 variants priced below their
+    landed cost, across 20 listings the reconciler had *already* flagged
+    ``SELLING_BELOW_COST``. The system knew, wrote it down, and sold anyway.
+    """
+    bind(cur)
+    add_variant(cur, price_cents=500, cost_cents=800)
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_REFUSE
+    assert decision["reason"] == gate.REASON_NEGATIVE_MARGIN
+    assert decision["charged_minor"] == 500
+    assert decision["basis_cost_minor"] == 800
+
+
+def test_a_profitable_sale_below_the_sellers_target_still_sells(cur):
+    """§5/§6. The gate refuses a loss, never a disappointing margin.
+
+    The store's configured rule is ``TARGET_MARGIN 68.0``, which on an $8.00 cost
+    wants $25.00. This sale makes $1.00. It is nowhere near the seller's target
+    and it is still profit, and §5 is explicit that the two questions are
+    different: "Distinguish LOSS SAFETY from SELLER TARGET."
+
+    This is the test that would fail if anyone ever wired the target into this
+    gate. Production has 112 variants in exactly this band — above cost, below
+    target — and a gate enforcing the preference would have taken them off sale.
+    """
+    bind(cur)
+    add_variant(cur, price_cents=900, cost_cents=800)
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_ALLOW
+    assert decision["reason"] != gate.REASON_NEGATIVE_MARGIN
+
+
+def test_break_even_is_not_a_loss(cur):
+    """The boundary, pinned: the comparison is strict.
+
+    Price exactly equal to landed cost loses nothing, so refusing it would be
+    enforcing a margin preference of "more than zero" — which is still a
+    preference. An off-by-one here is the difference between a loss gate and a
+    profit gate.
+    """
+    bind(cur)
+    add_variant(cur, price_cents=800, cost_cents=800)
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_ALLOW
+
+    bind(cur, listing_id=DROPSHIP_B, provider_variant_id="20002")
+    add_variant(cur, listing_id=DROPSHIP_B, provider_variant_id="20002",
+                price_cents=799, cost_cents=800)
+    confirm(cur, listing_id=DROPSHIP_B)
+    one_cent_short = gate.evaluate(cur, listing_id=DROPSHIP_B,
+                                   evidence=draining(cur), now=NOW)
+    assert one_cent_short["reason"] == gate.REASON_NEGATIVE_MARGIN
+
+
+def test_an_unknown_supplier_cost_does_not_invent_a_loss(cur):
+    """§1/§7 again: the refusal must be a fact, never an inference.
+
+    A variant with no stored cost is what an import that never read a price
+    leaves behind. Treating the absence as zero would call every such sale
+    profitable; treating it as infinite would refuse the catalogue. Neither is
+    something a supplier said, so the loss check declines to answer.
+    """
+    bind(cur)
+    add_variant(cur, cost_cents=None)
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_ALLOW
+    assert decision["basis_cost_minor"] is None
+
+
+def test_freight_is_part_of_the_cost_being_compared(cur):
+    """§4. Buyer-facing shipping is free; the freight still costs the seller.
+
+    $15.00 against a $8.00 item looks like profit and is a $1.00 loss once the
+    store's declared $8.00 freight allowance is added. §4 forbids changing the
+    landed-cost formula, so this reads the same ``pricing.basis`` the readiness
+    survey does — the gate and the report cannot disagree about what a product
+    costs.
+    """
+    policy(cur, allowance_cents=800)
+    bind_in_store(cur)
+    add_variant(cur, price_cents=1500, cost_cents=800)
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_REFUSE
+    assert decision["reason"] == gate.REASON_NEGATIVE_MARGIN
+    assert decision["basis_cost_minor"] == 1600
+
+
+def test_an_undeclared_freight_allowance_does_not_manufacture_a_loss(cur):
+    """The same listing, with no policy row: the item cost is all we can prove.
+
+    This is the lenient direction on purpose. A store that never declared an
+    allowance has told us nothing about freight, and inventing a number would
+    refuse sales on a cost nobody stated. It also means the gate is weakest
+    exactly where the data is thinnest, which is why §23's sentinel reports the
+    below-cost population separately rather than relying on this check alone.
+    """
+    bind_in_store(cur)
+    add_variant(cur, price_cents=1500, cost_cents=800)
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_ALLOW
+    assert decision["basis_cost_minor"] == 800
+
+
+def test_the_price_the_lane_is_actually_charging_wins_over_the_stored_one(cur):
+    """§24/§25. A cart holds a price; the stored one may have moved since.
+
+    The lanes pass the figure the charge is built from — the cart's
+    ``price_snapshot_minor``, the offer's accepted ``amount_minor``, buy-now's
+    ``unit_price_minor``. Judging the stored price instead would check a number
+    nobody is paying, which is how a cart added before a cost rise becomes a
+    loss that the gate waves through.
+    """
+    bind(cur)
+    add_variant(cur, price_cents=2000, cost_cents=800)
+    confirm(cur)
+    draining(cur)
+
+    stored = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert stored["decision"] == gate.DECISION_ALLOW
+
+    stale = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW,
+                          price_minor=500)
+    assert stale["decision"] == gate.DECISION_REFUSE
+    assert stale["reason"] == gate.REASON_NEGATIVE_MARGIN
+    assert stale["charged_minor"] == 500
+
+
+def test_a_lane_naming_no_price_falls_back_to_the_stored_one(cur):
+    """A caller that cannot name a price must not thereby skip the check.
+
+    ``price_minor=None`` means "this lane did not tell us", not "do not look".
+    Defaulting to no comparison would make the loss check opt-in, and the first
+    lane added later would opt out of it by saying nothing.
+    """
+    bind(cur)
+    add_variant(cur, price_cents=500, cost_cents=800)
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW,
+                             price_minor=None)
+    assert decision["reason"] == gate.REASON_NEGATIVE_MARGIN
+    assert decision["charged_minor"] == 500
+
+
+def test_a_basket_price_map_is_read_per_listing(cur):
+    """``screen`` must hand each line its own price, not the basket's first.
+
+    Two lines, one profitable at the price being charged and one not. Keying the
+    map wrongly — or passing one price to every line — turns a two-line cart into
+    a coin flip about which line's economics get checked.
+    """
+    bind(cur)
+    add_variant(cur, price_cents=2000, cost_cents=800)
+    bind(cur, listing_id=DROPSHIP_B, provider_variant_id="20002")
+    add_variant(cur, listing_id=DROPSHIP_B, provider_variant_id="20002",
+                price_cents=2000, cost_cents=800)
+    confirm(cur)
+    confirm(cur, listing_id=DROPSHIP_B)
+    draining(cur)
+
+    screened = gate.screen(cur, [DROPSHIP, DROPSHIP_B],
+                           prices={DROPSHIP: 2000, DROPSHIP_B: 100}, now=NOW)
+    assert screened["refused_listing_id"] == DROPSHIP_B
+    assert screened["refusal"]["reason"] == gate.REASON_NEGATIVE_MARGIN
+    assert screened["decisions"][DROPSHIP]["decision"] == gate.DECISION_ALLOW
+
+
+def test_both_new_refusals_reach_the_buyer_without_naming_the_seller_s_economics(cur):
+    """§25. Truthful to the buyer, silent about the seller's cost base.
+
+    "This seller priced below their own cost" is a true sentence and it is not
+    the buyer's business, so the loss refusal deliberately shares its copy with
+    the unbound one: both mean "you cannot buy this right now", which is the part
+    that concerns the buyer. Neither is mapped onto ``OUT_OF_STOCK`` — the
+    supplier has plenty — so the client falls back to the generic copy rather
+    than being handed a lie.
+    """
+    for reason in (gate.REASON_UNBOUND, gate.REASON_NEGATIVE_MARGIN):
+        message = gate.MESSAGES[reason]
+        assert "not been charged" in message, reason
+        for leak in ("cost", "margin", "supplier", "cj", "loss", "profit"):
+            assert leak not in message.lower(), f"{reason} leaked {leak}: {message}"
+        assert reason not in gate.WIRE_CODES, (
+            f"{reason} is mapped to a buyer-facing code that misstates the cause")
+    assert gate.WIRE_CODES[gate.REASON_SOLD_OUT] == "OUT_OF_STOCK"
+
+
+def test_every_refusal_code_has_buyer_copy(cur):
+    """A refusal with no message reaches the buyer as a blank screen."""
+    for reason in gate.REFUSAL_CODES:
+        assert gate.MESSAGES.get(reason), f"{reason} has no buyer message"
+
+
+def test_bound_variant_agrees_with_the_publication_path(cur):
+    """One question, two implementations, pinned rather than inspected.
+
+    ``drafts._sold_variant`` decides which variant a listing *publishes* as, and
+    ``_bound_variant`` decides which one it *sells*. If they ever disagree, a
+    listing publishes one physical item and charges for another — the exact
+    failure §11 and §24 are about. This is the test
+    ``_bound_variant``'s docstring promises.
+
+    Driven through both functions with the same inputs, including the two cases
+    that are easy to get differently: nothing bound, and a binding naming a
+    variant the listing does not have.
+    """
+    from services.business_os.suppliers import drafts
+
+    rows = [{"provider_variant_id": "20001", "id": 1},
+            {"provider_variant_id": "20002", "id": 2},
+            {"provider_variant_id": None, "id": 3}]
+    cases = [
+        {"provider_variant_id": "20001"},
+        {"provider_variant_id": "20002"},
+        {"provider_variant_id": "  20001  "},
+        {"provider_variant_id": "20099"},
+        {"provider_variant_id": ""},
+        {"provider_variant_id": None},
+        {},
+        None,
+    ]
+    for source in cases:
+        mine = gate._bound_variant(rows, source)
+        theirs = drafts._sold_variant(rows, source)
+        assert (mine is None) == (theirs is None), source
+        if mine is not None:
+            assert mine["id"] == theirs["id"], source
+
+
+def test_the_policy_columns_this_gate_reads_are_the_ones_store_policy_declares(cur):
+    """The allowance read is a hand-written SELECT; this is what keeps it honest.
+
+    ``_shipping_allowance`` cannot call ``store_policy.resolve_shipping_allowance``
+    because that routes through ``get_policy`` → ``ensure_schema`` → DDL, and
+    running DDL inside a checkout can block the route on PostgreSQL. The cost of
+    that decision is a duplicated column name, so the name is pinned against the
+    declaring module's own source.
+    """
+    assert "shipping_allowance_cents INTEGER" in inspect.getsource(store_policy), (
+        "store_policy no longer declares shipping_allowance_cents; the gate's "
+        "hand-written SELECT is now reading a column that does not exist")
+
+    read = inspect.getsource(gate._shipping_allowance)
+    # The table name is interpolated from store_policy rather than spelled out,
+    # so that half of the duplication cannot drift at all. Only the column name
+    # is copied, and that is the half this test exists for.
+    assert "{store_policy.TABLE}" in read, (
+        "the gate now names the policy table itself instead of deriving it from "
+        "store_policy, so a rename there would leave this SELECT behind")
+    assert "shipping_allowance_cents" in read
+
+
+def test_the_allowance_read_runs_no_ddl(cur):
+    """§24 forbids DDL at checkout, and the obvious helper does it.
+
+    ``ensure_schema`` on a route's own connection can hang it on PostgreSQL,
+    which is why this gate hand-rolls the SELECT. A refactor back to the
+    convenient call would reintroduce that, silently and only under load.
+    """
+    statements = []
+    real_execute = cur.execute
+
+    class Watching:
+        def execute(self, sql, *args, **kwargs):
+            statements.append(str(sql))
+            return real_execute(sql, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(cur, name)
+
+    policy(cur, allowance_cents=800)
+    bind_in_store(cur)
+    add_variant(cur, price_cents=2000, cost_cents=800)
+    confirm(cur)
+    gate.evaluate(Watching(), listing_id=DROPSHIP,
+                  evidence=draining(cur), now=NOW)
+    for sql in statements:
+        head = sql.strip().upper()
+        assert not head.startswith(("CREATE", "ALTER", "DROP")), sql

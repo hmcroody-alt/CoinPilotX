@@ -616,7 +616,18 @@ def offer_checkout(offer_id: int):
         # the commercial guards, before the first `seller_transactions` row. An
         # accepted offer is the lane most exposed to this, because the buyer may
         # have accepted hours ago and nothing re-checked the supplier since.
-        screened = supplier_checkout.screen(cur, [listing_id], now=now)
+        #
+        # The price passed is the offer's *unit* amount, deliberately not `amount`
+        # — that is `buyer_total_minor`, which already has `qty` in it, and
+        # comparing a two-unit total against a one-unit cost would clear the loss
+        # check on exactly the orders that lose the most. This is also the lane
+        # where the check earns the most: the other two charge a price the seller
+        # set, and this one charges a price a buyer talked them down to, which is
+        # the one number in the system that can go below cost without anything in
+        # the catalogue changing.
+        screened = supplier_checkout.screen(
+            cur, [listing_id], prices={listing_id: offer.get("amount_minor")},
+            now=now)
         if screened["refusal"]:
             refusal = screened["refusal"]
             return _error(refusal["message"], 409,
