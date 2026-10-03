@@ -2697,52 +2697,65 @@ def dashboard_scam_alerts_page():
     return render_account_page("custom", "Crypto Scam Alerts", current_user=user, custom_body=body)
 
 
+# An unknown slug in any of the five registry-backed families below is a 404,
+# not a redirect to the home page.
+#
+# All six handlers used to answer `302 -> /` (and `/intel/<slug>` `302 ->
+# /intel`) for anything the registry did not contain, which Google classes as a
+# soft 404: the URL does not exist, but the response says "it moved, and it
+# moved to the most important page on the site". The sibling catch-all
+# `seo_topic_page` at the bottom of this group has always returned a real 404
+# for the same condition, which is what makes this an oversight rather than a
+# decision -- the same question was answered two ways in one file.
+#
+# The cost is crawl budget over an unbounded space. `/markets/<symbol>` accepts
+# any string, so every typo, every stale inbound link and every guessed ticker
+# was a 302 Googlebot had to fetch, follow, and then discover was the home page
+# it already had. Verified anonymously against production on 2026-10-03:
+# `/markets/notacoin`, `/country-intelligence/atlantis`,
+# `/sports-edge/football` and `/intel/not-a-real-article` all redirected rather
+# than 404'd.
+#
+# 404 and not 410: these are URLs that never existed, not content we removed.
+# No successor exists for a symbol we do not cover, and the mission's rule is
+# that a 301 is only correct where a real successor does -- redirecting to the
+# home page is the specific thing it names as wrong.
+
+
+def _registry_page_or_404(page, include_article=False):
+    if not page:
+        return Response("Not found", status=404)
+    return render_seo_landing(page, include_article=include_article)
+
+
 @webhook_app.route("/markets/<symbol>/prediction", methods=["GET"])
 def seo_market_prediction(symbol):
-    page = market_prediction_page(symbol)
-    if not page:
-        return redirect(url_for("home"), code=302)
-    return render_seo_landing(page)
+    return _registry_page_or_404(market_prediction_page(symbol))
 
 
 @webhook_app.route("/markets/<symbol>/live", methods=["GET"])
 def seo_market_live(symbol):
-    page = market_live_page(symbol)
-    if not page:
-        return redirect(url_for("home"), code=302)
-    return render_seo_landing(page)
+    return _registry_page_or_404(market_live_page(symbol))
 
 
 @webhook_app.route("/markets/<symbol>", methods=["GET"])
 def seo_market_page(symbol):
-    page = market_page(symbol)
-    if not page:
-        return redirect(url_for("home"), code=302)
-    return render_seo_landing(page)
+    return _registry_page_or_404(market_page(symbol))
 
 
 @webhook_app.route("/country-intelligence/<country_slug>", methods=["GET"])
 def seo_country_page(country_slug):
-    page = country_page(country_slug)
-    if not page:
-        return redirect(url_for("home"), code=302)
-    return render_seo_landing(page)
+    return _registry_page_or_404(country_page(country_slug))
 
 
 @webhook_app.route("/sports-edge/<sport_slug>", methods=["GET"])
 def seo_sports_edge_page(sport_slug):
-    page = sports_page(sport_slug)
-    if not page:
-        return redirect(url_for("home"), code=302)
-    return render_seo_landing(page)
+    return _registry_page_or_404(sports_page(sport_slug))
 
 
 @webhook_app.route("/intel/<article_slug>", methods=["GET"])
 def seo_intel_article_page(article_slug):
-    page = article_page(article_slug)
-    if not page:
-        return redirect("/intel", code=302)
-    return render_seo_landing(page, include_article=True)
+    return _registry_page_or_404(article_page(article_slug), include_article=True)
 
 
 @webhook_app.route("/news", methods=["GET"])
