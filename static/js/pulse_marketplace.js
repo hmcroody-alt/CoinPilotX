@@ -28,9 +28,12 @@
   /* ------------------------------------------------------------------ *
    * Media states
    *
-   * The stylesheet keeps an image transparent until it carries
-   * `data-mkt-loaded`, which reveals the skeleton behind it. Two cases have
-   * to be handled beyond a plain `load` listener:
+   * The stylesheet hides only what this file marks `data-mkt-pending`,
+   * revealing the skeleton behind it; `data-mkt-loaded` is set on settle and
+   * is what the hover-zoom rules gate on. The polarity is deliberate — see
+   * the comment on the `[data-mkt-pending]` rule — because a stylesheet that
+   * hid by default turned any failure of this script into an invisible
+   * catalogue. Two cases have to be handled beyond a plain `load` listener:
    *
    *   1. The image may already be complete before this script runs (cache,
    *      or `loading="eager"` above the fold). `img.complete` catches that.
@@ -42,6 +45,7 @@
 
   function settleImage(img) {
     var box = img.closest(".mkt-media");
+    img.removeAttribute("data-mkt-pending");
     if (img.complete && img.naturalWidth === 0) {
       if (box) box.classList.add("is-broken");
       return;
@@ -58,6 +62,10 @@
         settleImage(img);
         return;
       }
+      /* Only now does anything become transparent. Marking pending here
+       * rather than letting the stylesheet assume it is what keeps a page
+       * this script never reached showing its images. */
+      img.setAttribute("data-mkt-pending", "1");
       img.addEventListener("load", function () {
         settleImage(img);
       });

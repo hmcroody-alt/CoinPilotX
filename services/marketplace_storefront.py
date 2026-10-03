@@ -92,8 +92,14 @@ BASE_PATH = "/pulse/marketplace"
 #: browser holding the previous CSS would paint the new light-page markup with
 #: dark-page rules — white text on a white card — so this is precisely the bump
 #: the comment above exists to force.
-CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20261002b"
-JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20261002b"
+#: `20261003a` inverts the image-reveal gate to fail open. The CSS hide rule is
+#: now keyed on a `data-mkt-pending` the script adds, instead of on the absence
+#: of `data-mkt-loaded`. The two halves only agree if they ship together: old
+#: CSS with new JS hides every image forever (nothing sets `data-mkt-loaded`
+#: before settle, and `:not()` matches), and new CSS with old JS loses the
+#: fade-in. Exactly the pair-wise break this token exists to prevent.
+CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20261003a"
+JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20261003a"
 
 #: Cards per grid page. Mirrors `marketplace_web.PAGE_SIZE` so pagination maths
 #: has one source.

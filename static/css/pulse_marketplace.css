@@ -987,15 +987,25 @@ body.mkt-public .mkt {
   }
 }
 
-/* An image that has not decoded yet is transparent, so the skeleton
- * shows. `data-mkt-loaded` is set by the tiny inline loader script on
- * `load`; the CSS `:not()` keeps the pre-script state correct too. */
-.mkt-media img:not([data-mkt-loaded]) {
+/* An image still being fetched is transparent, so the skeleton shows and
+ * the `opacity` transition above reads as a fade-in.
+ *
+ * Keyed on a `data-mkt-pending` that `pulse_marketplace.js` *adds*, never on
+ * the absence of `data-mkt-loaded`. Hiding by default made that script a
+ * single point of failure for the whole catalogue: if it failed to load,
+ * parse or run, every product image stayed fully transparent over valid
+ * markup with a correct `src` and decoded bytes — a healthy catalogue
+ * rendering as a wall of blank plates. Nothing marks pending, nothing
+ * hides, so an unscripted page shows its images.
+ *
+ * `data-mkt-pending` is the only thing that touches opacity here. A companion
+ * `[data-mkt-loaded]` rule carrying `opacity: 1` would be redundant — an image
+ * with no attribute is already opaque — and, sharing this rule's specificity
+ * while sitting later in the file, it would win whenever both attributes were
+ * briefly set and defeat the hide. `data-mkt-loaded` is still written by the
+ * script; the hover-zoom rules below gate transform on it. */
+.mkt-media img[data-mkt-pending] {
   opacity: 0;
-}
-
-.mkt-media img[data-mkt-loaded] {
-  opacity: 1;
 }
 
 /* Failure state. Rendered in the markup always, displayed only when the
