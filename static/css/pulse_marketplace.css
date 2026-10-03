@@ -528,8 +528,28 @@ body.mkt-public .mkt {
   text-decoration: underline;
 }
 
+/* Truncated on the same terms as the links beside it. This crumb carries the
+ * product heading, which can be a whole supplier sentence; left unclamped it
+ * wraps the trail onto three lines and restates the `<h1>` directly above it. */
 .mkt-crumbs [aria-current="page"] {
   color: var(--text-primary, #0f1111);
+  /* `inline-block` and not the `inline-flex` it inherits from `.mkt-crumbs li`:
+   * `text-overflow` only applies to a block container, so on a flex container
+   * it is silently inert and the crumb clips mid-word with no ellipsis --
+   * which reads as a rendering fault rather than as shortened text. */
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 22ch;
+  vertical-align: bottom;
+}
+
+/* `gap` is a flex property, and the rule above takes this one crumb out of
+ * flex layout, so its separator loses the space every other crumb gets from
+ * `.mkt-crumbs li` and renders as "/Upholstered". */
+.mkt-crumbs [aria-current="page"]::before {
+  margin-right: var(--spacing-2xs, 4px);
 }
 
 /* The heading and the cart link share one row. `align-items: flex-start`
@@ -605,7 +625,22 @@ body.mkt-public .mkt {
   color: var(--text-primary, #0f1111);
   /* Supplier titles in this catalogue run to ~160 characters. They are
    * reproduced verbatim (they are the product's real name), so the
-   * heading has to wrap gracefully rather than be rewritten. */
+   * heading has to wrap gracefully rather than be rewritten. `display_title`
+   * moves the tail into `.mkt-title-qualifier` where the seller's own
+   * punctuation allows it, but most titles have none and still land here
+   * whole. */
+  overflow-wrap: anywhere;
+}
+
+/* The rest of a title the seller had already broken with a comma. Quieter than
+ * the heading because it is a qualifier, and it must not read as a second
+ * heading -- that was the problem it exists to solve. */
+.mkt-title-qualifier {
+  margin: 4px 0 0;
+  font-size: var(--font-size-sm, 14px);
+  line-height: 1.4;
+  font-weight: 500;
+  color: var(--mkt-muted);
   overflow-wrap: anywhere;
 }
 

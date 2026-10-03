@@ -164,7 +164,7 @@ class PublicMarketplaceFixture(unittest.TestCase):
     def make_listing(self, *, status="published", approval_status="approved",
                      description=DESCRIPTION, price_label="$465.74", currency="USD",
                      cover="https://cdn.example/bed.jpg", quantity=12,
-                     product_type="physical"):
+                     product_type="physical", title="Linen Duvet Cover Set"):
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
         cur.execute(
@@ -173,7 +173,7 @@ class PublicMarketplaceFixture(unittest.TestCase):
             " quantity, product_type, listing_type, status, approval_status, cover_image_url,"
             " safety_score, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (SELLER, "Linen Duvet Cover Set", description, "Washed linen duvet set", "Home",
+            (SELLER, title, description, "Washed linen duvet set", "Home",
              price_label, currency, quantity, product_type, product_type, status, approval_status,
              cover, 7, NOW, NOW),
         )
@@ -561,6 +561,61 @@ class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
         conn.commit()
         conn.close()
         self.assertEqual(self.get(listing_id).status_code, 404)
+
+
+class PublicProductTitleTestCase(PublicMarketplaceFixture):
+    """The canonical title and the displayed name are two jobs, one string.
+
+    ``marketplace_web.display_title`` is unit-tested in
+    ``tests/test_marketplace_storefront.py``; what is asserted here is the
+    wiring, because the risk of this change was never the split itself. It was
+    that shortening the heading would also shorten what a search engine reads,
+    which would be a silent SEO regression on every long listing -- visible to
+    nobody looking at the page.
+    """
+
+    #: Listing 14 in production, verbatim. 160 characters, split at the
+    #: seller's own first comma.
+    LONG = (
+        "Upholstered Bed 135 X 190 Cm With LED Lighting, USB Type-C Charging, "
+        "Storage Headboard For Cellphones And Tablets, 4ft6 Hydraulic Storage "
+        "Bed With Metal Slatted"
+    )
+    HEAD = "Upholstered Bed 135 X 190 Cm With LED Lighting"
+
+    def test_the_heading_is_shortened_and_the_rest_is_kept_as_a_qualifier(self):
+        """Nothing the seller wrote stops being on the page; it is re-divided."""
+        body = self.get(self.make_listing(title=self.LONG)).get_data(as_text=True)
+        self.assertIn(f'<h1 class="mkt-title">{self.HEAD}</h1>', body)
+        self.assertIn('class="mkt-title-qualifier"', body)
+        self.assertIn("4ft6 Hydraulic Storage Bed With Metal Slatted", body)
+
+    def test_a_search_engine_still_reads_the_whole_canonical_title(self):
+        """The regression this class exists for.
+
+        ``<title>``, ``og:title`` and the ``Product`` node all keep the full
+        string. A crawler matching "Hydraulic Storage Bed" must still find this
+        page, and the structured-data ``name`` is what a shopping result shows.
+        """
+        response = self.get(self.make_listing(title=self.LONG))
+        body = response.get_data(as_text=True)
+        self.assertEqual(self.product_node(response)["name"], self.LONG)
+        self.assertRegex(body, r"<title>%s" % re.escape(self.LONG))
+        self.assertRegex(
+            body, r'<meta property="og:title" content="%s' % re.escape(self.LONG))
+
+    def test_the_breadcrumb_does_not_restate_the_heading_at_full_length(self):
+        """The duplication that prompted this: the same sentence twice, the
+        first time in 12px grey directly above the ``<h1>``."""
+        body = self.get(self.make_listing(title=self.LONG)).get_data(as_text=True)
+        self.assertIn(f'<li aria-current="page">{self.HEAD}</li>', body)
+        self.assertNotIn(f'<li aria-current="page">{self.LONG}</li>', body)
+
+    def test_a_title_that_does_not_split_renders_no_empty_qualifier(self):
+        """An empty ``<p>`` under the heading is a gap with no explanation."""
+        body = self.get(self.make_listing()).get_data(as_text=True)
+        self.assertIn('<h1 class="mkt-title">Linen Duvet Cover Set</h1>', body)
+        self.assertNotIn("mkt-title-qualifier", body)
 
 
 class PublicProductStoreIdentityTestCase(PublicMarketplaceFixture):

@@ -92,8 +92,8 @@ BASE_PATH = "/pulse/marketplace"
 #: browser holding the previous CSS would paint the new light-page markup with
 #: dark-page rules — white text on a white card — so this is precisely the bump
 #: the comment above exists to force.
-CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20261001b"
-JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20261001b"
+CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20261002b"
+JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20261002b"
 
 #: Cards per grid page. Mirrors `marketplace_web.PAGE_SIZE` so pagination maths
 #: has one source.
@@ -1522,6 +1522,11 @@ def render_product(
     """
     listing_id = int(listing.get("id") or 0)
     title = mw._clean(listing.get("title")) or "Marketplace listing"
+    # `title` stays the canonical string and keeps going to `<title>`, `og:title`
+    # and the structured data, because that is what the listing is called and
+    # what a search engine should match. `heading`/`qualifier` are the same text
+    # re-divided for a reader, never a different text.
+    heading, qualifier = mw.display_title(title)
     canonical = product_path(listing_id)
 
     price = mw.derive_price(listing, variants)
@@ -1598,7 +1603,11 @@ def render_product(
         crumb_items.append(
             f'<li><a href="{esc(BASE_PATH)}?category={esc(slug)}">{esc(label)}</a></li>'
         )
-    crumb_items.append(f'<li aria-current="page">{esc(title)}</li>')
+    # The heading, not the canonical title: this crumb sits directly above the
+    # `<h1>`, and a 160-character supplier title rendered here was the same
+    # sentence twice, the first time in 12px grey. It is still truncated in CSS
+    # like its siblings -- a breadcrumb is a trail, not a second headline.
+    crumb_items.append(f'<li aria-current="page">{esc(heading)}</li>')
     crumbs_html = (
         '<nav aria-label="Breadcrumb"><ol class="mkt-crumbs">'
         + "".join(crumb_items)
@@ -1830,8 +1839,10 @@ def render_product(
     info = (
         '<div class="mkt-detail-info">'
         f'<header class="mkt-head">'
-        f'<div class="mkt-head-row"><h1 class="mkt-title">{esc(title)}</h1>'
-        f"{cart_link_html(cart_count)}</div>{badge_row}</header>"
+        f'<div class="mkt-head-row"><h1 class="mkt-title">{esc(heading)}</h1>'
+        f"{cart_link_html(cart_count)}</div>"
+        + (f'<p class="mkt-title-qualifier">{esc(qualifier)}</p>' if qualifier else "")
+        + f"{badge_row}</header>"
         f"{buy_panel}"
         f"{app_cta_html}"
         f"{seller_card(listing, viewer=viewer, store_href=store_href, listing_count=seller_listing_count)}"

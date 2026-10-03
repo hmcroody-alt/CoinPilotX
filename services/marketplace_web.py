@@ -148,6 +148,64 @@ def _clean(value: Any) -> str:
     return _WHITESPACE.sub(" ", str(value if value is not None else "")).strip()
 
 
+_TITLE_SEPARATOR = re.compile(r"\s*[,|]\s+|\s+[-–—]\s+")
+# A head opening with one of these is a lead-in, not a name. The case this
+# guard actually catches in production is listing 50, "New Arrival Flower Oil
+# Dripping Open Ring, Alloy Hot Sale Butterfly Diamond": the head parses as a
+# ring, so every other guard passes it, and the shopper would be shown a
+# heading that opens on the supplier's marketing rather than the product.
+# Compatibility lead-ins ("Compatible with Apple, ...") are listed for the same
+# reason, though today's one such listing is short enough to never reach here.
+_TITLE_LEAD_IN = re.compile(
+    r"^(?:compatible|suitable|applicable|universal|for|fit|fits|new|hot)\b",
+    re.IGNORECASE,
+)
+_TITLE_NEEDS_SHORTENING = 70
+_TITLE_NAME_RANGE = (16, 70)
+
+
+def display_title(value: Any) -> tuple[str, str]:
+    """Split a supplier title into the name to show and the rest, or don't.
+
+    Why this is not a general shortener
+    -----------------------------------
+    Supplier titles are keyword runs, and the product noun is wherever the
+    keyword run happened to put it: production has "European And American Rib
+    Slim V-neck Elegant Long Sleeve Spring And Summer T-shirt", where cutting
+    at any word budget names the product "...Elegant Long" and loses the
+    T-shirt. There is no length at which a blind cut is safe, so there is no
+    blind cut. 191 of the 196 published titles come back whole.
+
+    What makes a split safe is that the supplier already made it. A comma, a
+    pipe or a spaced dash is punctuation the seller typed, so the text in front
+    of it is a phrase they chose to end -- not one this function found. Both
+    halves are returned verbatim; nothing is reworded, abbreviated or inferred.
+
+    The guards are there because a supplier-authored break is necessary and not
+    sufficient. A title short enough to read already does not need splitting, a
+    two-word head is not a product name, and a head that opens with a lead-in
+    is a qualifier the seller front-loaded. Each guard is allowed to be
+    over-strict: refusing to split leaves a long title, while splitting wrongly
+    renames the product, and only one of those is a lie.
+
+    Returns ``(name, subtitle)``. ``subtitle`` is empty when the title stands
+    whole. The caller keeps the original for ``<title>``, ``og:title`` and
+    anything else a search engine reads -- the canonical string is unchanged by
+    this function and remains what the listing is actually called.
+    """
+    title = _clean(value)
+    if len(title) <= _TITLE_NEEDS_SHORTENING:
+        return title, ""
+    match = _TITLE_SEPARATOR.search(title)
+    if not match:
+        return title, ""
+    name, subtitle = title[: match.start()].strip(), title[match.end():].strip()
+    low, high = _TITLE_NAME_RANGE
+    if not subtitle or not (low <= len(name) <= high) or _TITLE_LEAD_IN.match(name):
+        return title, ""
+    return name, subtitle
+
+
 def slugify(value: Any) -> str:
     """The public, URL-facing form of a category label.
 
