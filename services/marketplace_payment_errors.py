@@ -283,16 +283,26 @@ def _safe_attr(exc: Any, name: str) -> str | None:
     return text[:120] if text else None
 
 
-def _mro_names(exc: Exception) -> list[str]:
-    """Class names of the exception and every base, nearest first."""
-    return [cls.__name__ for cls in type(exc).__mro__]
-
-
 def _match_stripe_class(exc: Exception) -> tuple[str, int, str, bool, str] | None:
     """First named Stripe class in the MRO, so a subclass of ``CardError`` is
-    still treated as a card error rather than falling through to generic."""
-    for name in _mro_names(exc):
-        mapped = _STRIPE_CLASS_MAP.get(name)
+    still treated as a card error rather than falling through to generic.
+
+    A match whose *defining* class is a builtin is not a Stripe error and is
+    skipped. ``PermissionError`` is both a key in the table above and a builtin
+    subclass of ``OSError``, so an ordinary denial raised by our own code inside
+    the checkout ``try`` was answered as a payment misconfiguration: blocked,
+    non-retryable, and therefore rendered with the payment button disabled — a
+    dead end for a tap that would have succeeded. It belongs in the
+    non-provider branch, which is where ``AttributeError`` already goes.
+
+    Keyed on the class rather than on ``type(exc).__module__`` so our own
+    subclasses of the builtin are covered too: those carry their own module
+    name, but the class that matches the table is still the builtin.
+    """
+    for cls in type(exc).__mro__:
+        if (cls.__module__ or "") == "builtins":
+            continue
+        mapped = _STRIPE_CLASS_MAP.get(cls.__name__)
         if mapped:
             return mapped
     return None
