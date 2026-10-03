@@ -2,7 +2,7 @@
 
 ## Findings log (published as found, not held for the final report)
 
-Status: **OPEN — 9 findings (1 low), 6 attacks passed, 1 fleet blocker, 1 gate landed (red)**
+Status: **OPEN — 10 findings (1 low, 1 escalated out of Search OS), 6 attacks passed, 1 fleet blocker, 1 gate landed (red)**
 Branch: `search-os/agent-12-quality-sentinel`
 Measured against: `origin/main` @ `5bdf4e431`
 Method: Flask test client over `app.url_map`, against a scratch copy of the dev DB
@@ -671,6 +671,127 @@ mode as a gate with the wrong scope — which is the finding above.
 Notify **Agent 6** (sitemaps), **Agent 8** (IndexNow — it would submit all 206).
 Invariant: **#7 (canonical must agree)** and **#13 (a gate must see the whole set
 it certifies)**.
+
+---
+
+## A12-10 — `/api/pulse/payments/checkout` takes the price from the buyer's own request body for `lesson` and `live_class`
+
+**Severity: HIGH as written, latent today (0 production rows). Not a Search OS
+defect — escalated to Agent 0 for routing to the payments owner.**
+
+Found while grounding invariant #14 ("the price charged equals the price
+displayed") for the cross-agent matrix. The route accepts four `item_type`
+values and prices them from three different places (`bot.py:104190`–`104231`):
+
+| `item_type` | priced from |
+|---|---|
+| `marketplace_product` | `marketplace_price_authority.resolve_for_listing(...)` — correct |
+| `course` | `parse_price_label_to_cents(item["price_label"])` — **the DB row** |
+| `lesson` | `parse_price_label_to_cents(payload["price_label"])` — **the request** |
+| `live_class` | `parse_price_label_to_cents(payload["price_label"])` — **the request** |
+
+`payload` is `request.get_json(silent=True)` (`bot.py:104081`). The last two load
+their row from the database one line earlier and then never consult it for
+price.
+
+**This is not two price authorities drifting apart.** For these two item types
+there is no server-side price to drift *from* — the tables have no price column
+at all. Confirmed against the **production** schema, not just `init_db()`:
+
+```
+pulse_lessons          rows=     0  price-like columns=NONE
+pulse_live_classes     rows=     0  price-like columns=NONE
+pulse_courses          rows=     0  price-like columns=['price_label']
+```
+
+Measured, not read. `.attack/probe_checkout_price_is_client_supplied.py` drives
+the live route with a seeded class, lesson and course and captures the number on
+its way to Stripe:
+
+```
+live_class   buyer sends price_label=$0.50      -> HTTP 200; Stripe asked for unit_amount=50
+live_class   buyer sends price_label=$5000.00   -> HTTP 200; Stripe asked for unit_amount=500000
+lesson       buyer sends price_label=$0.50      -> HTTP 200; Stripe asked for unit_amount=50
+lesson       buyer sends price_label=$5000.00   -> HTTP 200; Stripe asked for unit_amount=500000
+course       buyer sends price_label=$0.50      -> HTTP 200; Stripe asked for unit_amount=25000
+course       buyer sends price_label=$5000.00   -> HTTP 200; Stripe asked for unit_amount=25000
+```
+
+**The `course` row is the control, and it is the reason this reading is
+trustworthy.** It takes the identical payload field and ignores it, charging its
+true DB price (`$250.00`) both times. If a changed payload had moved *both*, the
+probe would be reading a field that happens to be echoed rather than a price
+authority. It moves exactly the two branches the source says it should.
+
+Cross-checked against a second, independent reading: `seller_transactions` is
+INSERTed with `amount_cents` *before* the Stripe guard, and it recorded the same
+50 / 500000 / 25000. The ledger is cleared in `seed()` so the rows provably
+belong to the current run — the first version of this probe did not do that and
+reported four convincing amounts left over from a previous 503 run.
+
+**Exploitable window: `[50, 99_999_999]` — $0.50 to $999,999.99, buyer's
+choice.** `MAX_PRICE_LABEL_CENTS` (`bot.py:5430`) clamps the top and
+`DEFAULT_MINIMUM_CHARGE_MINOR = 50` is the Stripe floor. Note the clamp protects
+against *over*-charge only; the direction an attacker wants is down, and 50
+cents passed with HTTP 200. There is no downstream recompute — the only
+subsequent checks are `amount_cents <= 0` and `below_minimum_charge_error`, and
+the value reaches both the ledger insert and the Session's `unit_amount`
+(`bot.py:104643`). A comment in the route confirms the reach in as many words:
+*"the Session above is created for every item_type this route accepts"*.
+
+### What is honestly NOT proven
+
+- **Nothing has been charged this way.** Production `seller_transactions` holds
+  `marketplace_product` rows only — 47 across 5 statuses, no `lesson`,
+  `live_class` or `course` row has ever existed.
+- **There is nothing to buy.** All three teaching tables are empty in
+  production; the teaching product has never launched a row.
+- A buyer must be authenticated (`api_error("Login required.", 401)`), and
+  `ios_native_app_request()` refuses every non-`marketplace_product` type — so
+  the native app cannot reach it. Web/API only.
+- No first-party client POSTs these item types, so a buyer would be
+  hand-crafting the request.
+
+So: **latent, and it arms itself on the first row.** The defect is in the route,
+which ships today — not in the data, which is absent today. That ordering is
+what makes it worth publishing now: the fix is one line per branch while the
+tables are empty, and a refund reconciliation afterwards.
+
+### Two stubs, and why neither manufactures the result
+
+The probe patches three things, all restored in `finally`, with no source edits:
+
+1. `api_account_user` — the buyer. Stubbed because the hole is *behind* the login
+   wall: it is reachable by **any** logged-in buyer, and stubbing isolates the
+   price question from the access question.
+2. `approved_teacher_for_user` — worth stating precisely, because it looks like a
+   gate and is not. It is called as
+   `approved_teacher_for_user(cur, seller_user_id)` (`bot.py:104274`): a property
+   of the **seller**, not a barrier the buyer passes. Stubbing it asserts "this
+   class belongs to an approved teacher," which is true of every genuinely listed
+   class. It does not create reachability.
+3. `STRIPE_SECRET_KEY` — a configuration constant, not a price authority. Without
+   it the route returns 503 before building the Session, so the amount could not
+   be observed at all. `Session.create` is already replaced with a capture, so no
+   key exists, no network call is made, and no money can move.
+
+**Nothing here touched production, Stripe or money.** The DB is
+`.attack/scratch.db`; the production query above was `readonly=True`.
+
+### Secondary gap found in the same read
+
+The lifecycle check is marketplace-only:
+`if item_type == "marketplace_product" and not marketplace_listing_lifecycle.is_public(item)`
+(`bot.py:104236`). So for `lesson` and `live_class` a row in **any** status —
+`draft`, `cancelled` — is purchasable. The same is true of the goods-policy
+check. My probe seeded `scheduled`/`published`, so this is read from source, not
+measured; flagging it so the owner fixes the branch rather than the line.
+
+**Owner: payments surface, not a Search OS agent.** Escalated to **Agent 0**.
+Invariant: **#14 (the price charged equals the price displayed)** — the one
+invariant in the matrix whose violation costs money rather than crawl budget.
+Golden Rule 2 names price truth explicitly, which is why a payments finding
+belongs in a search-quality report at all.
 
 ---
 
