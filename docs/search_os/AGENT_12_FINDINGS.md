@@ -2,7 +2,10 @@
 
 ## Findings log (published as found, not held for the final report)
 
-Status: **OPEN — 10 findings (1 low, 1 escalated out of Search OS), 8 attacks passed, 1 fleet blocker, 1 gate landed (red)**
+Status: **OPEN — 11 findings (1 low, 2 escalated out of Search OS), 8 attacks passed, 1 fleet blocker, 1 gate landed (red), 2 of my own claims corrected**
+
+> **Read A12-11 first.** It is live in production, it is 78% of the product
+> catalogue, and it is the only finding here with an immediate revenue cost.
 Branch: `search-os/agent-12-quality-sentinel`
 Measured against: `origin/main` @ `5bdf4e431`
 Method: Flask test client over `app.url_map`, against a scratch copy of the dev DB
@@ -441,14 +444,39 @@ the three authorities side by side.
 | other 11 | 200 | `index,follow` | yes | True | complete |
 
 - **50 and 52: confirmed.** Agent 1 was right, and now there is wire evidence.
-- **110: unverifiable as stated.** It answers **404**, not 200-with-`noindex`.
-  Those are different outcomes — 404 is safe, but the claim as written implies a
-  rendered page. Either the row was depublished after Agent 1 measured, or the
-  claim was wrong. I cannot tell from a dev-DB copy; whoever has the production
-  reading should settle it.
-- **77 has the identical shape and Agent 1 did not name it.** So that section of
-  the report is a sample, not a census. Anything scoped to "the three noindex
-  listings" will miss a fourth.
+- **110: I was wrong, Agent 1 was right.** See the correction below.
+- **77 has the identical shape locally and Agent 1 did not name it.** That
+  reading does not survive production either — see the correction.
+> ### CORRECTION — the table above is a dev-copy reading, and two of its rows are wrong
+>
+> Settled against production on 2026-10-03, read-only:
+> `.attack/prod_settle_listing_110.py` and `.attack/prod_read_listing_directives.py`.
+>
+> | listing | prod DB | prod wire | my dev-copy claim |
+> |---|---|---|---|
+> | 50 | `published` | 200 `noindex,follow` | correct |
+> | 52 | `published` | 200 `noindex,follow` | correct |
+> | 110 | `published` | **200 `noindex,follow`** | **wrong** — I said 404, "no row" |
+> | 77 | `published` | **404** | **wrong** — I said 200 `noindex` |
+> | 35, 36 | `published` | 200 `index,follow` + preview directives | correct |
+>
+> **Agent 1's claim about 110 was right in every particular and I called it
+> unverifiable.** The dev copy holds 16 publishable rows against production's
+> 196; listing 110 is simply not in it. *A claim about a row cannot be refuted by
+> a database that does not contain the row*, and I published a refutation that
+> had exactly that shape. The control was there to be run and I did not run it:
+> 50 and 52 resolved locally, so I treated the corpus as adequate instead of
+> asking whether 110's absence was the property's answer or my copy's.
+>
+> The 77 inversion is not a copy artifact — it is A12-11 below, and it is the
+> more serious of the two.
+>
+> What stands: the three listings Agent 1 named all serve `noindex,follow` in
+> production, with a live control (35 and 36 serve `index,follow`), so the
+> per-listing split is real and observable from outside. What falls: my "sample,
+> not a census" criticism of Agent 1's section. On production evidence Agent 1's
+> three were three of three.
+
 - **0 cross-authority disagreements.** Every row's served directive, sitemap
   membership and `eligibility` verdict agree — `in_sitemap == indexable` for all
   16. This is the pattern A12-04 and A12-06 violate at *path* level, and at *row*
@@ -928,6 +956,143 @@ Invariant: **#14 (the price charged equals the price displayed)** — the one
 invariant in the matrix whose violation costs money rather than crawl budget.
 Golden Rule 2 names price truth explicitly, which is why a payments finding
 belongs in a search-quality report at all.
+
+---
+
+## A12-11 — 152 of 196 published products answer 404 in production, because the public gate reads a stock column the supplier sync does not write
+
+**This is live right now, it is 78% of the catalogue, and it is the largest
+discoverability defect on the property.** Not latent, not a crawl-budget
+nuance: 152 approved, published, genuinely in-stock products have no reachable
+URL.
+
+Found by accident. Production says listing 77 is `published`; its page answers
+**404**. 50, 52 and 110 are also `published` and answer 200. So `status` is not
+what decides, and `marketplace_listing_lifecycle.public_sql()` is a five-clause
+conjunction where any one clause retires the URL. Evaluating them one at a time
+(`.attack/prod_why_does_77_404.py`) gives a single answer:
+
+```
+  id=  50 status=published approval=approved seller=approved qty=14126 type=physical
+       failing clauses: none -- all pass
+  id=  77 status=published approval=approved seller=approved qty=None  type=physical
+       failing clauses: ['stock or intangible']
+  id= 110 status=published approval=approved seller=approved qty=14880 type=physical
+       failing clauses: none -- all pass
+```
+
+`COALESCE(l.quantity,0) > 0`. Listing 77's `quantity` is `NULL`, the predicate
+reads null as zero stock, and the route turns zero stock into a 404.
+
+### The population (`.attack/prod_stock_null_population.py`)
+
+```
+  published + approved + seller approved        196
+      quantity IS NULL                          148
+      quantity = 0                                4
+      quantity > 0                               44
+  RETIRED BY THE STOCK CLAUSE (404 on the wire) 152
+```
+
+### It is not out of stock. There are two stock columns and the gate reads the wrong one
+
+This is the part that makes it a defect rather than a shelf state. Stock lives
+in two places, and `.attack/prod_stock_authority_and_offer_set.py` asks which:
+
+```
+  marketplace_listing_variants   rows=3797  key=listing_id  stock-like=['stock_quantity', 'stock_state', 'stock_synced_at']
+      retired listings carrying stock_quantity>0 here: 152 of 152
+```
+
+**All 152 of 152.** They collectively hold **43,380,177 units**, every one of
+the 3,797 variant rows reads `stock_state = IN_STOCK`, and `stock_synced_at`
+across the retired set spans a 90-minute window ending minutes before I
+measured. The supplier sync is running, current, and writing real stock — into
+`marketplace_listing_variants.stock_quantity`. The public gate reads
+`marketplace_listings.quantity`, which for 148 of 196 rows nobody writes at all.
+
+And the listing-level column is not a stale roll-up of the variant data — I
+checked, because "the roll-up broke" and "the column was never on this path"
+have different owners and different fixes
+(`.attack/prod_two_stock_authorities.py`):
+
+```
+  across ALL survivors: 11 of 44 have quantity == sum(variant stock)
+         35          55        42      523654 !=
+         36          55        95     1191446 !=
+```
+
+So on 33 of the 44 rows that *do* carry a listing-level quantity, the number
+bears no arithmetic relation to the variants beneath it. I am not going to
+guess its intended semantics from two samples. What is measured is enough:
+**the column the public predicate depends on is not maintained by the system
+that owns stock**, and where it has a value that value disagrees with the
+authority three times out of four.
+
+### What it costs, stated honestly
+
+- **152 product pages return 404 to every buyer and every crawler.** A buyer
+  following a link from anywhere — a share, an email, an older index entry —
+  gets a dead page for a product with 43 million units behind it.
+- **The catalogue Google can see is 41 products, not 196.** The sitemap offers
+  41 product URLs, and that is *correct behaviour for a broken input*: the
+  generator applies the same predicate, so it honestly declines to submit a URL
+  that would 404. Invariant 9 is not violated. The offer set is truthful about a
+  catalogue that is 78% unreachable.
+- **404 is also the wrong answer for the 4 rows that genuinely read zero.**
+  Google's documented guidance for a temporarily out-of-stock product is a 200
+  with `availability: OutOfStock`, not a 404 — a 404 retires the URL and
+  discards whatever equity it had, so the page restarts from nothing when stock
+  returns. That is a secondary point and I am keeping it secondary: with 148 of
+  the 152 holding live stock, "we 404 out-of-stock products" is not the finding,
+  it is the smaller half of it.
+
+### Why nothing caught it
+
+Every layer is individually consistent, which is the shape this whole report
+keeps running into. The predicate does what it says. The route does what the
+predicate says. The sitemap generator applies the same predicate and so never
+offers a URL it cannot serve — the gate for invariant 9 passes **because** the
+defect is upstream of the offer set. A test that asks "is every offered URL
+reachable" gets a clean 148/148. No test asks the inverse: *is every publishable
+product offered?* That question has no owner and no coverage, and it is the only
+one that would have seen this.
+
+The dev copy cannot see it either. It holds 16 publishable rows, all with
+`quantity` populated, so locally the clause never fires. This is the same
+corpus gap that made me wrongly refute Agent 1 on listing 110, two findings
+apart — and it is the second time this round that a conclusion drawn from that
+database was wrong in production.
+
+### Owner and fix
+
+**Owner: marketplace listing lifecycle / the supplier sync path (Agent 5's
+area, not Search OS.)** Escalating rather than filing it inward, same as A12-10.
+
+The fix is a decision, not a patch, and it should be made by whoever owns stock
+semantics:
+
+1. make `marketplace_listings.quantity` a maintained roll-up of the variant
+   stock, written by the same sync that writes the variants; or
+2. have `public_sql()` read stock through the variant table when variants
+   exist, which is where the authority demonstrably is; and
+3. for a row that really has zero stock, serve 200 with an out-of-stock
+   availability signal rather than 404.
+
+(1) and (2) are alternatives; (3) is independent of both and smaller.
+
+**Regression coverage this needs, and it is the missing invariant rather than a
+new one:** *every listing the lifecycle calls public must answer 200, and every
+publishable product must be offered.* The suite has the forward direction and
+not the inverse. I have not written this gate — it belongs with the owner who
+decides between (1) and (2), because the assertion differs depending on which
+column becomes authoritative, and a gate written against the wrong one would
+pin the defect in place. Golden Rule 1 cuts the other way here too: the right
+move is not to write a test that passes today.
+
+Invariant: new row **16** in the matrix — the inverse of row 15. Row 15 says an
+item that cannot be bought must not be offered. Nothing said that an item that
+*can* be bought must be reachable.
 
 ---
 
