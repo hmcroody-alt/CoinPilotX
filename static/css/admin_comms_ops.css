@@ -1,0 +1,101 @@
+/* Admin communications operations centre.
+ *
+ * Page-scoped styles for /admin/communications and the communications blocks on
+ * /admin/dashboard and /admin/users/<id>. Kept out of admin_ops_center.css so a
+ * change here does not force a cache-token bump on the stylesheet that two
+ * hundred other admin pages load.
+ *
+ * Variables (--accent, --warn, --danger, --muted, --line, --line-soft) come from
+ * admin_ops_center.css, which every page carrying these classes already links.
+ */
+
+/* Status chips ------------------------------------------------------------ */
+.cchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .06);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.cchip.is-healthy,
+.cchip.is-ok { color: #06101b; background: var(--accent); border-color: transparent; }
+.cchip.is-degraded { color: #1b1402; background: var(--warn); border-color: transparent; }
+.cchip.is-failed,
+.cchip.is-critical,
+.cchip.is-error { color: #fff; background: var(--danger); border-color: transparent; }
+/* Dashed, not coloured: UNKNOWN is the absence of a signal, and it must not be
+ * mistakable at a glance for either a healthy or a failing state. */
+.cchip.is-unknown { color: var(--muted); background: rgba(255, 255, 255, .05); border-style: dashed; }
+
+/* Incidents --------------------------------------------------------------- */
+.comms-incidents { margin: 8px 0 0; padding-left: 0; list-style: none; }
+.comms-incidents li { padding: 6px 0; border-bottom: 1px solid var(--line-soft); line-height: 1.5; }
+.comms-incidents li:last-child { border-bottom: 0; }
+
+/* Dense tables ------------------------------------------------------------ */
+.comms-dense { font-size: .88rem; }
+.comms-dense th,
+.comms-dense td { padding: 7px 10px; white-space: nowrap; }
+.comms-dense th {
+  color: var(--muted);
+  font-size: .74rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.comms-dense td.n { text-align: right; font-variant-numeric: tabular-nums; }
+/* nowrap above is right for ids, states and numbers, and wrong for the two
+ * columns that hold a sentence. Without this the provider table's intrinsic
+ * width is ~1397px against a content column capped at 1320px, so "Basis" -- the
+ * field that says whether a state was observed or merely declared -- sat off the
+ * right edge behind a horizontal scroll at *every* desktop width, 4K included.
+ * The explanation of a health state should not be the part you have to go
+ * looking for. */
+.comms-dense td.prose { white-space: normal; min-width: 240px; max-width: 560px; }
+.comms-dense tr.is-now { background: rgba(54, 229, 143, .08); }
+
+/* Panels ------------------------------------------------------------------ */
+.comms-note { border-left: 3px solid var(--line); padding-left: 12px; margin: 10px 0; }
+.comms-panel { margin-top: 18px; }
+.comms-panel h3 { margin: 0 0 4px; font-size: .98rem; }
+.comms-scroll { overflow-x: auto; }
+
+/* Staleness banner -------------------------------------------------------- */
+.comms-stale {
+  border: 1px solid var(--warn);
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: rgba(255, 209, 102, .1);
+  color: #f2fbff;
+  font-weight: 700;
+}
+.comms-stale[hidden] { display: none; }
+.comms-stale a { text-decoration: underline; }
+
+/* Lookup form ------------------------------------------------------------- */
+/* admin_ops_center.css sets input/button to width:100%, which would stack these
+ * three on separate lines. Overridden here rather than there, because that rule
+ * is relied on by two hundred other pages. */
+.comms-lookup { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin: 8px 0 2px; }
+.comms-lookup label { flex: 0 0 auto; }
+.comms-lookup input { width: auto; flex: 1 1 220px; min-width: 160px; }
+.comms-lookup button { width: auto; flex: 0 0 auto; }
+.comms-refused {
+  border-left: 3px solid var(--warn);
+  padding: 7px 12px;
+  margin: 10px 0;
+  background: rgba(255, 209, 102, .08);
+}
+
+/* Responsive -------------------------------------------------------------- */
+@media (max-width: 860px) {
+  .comms-dense th,
+  .comms-dense td { padding: 6px 7px; }
+}

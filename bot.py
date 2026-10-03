@@ -18756,7 +18756,8 @@ def comms_dashboard_section():
             "ADMIN_DASHBOARD_COMMS_SECTION_FAILED error=%s", type(exc).__name__
         )
         return (
-            "<h2>Communications</h2>"
+            COMMS_OPS_PAGE_STYLE
+            + "<h2>Communications</h2>"
             "<div class='card' style='border-color:rgba(255,107,138,.5)'>"
             "<strong>Communications metrics unavailable.</strong> "
             "<span class='muted'>The snapshot could not be taken, so no call or message counts are "
@@ -18794,7 +18795,14 @@ def comms_dashboard_section():
     fail_cls = "attention" if (head.get("delivery_failures_24h") or 0) else ""
     bad_calls = "attention" if (head.get("calls_unsuccessful_24h") or 0) else ""
     return (
-        "<h2>Communications</h2>"
+        # This block uses .cchip and .comms-incidents, so it has to carry the
+        # stylesheet too. The dashboard is a different page from the operations
+        # centre and links nothing on its behalf: without this the status chips
+        # degrade to bold text and the incident list grows bullets, which is
+        # exactly the "can I see the state at a glance" property this section
+        # exists to provide.
+        COMMS_OPS_PAGE_STYLE
+        + "<h2>Communications</h2>"
         "<p class='muted' style='margin-top:-6px'>Calls, chat and notification delivery &mdash; "
         "operational metadata only. No message contents and no call audio are shown anywhere in "
         "this product's admin surfaces.</p>"
@@ -18832,50 +18840,19 @@ def comms_dashboard_section():
     )
 
 
+#: A linked stylesheet rather than an inline style block. The first draft
+#: inlined it, reasoning that a page-scoped block avoids bumping the shared
+#: admin stylesheet's cache token across two hundred pages -- but
+#: tests/web_parity/test_design_tokens.py caps inline blocks in bot.py and says
+#: plainly to use a stylesheet, and a separate file gets the scoping without
+#: spending the budget. (That gate counts the raw substring over the whole file,
+#: so spelling the tag out in this comment would itself have consumed a slot.)
+#:
+#: The href and its token are one string literal on one line on purpose: the
+#: cache-pin gate greps bot.py as text, so a URL split across two adjacent
+#: literals reads to it as an asset referenced with no token at all.
 COMMS_OPS_PAGE_STYLE = (
-    "<style>"
-    ".cchip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;"
-    "font-size:.72rem;font-weight:800;letter-spacing:.06em;border:1px solid var(--line);"
-    "background:rgba(255,255,255,.06);color:var(--muted);white-space:nowrap}"
-    ".cchip.is-healthy,.cchip.is-ok{color:#06101b;background:var(--accent);border-color:transparent}"
-    ".cchip.is-degraded{color:#1b1402;background:var(--warn);border-color:transparent}"
-    ".cchip.is-failed,.cchip.is-critical,.cchip.is-error{color:#fff;background:var(--danger);border-color:transparent}"
-    ".cchip.is-unknown{color:var(--muted);background:rgba(255,255,255,.05);border-style:dashed}"
-    ".comms-incidents{margin:8px 0 0;padding-left:0;list-style:none}"
-    ".comms-incidents li{padding:6px 0;border-bottom:1px solid var(--line-soft);line-height:1.5}"
-    ".comms-incidents li:last-child{border-bottom:0}"
-    ".comms-dense{font-size:.88rem}"
-    ".comms-dense th,.comms-dense td{padding:7px 10px;white-space:nowrap}"
-    ".comms-dense th{color:var(--muted);font-size:.74rem;letter-spacing:.06em;text-transform:uppercase;font-weight:700}"
-    ".comms-dense td.n{text-align:right;font-variant-numeric:tabular-nums}"
-    # nowrap above is right for ids, states and numbers, and wrong for the two
-    # columns that hold a sentence. Without this the provider table's intrinsic
-    # width is ~1397px against a content column capped at 1320px, so "Basis" --
-    # the field that says whether a state was observed or merely declared -- sat
-    # off the right edge behind a horizontal scroll at *every* desktop width,
-    # 4K included. The explanation of a health state should not be the part you
-    # have to go looking for.
-    ".comms-dense td.prose{white-space:normal;min-width:240px;max-width:560px}"
-    ".comms-dense tr.is-now{background:rgba(54,229,143,.08)}"
-    ".comms-note{border-left:3px solid var(--line);padding-left:12px;margin:10px 0}"
-    ".comms-panel{margin-top:18px}"
-    ".comms-panel h3{margin:0 0 4px;font-size:.98rem}"
-    ".comms-scroll{overflow-x:auto}"
-    ".comms-stale{border:1px solid var(--warn);border-radius:10px;padding:9px 12px;"
-    "background:rgba(255,209,102,.1);color:#f2fbff;font-weight:700}"
-    ".comms-stale[hidden]{display:none}"
-    ".comms-stale a{text-decoration:underline}"
-    # The shared admin stylesheet sets input/button to width:100%, which would
-    # stack these three on separate lines. Overridden here rather than there,
-    # because that rule is relied on by two hundred other pages.
-    ".comms-lookup{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:8px 0 2px}"
-    ".comms-lookup label{flex:0 0 auto}"
-    ".comms-lookup input{width:auto;flex:1 1 220px;min-width:160px}"
-    ".comms-lookup button{width:auto;flex:0 0 auto}"
-    ".comms-refused{border-left:3px solid var(--warn);padding:7px 12px;margin:10px 0;"
-    "background:rgba(255,209,102,.08)}"
-    "@media (max-width:860px){.comms-dense th,.comms-dense td{padding:6px 7px}}"
-    "</style>"
+    "<link rel='stylesheet' href='/static/css/admin_comms_ops.css?v=comms-ops-20261003a'/>"
 )
 
 

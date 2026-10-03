@@ -742,6 +742,44 @@ class TestTheOwnerCanFindIt(CommsOpsCase):
         self.assertIn(PAGE, body)
         self.assertIn("Active calls now", body)
 
+    def test_every_surface_that_uses_the_comms_classes_also_loads_them(self):
+        """A page can use .cchip and never link the stylesheet that styles it.
+
+        That is exactly what happened: the dashboard block was written against
+        the operations centre's classes while only that centre linked them, so
+        the status chips rendered as bold text and the incident list grew
+        bullets. Nothing failed -- the page was 200 and the numbers were right,
+        the state was just no longer legible at a glance, which is the one thing
+        a dashboard section is for.
+
+        Asserted per surface rather than once, because each is a separate page
+        and linking the stylesheet on one says nothing about the others.
+        """
+        self._call("call-live-7009", "connected", answered=90)
+        self._delivery("push", "failed", "410 BadDeviceToken")
+        self._sign_in(self.owner_id)
+        comms_ops.reset_snapshot_cache()
+        for url in ("/admin/dashboard", "/admin/communications"):
+            body = self.client.get(url).get_data(as_text=True)
+            uses = "cchip" in body or "comms-incidents" in body
+            self.assertTrue(uses, f"{url} stopped using the comms classes")
+            self.assertIn(
+                "admin_comms_ops.css", body,
+                f"{url} uses the comms classes but never links their stylesheet",
+            )
+
+    def test_the_comms_stylesheet_is_requested_with_a_cache_token(self):
+        """A bare /static URL is frozen in every warm cache for a year.
+
+        The pin in tests/web_surface/test_reaction_catalogue.py checks the file
+        and the token agree; this checks the token actually reaches the markup,
+        which is a different failure and one a string-concatenation slip caused
+        once already.
+        """
+        self._sign_in(self.owner_id)
+        body = self.client.get("/admin/communications").get_data(as_text=True)
+        self.assertRegex(body, r"admin_comms_ops\.css\?v=[A-Za-z0-9._-]+")
+
     def test_the_dashboard_shows_the_real_counts(self):
         self._conversation_with_messages(count=5)
         self._sign_in(self.owner_id)
