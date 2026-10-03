@@ -257,15 +257,27 @@ def _pricing_rollup(economics: list) -> dict:
     is the population a merchant most needs named, because it is the one they
     cannot see from the numbers in front of them.
 
-    There is deliberately no "below target" count. ``pricing.MARGIN_STATES`` has
-    no such member: a target is a property of a rule, this read runs under
-    ``MANUAL_PRICE`` on purpose, and a shortfall against a target nobody applied
-    would be a number this module invented. ``margin_states`` reports the
-    vocabulary that actually exists.
+    ``below_target`` is counted only when the store has actually declared a
+    target, and is ``None`` otherwise. ``pricing.MARGIN_STATES`` has no
+    below-target member and this does not add one: the four states are absolute
+    thresholds (:data:`pricing.LOW_BELOW` is 25) and a target is a property of the
+    merchant's own rule, so a store on ``TARGET_MARGIN`` 68 has thousands of
+    variants that are genuinely ``HEALTHY`` and still short of what it asked for.
+    Reporting that gap is repeating the merchant's declared standard back to them;
+    *inventing* a target for a store that set none would be the number this module
+    must not produce, which is why the absent case is ``None`` and not zero.
+
+    The comparison is against ``proposed_retail_cents``, which is the only field a
+    rule moves -- ``pricing.quote`` lets a stored ``retail_cents`` override the
+    rule -- so asking for the real rule adds this count without shifting a single
+    margin, state or blocker. That property is what makes it safe to resolve the
+    store's rule here at all.
     """
     states: dict[str, int] = {}
     below_landed = 0
     below_item = 0
+    below_target = 0
+    targeted = 0
     unpriced = 0
     total = 0
     offenders = []
@@ -278,9 +290,20 @@ def _pricing_rollup(economics: list) -> dict:
             retail = variant.get("retail_cents")
             landed = variant.get("landed_cost_cents")
             cost = variant.get("cost_cents")
+            target = variant.get("proposed_retail_cents")
             if retail is None:
                 unpriced += 1
                 continue
+            # A plain None check is sufficient *because* of the `continue` above.
+            # `quote` sets retail to the proposal when no price is stored, so an
+            # unpriced variant would otherwise compare a number against itself and
+            # report as compliant -- but such a variant never reaches here. Under
+            # MANUAL_PRICE `apply_rule` returns None and nothing is comparable,
+            # which is how a store that declared no target gets no count.
+            if target is not None:
+                targeted += 1
+                if int(retail) < int(target):
+                    below_target += 1
             if landed is not None and int(retail) < int(landed):
                 below_landed += 1
                 shortfall = int(landed) - int(retail)
@@ -301,6 +324,12 @@ def _pricing_rollup(economics: list) -> dict:
         "unpriced": unpriced,
         "below_item_cost": below_item,
         "below_landed_cost": below_landed,
+        # Denominator for `below_target`, reported beside it because the two are
+        # one answer: "477 of 3797" and "477 of 12" are different findings, and a
+        # rule that could price only some variants must not have its shortfall
+        # read against the whole catalogue.
+        "target_comparable": targeted or None,
+        "below_target": below_target if targeted else None,
         "margin_states": states,
         "worst_by_listing": offenders,
     }
@@ -314,21 +343,26 @@ def survey(business_id, store_id, actor_user_id, connection_id, *,
     own, which is correct for one product and is why it cannot be the thing a
     catalogue-wide answer loops over.
 
-    ``pricing_rule`` defaults to the same ``None`` the Review Product screen's
-    route passes, so the margins and the blockers here are the ones that screen
-    shows for the same product. Under the resulting ``MANUAL_PRICE`` rule no
-    price is *proposed*, which is exactly right for a read: margin is computed
-    from the retail price already stored and is the same under every rule, while
-    ``proposed_retail_cents`` is the only field a rule changes. Passing a rule
-    here would therefore change nothing a caller reads and would risk reporting a
-    margin the publish gate does not judge.
+    ``pricing_rule`` defaults to the store's own, resolved through the same
+    :func:`store_policy.resolve_rule` the importer and the publish gate use, and
+    reported back as ``pricing_rule``/``pricing_source`` so a reader can tell "the
+    store chose 68%" from "nobody chose and the platform did".
+
+    Resolving it rather than falling back to ``MANUAL_PRICE`` changes no margin,
+    no state and no blocker. ``pricing.quote`` lets a stored ``retail_cents``
+    override the rule, so the only field a rule moves on an already-priced variant
+    is ``proposed_retail_cents`` -- and that field is what makes a below-target
+    report possible at all. Defaulting to ``MANUAL_PRICE`` here looked harmless
+    for exactly that reason and was not: it silently discarded the only number
+    that could say whether this catalogue meets the standard its owner set.
     """
     policy.require_enabled()
-    rule = pricing.normalize_rule(pricing_rule)
     conn = db.connect()
     try:
         _, seller_user_id = drafts._scope(conn, business_id, store_id, actor_user_id,
                                           connection_id, context=context)
+        rule, pricing_source = store_policy.resolve_rule(
+            conn, business_id, store_id, pricing_rule)
         shipping_cents, shipping_source = store_policy.resolve_shipping_allowance(
             conn, business_id, store_id)
         cur = conn.cursor()
@@ -415,6 +449,11 @@ def survey(business_id, store_id, actor_user_id, connection_id, *,
         "shipping_allowance_cents": shipping_cents,
         "shipping_allowance_source": shipping_source,
         "pricing_rule": rule,
+        # Beside the rule for the same reason the importer reports it: "68%" means
+        # something different depending on whether the merchant typed it or the
+        # platform assumed it, and a below-target count read against a platform
+        # default would be this module holding a store to a standard nobody set.
+        "pricing_source": pricing_source,
     }
 
 
@@ -431,6 +470,15 @@ def summarize(report: dict) -> str:
         f"  below item cost          {priced['below_item_cost']}",
         f"  below landed cost        {priced['below_landed_cost']}",
     ]
+    rule = report.get("pricing_rule") or {}
+    if priced.get("below_target") is None:
+        # Spelled out rather than omitted. A line that simply disappears reads as
+        # "none below target", which is the opposite of "nobody set a target".
+        lines.append(f"  below target             n/a ({rule.get('type')} sets none)")
+    else:
+        lines.append("  below target             %s of %s (%s %s, %s)" % (
+            priced["below_target"], priced["target_comparable"],
+            rule.get("type"), rule.get("value"), report.get("pricing_source")))
     for state, count in sorted(priced["margin_states"].items()):
         lines.append(f"  margin {state:<18} {count}")
     return "\n".join(lines)
