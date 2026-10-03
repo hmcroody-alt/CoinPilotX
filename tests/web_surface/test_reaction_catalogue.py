@@ -45,6 +45,10 @@ BOT = os.path.join(REPO, "bot.py")
 #: digest here. Updating the digest *without* bumping the token puts the bug back
 #: -- the point of recording them together is that the diff shows you doing it.
 CACHE_PINNED_ASSETS = {
+    "static/css/admin_comms_ops.css": (
+        "comms-ops-20261003c",
+        "3d37d773889c1f5417fc4c3856f2397b78202823ff2d04a706046fcc150c7c04",
+    ),
     "static/css/admin_ops_center.css": (
         "opsv2-20260914c",
         "7f28cbd39f65dd2753229c00125b2854ca1b622a2ac2c248ff3f75df32e7024f",
@@ -143,6 +147,10 @@ CACHE_PINNED_ASSETS = {
     "static/css/pulsesoc_promotions.css": (
         "bare-asset-tokens-20260930a",
         "7313b11bdba2508a2069bc82ccbd314a905d946410023c1eb2d9caeb0bed6e1c",
+    ),
+    "static/js/admin_comms_ops.js": (
+        "comms-ops-20261003b",
+        "6ea9fbeefaf0143452021a80617396e3f45984cb4b14ba03aa72b36413a611cb",
     ),
     "static/js/admin_ops_center.js": (
         "opsv2-20260722i",

@@ -11,6 +11,7 @@ import bot
 from services import pulse_ai, pulse_feed_engine
 from services import marketplace_reservation_sweeper as reservation_sweeper
 from services import marketplace_release_cycle as release_cycle
+from services import marketplace_missed_payment_cycle as missed_payment_cycle
 from services import marketplace_payout_worker as payout_worker
 from services import payments_reconciliation_cycle as reconciliation_cycle
 from services import stripe_mode
@@ -284,6 +285,23 @@ def main():
         reconciliation_cycle.reconciliation_enabled(),
         reconciliation_cycle.interval_seconds(),
     )
+    # `may_repair` rather than `may_move_money`, and the distinction is the
+    # whole configuration: this cycle detects lost payments whenever it is
+    # enabled, and repairs them only when the gates below are all open. An
+    # operator who reads `enabled=True may_repair=False` is looking at a
+    # deployment that will tell them a payment went missing and wait to be told
+    # what to do about it, which is the useful default.
+    logging.info(
+        "MISSED_PAYMENT_CYCLE_CONFIG enabled=%s may_repair=%s blocked_by=%s "
+        "stripe_mode=%s interval=%s batch=%s grace_minutes=%s",
+        missed_payment_cycle.cycle_enabled(),
+        not missed_payment_cycle.blocked_reason(),
+        missed_payment_cycle.blocked_reason() or "-",
+        stripe_mode.mode(),
+        missed_payment_cycle.interval_seconds(),
+        missed_payment_cycle.batch_limit(),
+        missed_payment_cycle.grace_minutes(),
+    )
     state: dict = {}
     while True:
         try:
@@ -316,6 +334,13 @@ def main():
             # After them rather than before, so a finding is about the state the
             # chain settled into on this tick and not the one it started from.
             reconciliation_cycle.run_reconciliation_cycle_if_due(state)
+            # Outside that chain entirely, because it does not check whether the
+            # chain worked -- it checks whether the chain was ever *told*. Every
+            # write above hangs off a webhook, so a delivery that never happened
+            # leaves no failure for any of them to find, only a payment Stripe
+            # took and this server has no record of. This is the only cycle that
+            # asks Stripe instead of waiting to be told.
+            missed_payment_cycle.run_missed_payment_cycle_if_due(state)
             bot.record_worker_heartbeat(
                 WORKER_NAME,
                 "healthy",
@@ -329,6 +354,7 @@ def main():
                     **release_cycle.heartbeat_metadata(state),
                     **payout_worker.heartbeat_metadata(state),
                     **reconciliation_cycle.heartbeat_metadata(state),
+                    **missed_payment_cycle.heartbeat_metadata(state),
                 },
             )
         except Exception as exc:

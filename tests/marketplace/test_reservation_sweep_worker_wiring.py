@@ -573,6 +573,18 @@ HOSTED_MARKETPLACE_SEAMS = {
     "services.marketplace_release_cycle",
     "services.marketplace_payout_worker",
     "services.payments_reconciliation_cycle",
+    # The fifth, argued for as this comment block requires. It is the same shape
+    # as the four above -- `run_missed_payment_cycle_if_due(state)` and
+    # `heartbeat_metadata(state)`, nothing else reachable from the worker -- and
+    # that layering is what keeps test 16 green: the sweep it drives,
+    # `bot.pulse_reconcile_missed_marketplace_payments`, is called by the seam
+    # and never by the worker.
+    #
+    # Why it has to be hosted here at all: every other seam in this set hangs
+    # off a webhook that arrived. This one exists for the webhook that did not,
+    # which is the one failure none of the others can detect, and `pulse_worker`
+    # is the process that actually runs in production.
+    "services.marketplace_missed_payment_cycle",
 }
 
 

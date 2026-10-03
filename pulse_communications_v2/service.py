@@ -1503,15 +1503,49 @@ def create_conversation(user_id: int, payload: dict | None = None) -> dict:
 
             if not message_privacy.may_message(cur, target_id, user_id):
                 return _err("This member is not accepting new messages.", 403, "message_requests_closed")
+            # Conflict-tolerant, because the SELECT above and `direct_key`'s
+            # unique index do not agree on which rows exist: the SELECT hides a
+            # soft-deleted thread, the index still holds its key. A plain INSERT
+            # therefore raised for any pair who had ever deleted their thread,
+            # and `create_conversation` re-raises -- so the one thing a pair
+            # could never do again was reopen the DM they closed.
+            #
+            # `INSERT OR IGNORE` is rewritten to `ON CONFLICT DO NOTHING` by
+            # services.db, which also makes concurrent first-taps converge on one
+            # row instead of one of them raising. The id must come from the
+            # SELECT below: on the conflict path no row was inserted, and
+            # services.db deliberately omits the `RETURNING id` it would
+            # otherwise append, so `lastrowid` is empty there and stale anywhere
+            # else. Same shape as `pulse_chat_bridge.direct_thread`, which
+            # resolves this identical key.
             cur.execute(
                 """
-                INSERT INTO comm_v2_conversations
+                INSERT OR IGNORE INTO comm_v2_conversations
                 (public_id, conversation_type, title, owner_user_id, created_by_user_id, direct_key, privacy, visibility, status, member_count, created_at, updated_at, last_activity_at)
                 VALUES (?, 'direct', '', ?, ?, ?, 'private', 'members', 'active', 0, ?, ?, ?)
                 """,
                 (_public_id("dm"), int(user_id), int(user_id), direct_key, now, now, now),
             )
-            conversation_id = int(cur.lastrowid)
+            cur.execute(
+                "SELECT id, COALESCE(deleted_at,'') AS deleted_at FROM comm_v2_conversations WHERE direct_key=? LIMIT 1",
+                (direct_key,),
+            )
+            claimed = _row(cur.fetchone())
+            conversation_id = int(claimed.get("id") or 0)
+            if not conversation_id:
+                return _err("This direct message could not be opened.", 500, "conversation_unavailable")
+            # Unlike the branch above, this one is reached *because* no live row
+            # matched -- so a row found here is either brand new or the revived
+            # soft-deleted one, and only the second needs undeleting. Clearing
+            # `deleted_at` is what puts it back in reach of every reader:
+            # `list_conversations` and `_conversation_access` both filter on it,
+            # so a row left deleted would be an id the caller is handed and then
+            # cannot open.
+            if claimed.get("deleted_at"):
+                cur.execute(
+                    "UPDATE comm_v2_conversations SET deleted_at='', status='active', updated_at=?, last_activity_at=COALESCE(NULLIF(last_activity_at,''), ?) WHERE id=?",
+                    (now, now, conversation_id),
+                )
             _add_participant(cur, conversation_id, int(user_id), "member")
             _add_participant(cur, conversation_id, target_id, "member")
         elif conversation_type == "group":
