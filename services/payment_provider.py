@@ -391,8 +391,8 @@ def create_checkout_session(
         }],
         metadata=metadata,
         payment_intent_data=payment_intent_data,
-        success_url=success_url or f"{_base_url()}/payments/success?transaction_id={transaction_id}",
-        cancel_url=cancel_url or f"{_base_url()}/payments/cancel?transaction_id={transaction_id}",
+        success_url=success_url or f"{_base_url()}/payments/success?transaction_id={transaction_id}&lane=creator",
+        cancel_url=cancel_url or f"{_base_url()}/payments/cancel?transaction_id={transaction_id}&lane=creator",
     )
     return {
         "ok": True,
