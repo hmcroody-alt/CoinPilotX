@@ -31,6 +31,16 @@ why, but it must not be used as a specification:
    meant two copies of the restriction, legal-acceptance and session logic --
    which is how the two providers drift into two different security postures.
 
+3. **One thing this document does not cover at all: replay.** It treats a
+   verified token as a safe credential, and a verified token is a *bearer*
+   credential whose signature, issuer, audience and expiry stay valid on every
+   presentation. The nonce does not close that gap on either provider, and on
+   native Google it cannot: `@react-native-google-signin` v16.1.5 has no nonce
+   field at all. The defence, the measurements behind it, and the reason there
+   must be exactly one of them are in
+   **`docs/identity/native_credential_replay.md`** -- read that before adding
+   any single-use or idempotency mechanism to a sign-in path.
+
 Everything else -- the separate identity table with `UNIQUE (provider,
 provider_subject)`, server-side token verification, "resolve by `sub` first,
 always", the account outliving the email -- was built as written here.
