@@ -74,7 +74,20 @@ _RULES = (
     # --- Never indexable: operational and machine surfaces -----------------
     ("/api/", NOINDEX_NOFOLLOW, "JSON API, not a page"),
     ("/admin", NOINDEX_NOFOLLOW, "administrative surface"),
+    # `/admin-dashboard` is a *sibling* of `/admin`, not a child, so the rule
+    # above never classified it -- `classify` matches path segments. It was
+    # nevertheless uncrawlable, because robots.txt matched `Disallow: /admin`
+    # as a raw string prefix. Naming it here is what makes the two channels
+    # agree deliberately instead of by accident; `robots_disallow_patterns`
+    # explains why that accident had to end.
+    ("/admin-dashboard", NOINDEX_NOFOLLOW, "administrative surface"),
+    # Both spellings are live: `/webhook/stripe` and `/webhooks/stripe` are
+    # separate routes. `/webhooks/` is a sibling of `/webhook`, so only the
+    # raw-prefix accident was covering it -- and `GET /webhooks/stripe` answers
+    # 200 with no robots meta of its own. That makes this the one entry in this
+    # block whose absence was a live indexability hole rather than untidiness.
     ("/webhook", NOINDEX_NOFOLLOW, "machine callback"),
+    ("/webhooks/", NOINDEX_NOFOLLOW, "machine callback"),
     ("/.well-known/", NOINDEX_NOFOLLOW, "protocol metadata"),
     ("/static/", NOINDEX_NOFOLLOW, "asset path"),
 
@@ -91,6 +104,14 @@ _RULES = (
     ("/messages", NOINDEX_NOFOLLOW, "private messaging"),
     ("/chat", NOINDEX_NOFOLLOW, "private messaging"),
     ("/pulse/messages", NOINDEX_NOFOLLOW, "private messaging"),
+    # Two versioned siblings of the messaging surface, both outside the segment
+    # match above. `/pulse/messages-v2` 302s anonymous traffic to
+    # `/login?next=/pulse/messages-v2`, which mints one more crawlable
+    # `?next=` URL for the login wall -- the trap this module should be
+    # shrinking, not feeding. `/pulse/messages-legacy` 301s onto the blocked
+    # parent, so it is harmless on its own and declared for symmetry.
+    ("/pulse/messages-v2", NOINDEX_NOFOLLOW, "private messaging"),
+    ("/pulse/messages-legacy", NOINDEX_NOFOLLOW, "private messaging"),
     ("/pulse/settings", NOINDEX_NOFOLLOW, "account settings"),
     ("/pulse/my-posts", NOINDEX_NOFOLLOW, "personal content list"),
     ("/portfolio", NOINDEX_NOFOLLOW, "financial information"),
@@ -119,6 +140,12 @@ _RULES = (
     ("/logout", NOINDEX_NOFOLLOW, "authentication workflow state"),
     ("/reset-password", NOINDEX_NOFOLLOW, "password reset URL"),
     ("/verify", NOINDEX_NOFOLLOW, "one-time verification URL"),
+    # `/verify-email` is a sibling of `/verify` and falls squarely inside that
+    # rule's stated intent. Its template already hardcodes `noindex, nofollow`,
+    # so this changes nothing a crawler sees -- it moves the statement into the
+    # table that the sitemap gate and robots.txt both read, instead of leaving
+    # it in one Jinja file where neither can see it.
+    ("/verify-email", NOINDEX_NOFOLLOW, "one-time verification URL"),
     ("/oauth", NOINDEX_NOFOLLOW, "OAuth callback"),
 
     # --- App hand-off -----------------------------------------------------
@@ -166,6 +193,32 @@ _RULES = (
     # links to a URL and no instruction about it.
     ("/day-signal", NOINDEX_FOLLOW, "authenticated surface behind a redirect"),
 
+    # The arena, for the same reason and with the same evidence. Probed
+    # anonymously against production on 2026-10-03, `/arena` and every
+    # `/arena/<anything>` answered `302 -> /login?next=...`; not one of them has
+    # ever shown Googlebot a page. Six of them were in `sitemap-live.xml` and
+    # `sitemap-replays.xml` regardless, because those two routes hardcode a
+    # path list that was written when the arena was public and never revisited.
+    #
+    # Declaring the subtree here is what retires those entries: `sitemap_xml`
+    # already gates every path on `sitemap_eligible`, and `sitemap_eligible`
+    # reads this table, so the hardcoded lists stop being able to publish a
+    # login redirect no matter what anyone adds to them later.
+    #
+    # `/arena` and not `/arena/`: the bare path redirects too. The segment
+    # matcher stops there, which is the point -- `/arena-preview` and
+    # `/alpha-arena` are public `200`s that must keep their indexability, and
+    # under the old bare-prefix robots.txt emitter a `nofollow` here would have
+    # blocked both of them. See `robots_disallow_patterns`.
+    #
+    # `follow`, matching `/day-signal`: public pages link into the arena, and a
+    # `Disallow` would leave Google holding inbound links to a URL it has no
+    # instruction about. The crawl then lands on `/login?next=/arena`, which is
+    # a separate defect -- the login wall mints one crawlable URL per `next`
+    # target -- and it is fixed at `/login`, not by blocking every page that
+    # redirects there.
+    ("/arena", NOINDEX_FOLLOW, "authenticated arena surface behind a redirect"),
+
     # The AI command center answers on four paths. `/app` now branches on
     # authentication and serves a public landing page to anonymous visitors, so
     # it is deliberately absent from this table. The other three still 302 to
@@ -189,6 +242,99 @@ _RULES = (
     # public path can still hold a listing with no description or no image --
     # the same split this module draws between `classify` and
     # `content_eligibility`.
+
+    # --- The Pulse app: private by default, public by exception -------------
+    #
+    # Everything above this point enumerates what is *private*. For `/pulse`
+    # that approach had failed quantitatively, not marginally. Probed
+    # anonymously against production on 2026-10-03:
+    #
+    #   145 static `/pulse/*` GET routes      5 serve an anonymous 200
+    #                                       138 serve 302 -> the auth wall
+    #                                         1 serves 301, 1 serves 404
+    #    35 parameterised `/pulse/*` routes   1 serves an anonymous 200
+    #
+    # and this table classified **115 of the redirecting ones `index,follow`**,
+    # by the fallthrough at the bottom of `classify`, because each was simply
+    # never named. `/pulse` is PulseSoc's authenticated social application --
+    # feed, reels, messages, orders, live studio, private office. The table was
+    # declaring the whole of it indexable while `pulse_social_shell` gated every
+    # route in it.
+    #
+    # That is the arena defect at twenty times the scale, and it runs in the
+    # opposite direction to the rest of this module: not "we recommend a URL we
+    # cannot fetch" but "we have published an indexability claim over a private
+    # application". Each of those 115 also mints a crawlable
+    # `/login?next=<path>` URL when Googlebot follows an internal link to it.
+    # Google has discovered 40 so far. Nothing was converging; the count grows
+    # with every authenticated route anyone adds.
+    #
+    # So the default inverts here, and only here. A new `/pulse` route is
+    # non-indexable until someone makes it public on purpose and says so below.
+    # That matches how `route_auth` already treats this application -- new
+    # routes are authenticated until declared `@public_route` -- and it is the
+    # only version of this rule that does not rot, because the failure mode of
+    # an enumerated private list is silence.
+    #
+    # ORDERING: `classify` is first-match-wins, so every carve-out must precede
+    # the broad rule. They are longer strings but that buys nothing; this table
+    # is not longest-prefix.
+    #
+    # `NOINDEX_FOLLOW` on the broad rule, and the choice is load-bearing rather
+    # than stylistic. `robots_disallow_prefixes` offers up exactly the
+    # `NOINDEX_NOFOLLOW` prefixes, so `nofollow` here would emit
+    # `Disallow: /pulse/` -- which matches `/pulse/marketplace`,
+    # `/pulse/marketplace/<id>` and `/pulse/post/<id>`, i.e. the entire commerce
+    # graph and every indexed product page on this site. Note that the
+    # segment-exact patterns do *not* save us: `Disallow: /pulse/` is a
+    # perfectly correct rendering of a rule about `/pulse`, and a parent
+    # blocking its own children is the intended reading, not an overreach bug.
+    # The thing standing between this entry and a site-wide deindexing is the
+    # directive, nothing else. `follow` is also true on the merits: public pages
+    # link into `/pulse`, and those links need to stay walkable.
+    #
+    # The five public paths, each verified as an anonymous 200 in production on
+    # 2026-10-03 rather than inferred from the route table:
+    #
+    #   /pulse/marketplace       index,follow + self-canonical   (collection)
+    #   /pulse/marketplace/<id>  index,follow + self-canonical   (product)
+    #   /pulse/post/<id>         index,follow + self-canonical
+    #   /pulse/help              index,follow, canonical -> /help
+    #   /pulse/support           index,follow, canonical -> /help
+    #
+    # `/pulse/app` and `/pulse/cart` are the other two anonymous 200s and are
+    # deliberately *not* carved out: both already render `noindex` of their own
+    # accord, so the broad rule agrees with the page instead of contradicting
+    # it. `/pulse/app` is the SPA shell -- a container whose content arrives by
+    # fetch -- and `/pulse/cart` is a commerce workflow covered in spirit by
+    # `/checkout` above.
+    #
+    # Two surfaces this rule closes that are worth naming, because both were
+    # `index,follow` until now and neither is reachable:
+    #
+    #   /pulse/search          internal search. `?q=<anything>` 302s to
+    #                          `/login?next=/pulse/search%3Fq%3D<query>`, so an
+    #                          indexable internal-search path over an unbounded
+    #                          query space was feeding the login wall one URL per
+    #                          distinct query. The site-wide `/search` rule has
+    #                          said `noindex,follow` for this reason all along;
+    #                          `/pulse/search` is a sibling and escaped it.
+    #   /pulse/premium/success post-checkout confirmation.
+    #
+    # What this rule does NOT fix, and must not be read as fixing: the 66
+    # `/pulse/topic/<tag>` URLs in Search Console's noindex bucket. Classifying
+    # them correctly stops us *claiming* they are indexable and keeps them out of
+    # every sitemap, but they are in Google's index report because public pages
+    # link to them as though they were public hubs. The link graph is the defect
+    # there; see the report. Making them public is not the answer either -- they
+    # are hashtag pages over marketplace products, which is the thin
+    # mass-generated duplicate of `/pulse/marketplace?category=` that the
+    # category threshold exists to prevent.
+    ("/pulse/marketplace", INDEX_DIRECTIVE, "public product collection and product pages"),
+    ("/pulse/post", INDEX_DIRECTIVE, "public post permalink"),
+    ("/pulse/help", INDEX_DIRECTIVE, "public help centre"),
+    ("/pulse/support", INDEX_DIRECTIVE, "public help centre"),
+    ("/pulse", NOINDEX_FOLLOW, "authenticated social application"),
 )
 
 
@@ -250,6 +396,83 @@ def robots_disallow_prefixes():
     return tuple(prefixes)
 
 
+def robots_disallow_patterns():
+    """The same prefixes, rewritten so a crawler reads them as `classify` does.
+
+    THE BUG THIS FUNCTION EXISTS TO CLOSE
+    -------------------------------------
+    `classify` matches **path segments**: `/portfolio` covers `/portfolio` and
+    `/portfolio/...` and stops there. robots.txt matches **raw string
+    prefixes**: `Disallow: /portfolio` covers `/portfolioanything`. Emitting
+    the bare prefix silently translated the first into the second, so robots.txt
+    blocked a strictly larger set of URLs than the table it was derived from.
+
+    Measured against the live app on 2026-10-03, that gap cost two real pages:
+    `/portfolio-ai` and `/portfolio-intelligence` are public SEO landing pages
+    from `seo/content.py`, they classify `index,follow`, they are *in
+    sitemap-pages.xml* -- and `Disallow: /portfolio` forbade Googlebot from
+    fetching either one. We were submitting two URLs and refusing the crawl.
+
+    It also ran the other way, which is why this is not a one-line fix. Five
+    url_map routes were uncrawlable *only* because of the overreach -- their
+    paths are siblings of a disallowed prefix, so `classify` called them
+    indexable and robots.txt blocked them anyway. Tightening the patterns
+    without first naming those five in `_RULES` would have published a Stripe
+    webhook health endpoint that answers `200` with no robots meta. They are
+    named now; see the comments beside each one.
+
+    WHY `$` AND `?` AND NOT JUST THE SLASH
+    --------------------------------------
+    Three lines per prefix reproduce segment semantics exactly:
+
+      Disallow: /portfolio$   the bare path, and nothing that merely starts
+                              with it
+      Disallow: /portfolio?    the bare path carrying a query string -- the
+                              GSC robots-blocked export contains
+                              `/chat?asset=ETH`, so dropping this line would
+                              un-block a URL that is correctly blocked today
+      Disallow: /portfolio/   everything beneath it
+
+    `$` and `*` are robots.txt extensions. Google, Bing and Yandex all honour
+    them. A crawler that does not will read `/portfolio$` as a literal path
+    containing a dollar sign, match nothing, and fall through to the `/` line --
+    so for that crawler the bare path alone becomes crawlable while its
+    children stay blocked. Every path in this list answers 401, 302 or a
+    hardcoded `noindex` to an anonymous request, so the downside of that is a
+    wasted fetch, which is the right side of the trade against two sitemapped
+    pages we are currently refusing to serve.
+
+    A slash-terminated prefix is expanded the same way on purpose. `/api/`
+    alone never blocked `/api` itself, while `classify("/api")` has always
+    returned `noindex` -- the same translation gap, pointing the other way.
+    """
+
+    patterns = []
+    for prefix in robots_disallow_prefixes():
+        bare = prefix.rstrip("/") or "/"
+        patterns += [f"{bare}$", f"{bare}?", f"{bare}/"]
+    return tuple(patterns)
+
+
+def robots_blocked(path, patterns=None):
+    """Would the generated robots.txt block this path? Crawler semantics.
+
+    Deliberately implemented the way a crawler reads the file -- raw string
+    prefix, with `$` anchoring the end of the URL -- and not by reusing
+    `classify`. A checker that shared `classify`'s matcher could not detect a
+    disagreement between the two, which is the only thing this is for.
+    """
+
+    p = (path or "/") or "/"
+    for pattern in (patterns if patterns is not None else robots_disallow_patterns()):
+        if pattern.endswith("$"):
+            if p == pattern[:-1]:
+                return pattern
+        elif p.startswith(pattern):
+            return pattern
+    return None
+
+
 def _normalize(path):
     """Strip the query string, the fragment and a trailing slash.
 
@@ -266,13 +489,34 @@ def _normalize(path):
 
 
 def classify(path):
-    """Indexability for a request path. Query strings are not consulted."""
+    """Indexability for a request path. Query strings are not consulted.
+
+    A matched rule's sitemap eligibility is *derived from its directive*, the
+    same way `_d` derives `indexable`, rather than being hardcoded `False`.
+
+    It was hardcoded, and for as long as every entry in `_RULES` was a
+    `noindex` of some kind that was indistinguishable from the derived value --
+    which is why it went unnoticed. It stops being equivalent the moment the
+    table needs to say "this subtree is private *except* for these paths",
+    because the carve-out has to be an `INDEX_DIRECTIVE` entry, and under the
+    old line a carve-out would have been classified indexable and
+    sitemap-*ineligible* at the same time. `sitemap_xml` gates every entry on
+    `sitemap_eligible`, so adding the `/pulse` rule below would have silently
+    emptied `sitemap-products.xml`, `sitemap-categories.xml` and
+    `sitemap-posts.xml` -- a self-inflicted deindexing of the entire commerce
+    graph, delivered by a change whose stated purpose was to protect it.
+
+    The two are equivalent for every rule that exists at the time of writing
+    (all of them `noindex`, so both forms yield `False`), which is what makes
+    this safe to change rather than a behavioural edit smuggled in alongside a
+    new rule.
+    """
 
     lowered = _normalize(path).lower()
 
     for prefix, directive, reason in _RULES:
         if lowered == prefix or lowered.startswith(prefix if prefix.endswith("/") else prefix + "/") or lowered == prefix.rstrip("/"):
-            return _d(directive, False, reason)
+            return _d(directive, directive.startswith("index"), reason)
 
     target = _CANONICAL_ALIASES.get(lowered)
     if target:

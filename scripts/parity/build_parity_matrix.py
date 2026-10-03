@@ -38,6 +38,11 @@ HTML_HELPERS = {
     "dashboard_account_shell", "render_ads_landing_page", "education_shell",
     "education_feature_page", "dashboard_creator_subsystem_page", "render_template",
     "_verification_admin_shell", "search_pages", "pulse_gateway_card_html",
+    # Kept in step with the identical set in `render_reports.py`; see the
+    # comment there. The two sets are duplicated in the source, so a name
+    # added to one and not the other makes the matrix and the inventory
+    # disagree about the same route.
+    "_registry_page_or_404",
 }
 
 FLASK_PARAM = re.compile(r"<[^>]+>")

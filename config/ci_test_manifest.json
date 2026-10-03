@@ -602,6 +602,7 @@
     "tests/test_qa_account_classifier.py",
     "tests/test_reel_share_preview.py",
     "tests/test_reel_takedown_read_path.py",
+    "tests/test_registry_landing_pages.py",
     "tests/test_replay_lifecycle.py",
     "tests/test_resource_page_app_ctas.py",
     "tests/test_scam_shield_routing.py",

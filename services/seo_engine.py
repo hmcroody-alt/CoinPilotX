@@ -134,12 +134,21 @@ def robots_txt():
     robots.txt is not a privacy mechanism. Nothing here is the only thing
     standing between the public and private data -- the routes still
     authenticate.
+
+    The `Disallow` lines come from `robots_disallow_patterns()` rather than
+    `robots_disallow_prefixes()`. The difference is three lines per prefix
+    instead of one, and it is the difference between a file that blocks what
+    the policy table says and one that blocks every URL merely *starting with*
+    a disallowed string -- which is how `Disallow: /portfolio` came to forbid
+    the crawl of `/portfolio-ai` and `/portfolio-intelligence`, two public
+    pages this same module puts in the sitemap. That function's docstring has
+    the full account.
     """
 
     from services import search_visibility
 
     lines = ["User-agent: *", "Allow: /"]
-    lines += [f"Disallow: {prefix}" for prefix in search_visibility.robots_disallow_prefixes()]
+    lines += [f"Disallow: {pattern}" for pattern in search_visibility.robots_disallow_patterns()]
     lines += [
         "",
         f"Sitemap: {BASE_URL}/sitemap.xml",

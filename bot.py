@@ -1763,6 +1763,14 @@ def render_ads_landing_page(slug):
     headline = page[f"headline_{variant}"]
     cta = page[f"cta_{variant}"]
     canonical = f"https://pulsesoc.com/{slug}"
+    # Same defect as `seo_page.html`, in a different template, with a smaller
+    # blast radius. This page had `index,follow,max-image-preview:large` written
+    # into the f-string, which agrees with the policy table's *direction* but
+    # drops `max-snippet:-1,max-video-preview:-1` -- so the four pages paid
+    # Google Ads traffic lands on were the four asking Google to cap their own
+    # snippet length. The table says `index` for all four, so reading it here
+    # can only lengthen the directive, never flip it.
+    robots = search_visibility.robots_meta(f"/{slug}")
     if slug == "crypto-scam-scanner":
         signup_url = f"{page['next']}?utm_source=google_ads&utm_medium=cpc&utm_campaign={slug}&utm_content=hero_{variant}"
     else:
@@ -1796,7 +1804,7 @@ def render_ads_landing_page(slug):
         ]
         if path != f"/{slug}"
     )
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(page['title']))}</title><meta name="description" content="{html_escape(clean_html(page['description']))}"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="{canonical}"><meta property="og:title" content="{html_escape(clean_html(page['title']))}"><meta property="og:description" content="{html_escape(clean_html(page['description']))}"><meta property="og:url" content="{canonical}"><meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-og-20260913.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{html_escape(clean_html(page['title']))}"><meta name="twitter:description" content="{html_escape(clean_html(page['description']))}"><meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-og-20260913.png"><link rel="icon" type="image/png" href="/static/brand/pulsesoc-favicon-32-20260913.png"><link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260913.png"><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#020817">{google_tag_script()}<script type="application/ld+json">{json.dumps(schema)}</script><style>:root{{--bg:#050b14;--text:#f6fbff;--muted:#a8b8c8;--line:rgba(255,255,255,.13);--accent:{page['accent']};--green:#36e58f;--cyan:#6edff6}}*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;overflow-x:hidden}}body{{background:radial-gradient(circle at 18% 0,color-mix(in srgb,var(--accent) 24%,transparent),transparent 24rem),radial-gradient(circle at 90% 8%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}.wrap{{width:min(100% - 28px,1120px);margin:auto;padding:22px 0 76px}}nav{{min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:14px}}.brand{{display:inline-flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{min-height:calc(100dvh - 82px);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(300px,.95fr);gap:22px;align-items:center}}.kicker{{color:var(--green);font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}h1{{font-size:clamp(42px,7.5vw,82px);line-height:.95;margin:10px 0 14px;letter-spacing:0}}p{{color:var(--muted);font-size:17px;line-height:1.58}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}}.button{{min-height:50px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;text-decoration:none;font-weight:950;border:1px solid rgba(255,255,255,.16);color:var(--text);background:rgba(255,255,255,.065)}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0;box-shadow:0 0 28px color-mix(in srgb,var(--accent) 35%,transparent)}}.stage{{position:relative;border:1px solid color-mix(in srgb,var(--accent) 42%,rgba(255,255,255,.12));border-radius:18px;overflow:hidden;background:linear-gradient(150deg,rgba(255,255,255,.09),rgba(255,255,255,.035));box-shadow:0 26px 90px rgba(0,0,0,.34);padding:20px;min-height:360px}}.stage:before{{content:"";position:absolute;inset:-35%;background:conic-gradient(from 120deg,transparent,color-mix(in srgb,var(--accent) 25%,transparent),transparent 38%,rgba(54,229,143,.16),transparent 68%);animation:sweep 10s linear infinite;pointer-events:none}}.stage>*{{position:relative}}.logo{{width:84px;height:84px;border-radius:22px;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--accent) 38%,transparent))}}.metric{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}}.metric div,.proof span{{border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}}.proof{{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}}.trust{{border-top:1px solid var(--line);padding-top:18px;margin-top:18px;font-size:14px;color:var(--muted)}}.related{{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}}.related a{{color:#dff9ff;border:1px solid var(--line);border-radius:999px;padding:8px 11px;text-decoration:none;font-weight:850}}@keyframes sweep{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}@media(max-width:820px){{.wrap{{width:min(100% - 24px,1120px);padding-bottom:44px}}.hero{{grid-template-columns:1fr;min-height:auto;padding-top:24px}}h1{{font-size:clamp(34px,10vw,54px)}}.button{{width:100%}}.stage{{min-height:280px;padding:16px}}.stage:before{{animation-duration:18s}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="PulseSoc logo" width="38" height="38">CoinPlotXAI</a><a class="button" href="/privacy">Privacy</a></nav><section class="hero"><article><div class="kicker">Controlled Google Ads landing page · Variant {variant.upper()}</div><h1>{html_escape(clean_html(headline))}</h1><p>{html_escape(clean_html(page['description']))}</p><div class="actions"><a class="button primary" href="{signup_url}" data-analytics="{html_escape(clean_html(page['analytics']))}">{html_escape(clean_html(cta))}</a><a class="button" href="{secondary_url}" data-analytics="landing_secondary_click">{html_escape(clean_html(page['secondary']))}</a></div><div class="proof">{proof}</div><p class="trust">Educational platform only. Alpha Arena uses simulated trading and virtual dollars. Roast Battle virtual dollars are entertainment scoring only and have no real-money value. CoinPlotXAI never asks for seed phrases or private keys.</p><div class="related">{related}</div></article><aside class="stage" aria-label="CoinPlotXAI live preview"><img class="logo" src="/static/brand/pulsesoc-mark-20260913.png" alt="PulseSoc logo" width="84" height="84"><h2>Live command-center preview</h2><p>Fast mobile pages, clear CTAs, moderated social energy, and privacy-first behavioral analytics.</p><div class="metric"><div><strong>CTA</strong><br>{html_escape(clean_html(cta))}</div><div><strong>Trust</strong><br>Safety-first copy</div><div><strong>Tracking</strong><br>GA4 + Ads ready</div><div><strong>Speed</strong><br>Deferred scripts</div></div></aside></section></main><script src="/static/analytics.js" defer></script></body></html>"""
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(page['title']))}</title><meta name="description" content="{html_escape(clean_html(page['description']))}"><meta name="robots" content="{robots}"><link rel="canonical" href="{canonical}"><meta property="og:title" content="{html_escape(clean_html(page['title']))}"><meta property="og:description" content="{html_escape(clean_html(page['description']))}"><meta property="og:url" content="{canonical}"><meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-og-20260913.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{html_escape(clean_html(page['title']))}"><meta name="twitter:description" content="{html_escape(clean_html(page['description']))}"><meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-og-20260913.png"><link rel="icon" type="image/png" href="/static/brand/pulsesoc-favicon-32-20260913.png"><link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260913.png"><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#020817">{google_tag_script()}<script type="application/ld+json">{json.dumps(schema)}</script><style>:root{{--bg:#050b14;--text:#f6fbff;--muted:#a8b8c8;--line:rgba(255,255,255,.13);--accent:{page['accent']};--green:#36e58f;--cyan:#6edff6}}*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;overflow-x:hidden}}body{{background:radial-gradient(circle at 18% 0,color-mix(in srgb,var(--accent) 24%,transparent),transparent 24rem),radial-gradient(circle at 90% 8%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}.wrap{{width:min(100% - 28px,1120px);margin:auto;padding:22px 0 76px}}nav{{min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:14px}}.brand{{display:inline-flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{min-height:calc(100dvh - 82px);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(300px,.95fr);gap:22px;align-items:center}}.kicker{{color:var(--green);font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}h1{{font-size:clamp(42px,7.5vw,82px);line-height:.95;margin:10px 0 14px;letter-spacing:0}}p{{color:var(--muted);font-size:17px;line-height:1.58}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}}.button{{min-height:50px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;text-decoration:none;font-weight:950;border:1px solid rgba(255,255,255,.16);color:var(--text);background:rgba(255,255,255,.065)}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0;box-shadow:0 0 28px color-mix(in srgb,var(--accent) 35%,transparent)}}.stage{{position:relative;border:1px solid color-mix(in srgb,var(--accent) 42%,rgba(255,255,255,.12));border-radius:18px;overflow:hidden;background:linear-gradient(150deg,rgba(255,255,255,.09),rgba(255,255,255,.035));box-shadow:0 26px 90px rgba(0,0,0,.34);padding:20px;min-height:360px}}.stage:before{{content:"";position:absolute;inset:-35%;background:conic-gradient(from 120deg,transparent,color-mix(in srgb,var(--accent) 25%,transparent),transparent 38%,rgba(54,229,143,.16),transparent 68%);animation:sweep 10s linear infinite;pointer-events:none}}.stage>*{{position:relative}}.logo{{width:84px;height:84px;border-radius:22px;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--accent) 38%,transparent))}}.metric{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}}.metric div,.proof span{{border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}}.proof{{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}}.trust{{border-top:1px solid var(--line);padding-top:18px;margin-top:18px;font-size:14px;color:var(--muted)}}.related{{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}}.related a{{color:#dff9ff;border:1px solid var(--line);border-radius:999px;padding:8px 11px;text-decoration:none;font-weight:850}}@keyframes sweep{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}@media(max-width:820px){{.wrap{{width:min(100% - 24px,1120px);padding-bottom:44px}}.hero{{grid-template-columns:1fr;min-height:auto;padding-top:24px}}h1{{font-size:clamp(34px,10vw,54px)}}.button{{width:100%}}.stage{{min-height:280px;padding:16px}}.stage:before{{animation-duration:18s}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="PulseSoc logo" width="38" height="38">CoinPlotXAI</a><a class="button" href="/privacy">Privacy</a></nav><section class="hero"><article><div class="kicker">Controlled Google Ads landing page · Variant {variant.upper()}</div><h1>{html_escape(clean_html(headline))}</h1><p>{html_escape(clean_html(page['description']))}</p><div class="actions"><a class="button primary" href="{signup_url}" data-analytics="{html_escape(clean_html(page['analytics']))}">{html_escape(clean_html(cta))}</a><a class="button" href="{secondary_url}" data-analytics="landing_secondary_click">{html_escape(clean_html(page['secondary']))}</a></div><div class="proof">{proof}</div><p class="trust">Educational platform only. Alpha Arena uses simulated trading and virtual dollars. Roast Battle virtual dollars are entertainment scoring only and have no real-money value. CoinPlotXAI never asks for seed phrases or private keys.</p><div class="related">{related}</div></article><aside class="stage" aria-label="CoinPlotXAI live preview"><img class="logo" src="/static/brand/pulsesoc-mark-20260913.png" alt="PulseSoc logo" width="84" height="84"><h2>Live command-center preview</h2><p>Fast mobile pages, clear CTAs, moderated social energy, and privacy-first behavioral analytics.</p><div class="metric"><div><strong>CTA</strong><br>{html_escape(clean_html(cta))}</div><div><strong>Trust</strong><br>Safety-first copy</div><div><strong>Tracking</strong><br>GA4 + Ads ready</div><div><strong>Speed</strong><br>Deferred scripts</div></div></aside></section></main><script src="/static/analytics.js" defer></script></body></html>"""
     response = Response(html)
     response.headers["Cache-Control"] = "public, max-age=300"
     return response
@@ -2248,14 +2256,49 @@ def site_search():
 
 
 def render_seo_landing(page, include_article=False):
+    """Render a public SEO landing page.
+
+    `robots` is passed because `seo_page.html` used to hardcode
+    `index, follow, max-image-preview:large, max-snippet:-1` and therefore could
+    not be told otherwise. Every page in every registry served through this
+    template claimed indexability, including the two families
+    `search_visibility._RULES` has classified `noindex,follow` as scaled
+    near-duplicates: `/markets/<symbol>{,/prediction,/live}` and
+    `/country-intelligence/<slug>`, 42 URLs between them.
+
+    The sitemap half of that policy worked -- `sitemap_eligible` reads the same
+    table, so none of the 42 were ever submitted. Only the directive the page
+    hands to Googlebot was wrong, which is why it survived: nothing that
+    enumerates sitemaps could see it, and the pages do render and do answer 200.
+    Verified against production on 2026-10-03: `/markets/btc`,
+    `/markets/btc/live`, `/markets/eth` and `/country-intelligence/nigeria` all
+    served `index, follow, max-image-preview:large, ...` while the policy table
+    said `noindex,follow`.
+
+    So these 42 pages have been asking Google to rank them for as long as the
+    rule has existed, and Search Console's "crawled - currently not indexed"
+    bucket is where that request has been landing. The declared policy and the
+    delivered directive now come from one function.
+    """
+
     schema_json = seo_schema.schema_graph(
         page,
         include_product=page.get("slug") in {"portfolio-intelligence", "ai-market-analysis", "telegram-crypto-bot"},
         include_article=include_article or page.get("og_type") == "article",
     )
     share_url = quote(page["canonical"], safe="")
-    share_text = quote(f"{page['h1']} by CoinPlotXAI Inc.", safe="")
-    return render_template("seo_page.html", page=page, schema_json=schema_json, share_url=share_url, share_text=share_text)
+    # The share text a reader hands to someone else should name the product they
+    # are being sent to. "by CoinPlotXAI Inc." is the operating company, which is
+    # the right answer on /terms and the wrong one in a tweet about a market page.
+    share_text = quote(f"{page['h1']} by PulseSoc", safe="")
+    return render_template(
+        "seo_page.html",
+        page=page,
+        schema_json=schema_json,
+        share_url=share_url,
+        share_text=share_text,
+        robots=search_visibility.robots_meta(urlparse(page["canonical"]).path),
+    )
 
 
 def simple_public_page(slug, title, h1, intro, answer, points, sections=None, related=None):
@@ -2665,52 +2708,65 @@ def dashboard_scam_alerts_page():
     return render_account_page("custom", "Crypto Scam Alerts", current_user=user, custom_body=body)
 
 
+# An unknown slug in any of the five registry-backed families below is a 404,
+# not a redirect to the home page.
+#
+# All six handlers used to answer `302 -> /` (and `/intel/<slug>` `302 ->
+# /intel`) for anything the registry did not contain, which Google classes as a
+# soft 404: the URL does not exist, but the response says "it moved, and it
+# moved to the most important page on the site". The sibling catch-all
+# `seo_topic_page` at the bottom of this group has always returned a real 404
+# for the same condition, which is what makes this an oversight rather than a
+# decision -- the same question was answered two ways in one file.
+#
+# The cost is crawl budget over an unbounded space. `/markets/<symbol>` accepts
+# any string, so every typo, every stale inbound link and every guessed ticker
+# was a 302 Googlebot had to fetch, follow, and then discover was the home page
+# it already had. Verified anonymously against production on 2026-10-03:
+# `/markets/notacoin`, `/country-intelligence/atlantis`,
+# `/sports-edge/football` and `/intel/not-a-real-article` all redirected rather
+# than 404'd.
+#
+# 404 and not 410: these are URLs that never existed, not content we removed.
+# No successor exists for a symbol we do not cover, and the mission's rule is
+# that a 301 is only correct where a real successor does -- redirecting to the
+# home page is the specific thing it names as wrong.
+
+
+def _registry_page_or_404(page, include_article=False):
+    if not page:
+        return Response("Not found", status=404)
+    return render_seo_landing(page, include_article=include_article)
+
+
 @webhook_app.route("/markets/<symbol>/prediction", methods=["GET"])
 def seo_market_prediction(symbol):
-    page = market_prediction_page(symbol)
-    if not page:
-        return redirect(url_for("home"), code=302)
-    return render_seo_landing(page)
+    return _registry_page_or_404(market_prediction_page(symbol))
 
 
 @webhook_app.route("/markets/<symbol>/live", methods=["GET"])
 def seo_market_live(symbol):
-    page = market_live_page(symbol)
-    if not page:
-        return redirect(url_for("home"), code=302)
-    return render_seo_landing(page)
+    return _registry_page_or_404(market_live_page(symbol))
 
 
 @webhook_app.route("/markets/<symbol>", methods=["GET"])
 def seo_market_page(symbol):
-    page = market_page(symbol)
-    if not page:
-        return redirect(url_for("home"), code=302)
-    return render_seo_landing(page)
+    return _registry_page_or_404(market_page(symbol))
 
 
 @webhook_app.route("/country-intelligence/<country_slug>", methods=["GET"])
 def seo_country_page(country_slug):
-    page = country_page(country_slug)
-    if not page:
-        return redirect(url_for("home"), code=302)
-    return render_seo_landing(page)
+    return _registry_page_or_404(country_page(country_slug))
 
 
 @webhook_app.route("/sports-edge/<sport_slug>", methods=["GET"])
 def seo_sports_edge_page(sport_slug):
-    page = sports_page(sport_slug)
-    if not page:
-        return redirect(url_for("home"), code=302)
-    return render_seo_landing(page)
+    return _registry_page_or_404(sports_page(sport_slug))
 
 
 @webhook_app.route("/intel/<article_slug>", methods=["GET"])
 def seo_intel_article_page(article_slug):
-    page = article_page(article_slug)
-    if not page:
-        return redirect("/intel", code=302)
-    return render_seo_landing(page, include_article=True)
+    return _registry_page_or_404(article_page(article_slug), include_article=True)
 
 
 @webhook_app.route("/news", methods=["GET"])
@@ -31703,6 +31759,29 @@ def marketplace_public_entries(limit=500):
     sitemap -- it is the collection page and it is in no other child -- and it
     has no honest modification date, since what changes is the 40 rows it
     happens to render. An absent `lastmod` says that; today's date would not.
+
+    It leads the list unconditionally, and that is worth stating because it is
+    the one place this module knowingly submits a path that can arrive carrying
+    `noindex`. `marketplace_storefront` renders the grid `noindex,follow` when
+    the eligible catalogue is empty, on the soft-404 reasoning its own comment
+    sets out, so on an empty catalogue the sitemap and the page disagree.
+
+    It stays unconditional for two reasons, neither of them "nobody noticed".
+    `test_the_collection_page_is_submitted_even_with_nothing_published` makes
+    the first: `noindex,follow` is not `Disallow`, and the grid is the URL a
+    crawler walks through to reach tomorrow's products. The second is that the
+    condition cannot be written honestly from here. `marketplace_public_listings`
+    returns `[]` both for an empty catalogue and for a failed query -- a
+    distinction `test_a_failed_query_is_logged_rather_than_passed_off_as_an_empty_catalogue`
+    exists to protect -- so keying on "no rows" would drop the collection page
+    from the sitemap during a transient database error, when the page itself is
+    still serving `index,follow`. Trading a contradiction that only occurs on
+    an empty catalogue for one that occurs whenever the database hiccups is the
+    wrong way round.
+
+    `tests/protection/test_sitemap_entries_are_indexable.py` carves this path
+    out by name rather than quietly tolerating it, so the carve-out is visible
+    to whoever revisits the decision.
     """
 
     entries = [(marketplace_seo.INDEX_PATH, "")]
@@ -31847,12 +31926,29 @@ def merchant_center_feed_xml():
 
 @webhook_app.route("/sitemap-live.xml", methods=["GET"])
 def sitemap_live_xml():
-    paths = ["/arena/live", "/arena/roast-battle", "/arena/momentum", "/arena/leaderboard", "/momentum"]
+    # `/momentum` is gone -- the route was removed and the path answers 404 in
+    # production, while sitting in this list asking Google to crawl it. The
+    # `/arena/*` paths stay written here but no longer survive `sitemap_xml`:
+    # all four redirect anonymous traffic to `/login`, and
+    # `search_visibility` now classifies the `/arena` subtree as such, so the
+    # eligibility gate drops them.
+    #
+    # This list is the reason both of those went unnoticed for so long. A
+    # hardcoded path list cannot tell that a route started redirecting or
+    # stopped existing, and nothing re-read it. The durable half of this fix is
+    # in `tests/protection/test_sitemap_entries_are_indexable.py`, which drives
+    # every sitemap route through the test client and fails if any `<loc>` is
+    # not a self-canonical, indexable 200 -- the only check that can catch this
+    # class of rot.
+    paths = ["/arena/live", "/arena/roast-battle", "/arena/momentum", "/arena/leaderboard"]
     return Response(seo_engine.sitemap_xml(paths, changefreq="hourly"), mimetype="application/xml")
 
 
 @webhook_app.route("/sitemap-replays.xml", methods=["GET"])
 def sitemap_replays_xml():
+    # Same situation: both static fallbacks are login redirects and are now
+    # filtered by the eligibility gate. Published replays are the real content
+    # this sitemap is for, and they are still queried below.
     paths = ["/arena/highlights", "/arena/momentum"]
     try:
         conn = db()

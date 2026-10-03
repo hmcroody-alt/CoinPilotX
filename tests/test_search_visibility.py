@@ -99,8 +99,14 @@ def test_operational_and_personal_paths_are_never_indexable(path):
         "/about",
         "/help",
         "/pulse/post/1781",
-        "/pulse/profile/someone",
         "/intel/bitcoin-outlook",
+        # The carve-outs that keep the commerce graph indexable through the
+        # `/pulse` default-deny rule. Listed here so that deleting one of them
+        # fails as a lost public page rather than as a quiet sitemap shrink.
+        "/pulse/marketplace",
+        "/pulse/marketplace/102",
+        "/pulse/help",
+        "/pulse/support",
     ],
     ids=lambda p: p,
 )
@@ -108,6 +114,36 @@ def test_public_paths_stay_indexable(path):
     """The neighbouring-allow half of the pairs above."""
 
     assert sv.classify(path).indexable is True
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/pulse/profile/someone", "/pulse/@someone", "/pulse/u/someone", "/pulse/id/someone"],
+    ids=lambda p: p,
+)
+def test_a_human_profile_is_not_a_public_indexable_page(path):
+    """`/pulse/profile/<key>` used to be asserted as public and indexable.
+
+    It is not, and never has been in production. Probed anonymously on
+    2026-10-03, `/pulse/profile/pulsedrop` and `/pulse/profile/PulseSoc-33`
+    both answered `302 -> /login?next=...`; `pulse_social_shell` gates the whole
+    profile family. So the old assertion was asking the policy table to call a
+    login redirect an indexable public page.
+
+    It is also the wrong default on the merits, independently of the redirect.
+    A person's profile becoming eligible for Google because its visibility flag
+    says "public" is a privacy decision being made by an SEO table: "public on
+    PulseSoc" is consent to be seen by people browsing PulseSoc, which is not
+    the same act as consent to be listed in a search engine. Indexing a human
+    profile needs its own explicit opt-in, and until one exists the answer is
+    no. `content_eligibility` already honours a creator's search opt-out for
+    posts, which is the shape that decision has to take.
+    """
+
+    decision = sv.classify(path)
+    assert decision.indexable is False
+    assert decision.sitemap_eligible is False
+    assert decision.reason
 
 
 @pytest.mark.parametrize(
@@ -164,12 +200,32 @@ def test_the_root_path_survives_normalisation():
 
 
 def test_no_rule_can_produce_a_noindex_sitemap_entry():
-    """Asserted over the whole table, so a rule added later is covered too."""
+    """Asserted over the whole table, so a rule added later is covered too.
 
-    for prefix, _directive, _reason in sv._RULES:
+    Both directions, because the table now holds `index` rules as well as
+    `noindex` ones. It did not when this test was written, so "every rule is
+    non-indexable and sitemap-ineligible" was then a true statement of the
+    invariant and is now a stricter claim than the invariant -- the name says
+    *noindex* entries must not be sitemap-eligible, and that is what is checked.
+
+    The `index` half is the half with teeth. `classify` used to hardcode
+    `sitemap_eligible=False` on every rule match, which was invisible while
+    every rule was a `noindex`; the moment the table needed a public carve-out
+    inside a private subtree, that line made the carve-out indexable and
+    sitemap-ineligible simultaneously, which would have emptied
+    `sitemap-products.xml` on deploy. This assertion is what makes that
+    combination impossible to express.
+    """
+
+    for prefix, directive, _reason in sv._RULES:
         decision = sv.classify(prefix)
-        assert decision.sitemap_eligible is False, prefix
-        assert decision.indexable is False, prefix
+        assert decision.directive == directive, prefix
+        if directive.startswith("index"):
+            assert decision.indexable is True, prefix
+            assert decision.sitemap_eligible is True, prefix
+        else:
+            assert decision.indexable is False, prefix
+            assert decision.sitemap_eligible is False, prefix
 
 
 def test_signup_is_not_sitemap_eligible():
