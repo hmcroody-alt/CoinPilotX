@@ -2,7 +2,7 @@
 
 ## Findings log (published as found, not held for the final report)
 
-Status: **OPEN — 7 findings (1 low), 3 attacks passed, 1 fleet blocker, 1 gate landed (red)**
+Status: **OPEN — 8 findings (1 low), 4 attacks passed, 1 fleet blocker, 1 gate landed (red)**
 Branch: `search-os/agent-12-quality-sentinel`
 Measured against: `origin/main` @ `5bdf4e431`
 Method: Flask test client over `app.url_map`, against a scratch copy of the dev DB
@@ -332,6 +332,36 @@ highest-severity SEO attack there is and it is properly closed.
 **Double-slash reachability: PASS.** 0 host-relative double-slash URLs emitted
 across four sitemaps, `robots.txt`, and five rendered pages.
 
+**Price-truth guard: PASS, and it is the best-defended thing I attacked.** Four
+attacks, all held:
+
+1. *Can the page publish a number the feed refused?* No. The product page's
+   price pill and its `Offer` are both `marketplace_web.PriceView` from
+   `derive_price`, so they cannot disagree with each other, and
+   `marketplace_seo.public_price` applies the same contradiction refusal the
+   feed does — a contradicted row renders with no price pill and a `Product`
+   node carrying no `Offer`, rather than printing a number.
+2. *Can the discovery cards disagree with the product page?* No. Both price
+   through `derive_price`; the module docstring names the grid-vs-API split as
+   the defect it was written to end.
+3. *Can the feed and the page judge the contradiction against different variant
+   sets?* No — and this was the attack I expected to land. All five variant
+   loads in the codebase (`bot.py:32585`, `60905`, `61302`, `61730`, and the
+   feed's) go through the single `marketplace_storefront_variants` loader, so
+   there is no second filter to drift.
+4. *Is the guard's fail-open reachable on a live surface?* No.
+   `price_label_contradicts_variants` returns `False` when `variants` is absent,
+   which is a real fail-open, but the only loader feeding both the sitemap and
+   the feed populates the key unconditionally. Both test files
+   (`tests/test_marketplace_seo.py`, `tests/test_merchant_center_feed.py`) are
+   in `config/ci_test_manifest.json` and both pin the fail-open deliberately.
+
+There is a dead rollback renderer, `bot.py:_marketplace_public_product_response`,
+that *would* reintroduce the split — it states a price through `public_price`
+and cannot render a range at all. It has no callers and its own docstring warns
+against reaching for it. Noted, not filed: an uncalled function is not a defect.
+If it is still there next release, delete it.
+
 ---
 
 ## A12-07 — LOW/latent: two slash-merge redirects 301 into a 404
@@ -359,14 +389,71 @@ should not jump any queue.
 
 ---
 
+## A12-08 — A product leaving Shopping leaves no trace; only the unreachable failure is logged
+
+I set out to attack the price-truth guard and could not break it (see the pass
+record below). What broke instead is the *observability* around it, and it is
+one line.
+
+`merchant_center_feed.feed_xml` handles two kinds of omission and logs only one:
+
+```python
+try:
+    row = feed_row(listing)
+except Exception:
+    logging.exception("MERCHANT_FEED_ROW_FAILED listing_id=%s; ...")   # loud
+    continue
+if row is None:
+    continue                                                           # silent
+```
+
+Measured on the wire — `.attack/probe_feed_exclusion_is_silent.py`, root logger
+captured at DEBUG, one row per shape:
+
+| row shape | in feed | log lines | reason |
+|---|---|---|---|
+| A complete | Y | 0 | `complete` |
+| B price label contradicts variants | **N** | **0** | `price_label disagrees with variant prices` |
+| C description under 40 chars | **N** | **0** | `description under 40 chars` |
+| D availability with no feed spelling (control) | N | **1** | `MERCHANT_FEED_ROW_FAILED` |
+
+The asymmetry is the wrong way round. D is the case the module says it cannot
+reason about, and on production data it happens never — `availability` maps
+every value the lifecycle can produce, which is why my first attempt at this
+control sailed straight into the feed and proved nothing. I had to monkeypatch
+`marketplace_seo.availability` to reach that branch at all. B and C are the
+cases that happen *now*, to **7 of the ~35 publishable rows** — the five price
+contradictions plus the two the module's own docstring counts as having no
+description — and they are the silent ones.
+
+So roughly a fifth of the catalogue is in Search and out of Shopping, and
+nothing in the platform's telemetry says so. `feed_row`'s docstring states the
+hazard in as many words — *"a silent skip is how a product leaves Shopping with
+no trace"* — in the comment above the `raise` it added to avoid it, two
+branches above the `return None` that does it.
+
+This is why the price disagreement in the carried-forward list was found by a
+human reading the feed rather than by an alert. Phase 100 in reverse: a gate
+that never fires is not quiet because things are fine.
+
+Not proposing a log line per row — a 500-row feed would emit 500 lines a crawl
+and become its own noise. The honest shape is one aggregate per build
+(`eligible/total` plus a count by `Eligibility.reason`, which already carries
+the string), so the number is trendable and a jump is visible.
+
+**Owner: Agent 6** (Merchant/feed), with Agent 5 for the underlying price data.
+Invariant: price truth must be *observable*, not merely enforced.
+
+---
+
 ## Carried forward — not yet investigated
 
-- **Live price disagreement in production.** `price_label_contradicts_variants()`
-  currently excludes products **112, 15, 89, 35, 36** from the Merchant feed. The
-  guard is failing closed, which is correct behaviour. But the underlying data
-  disagreement between a product's price label and its variants is a P0
-  search-truth item, and the guard is hiding it rather than resolving it. Owner
-  likely Agent 5 / Agent 9; to be confirmed.
+- **Live price disagreement in production** — products **112, 15, 89, 35, 36**.
+  Investigated this round: the guard itself is sound (see the pass record), and
+  the observability gap around it is now A12-08. What is still open is the
+  underlying data: *why* does a seller's `price_label` disagree with the
+  supplier-synced `price_cents`, and which of the two is wrong per row. That is
+  a data question for Agent 5, not a code question.
 - Agent 1's unproven claim that listings **50 / 52 / 110** render `noindex`.
   Asserted without wire evidence, same as A12-01 was. To be measured.
 - Canonical/host injection, facet, pagination and redirect attacks — I will
