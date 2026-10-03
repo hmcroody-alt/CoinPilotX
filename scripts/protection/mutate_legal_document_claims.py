@@ -216,6 +216,42 @@ MUTATIONS = [
         suites=[CLAIM_MATRIX],
     ),
     dict(
+        name="ip-hash-listed-as-a-security-safeguard",
+        control=(
+            "The real sentence this restores. It sat in the Security section beside "
+            "password hashing and TLS. Every word true; the paragraph still told a "
+            "member the hash protected them, and bot.py's own comment calls it "
+            "'pseudonymisation that does not pseudonymise'."
+        ),
+        path=PRIVACY,
+        old="Traffic to PulseSoc is encrypted in transit.</p>\n        <p>Three things we will not overstate:",
+        new="Traffic to PulseSoc is encrypted in transit. IP addresses in analytics records are stored as hashes.</p>\n        <p>Three things we will not overstate:",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
+        name="ip-hash-disclosure-dropped",
+        control=(
+            "Removing the bullet leaves the member with a hashed IP and no warning "
+            "that the hash is reversible -- the omission half of the same fiction."
+        ),
+        path=PRIVACY,
+        old="is not anonymisation, and we are not going to list it as a safeguard.",
+        new="protects your address.",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
+        name="all-usage-events-claimed-accountless",
+        control=(
+            "The real sentence this restores. Drafted from the page-view writer, which "
+            "hard-codes user_id NULL, and generalised over log_product_event, which "
+            "writes the signed-in user_id into the same table."
+        ),
+        path=PRIVACY,
+        old="Two kinds of usage event are recorded, and the difference matters.",
+        new="These website events are recorded without being linked to an account.",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
         name="section-10-hands-privacy-center-authority-over-visibility",
         control=(
             "The real sentence this restores. Section 13 said three of the four boxes "

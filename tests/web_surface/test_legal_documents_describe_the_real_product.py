@@ -686,6 +686,102 @@ def test_the_policy_does_not_endorse_the_privacy_center_boxes_that_do_nothing(pa
         )
 
 
+def test_the_policy_does_not_offer_the_ip_hash_as_a_safeguard(pages):
+    """A hash with a committed salt is a label, not anonymisation.
+
+    `bot.py::client_ip_hash` says it plainly in its own comment -- "pseudonymisation
+    that does not pseudonymise". The salt falls back to a constant that lives in
+    this repository, `ANALYTICS_SALT` is unset in production, and IPv4 is 2**32
+    wide, so every stored hash is reversible by anyone holding the repo.
+
+    An earlier draft listed "IP addresses in analytics records are stored as
+    hashes" in the Security section, beside password hashing and TLS. Every word
+    was true and the paragraph was still misleading: a member reads a safeguards
+    list as safeguards. §64 covers this -- a security guarantee the system does not
+    provide is fiction even when assembled from true parts.
+
+    The fallback default is the fact under test. If someone makes the salt a
+    required secret, this disclosure becomes the false claim and should be rewritten
+    rather than silently kept.
+    """
+
+    source = (ROOT / "bot.py").read_text(errors="ignore")
+    signature = re.search(
+        r"def client_ip_hash\(\):(.{0,1400}?)\n\ndef ", source, re.S
+    )
+    assert signature, "client_ip_hash moved; re-read how the salt is sourced"
+    body = signature.group(1)
+    fallback = re.search(r"os\.getenv\(\s*[\"']ANALYTICS_SALT[\"']\s*,\s*[\"']([^\"']+)[\"']\s*\)", body)
+    assert fallback, (
+        "ANALYTICS_SALT no longer falls back to a committed constant. If the salt is "
+        "now a required secret, the hash may genuinely pseudonymise and the Policy's "
+        "paragraph calling it 'not anonymisation' has become the false claim."
+    )
+
+    visible = pages[PRIVACY]["visible"]
+    safeguard_list = re.search(
+        r"reasonable technical and organisational measures(.{0,400}?)(?:Three|Two) things we will not overstate",
+        visible,
+        re.S | re.I,
+    )
+    assert safeguard_list, "the Security section's safeguards paragraph moved"
+    assert not re.search(r"IP address", safeguard_list.group(1), re.I), (
+        "the hashed IP address is listed among the safeguards; with a salt committed "
+        "to this repository it does not belong in that list"
+    )
+    assert re.search(r"not anonymisation", visible, re.I), (
+        "the Policy stores a hashed IP and never tells the member that hash does not "
+        "anonymise them"
+    )
+
+
+ANON_EVENT_WRITER = "log_website_event"
+LINKED_EVENT_WRITER = "log_product_event"
+
+
+def test_the_policy_does_not_claim_all_usage_events_are_accountless(pages):
+    """Two writers into one table, and only one of them is anonymous.
+
+    The website page-view insert hard-codes `user_id` to `NULL`. `log_product_event`
+    writes into the same `analytics_events` table *with* the signed-in `user_id`,
+    plus the request path, device, browser and the same hashed IP.
+
+    An earlier draft read the first writer and generalised: "These website events are
+    recorded without being linked to an account." True of one path, false of the
+    other, and a member would take it to mean their usage is never account-linked.
+    The same defect as the deletion and Privacy Center paragraphs: a universal claim
+    drafted from a single code path.
+    """
+
+    source = (ROOT / "bot.py").read_text(errors="ignore")
+    linked = re.search(rf"def {LINKED_EVENT_WRITER}\((.{{0,2000}}?)\n\ndef ", source, re.S)
+    assert linked, (
+        f"{LINKED_EVENT_WRITER} is gone. If nothing writes an account-linked usage "
+        "event any more, the Policy's admission that some usage is linked has become "
+        "the false claim."
+    )
+    assert "user_id" in linked.group(1) and "analytics_events" in linked.group(1), (
+        f"{LINKED_EVENT_WRITER} no longer writes a user_id into analytics_events; "
+        "re-read it before trusting this paragraph"
+    )
+
+    visible = pages[PRIVACY]["visible"]
+    overbroad = _unnegated(
+        visible, r"(?:these|all) (?:website )?(?:usage )?events are recorded without being linked"
+    )
+    assert not overbroad, (
+        f"the Policy generalises one anonymous writer to all usage events: {overbroad}"
+    )
+    assert re.search(r"no account identifier at all", visible, re.I), (
+        "the page-view stream really does carry no account id, and that is worth "
+        "telling members; the Policy no longer says it"
+    )
+    assert re.search(r"some of it is", visible, re.I), (
+        "the Policy does not admit that signed-in product actions are recorded "
+        "against the account"
+    )
+
+
 BREVO_CAMPAIGN_MARKERS = ("emailCampaigns", "/v3/emailCampaigns", "smsCampaigns")
 
 
