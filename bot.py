@@ -317,6 +317,7 @@ from services import (
     live_distribution_service,
     live_feed_service,
     live_health_service,
+    live_moderation,
     live_ranking_engine,
     live_ops_engine,
     live_participants,
@@ -55585,16 +55586,17 @@ def pulse_live_promote_guest_row(cur, live, *, target_user_id, request_id, actor
 
 
 def pulse_live_user_is_blocked(cur, live_id, user_id):
-    cur.execute(
-        """
-        SELECT 1 FROM pulse_live_moderation
-        WHERE live_id=? AND target_user_id=? AND status='active'
-          AND LOWER(COALESCE(action,'')) IN ('block','blocked','ban','banned')
-        LIMIT 1
-        """,
-        (int(live_id or 0), int(user_id or 0)),
-    )
-    return bool(cur.fetchone())
+    """Is this user banned from this Live?
+
+    Six authorization sites call this: the canonical audience gate, the replay
+    /state read, the co-host request, the join-status projection, the guest
+    invite and the invite answer. It now delegates to
+    ``services.live_moderation`` so that one module owns both the reading and
+    the writing of this table, and so all six inherit the fail-closed
+    behaviour: a read error denies the protected action instead of quietly
+    answering "not banned".
+    """
+    return live_moderation.is_banned(cur, live_id, user_id)
 
 
 def pulse_live_viewer_authorized(cur, live, viewer_user_id):
@@ -58198,6 +58200,180 @@ def api_pulse_live_guest_action(live_id, guest_id, action):
         except Exception:
             pass
         return api_error("Guest action could not be completed.", 500)
+
+
+def pulse_live_moderation_actor_role(cur, live, user):
+    """The actor's moderation role *on this Live*, resolved from server state.
+
+    Mirrors ``api_pulse_live_guest_action`` deliberately: the role comes from
+    the actor's active guest row on this specific live (or from being its host,
+    or a platform admin), never from anything the client sent. Resolving it
+    per-live is what makes "I co-host Live A" fail to grant authority over
+    Live B.
+    """
+    is_host = pulse_live_is_host(live, user) or bool(admin_current_user())
+    actor_guest = pulse_live_active_guest(cur, int(live.get("id") or 0), int(user["user_id"] or 0)) or {}
+    return live_participants.normalize_role(
+        live_participants.ROLE_HOST if is_host else (actor_guest.get("role") or actor_guest.get("guest_role"))
+    )
+
+
+#: Denial reason -> what the actor is told. The messages are deliberately
+#: about the *rule*, never about the target's state, so an unauthorized caller
+#: learns nothing from the response that they did not already know.
+PULSE_LIVE_MODERATION_DENIALS = {
+    "invalid_identity": "Invalid moderation target.",
+    "not_a_moderator": "Only the host or a co-host can moderate viewers.",
+    "cannot_moderate_host": "The host cannot be banned from their own broadcast.",
+    "cannot_moderate_self": "You cannot ban yourself from your own live.",
+}
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/viewers/<int:target_user_id>/<action>", methods=["POST"])
+@auth_required
+def api_pulse_live_viewer_moderation(live_id, target_user_id, action):
+    """Ban or unban a viewer from one Live session.
+
+    This is the authority behind the six ``pulse_live_user_is_blocked`` reads.
+    It performs no enforcement of its own: it decides who may write, writes
+    through ``services/live_moderation.py``, and the existing audience gate,
+    replay read, co-host request, join-status projection, guest invite and
+    invite answer all observe the result on their next call.
+
+    What a ban can and cannot do is worth being precise about, because the
+    product copy has to match it: an Agora token already issued stays valid
+    until it expires, and there is no kick API in this deployment. So a ban
+    denies the *next* token mint, join, replay read, co-host request and
+    invite. A viewer already connected is dropped at their next reconnect or
+    token refresh, not at the instant the button is pressed.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    action = clean_html(action or "")[:16].lower()
+    if action not in live_moderation.MODERATION_ACTIONS:
+        return api_error("Invalid moderation action.", 400)
+    payload = request.get_json(silent=True) or {}
+    reason = live_moderation.normalize_reason(payload.get("reason") or "")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+        live = dict(cur.fetchone() or {})
+        if not live:
+            conn.close()
+            return api_error("Live stream not found.", 404)
+        actor_user_id = int(user["user_id"] or 0)
+        actor_role = pulse_live_moderation_actor_role(cur, live, user)
+        allowed, denial = live_moderation.authorize(
+            actor_role,
+            actor_user_id=actor_user_id,
+            target_user_id=target_user_id,
+            host_user_id=int(live.get("user_id") or 0),
+            can_moderate=live_participants.can_moderate,
+        )
+        if not allowed:
+            logging.warning(
+                "LIVE_MODERATION_DENIED live_id=%s actor=%s target=%s action=%s role=%s reason=%s",
+                live_id, actor_user_id, target_user_id, action, actor_role, denial,
+            )
+            conn.close()
+            return api_error(PULSE_LIVE_MODERATION_DENIALS.get(denial, "Not allowed."), 403)
+        # Only after authorization do we touch the target, so an unauthorized
+        # caller cannot use this route to learn whether an account exists.
+        cur.execute("SELECT user_id FROM users WHERE user_id=? LIMIT 1", (target_user_id,))
+        if not cur.fetchone():
+            conn.close()
+            return api_error("That account could not be found.", 404)
+        if action == live_moderation.ACTION_BAN:
+            result = live_moderation.ban(cur, live_id, actor_user_id, target_user_id, reason=reason)
+            already = result.get("status") == "already_active"
+            pulse_live_audit(
+                cur, live_id, actor_user_id,
+                "viewer_ban_already_active" if already else "viewer_ban",
+                target_user_id=target_user_id,
+                metadata={"has_reason": bool(reason)},
+            )
+            logging.info(
+                "%s live_id=%s actor=%s target=%s",
+                "LIVE_MODERATION_BAN_ALREADY_ACTIVE" if already else "LIVE_MODERATION_BAN_CREATED",
+                live_id, actor_user_id, target_user_id,
+            )
+        else:
+            result = live_moderation.unban(cur, live_id, actor_user_id, target_user_id)
+            pulse_live_audit(
+                cur, live_id, actor_user_id, "viewer_unban",
+                target_user_id=target_user_id,
+                metadata={"cleared": int(result.get("cleared") or 0)},
+            )
+            logging.info(
+                "LIVE_MODERATION_UNBAN live_id=%s actor=%s target=%s cleared=%s",
+                live_id, actor_user_id, target_user_id, result.get("cleared"),
+            )
+        conn.commit()
+        banned_now = action == live_moderation.ACTION_BAN
+        conn.close()
+        # The reason is private trust & safety metadata and never leaves the
+        # moderator surface, so the event carries only the state change.
+        pulse_emit_event(
+            "pulse_live_viewer_banned" if banned_now else "pulse_live_viewer_unbanned",
+            {"live_id": live_id, "target_user_id": target_user_id, "banned": banned_now},
+            actor_user_id=actor_user_id,
+            post_id=int(live.get("feed_post_id") or 0),
+        )
+        return jsonify({
+            "ok": True,
+            "status": result.get("status"),
+            "live_id": live_id,
+            "target_user_id": target_user_id,
+            "banned": banned_now,
+        })
+    except Exception as exc:
+        logging.exception(
+            "LIVE_MODERATION_WRITE_FAILED live_id=%s actor=%s target=%s action=%s error=%s",
+            live_id, user.get("user_id"), target_user_id, action, exc,
+        )
+        try:
+            conn.rollback(); conn.close()
+        except Exception:
+            pass
+        return api_error("Moderation action could not be completed.", 500)
+
+
+@webhook_app.route("/api/pulse/live/<int:live_id>/moderation", methods=["GET"])
+@auth_required
+def api_pulse_live_moderation_state(live_id):
+    """The current bans on a Live. Moderator-only.
+
+    Rows carry ``reason``, which is a private moderator note, so this is gated
+    by the same authority as the write and is never part of any viewer-facing
+    projection.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM pulse_live_sessions WHERE id=? LIMIT 1", (live_id,))
+        live = dict(cur.fetchone() or {})
+        if not live:
+            conn.close()
+            return api_error("Live stream not found.", 404)
+        actor_role = pulse_live_moderation_actor_role(cur, live, user)
+        if not live_participants.can_moderate(actor_role):
+            conn.close()
+            return api_error("Only the host or a co-host can moderate viewers.", 403)
+        bans = live_moderation.list_active_bans(cur, live_id)
+        conn.close()
+        return jsonify({"ok": True, "live_id": live_id, "bans": bans, "count": len(bans)})
+    except Exception as exc:
+        logging.exception("LIVE_MODERATION_STATE_FAILED live_id=%s error=%s", live_id, exc)
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return api_error("Moderation state could not be loaded.", 500)
 
 
 def pulse_live_publish_replay_reel(live_id, *, trace_id=""):
@@ -127133,6 +127309,10 @@ def _init_db_impl():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_guests_live_status ON pulse_live_guests(live_id, status, updated_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_guests_user ON pulse_live_guests(live_id, user_id, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_audit_logs_live ON pulse_live_audit_logs(live_id, created_at)")
+    # Read on every token mint, join, replay read, co-host request and invite
+    # decision. Unindexed this is a sequential scan on a table that only grows.
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_moderation_target ON pulse_live_moderation(live_id, target_user_id, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_moderation_live_status ON pulse_live_moderation(live_id, status, id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_webrtc_signals_live_target ON pulse_live_webrtc_signals(live_id, target_peer_id, id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_webrtc_signals_live_role ON pulse_live_webrtc_signals(live_id, sender_role, id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_live_destinations_user ON pulse_live_destinations(user_id, platform, status)")
