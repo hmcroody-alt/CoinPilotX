@@ -216,6 +216,20 @@ MUTATIONS = [
         suites=[CLAIM_MATRIX],
     ),
     dict(
+        name="section-10-hands-privacy-center-authority-over-visibility",
+        control=(
+            "The real sentence this restores. Section 13 said three of the four boxes "
+            "do nothing; section 10, four hundred lines earlier, said the 'visibility "
+            "controls in Privacy Center ... determine the rest'. The document "
+            "contradicted itself, and the first version of the claim test matched only "
+            "the change/manage/update phrasing, so it passed."
+        ),
+        path=PRIVACY,
+        old="The settings that actually decide this are the privacy and visibility settings in your account settings. The visibility tick-boxes on <a href=\"/privacy-center\">Privacy Center</a> are not what controls it, for the reason set out in section 13.",
+        new="The visibility controls in <a href=\"/privacy-center\">Privacy Center</a> and your settings determine the rest.",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
         name="marketing-opt-out-points-at-an-unsubscribe-link",
         control=(
             "The consent rows at signup say 'I can unsubscribe anytime', and an "

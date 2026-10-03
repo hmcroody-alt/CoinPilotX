@@ -660,6 +660,31 @@ def test_the_policy_does_not_endorse_the_privacy_center_boxes_that_do_nothing(pa
         f"visibility settings; three of its four boxes do nothing: {endorsement}"
     )
 
+    # The assertion above only caught the phrasing I happened to use first. A
+    # separate sentence in section 10 said the "visibility controls in Privacy
+    # Center ... determine the rest" -- the same false endorsement, in a shape that
+    # regex did not match, contradicting section 13 four hundred lines later. Catch
+    # the claim, not one wording of it: a verb of control on either side of the name.
+    control_verbs = r"controls?|determines?|decides?|governs?|applies|sets?"
+    # `_unnegated` looks only backwards, which is right where a denial belongs in a
+    # preceding sentence. Here the denial sits inside the clause itself -- "the
+    # tick-boxes on Privacy Center are *not* what controls it" -- so a negator within
+    # the matched span counts, and nothing outside it does.
+    for pattern in (
+        rf"Privacy Center[^.]{{0,120}}?\b(?:{control_verbs})\b",
+        rf"\b(?:{control_verbs})\b[^.]{{0,120}}?Privacy Center",
+    ):
+        implied = [
+            match.group(0)
+            for match in re.finditer(pattern, visible, re.I)
+            if not _NEGATORS.search(match.group(0))
+            and not _NEGATORS.search(visible[max(0, match.start() - 140):match.start()].rsplit(". ", 1)[-1])
+        ]
+        assert not implied, (
+            "a sentence gives Privacy Center authority over visibility that three of "
+            f"its four boxes do not have: {implied}"
+        )
+
 
 BREVO_CAMPAIGN_MARKERS = ("emailCampaigns", "/v3/emailCampaigns", "smsCampaigns")
 
