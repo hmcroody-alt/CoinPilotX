@@ -58275,8 +58275,9 @@ def api_pulse_live_viewer_moderation(live_id, target_user_id, action):
     This is the authority behind the six ``pulse_live_user_is_blocked`` reads.
     It performs no enforcement of its own: it decides who may write, writes
     through ``services/live_moderation.py``, and the existing audience gate,
-    replay read, co-host request, join-status projection, guest invite and
-    invite answer all observe the result on their next call.
+    replay read, co-host request, guest invite and invite answer all observe
+    the result on their next call. The sixth reader, ``/cohost/debug``, is a
+    diagnostic that refuses nobody.
 
     What a ban can and cannot do is worth being precise about, because the
     product copy has to match it: an Agora token already issued stays valid
