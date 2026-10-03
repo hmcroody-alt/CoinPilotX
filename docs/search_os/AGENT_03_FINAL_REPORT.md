@@ -27,7 +27,7 @@ Delivered:
 | `services/catalog_semantics.py` | ~640 | the identity / provenance / confidence layer |
 | `tests/catalog/test_catalog_semantics.py` | 63 tests | behavioural pins |
 | `scripts/protection/catalog_semantics_mutation_matrix.py` | 20 mutations | proof the pins can fail |
-| `docs/search-os/AGENT_03_PRODUCT_GRAPH.md` | — | frozen contracts, fleet notifications |
+| `docs/search_os/AGENT_03_PRODUCT_GRAPH.md` | — | frozen contracts, fleet notifications |
 | `.agent3/*.py` | 6 scripts | the read-only recon that produced every number |
 
 No schema migration. No backfill. No row written. Every database session was
