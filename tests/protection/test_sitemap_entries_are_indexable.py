@@ -14,7 +14,11 @@ list written when a surface was public keeps being published long after the
 surface stopped being public, and every signal we have says it is fine.
 
 Measured against production on 2026-10-03, that had happened to **every single
-entry** in two of the six child sitemaps:
+entry** in two of the then-six child sitemaps. Both routes are gone now --
+every path either of them could offer came from the `noindex,follow` `/arena`
+subtree, so they had no reachable content left to distribute and were deleted
+rather than kept as two permanently empty `<urlset>`s. The table is the state
+that motivated this file, not a description of live routes:
 
     sitemap-live.xml      /arena/live            302 -> /login?next=...
                           /arena/roast-battle    302 -> /login?next=...
@@ -129,14 +133,77 @@ class SitemapEntriesAreIndexable(unittest.TestCase):
             for loc in RE_LOC.findall(body):
                 cls.entries.append((child, loc, _path_of(loc)))
 
+    #: Children whose entire URL list comes from member content, so an
+    #: environment with no rows renders them legitimately empty. They are
+    #: exempt from the non-empty check below for that reason and no other --
+    #: emptiness here is a statement about the fixture, not about the sitemap.
+    #: `/sitemap-pages.xml` and `/sitemap-products.xml` are absent deliberately:
+    #: both emit at least one static path (the marketing routes, and the
+    #: `/pulse/marketplace` hub) regardless of what is in the database, so for
+    #: them empty is always a real defect.
+    DATA_DRIVEN_CHILDREN = ("/sitemap-posts.xml", "/sitemap-categories.xml")
+
+    def test_no_advertised_child_sitemap_is_structurally_empty(self):
+        """The per-child corpus guard, for the reason `_served_disallows` has one.
+
+        Every other assertion in this class iterates `cls.entries`, so a child
+        contributing no `<loc>` is checked by none of them -- it is skipped in
+        silence and the suite still reports green. That is how two of the six
+        children came to be advertised to Googlebot while being permanently
+        incapable of listing anything.
+
+        `search_visibility` classifies the whole `/arena` subtree as
+        `noindex,follow` -- it 302s anonymous traffic to `/login` -- and
+        `/sitemap-live.xml` and `/sitemap-replays.xml` drew *exclusively* from
+        that subtree. The eligibility gate in `sitemap_xml` dropped every
+        candidate, which fixed the real defect: we stopped submitting URLs we
+        could not serve. What it left behind was two `<urlset>`s with no `<url>`
+        in them, still listed in `/sitemap.xml`. Measured against production on
+        2026-10-03 both were 0 URLs, and `/sitemap-replays.xml` still ran a
+        200-row query against `arena_replays` per crawl and discarded all of it,
+        because `/arena/replay/<token>` cannot pass the gate either.
+
+        An empty sitemap is not an error to Google, so nothing external would
+        ever have reported this. The cost is ours: crawl fetches spent on
+        documents carrying no information, a query per fetch for nothing, and
+        four invariant assertions that look like they cover six children and
+        cover four.
+
+        Why an exemption list rather than "every child is non-empty": posts and
+        categories are member content, and this suite runs against a database
+        that may have none. Failing there would be the test reporting on the
+        fixture. The exemption is two named children, so it cannot absorb the
+        defect it exists alongside -- a child drawing only from an ineligible
+        subtree is not data-driven and is not on the list.
+        """
+
+        stale = sorted(set(self.DATA_DRIVEN_CHILDREN) - set(bot.SITEMAP_CHILDREN))
+        self.assertEqual(
+            stale, [],
+            f"These names are exempted from the check below but are no longer "
+            f"children: {stale}. An exemption for a child that does not exist is "
+            f"how an allowlist outlives its reason -- rename or drop it.")
+
+        for child in bot.SITEMAP_CHILDREN:
+            if child in self.DATA_DRIVEN_CHILDREN:
+                continue
+            with self.subTest(child=child):
+                count = len([e for e in self.entries if e[0] == child])
+                self.assertGreater(
+                    count, 0,
+                    f"{child} is listed in /sitemap.xml and lists no URL, so every "
+                    f"other assertion in this class passes over it vacuously. Either it "
+                    f"has content and the eligibility gate is wrong, or it has none and "
+                    f"the route and its index entry should be deleted.")
+
     def test_the_sitemap_index_lists_every_child_and_each_one_renders(self):
         """Expected children come from the url_map, not from `SITEMAP_CHILDREN`.
 
         Comparing the index against `SITEMAP_CHILDREN` is what this test did
         first, and it was circular: `sitemap_index_xml` is *generated from*
         `SITEMAP_CHILDREN`, so both sides of the assertion moved together.
-        A mutation that dropped `/sitemap-replays.xml` from the tuple left the
-        route registered and serving, removed it from the index, and this test
+        A mutation that dropped the last child from the tuple left the route
+        registered and serving, removed it from the index, and this test
         passed -- it had simply stopped expecting it.
 
         The url_map is the independent source: a child sitemap that is routed

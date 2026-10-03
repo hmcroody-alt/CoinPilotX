@@ -19,12 +19,15 @@ Mutates a `copytree` of the checkout inside a `TemporaryDirectory`. Real source
 is edited, in a sandbox -- not a reimplementation of the policy inside the test,
 which would only prove the copy agrees with itself.
 
-TWO MUTATIONS HERE ARE THE SHIPPED BUGS
----------------------------------------
-`the robots emitter goes back to bare prefixes` and `/momentum returns to the
-live sitemap` are not hypothetical wrong versions. They are the exact state of
-production on 2026-10-03, re-applied. If either survived, the corresponding
-test would be decoration.
+ONE MUTATION HERE IS THE SHIPPED BUG
+------------------------------------
+`the robots emitter goes back to bare prefixes` is not a hypothetical wrong
+version. It is the exact state of production on 2026-10-03, re-applied. If it
+survived, the corresponding test would be decoration.
+
+It used to be two. `/momentum returns to the live sitemap` was the second, and
+it is gone because the hardcoded arena path list it mutated is gone with the
+two empty arena sitemaps; see the note above that mutation's former position.
 
 WHAT THE FIRST RUN FOUND
 ------------------------
@@ -133,19 +136,24 @@ MUTATIONS = (
         replacement="search_visibility.robots_disallow_prefixes()",
         killed_by="test_no_sitemapped_url_is_blocked_by_our_own_robots_txt",
     ),
+    # Deleting `/sitemap-live.xml` and `/sitemap-replays.xml` removed the only
+    # hardcoded path lists in any sitemap route, and with them both the second
+    # shipped-bug mutation (`/momentum returns to the live sitemap`) and the
+    # reason the mutation below was attributed where it was. That one used to be
+    # killed by `test_every_sitemapped_url_answers_200`, because unclassifying
+    # `/arena` put four login redirects straight back into a `<urlset>`. No
+    # sitemap sources an arena path now, so against the sitemap it is inert --
+    # it survived a full run. Not because the invariant stopped mattering: an
+    # unclassified `/arena` still makes a login-walled subtree claim
+    # `index,follow`, which is the guard named below, failing on all four paths.
+    # `test_every_sitemapped_url_answers_200` keeps its own proof lower down, in
+    # `sitemap_xml stops gating entries on eligibility`.
     Mutation(
-        name="/momentum returns to the live sitemap (the shipped bug)",
-        path="bot.py",
-        anchor='paths = ["/arena/live", "/arena/roast-battle", "/arena/momentum", "/arena/leaderboard"]',
-        replacement='paths = ["/arena/live", "/arena/roast-battle", "/arena/momentum", "/arena/leaderboard", "/momentum"]',
-        killed_by="test_every_sitemapped_url_answers_200",
-    ),
-    Mutation(
-        name="the arena stops being classified, so its login redirects re-enter the sitemap",
+        name="the arena stops being classified, so a login-walled subtree claims indexability",
         path="services/search_visibility.py",
         anchor='    ("/arena", NOINDEX_FOLLOW, "authenticated arena surface behind a redirect"),',
         replacement="",
-        killed_by="test_every_sitemapped_url_answers_200",
+        killed_by="test_the_arena_subtree_is_not_indexable_but_its_public_siblings_are",
     ),
 
     # --- the pattern expansion, one form at a time --------------------------
@@ -234,9 +242,25 @@ MUTATIONS = (
     Mutation(
         name="a child sitemap is routed but no longer listed in the index",
         path="bot.py",
-        anchor='SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml")',
-        replacement='SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml", "/sitemap-live.xml")',
+        anchor='SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml")',
+        replacement='SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-categories.xml")',
         killed_by="test_the_sitemap_index_lists_every_child_and_each_one_renders",
+    ),
+    # The inverse, and the harder one to see. The mutation above leaves a
+    # working sitemap unadvertised; this one leaves an advertised sitemap with
+    # nothing in it, which is the shape the two deleted arena children had.
+    # Every other assertion in the indexability suite iterates the `<loc>` list,
+    # so an empty child satisfies all of them and the suite reports green over a
+    # partition that distributes nothing. The path source is narrowed to
+    # `/account`, which the policy table classifies private, so the eligibility
+    # gate drops all of it -- a path list that stops yielding eligible URLs,
+    # rather than a route that errors.
+    Mutation(
+        name="an advertised child sitemap renders empty",
+        path="bot.py",
+        anchor="    paths = sorted(set(all_public_paths()) | set(seo_engine.PUBLIC_LEARN_PATHS) | set(seo_engine.ADS_LANDING_PATHS))",
+        replacement='    paths = [p for p in sorted(set(all_public_paths())) if p.startswith("/account")]',
+        killed_by="test_no_advertised_child_sitemap_is_structurally_empty",
     ),
 
     # --- and the gate the whole thing rests on ------------------------------

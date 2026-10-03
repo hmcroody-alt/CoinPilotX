@@ -59,8 +59,6 @@ SITEMAP_ROUTES = (
     # `lastmod`.
     "/sitemap-categories.xml",
     "/sitemap-products.xml",
-    "/sitemap-live.xml",
-    "/sitemap-replays.xml",
 )
 
 
