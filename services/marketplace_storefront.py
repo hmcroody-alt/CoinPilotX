@@ -57,7 +57,11 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence
 
 from services import app_links
+from services import marketplace_listing_lifecycle
+from services import marketplace_seller_identity as seller_identity
 from services import marketplace_web as mw
+from services import pulse_runtime_assets
+from services import search_visibility
 
 #: Canonical, stable, human-readable product and listing URLs. These are the
 #: paths the old routes already served, so nothing that was indexable or
@@ -88,8 +92,8 @@ BASE_PATH = "/pulse/marketplace"
 #: browser holding the previous CSS would paint the new light-page markup with
 #: dark-page rules — white text on a white card — so this is precisely the bump
 #: the comment above exists to force.
-CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20260928b"
-JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20260928b"
+CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20261002b"
+JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20261002b"
 
 #: Cards per grid page. Mirrors `marketplace_web.PAGE_SIZE` so pagination maths
 #: has one source.
@@ -211,6 +215,13 @@ class RenderedPage:
     #: and Discord all render a product card differently, and the value is a
     #: fact about the page, so it belongs beside the rest of the metadata.
     og_type: str = "website"
+    #: The listing ids this page actually rendered, in the order it rendered
+    #: them. Reported rather than recomputed because filtering, sorting and
+    #: paging all happen inside `render_discovery`: a caller that wants to
+    #: describe this page's contents in structured data would otherwise have to
+    #: re-derive the result set, and the copy that drifted would be the one
+    #: Google reads. Empty on pages that are not lists.
+    listed_ids: tuple[int, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -446,10 +457,10 @@ def product_card(
     seller_block = ""
     if seller_name:
         initial = esc(seller_name[:1].upper())
-        avatar_url = mw._clean(row.get("seller_avatar_url"))
+        logo_url = seller_identity.store_logo_url(row)
         avatar = (
-            f'<img class="mkt-seller-avatar" src="{esc(avatar_url)}" alt="" loading="lazy" decoding="async">'
-            if avatar_url
+            f'<img class="mkt-seller-avatar" src="{esc(logo_url)}" alt="" loading="lazy" decoding="async">'
+            if logo_url
             else f'<span class="mkt-seller-avatar" aria-hidden="true">{initial}</span>'
         )
         if seller_href:
@@ -885,8 +896,8 @@ def render_discovery(
     badge_map = {int(r.get("id") or 0): mw.classify_badges(r) for r in page.items}
     badge_map = mw.suppress_uninformative_badges(badge_map)
 
-    # Derived per row rather than once for the page, because three of the four
-    # reasons to withhold the button are properties of the individual listing.
+    # Derived per row rather than once for the page, because every reason to
+    # withhold the button is a property of the individual listing.
     # `cart_count is None` is the caller's opt-out and suppresses every button,
     # which is what keeps a call site that never wired up the cart API from
     # sprouting controls that post to it.
@@ -897,7 +908,6 @@ def render_discovery(
             affordance, hidden_reason = mw.cart_affordance(
                 row,
                 price=row["price"],
-                signed_in=viewer.signed_in,
                 viewer_user_id=viewer.user_id,
                 variants=row.get("_variants") or (),
             )
@@ -910,8 +920,8 @@ def render_discovery(
             # on this page and the only image reliably above the fold.
             eager=(index == 0),
             cart=affordance,
-            # The one withheld reason that still renders something. The other
-            # four mean "this cannot be bought"; this one means "not in one tap",
+            # The one withheld reason that still renders something. The others
+            # mean "this cannot be bought"; this one means "not in one tap",
             # and sending the buyer to the picker is the correct answer to it.
             choose_options=(hidden_reason == mw.CART_HIDDEN_NEEDS_CHOICE),
         ))
@@ -1010,7 +1020,21 @@ def render_discovery(
     # catalogue" as the Marketplace's contents, and the department page would rank
     # for its own error message. The URL is still worth crawling later, so this
     # stays `noindex,follow` like the other three rather than becoming `nofollow`.
-    indexable = not filters.q and filters.page == 1 and known_category and not load_error
+    #
+    # ...and a fifth: a catalogue with nothing in it at all. A URL that answers
+    # 200 with no products on it is the soft-404 pattern Google names, and on a
+    # new deployment it is a real state rather than a hypothetical one. Keyed on
+    # `total_all`, the size of the whole eligible catalogue, and deliberately not
+    # on the post-filter result count — an existing department that happens to be
+    # out of stock today is a real page that should keep its ranking, which is
+    # the distinction the `known_category` check above already draws.
+    indexable = (
+        not filters.q
+        and filters.page == 1
+        and known_category
+        and not load_error
+        and total_all > 0
+    )
     robots_extra = "" if indexable else "noindex,follow"
 
     return RenderedPage(
@@ -1031,6 +1055,7 @@ def render_discovery(
             if item
         ),
         assets_html=assets_html(),
+        listed_ids=tuple(int(row.get("id") or 0) for row in page.items),
     )
 
 
@@ -1047,6 +1072,15 @@ def _crumbs_html(crumbs: Sequence[tuple[str, str]], filters: Filters) -> str:
 
 
 def assets_html() -> str:
+    """The stylesheet and script this module's own bodies depend on.
+
+    Deliberately *not* the `pulseApi`/`toast` runtime, even though
+    `pulse_marketplace.js` wants `window.toast`. That pair belongs to whichever
+    document wraps this body -- `pulse_social_shell` and `public_document` both
+    emit it -- and putting it here too meant a member viewing the grid fetched
+    and ran it twice, once from each. A page declares its own assets; a frame
+    declares the runtime every page it wraps can assume.
+    """
     return (
         f'<link rel="stylesheet" href="{CSS_HREF}">'
         f'<script src="{JS_SRC}" defer></script>'
@@ -1277,18 +1311,24 @@ def seller_card(
 
     No rating, no response time, no "Trusted Seller", no join date: there is no
     review table, no response-time metric and no verified-merchant tier that a
-    buyer-facing claim could be drawn from. The seller's store name, their
-    handle, and how many other products they have listed are real, and that is
-    what appears.
+    buyer-facing claim could be drawn from. The seller's store name, their logo,
+    and how many other products they have listed are real, and that is what
+    appears.
+
+    All three are *store* facts. The handle used to appear here too, as
+    "@roody" under the shop name, and the logo used to be the account holder's
+    profile picture; both are personal identity on a commercial surface, which
+    is what ``services/marketplace_seller_identity`` exists to keep out. The
+    handle is still selected -- "Message seller" routes on it -- and is now
+    only ever used as a URL.
     """
     name = mw._clean(row.get("seller_store_name")) or "PulseSoc seller"
-    username = mw._clean(row.get("seller_username"))
     seller_id = int(row.get("seller_user_id") or 0)
     initial = esc(name[:1].upper())
-    avatar_url = mw._clean(row.get("seller_avatar_url"))
+    logo_url = seller_identity.store_logo_url(row)
     figure = (
-        f'<figure class="mkt-seller-figure"><img src="{esc(avatar_url)}" alt="" loading="lazy" decoding="async"></figure>'
-        if avatar_url
+        f'<figure class="mkt-seller-figure"><img src="{esc(logo_url)}" alt="" loading="lazy" decoding="async"></figure>'
+        if logo_url
         else f'<figure class="mkt-seller-figure" aria-hidden="true">{initial}</figure>'
     )
     # The store name links to the seller's profile, but only for a signed-in
@@ -1297,6 +1337,7 @@ def seller_card(
     # visitor who most needs to see products — a login wall instead of a
     # destination. Plain text is the honest treatment when there is nowhere
     # this viewer can actually go.
+    username = mw._clean(row.get("seller_username"))
     href = store_href or (f"/pulse/u/{mw.url_quote(username)}" if username and viewer.signed_in else "")
     name_html = (
         f'<a class="mkt-seller-name" href="{esc(href)}">{esc(name)}</a>'
@@ -1304,8 +1345,6 @@ def seller_card(
         else f'<span class="mkt-seller-name">{esc(name)}</span>'
     )
     meta_bits: list[str] = []
-    if username:
-        meta_bits.append(f"@{username}")
     if listing_count > 1:
         meta_bits.append(f"{listing_count} products listed")
     meta = (
@@ -1483,6 +1522,11 @@ def render_product(
     """
     listing_id = int(listing.get("id") or 0)
     title = mw._clean(listing.get("title")) or "Marketplace listing"
+    # `title` stays the canonical string and keeps going to `<title>`, `og:title`
+    # and the structured data, because that is what the listing is called and
+    # what a search engine should match. `heading`/`qualifier` are the same text
+    # re-divided for a reader, never a different text.
+    heading, qualifier = mw.display_title(title)
     canonical = product_path(listing_id)
 
     price = mw.derive_price(listing, variants)
@@ -1540,6 +1584,15 @@ def render_product(
         in_stock = any(view.available for view in views)
     elif stock_text:
         in_stock = "out of stock" not in stock_text.lower()
+    else:
+        # `stock_text` is empty for a course, a download or any other type with
+        # nothing to count, and that silence is right on the page -- "In stock"
+        # against a course tells a reader nothing. It is not right in the
+        # `Offer`, where `availability` is a required property and its absence
+        # reads as unknown rather than as not-applicable. So the structured
+        # claim falls back to the lifecycle rule `public_sql` already filtered
+        # this row on, rather than to the sentence a human was shown.
+        in_stock = marketplace_listing_lifecycle.inventory_available(listing)
 
     badges = mw.classify_badges(listing)
     crumbs = mw.category_crumbs(listing.get("category"))
@@ -1550,7 +1603,11 @@ def render_product(
         crumb_items.append(
             f'<li><a href="{esc(BASE_PATH)}?category={esc(slug)}">{esc(label)}</a></li>'
         )
-    crumb_items.append(f'<li aria-current="page">{esc(title)}</li>')
+    # The heading, not the canonical title: this crumb sits directly above the
+    # `<h1>`, and a 160-character supplier title rendered here was the same
+    # sentence twice, the first time in 12px grey. It is still truncated in CSS
+    # like its siblings -- a breadcrumb is a trail, not a second headline.
+    crumb_items.append(f'<li aria-current="page">{esc(heading)}</li>')
     crumbs_html = (
         '<nav aria-label="Breadcrumb"><ol class="mkt-crumbs">'
         + "".join(crumb_items)
@@ -1600,7 +1657,6 @@ def render_product(
         affordance, hidden_reason = mw.cart_affordance(
             listing,
             price=price,
-            signed_in=viewer.signed_in,
             viewer_user_id=viewer.user_id,
             variants=variants,
             # The selection this page resolved, which is the whole difference
@@ -1674,10 +1730,22 @@ def render_product(
                 f'<button class="{contact_class}" type="button" data-mkt-contact="{seller_id}"'
                 f" hidden>Message seller</button>"
             )
-    elif not viewer.signed_in:
+    elif not viewer.signed_in and seller_id:
+        # Not "Sign in to add to cart". That was the correct label while the
+        # cart route answered 401 to anyone without a session; it is a lie now
+        # that a visitor gets a cart of their own, and it is the exact shape
+        # this work exists to remove -- a sign-in wall standing between a
+        # shopper and a purchase they could have completed.
+        #
+        # Messaging is a different matter and genuinely needs an account: a
+        # conversation has two named sides and a visitor has no name. So the
+        # sign-in link survives here, pointed at the thing it actually unlocks.
+        # `contact_class` keeps it secondary whenever there is a buy action, so
+        # it cannot outrank Add to cart; when the listing cannot be bought at
+        # all there is no action for it to outrank.
         actions.append(
-            f'<a class="mkt-cta" href="/login?next={esc(canonical)}">'
-            f"Sign in to buy</a>"
+            f'<a class="{contact_class}" href="/login?next={esc(canonical)}">'
+            f"Sign in to message seller</a>"
         )
     elif viewer.owns(seller_id):
         actions.append(
@@ -1771,8 +1839,10 @@ def render_product(
     info = (
         '<div class="mkt-detail-info">'
         f'<header class="mkt-head">'
-        f'<div class="mkt-head-row"><h1 class="mkt-title">{esc(title)}</h1>'
-        f"{cart_link_html(cart_count)}</div>{badge_row}</header>"
+        f'<div class="mkt-head-row"><h1 class="mkt-title">{esc(heading)}</h1>'
+        f"{cart_link_html(cart_count)}</div>"
+        + (f'<p class="mkt-title-qualifier">{esc(qualifier)}</p>' if qualifier else "")
+        + f"{badge_row}</header>"
         f"{buy_panel}"
         f"{app_cta_html}"
         f"{seller_card(listing, viewer=viewer, store_href=store_href, listing_count=seller_listing_count)}"
@@ -1875,10 +1945,26 @@ def head_html(page: RenderedPage, *, origin: str = mw.PUBLIC_ORIGIN) -> str:
     without a Flask client.
     """
     canonical = f"{origin}{page.canonical_path}"
+    # The positive directive is asked for, not written here.
+    #
+    # This line used to spell out `index,follow,max-image-preview:large`, which
+    # is a shorter directive than `search_visibility.classify` issues for the
+    # same path -- it drops `max-snippet:-1` and `max-video-preview:-1`, the two
+    # that tell Google it may show a full snippet and a full video preview
+    # rather than its conservative defaults. Every other indexable page on the
+    # site gets those through `search_visibility.robots_meta`; the storefront
+    # silently opted out of them by restating the policy from memory. Asking the
+    # module that owns it is the only way the two stay equal.
+    #
+    # `robots_extra` still wins, because a renderer that has decided this
+    # particular page is a soft 404 knows something about the row that a
+    # path-shaped policy cannot. `page.indexable` is the page-shape question and
+    # `robots_extra` the per-row one, which is why both exist.
     robots = (
         page.robots_extra
         if page.robots_extra
-        else ("index,follow,max-image-preview:large" if page.indexable else "noindex,nofollow")
+        else (search_visibility.robots_meta(page.canonical_path)
+              if page.indexable else search_visibility.NOINDEX_NOFOLLOW)
     )
     tags = [
         f'<link rel="canonical" href="{esc(canonical)}">',
@@ -1934,30 +2020,83 @@ def head_html(page: RenderedPage, *, origin: str = mw.PUBLIC_ORIGIN) -> str:
 # one stylesheet and one set of structured data, and puts the entire difference
 # between the two experiences in the frame rather than in the content.
 
+# Light, because the storefront it frames is light.
+#
+# This block used to paint a dark gradient page and dark-theme chrome, which
+# was right when it was written against the rest of the site and wrong for the
+# one subtree it actually wraps: `.mkt` resolves the native app's *light* store
+# palette, so the result was a white content column inset in a near-black page
+# — a dark band down either side at every viewport from 320px up, and the
+# widest at desktop. Painting the document in the storefront's own surface is
+# the fix; colouring the gutters would only have moved the seam.
+#
+# Every colour below is a `--store-*` token rather than a literal. The tokens
+# are declared on `body.mkt-public` by `pulse_marketplace.css`, which this
+# document links, and `var()` resolves against the cascade on the element — so
+# these rules read the same transcription of `storeLight.ts` that the cards do
+# and cannot drift from them. The fallbacks are the matching light values, for
+# the one case that would otherwise paint dark text on dark: the stylesheet
+# failing to load.
+#
+# The masthead stays dark on purpose. A black header over a light catalogue is
+# what the native store does and what the Business surfaces lock to; it is not
+# a leftover of the dark document.
 _PUBLIC_BASE_CSS = (
-    ":root{color-scheme:dark}"
     "*{box-sizing:border-box}"
     "html,body{max-width:100%;overflow-x:hidden}"
-    "body{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),"
-    "linear-gradient(145deg,#050b14,#081421);color:#f2fbff;"
+    "body{margin:0;background:var(--store-bg-page,#eaeded);"
+    "color:var(--store-text-primary,#0f1111);"
     "font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;"
     "-webkit-font-smoothing:antialiased}"
     ".mkt-doc{width:min(100% - 24px,1180px);margin:0 auto;"
-    "padding:max(16px,env(safe-area-inset-top)) 0 calc(56px + env(safe-area-inset-bottom))}"
-    ".mkt-doc-bar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;"
-    "justify-content:space-between;padding:12px 0 18px}"
+    "padding:0 0 calc(56px + env(safe-area-inset-bottom))}"
+    # Full-bleed so the dark masthead reaches both edges of the window rather
+    # than ending where the centred measure does, which is the same seam this
+    # block exists to remove.
+    ".mkt-doc-bar{background:var(--store-bg-header,#0b0b0c);"
+    "margin:0 calc(50% - 50vw) 18px;padding:max(10px,env(safe-area-inset-top)) "
+    "calc(50vw - 50% + 4px) 10px;display:flex;flex-wrap:wrap;align-items:center;"
+    "gap:12px;justify-content:space-between}"
     ".mkt-doc-brand{display:inline-flex;align-items:center;gap:8px;font-weight:900;"
-    "font-size:18px;color:#f2fbff;text-decoration:none;letter-spacing:-.01em}"
+    "font-size:18px;color:var(--store-text-on-dark,#fff);text-decoration:none;"
+    "letter-spacing:-.01em}"
     ".mkt-doc-bar nav{display:flex;flex-wrap:wrap;gap:8px}"
-    ".mkt-doc-bar nav a{font-size:13px;font-weight:700;text-decoration:none;color:#cfe9f5;"
-    "border:1px solid rgba(110,223,246,.22);border-radius:999px;padding:7px 13px}"
-    ".mkt-doc-bar nav a:hover{border-color:rgba(110,223,246,.5)}"
-    ".mkt-doc-bar nav a.is-primary{background:linear-gradient(135deg,#32e6b3,#61d8ff);"
-    "color:#06101b;border-color:transparent}"
-    ".mkt-doc-foot{margin-top:40px;padding-top:18px;border-top:1px solid rgba(110,223,246,.16);"
-    "font-size:13px;color:#9fb5c0;display:grid;gap:8px}"
-    ".mkt-doc-foot a{color:#61d8ff}"
-    ".mkt-doc a:focus-visible,.mkt-doc button:focus-visible{outline:2px solid #61d8ff;outline-offset:2px}"
+    ".mkt-doc-bar nav a{font-size:13px;font-weight:700;text-decoration:none;"
+    "color:var(--store-text-on-dark-muted,#c7cdd3);"
+    "border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:7px 13px}"
+    ".mkt-doc-bar nav a:hover{border-color:rgba(255,255,255,.5);"
+    "color:var(--store-text-on-dark,#fff)}"
+    ".mkt-doc-bar nav a.is-primary{background:linear-gradient("
+    "135deg,var(--store-cta-from,#2ee6a8),var(--store-cta-to,#22c48d));"
+    "color:var(--store-cta-text,#04231a);border-color:transparent}"
+    ".mkt-doc-foot{margin-top:40px;padding-top:18px;"
+    "border-top:1px solid var(--store-border-hairline,#d5d9d9);"
+    "font-size:13px;color:var(--store-text-muted,#565959);display:grid;gap:10px}"
+    ".mkt-doc-foot a{color:var(--store-text-link,#0a7050)}"
+    ".mkt-doc-links{display:flex;flex-wrap:wrap;gap:8px 18px}"
+    ".mkt-doc a:focus-visible,.mkt-doc button:focus-visible{"
+    "outline:2px solid var(--store-select-border,#189669);outline-offset:2px}"
+)
+
+
+#: The four commerce policy pages, plus the company pages a shopper looks for
+#: before handing over a card. Duplicated from `_public_shell.html`'s footer
+#: rather than imported because that is a Jinja template and this is a Python
+#: string builder; `tests/test_marketplace_public_pages.py` asserts the two
+#: carry the same commerce set, which is the part Merchant Center's review
+#: looks for from the landing page. A sitemap is not a path a reviewer follows.
+_PUBLIC_FOOTER_LINKS = (
+    ("/", "Home"),
+    ("/app", "iPhone app"),
+    ("/about", "About"),
+    ("/help", "Help"),
+    ("/terms", "Terms"),
+    ("/privacy", "Privacy"),
+    ("/support", "Support"),
+    ("/returns", "Returns"),
+    ("/refund-policy", "Refunds"),
+    ("/shipping", "Shipping"),
+    ("/contact", "Contact"),
 )
 
 
@@ -1966,7 +2105,8 @@ def public_document(
     *,
     origin: str = mw.PUBLIC_ORIGIN,
     sign_in_href: str = "/login",
-    app_cta_html: str = "",
+    head_extra: str = "",
+    extra_html: str = "",
 ) -> str:
     """The signed-out, indexable document for one storefront page.
 
@@ -1975,8 +2115,62 @@ def public_document(
     not there — nothing else. All commerce markup is `page.body_html`, byte for
     byte the same string the member shell receives, so the two experiences
     cannot drift apart in content and there is no second storefront to maintain.
+
+    `mkt-public` on the body is what stops this document framing the storefront
+    in the wrong colour. The storefront subtree is deliberately light (see the
+    `.mkt` palette block in `pulse_marketplace.css`), this document's base rules
+    are dark, and a light panel inset in a dark page paints a dark band down
+    either side of the content — measured at every viewport from 320px up. The
+    class lets that stylesheet claim the page surface too, scoped so it cannot
+    reach a document that is not a storefront.
+
+    `head_extra` is for tags the route owns rather than the renderer: today the
+    Smart App Banner, whose app-id comes from the App Store URL that
+    `bot.app_link_context` already treats as the single authority.
+
+    `extra_html` lands after the body, and mirrors the parameter of the same
+    name on `bot._marketplace_member_storefront_reply`. It is for markup that
+    belongs to the page but not inside it — today the delivery estimate's
+    stylesheet and the script that fills the pending sentence in. The renderer
+    cannot place those: `delivery_html` arrives already rendered precisely so
+    this module holds no opinion about delivery, and the assets are the route's
+    to version.
+
+    There is deliberately no `app_cta_html` here, though an earlier draft had
+    one. `render_discovery` and `render_product` already place that CTA inside
+    the body, because the member shell receives nothing but the body and the
+    promotion has to reach that reader too. A second slot in this wrapper is
+    therefore not a placement choice, it is a second copy — which is what the
+    route hit the first time it passed one. `extra_html` is not that case and
+    the difference is worth stating: the renderer never emits those assets for
+    anyone, so this slot is the only one, not the second.
     """
     lang = "en"
+    footer_links = "".join(
+        f'<a href="{esc(href)}">{esc(label)}</a>' for href, label in _PUBLIC_FOOTER_LINKS
+    )
+    # Setting `mkt-public` below is a promise that the `--store-*` palette is
+    # readable on this document, and until now only pages that happened to pass
+    # `assets_html()` kept it: the class was set unconditionally, the stylesheet
+    # declaring it was not. `/pulse/cart` is the first body to arrive without
+    # that bundle and it found every token undefined -- the page still looked
+    # light only because `_PUBLIC_BASE_CSS` spells its own fallbacks inline, and
+    # a wrapped body reading `var(--store-text-primary)` got nothing.
+    #
+    # A frame declares what every page it wraps may assume -- the same rule
+    # `assets_html` states for the runtime -- and a palette named by a class
+    # this function sets is the frame's, not the page's. Linking the whole
+    # stylesheet rather than copying the tokens inline keeps one declaration
+    # site, which is what `tests/test_marketplace_light_parity.py` scans and
+    # what stops a second copy drifting from `storeLight.ts`. Nothing else in
+    # that file can reach a non-storefront body: every selector in it is scoped
+    # under `.mkt`.
+    #
+    # Skipped when the page already brought it, so a grid or product document
+    # is unchanged rather than carrying the link twice.
+    palette_html = (
+        "" if CSS_HREF in page.assets_html else f'<link rel="stylesheet" href="{CSS_HREF}">'
+    )
     return (
         "<!doctype html>"
         f'<html lang="{lang}">'
@@ -1985,11 +2179,22 @@ def public_document(
         '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
         f"<title>{esc(page.title)}</title>"
         f"{head_html(page, origin=origin)}"
+        f"{head_extra}"
         '<link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=storefront-20260926a">'
         f"<style>{_PUBLIC_BASE_CSS}</style>"
+        # The frame's job, not the page's: bodies here call `pulseApi()` and
+        # `toast()` by bare name, and the other wrapper these same bodies go
+        # out through defines both. A page that had to remember to ask would
+        # eventually forget, and the failure is a silent ReferenceError.
+        f"{pulse_runtime_assets.runtime_html()}"
+        # Ahead of the page's own assets and never both: a page that declares
+        # the stylesheet keeps it in exactly the position it had, so the
+        # cascade order between it and the inline base rules does not depend
+        # on which document a body was wrapped in.
+        f"{palette_html}"
         f"{page.assets_html}"
         "</head>"
-        "<body>"
+        '<body class="mkt-public">'
         '<div class="mkt-doc">'
         '<header class="mkt-doc-bar">'
         f'<a class="mkt-doc-brand" href="{esc(BASE_PATH)}">PulseSoc Marketplace</a>'
@@ -1999,7 +2204,6 @@ def public_document(
         f'<a class="is-primary" href="{esc(sign_in_href)}">Sign in</a>'
         "</nav>"
         "</header>"
-        f"{app_cta_html}"
         "<main>"
         f"{page.body_html}"
         "</main>"
@@ -2007,7 +2211,9 @@ def public_document(
         "<p>Products are listed by independent PulseSoc sellers. "
         f'<a href="{esc(BASE_PATH)}">Browse the Marketplace</a> or '
         '<a href="/pulse">join PulseSoc</a> to message a seller.</p>'
+        f'<nav class="mkt-doc-links" aria-label="PulseSoc">{footer_links}</nav>'
         "</footer>"
         "</div>"
+        f"{extra_html}"
         "</body></html>"
     )

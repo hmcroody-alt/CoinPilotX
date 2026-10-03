@@ -388,6 +388,51 @@ MEMBER_ROUTES_OPENED_ON_PURPOSE = {
         "field, because /api/pulse/marketplace/search still requires a session.",
 }
 
+#: The guest cart, six endpoints that share one argument.
+#:
+#: `_require_user()` was a real gate and it is really gone. What has to be read
+#: carefully is what it was gating. It was not protecting a resource that
+#: belongs to the site; it was answering "whose cart is this?" by refusing
+#: everyone who had no answer. A visitor now has an answer -- an owner id minted
+#: by `services/marketplace_guest_customer`, counted *down* from -1,000,000 so
+#: it can never collide with a `users.id`, held only by an HttpOnly cookie the
+#: server set, and unguessable (32 random bytes).
+#:
+#: So the ownership check survives in full; `_cart_owner()` is where it lives
+#: now, and every line-scoped route still filters on it. The three specific
+#: things that would make this unsafe, and why none of them hold:
+#:
+#: * **Reading someone else's cart.** The owner predicate is unchanged --
+#:   `WHERE c.user_id = ?`, with the id resolved from the cookie rather than the
+#:   session. A forged or stale token resolves to `0`, which matches no row.
+#: * **Enumerating line ids.** A line that is not yours 404s, which is the same
+#:   answer a member got for a member's line; the routes do not distinguish "no
+#:   such line" from "not yours".
+#: * **Minting identities by crawling.** Only `cart_add` allocates, only after
+#:   every other refusal, and only when the response is a success. A page load,
+#:   a `GET /cart` and a bot sweeping the grid all allocate nothing.
+#:
+#: No read is opened that a member did not already have, which is the bar this
+#: list sets: a cart contains only what its own owner put in it. `/checkout`
+#: takes money and still requires an account -- it is not in this list, and
+#: `test_the_deliberate_openings_list_does_not_outlive_its_entries` is what will
+#: notice if it ever joins.
+_GUEST_CART_OPENING = (
+    "Guest cart. Ownership moved from the session to an unguessable HttpOnly "
+    "cookie resolving to an owner id disjoint from users "
+    "(services/marketplace_guest_customer); _cart_owner() enforces it on every "
+    "route and an absent or forged token matches no row. Opens no read a member "
+    "did not already have. Allocation happens only on a successful add, never on "
+    "a read. /api/pulse/marketplace/cart/checkout still requires an account."
+)
+MEMBER_ROUTES_OPENED_ON_PURPOSE.update({
+    f"pulse_marketplace_cart.{name}": _GUEST_CART_OPENING
+    for name in (
+        "cart_list", "cart_add", "cart_update", "cart_remove",
+        "cart_confirm_price", "cart_validate",
+    )
+})
+
 
 def test_member_routes_do_not_become_public_routes():
     """A member route going fully public, which evidence rank cannot see.

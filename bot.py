@@ -327,6 +327,9 @@ from services import (
     intelligence as intelligence_service,
     market_data as market_data_service,
     marketplace_fulfillment as marketplace_fulfillment,
+    marketplace_guest_cart_merge as marketplace_guest_cart_merge,
+    marketplace_guest_customer as marketplace_guest_customer,
+    pulse_runtime_assets as pulse_runtime_assets,
     marketplace_listing_types as marketplace_listing_types_service,
     marketplace_listing_lifecycle as marketplace_listing_lifecycle,
     marketplace_order_fulfillment as marketplace_order_fulfillment,
@@ -3092,6 +3095,12 @@ def add_pwa_headers(response):
         logging.debug("PERF_REQUEST_LOG_SKIPPED path=%s error=%s", request.path, exc)
     if getattr(g, "persistent_session_clear_cookie", False):
         clear_persistent_session_cookie(response)
+    if getattr(g, "pulse_guest_cart_clear_cookie", False):
+        # The guest cart behind this key is now the member's, so the key opens
+        # nothing. Set only after the merge committed -- see
+        # `absorb_guest_cart_into_the_account_that_just_signed_in`. `path` must
+        # match the one it was written with or the delete silently misses.
+        response.delete_cookie(marketplace_guest_customer.COOKIE_NAME, path="/")
     rotated_refresh_token = getattr(g, "persistent_session_refresh_token", "")
     if rotated_refresh_token:
         set_persistent_session_cookie(response, rotated_refresh_token)
@@ -4312,6 +4321,79 @@ def restore_account_from_persistent_cookie():
     if token_payload.get("refresh_token"):
         g.persistent_session_refresh_token = token_payload["refresh_token"]
     return user["user_id"]
+
+
+@webhook_app.before_request
+def absorb_guest_cart_into_the_account_that_just_signed_in():
+    """A shopper who signs in holding a guest cart keeps it.
+
+    Keyed on a *state* -- this browser carries an unclaimed guest cart key and
+    this request is authenticated -- rather than on the sign-in *event*. There
+    are six places that write ``session["account_user_id"]`` (password login,
+    signup, mobile login, mobile signup, session restore, cookie refresh) and a
+    seventh will be added by someone who has never read this module. Hooking the
+    event means being wrong the moment that happens, and being wrong here means
+    a shopper watching their cart empty itself at the exact moment they did what
+    the site asked them to do.
+
+    Keyed on state, it is also self-healing: nothing is cleared until the merge
+    has committed, so a failed attempt simply happens again on the next request.
+
+    Costs an authenticated member nothing. The guard is a cookie lookup, and the
+    cookie is absent for every request that is not within one round trip of a
+    guest signing in -- no session read, no connection taken from a pool this
+    repo has already been bitten by. Even a browser that somehow keeps the
+    cookie pays one indexed lookup on a unique column: a claimed token resolves
+    to nothing and `merge` returns `stale` without writing.
+    """
+    token = request.cookies.get(marketplace_guest_customer.COOKIE_NAME)
+    if not token:
+        return None
+    try:
+        user_id = account_user_id()
+    except Exception:
+        return None
+    if not user_id:
+        return None
+    conn = None
+    try:
+        conn = db()
+        cur = conn.cursor()
+        outcome = marketplace_guest_cart_merge.merge(
+            # `timespec="seconds"` matches `marketplace_cart_routes._now`, which
+            # wrote every other `updated_at` in this table.
+            cur, token, user_id,
+            datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        )
+        if outcome.get("ok"):
+            conn.commit()
+        else:
+            conn.rollback()
+    except Exception:
+        logging.exception("GUEST_CART_MERGE_HOOK_FAILED user_id=%s", user_id)
+        try:
+            if conn is not None:
+                conn.rollback()
+        except Exception:
+            pass
+        return None
+    finally:
+        try:
+            if conn is not None:
+                conn.close()
+        except Exception:
+            pass
+    # Only once the merge is on disk. Clearing it on a rolled-back attempt would
+    # throw away the only handle on those lines; leaving it costs one more
+    # lookup on the next request, which then finds a claimed token and stops.
+    if outcome.get("ok"):
+        g.pulse_guest_cart_clear_cookie = True
+        if outcome.get("moved") or outcome.get("combined"):
+            logging.info(
+                "GUEST_CART_MERGED user_id=%s moved=%s combined=%s raised=%s",
+                user_id, outcome["moved"], outcome["combined"], outcome["raised"],
+            )
+    return None
 
 
 def _bearer_refused(reason):
@@ -31142,6 +31224,16 @@ def marketplace_public_listings(limit=500):
     sitemap and a feed that are both valid, green and half the size they should
     be.
 
+    Variants are loaded and attached as `listing["variants"]` for a second
+    eligibility question, and only this loader answers it. `price_label` is what
+    the feed publishes; `marketplace_listing_variants.price_cents` is what the
+    product page shows and what checkout charges. When the two disagree the feed
+    is advertising a number the buyer will not be asked to pay, so
+    `marketplace_seo.price_label_contradicts_variants` drops the row from
+    Shopping while leaving it in Search. That check reads the key set here and
+    is inert without it -- which is why the variant load belongs in the one
+    query both surfaces share rather than in the feed route.
+
     Returns `(row, listing)` pairs. The raw row is carried alongside the payload
     because the sitemap needs `updated_at` for its `lastmod` and the payload does
     not preserve it.
@@ -31161,8 +31253,9 @@ def marketplace_public_listings(limit=500):
               AND {discovery_visible_sql('u')}
             ORDER BY l.id DESC LIMIT ?""", (int(limit),))
         rows = [dict(row) for row in cur.fetchall()]
-        media_by_listing = pulse_marketplace_media_rows_for_listings(
-            cur, [int(row.get("id") or 0) for row in rows])
+        listing_ids = [int(row.get("id") or 0) for row in rows]
+        media_by_listing = pulse_marketplace_media_rows_for_listings(cur, listing_ids)
+        variants_by_listing = marketplace_storefront_variants(cur, listing_ids)
         conn.close()
     except Exception:
         # Same reasoning as the posts sitemap: an empty `<urlset>` -- or an empty
@@ -31173,10 +31266,13 @@ def marketplace_public_listings(limit=500):
         logging.exception("MARKETPLACE_PUBLIC_QUERY_FAILED serving an empty list")
         return []
 
-    return [
-        (row, pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), [])))
-        for row in rows
-    ]
+    pairs = []
+    for row in rows:
+        listing_id = int(row.get("id") or 0)
+        listing = pulse_marketplace_listing_payload(row, media_by_listing.get(listing_id, []))
+        listing["variants"] = variants_by_listing.get(listing_id, [])
+        pairs.append((row, listing))
+    return pairs
 
 
 def marketplace_feed_listings(limit=500):
@@ -50943,7 +51039,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
   </div>
 </section>
 """
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=cache-sweep-20260930a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=apps-menu-width-20260927a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=cache-sweep-20260930a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css?v=bare-asset-tokens-20260930a"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css?v=reels-desktop-create-20260929a"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=desktop-dock-20260927a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=video-action-fit-20260927i"><link rel="stylesheet" href="/static/css/pulse-commerce-attachment.css?v=commerce-attachment-20260928a">{app_promotion.assets_html()}<style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:var(--text-primary)}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}{app_promotion.marketplace_note_html()}<div class="toast" id="toast"></div><script src="/static/js/time.js?v=bare-asset-tokens-20260930a"></script><script src="/static/js/pulseshell_bridge.js?v=cache-sweep-20260930a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script><script data-pulse-reaction-catalog>window.PULSE_REACTION_CATALOG={json.dumps(pulse_reactions.catalog_payload())};window.PULSE_REACTION_TRAY_SIZE={pulse_reactions.TRAY_SIZE};</script><script src="/static/js/pulse_reaction_system.js?v=cache-sweep-20260928a"></script><script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script><script src="/static/js/pulse_media_renderer.js?v=cache-sweep-20260930a"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script src="/static/js/pulse_commerce_card.js?v=commerce-i18n-20260929a"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=cache-sweep-20260930a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=apps-menu-width-20260927a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=cache-sweep-20260930a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css?v=bare-asset-tokens-20260930a"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css?v=reels-desktop-create-20260929a"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=desktop-dock-20260927a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=video-action-fit-20260927i"><link rel="stylesheet" href="/static/css/pulse-commerce-attachment.css?v=commerce-attachment-20260928a">{app_promotion.assets_html()}<style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;pointer-events:none;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:var(--text-primary)}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}{app_promotion.marketplace_note_html()}<div class="toast" id="toast"></div><script src="/static/js/time.js?v=bare-asset-tokens-20260930a"></script><script src="/static/js/pulseshell_bridge.js?v=cache-sweep-20260930a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script><script data-pulse-reaction-catalog>window.PULSE_REACTION_CATALOG={json.dumps(pulse_reactions.catalog_payload())};window.PULSE_REACTION_TRAY_SIZE={pulse_reactions.TRAY_SIZE};</script><script src="/static/js/pulse_reaction_system.js?v=cache-sweep-20260928a"></script><script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927b" defer></script><script src="/static/js/pulse_media_renderer.js?v=cache-sweep-20260930a"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script src="/static/js/pulse_commerce_card.js?v=commerce-i18n-20260929a"></script>{pulse_runtime_assets.runtime_html()}<script>const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -59014,12 +59110,19 @@ MARKETPLACE_STOREFRONT_SCAN_LIMIT = 600
 #: The columns the storefront needs on top of `marketplace_listings.*`.
 #:
 #: `seller_username` is what makes "Message seller" work without JavaScript --
-#: it is the query the messenger's people search takes. `seller_avatar_url` is
-#: the store avatar on the seller card. Both come from `users`, whose primary
-#: key is `user_id`, not `id`.
-MARKETPLACE_STOREFRONT_SELLER_COLUMNS = """
+#: it is the query the messenger's people search takes, and it comes from
+#: `users`, whose primary key is `user_id`, not `id`. It is a *routing* value
+#: and is deliberately not rendered: a handle is personal identity and a buyer
+#: is transacting with a store.
+#:
+#: The logo comes from `marketplace_sellers`, not from `u.avatar_url`. This
+#: projection used to alias the account holder's profile picture as
+#: `seller_avatar_url` and call it "the store avatar" -- see
+#: `services/marketplace_seller_identity` for why that was the same leak as the
+#: personal *name*, and why there is no fallback from one to the other.
+MARKETPLACE_STOREFRONT_SELLER_COLUMNS = f"""
                    COALESCE(u.username,'') AS seller_username,
-                   COALESCE(u.avatar_url,'') AS seller_avatar_url,
+                   {marketplace_seller_identity.store_logo_select()},
                    COALESCE(ms.status,'missing') AS seller_status"""
 
 
@@ -59160,6 +59263,36 @@ def marketplace_storefront_cart_count(cur, user_id):
         return None
 
 
+def marketplace_storefront_cart_state(cur, user):
+    """The header badge for whoever is asking -- member or visitor.
+
+    `None` still means "the cart could not be read", and the renderers treat it
+    as the caller withholding the whole cart UI, Add to cart included. A visitor
+    who has never added anything is `0`: they have an empty cart, not an
+    unreadable one.
+
+    That distinction is the whole of this function. The page used to answer
+    `None` for every visitor, on the then-true grounds that a cart was owned by
+    a `users` row and a visitor had none -- so the buttons were withheld and the
+    header's cart link omitted. `marketplace_guest_customer` gives a visitor an
+    owner id, so the honest answer is now a count like any other.
+
+    No allocation happens here. A guest customer is minted by *adding* to a
+    cart, never by rendering a page; `owner_id_for_token` answers `0` for a
+    visitor with no cookie, which is an empty cart and the right one.
+    """
+
+    if user:
+        return marketplace_storefront_cart_count(cur, user.get("user_id"))
+    if not marketplace_cart_table_exists(cur):
+        return 0
+    owner_id = marketplace_guest_customer.owner_id_for_token(
+        cur, request.cookies.get(marketplace_guest_customer.COOKIE_NAME))
+    if not owner_id:
+        return 0
+    return marketplace_storefront_cart_count(cur, owner_id)
+
+
 def marketplace_storefront_payloads(cur, rows):
     """Run listing rows through the same serializer the app reads.
 
@@ -59254,7 +59387,7 @@ def marketplace_storefront_product_context(cur, row):
     return related, related_variants, seller_listing_count
 
 
-def marketplace_storefront_app_cta(destination, resource_id=None):
+def marketplace_storefront_app_cta(destination, resource_id=None, store_badge=False):
     """The "Open in PulseSoc" affordance, as an addition and never a redirect.
 
     The website is the canonical, indexable surface for a product now, so this is
@@ -59283,14 +59416,28 @@ def marketplace_storefront_app_cta(destination, resource_id=None):
     design and the member is offered the choice -- which means this fix needs no
     AASA change, and so cannot disturb the Stripe onboarding paths that share
     that file.
+
+    `store_badge` adds the App Store link beside it, for the signed-out document
+    where the reader may not have the app at all. The two are different promises
+    and the store link is only ever allowed alongside the contextual one, never
+    instead of it -- the same rule `_app_link_cta.html` states for the templates
+    this document replaces. A member already has the app installed often enough
+    that the badge is noise on their page, so it stays off by default.
     """
 
     href = app_links.open_interstitial_url(destination, resource_id, "web")
     label = app_links.destination_label(destination, "Open in PulseSoc")
+    badge = ""
+    if store_badge:
+        badge = (
+            f' <a href="{html_escape(app_links.app_store_url())}" rel="noopener"'
+            f' data-app-link="app-store">{html_escape(app_promotion.APP_STORE_LABEL)}</a>'
+        )
     return (
         '<aside class="mkt-appcta">'
         f'<p>Prefer the app? <a href="{html_escape(href)}"'
-        f' data-app-link="{html_escape(destination)}">{html_escape(label)}</a></p>'
+        f' data-app-link="{html_escape(destination)}">{html_escape(label)}</a>'
+        f"{badge}</p>"
         "</aside>"
     )
 
@@ -59305,16 +59452,22 @@ def _marketplace_member_storefront_reply(page, status=200, extra_html=""):
     positions itself against the viewport is not part of a purchase panel, and
     threading it through `promote_html` would nest it inside one.
 
-    Member-only by design. The anonymous reader never reaches this function --
-    `_marketplace_public_index_response` and `_marketplace_public_product_response`
-    answer that reader, and they are the documents Google and Merchant Center
-    fetch. An earlier draft of this storefront served both audiences from one
-    `RenderedPage` through a public document of its own; that half was withdrawn
-    on integration rather than landed, because the public half already exists, is
-    indexed, and is the page the product feed is compared against. Two
-    implementations of one indexable page is how a feed and a page begin
-    disagreeing about a price, and that disagreement is a Merchant Center
-    misrepresentation finding rather than a rendering bug.
+    Member-only by design, but no longer the only wrapper around a storefront
+    page: `_marketplace_public_storefront_reply` below serves the same
+    `RenderedPage` to the anonymous reader through
+    `marketplace_storefront.public_document`.
+
+    That half was withdrawn once, on the objection that two implementations of
+    one indexable page is how a feed and a page begin disagreeing about a price,
+    and that such a disagreement is a Merchant Center misrepresentation finding
+    rather than a rendering bug. The objection was right about the risk and
+    wrong about which arrangement carried it. Two implementations was the
+    arrangement being *withdrawn to*: the member grid priced through
+    `marketplace_web.derive_price`, which reads variant rows, while the public
+    grid priced through `marketplace_seo.parse_price`, which reads only
+    `price_label` -- and four live listings disagreed between them, one of them
+    by $8.41 in the buyer's disfavour. One renderer for both audiences is what
+    makes that class of disagreement unrepresentable.
     """
 
     # `pulse_social_shell` returns a `Response` already -- wrapping it in a second
@@ -59340,6 +59493,79 @@ def _marketplace_member_storefront_reply(page, status=200, extra_html=""):
     # One URL, two documents, chosen by the session cookie. Without this a shared
     # cache may hand an anonymous reader the member frame -- which for a crawler
     # means being served the `noindex` copy of an indexable page.
+    response.headers["Vary"] = "Cookie"
+    return response
+
+
+def _marketplace_public_storefront_reply(
+        page, listings_by_id=None, status=200, extra_html=""):
+    """The same `RenderedPage`, wrapped for a reader with no session.
+
+    The entire difference between this and the member reply is the frame. The
+    body is `page.body_html` byte for byte, so the anonymous visitor and the
+    crawler see the catalogue the member sees -- the same cards, the same
+    derived prices, the same filters, sort and paging -- rather than a reduced
+    page that happens to live at the same URL.
+
+    `listings_by_id` is the payloads this request read, keyed by id. When it is
+    supplied and the page is the canonical unfiltered one, `index_schema_graph`
+    is attached on top of whatever the renderer already produced. The lookup is
+    by `page.listed_ids` rather than over the whole catalogue because the graph
+    must describe *this* document: the renderer filters, sorts and pages, and a
+    graph built from the pre-render list would name products the page does not
+    contain.
+
+    The gate is `canonical_path == BASE_PATH`, not merely `indexable`. A
+    department page is indexable too, but `index_schema_graph` hardcodes the
+    unfiltered URL as its `@id`, so emitting it there would publish one document
+    describing a different URL -- a self-contradiction a validator reports and a
+    crawler resolves by ignoring the page's own canonical.
+
+    `extra_html` matches the member reply's parameter of the same name and is
+    passed straight to `public_document`. Both wrappers need it for the same
+    reason: the delivery estimate's stylesheet and script belong to the page but
+    not inside the purchase panel, and the page says the same thing about
+    delivery to both readers.
+    """
+
+    rendered = []
+    for listing_id in page.listed_ids:
+        row = (listings_by_id or {}).get(listing_id)
+        if row:
+            rendered.append(row)
+    if listings_by_id is not None and page.canonical_path == marketplace_storefront.BASE_PATH:
+        # One `@graph` block rather than five loose nodes. `head_html` emits one
+        # <script> per entry in `jsonld`, and a bare `CollectionPage` with no
+        # `@context` of its own is not parseable schema -- the nodes also
+        # cross-reference each other by `@id`, which only resolves inside a
+        # shared graph.
+        page.jsonld = tuple(page.jsonld) + ({
+            "@context": "https://schema.org",
+            "@graph": marketplace_seo.index_schema_graph(rendered),
+        },)
+
+    response = webhook_app.make_response(marketplace_storefront.public_document(
+        page,
+        # The Smart App Banner is Safari's own affordance and costs the page
+        # nothing; `app_promotion` owns the app id so this route cannot name a
+        # second one. Deliberately not a body-level interstitial -- the brief
+        # forbids a barrier between a visitor and the catalogue, and iOS draws
+        # this one above the page rather than over it.
+        head_extra=app_promotion.smart_app_banner_meta(request.path),
+        extra_html=extra_html,
+    ))
+    response.headers["Content-Type"] = "text/html; charset=utf-8"
+    response.status_code = status
+    # Shared-cacheable, and the flag is the half that makes it stick:
+    # `add_pwa_headers` stamps `no-store` on every `/pulse/` response unless a
+    # route has declared the body carries nothing personal. Nothing on this page
+    # is read from the session -- that is what `Viewer()` with no fields means.
+    g.pulse_public_cacheable = True
+    response.headers["Cache-Control"] = "public, max-age=300"
+    # One URL, two documents, chosen by the session cookie. Without this an
+    # intermediary may hand a member this frame, or hand a crawler the member
+    # frame -- which for a crawler means being served the `noindex` copy of an
+    # indexable page.
     response.headers["Vary"] = "Cookie"
     return response
 
@@ -59409,7 +59635,19 @@ def _marketplace_storefront_unavailable_response(page, user):
 
 
 def _marketplace_public_index_response(listings):
-    """The marketplace grid for a reader with no session -- including Googlebot.
+    """The previous marketplace grid for a reader with no session.
+
+    No callers. Retained for one release, with
+    `templates/marketplace_index_public.html`, as the rollback for the
+    unification in `pulse_marketplace_page`: that route now renders one
+    `RenderedPage` for both audiences and differs only in the wrapper. Deleting
+    this in the same change would have left no way back from a storefront
+    regression on the one marketplace surface a crawler reads.
+
+    Do not reach for it as an alternative renderer. Serving it to anyone again
+    reinstates the defect the unification closed -- its cards price through
+    `marketplace_seo.parse_price`, which reads `price_label` alone, while the
+    product page it links to prices through the variant rows.
 
     Short for the same reason its product-page twin is short: every value on
     every card comes from ``marketplace_seo.index_card``, which derives it from
@@ -59491,58 +59729,18 @@ def pulse_marketplace_page():
     # `/pulse/marketplace/<id>`, which applies both predicates, so a grid that
     # applied fewer would be rendering its own links as 404s.
     from services.discovery_visibility import discovery_visible_sql
-    if not user:
-        # Scoped to the anonymous branch rather than run for everyone. The member
-        # branch below reads the same two predicates but needs a wider row -- the
-        # seller columns the storefront's seller card and "Message seller" are built
-        # from -- and a higher ceiling than 40, so it issues its own query. Leaving
-        # this one above the branch meant every signed-in visitor paid for a
-        # 40-row read whose result was then discarded.
-        # Guarded for the same reason the member branch below is, and it is the
-        # same failure: an unreadable catalogue answered 500 and rendered the
-        # trace page as the Marketplace's contents. This is the half a crawler
-        # actually fetches, so leaving it bare while the member half answered 503
-        # protected the audience that was not at risk.
-        #
-        # "Empty" is the claim this must not fall back to. `_public_index_response`
-        # treats no rows as an empty catalogue and says so on the page -- true for
-        # a new deployment, and a failed read has not earned it.
-        try:
-            cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
-                FROM marketplace_listings l
-                LEFT JOIN users u ON u.user_id=l.seller_user_id
-                LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-                WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
-                  AND {discovery_visible_sql('u')}
-                ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
-            listings = [dict(row) for row in cur.fetchall()]
-            # The public grid is built from `pulse_marketplace_listing_payload`, the
-            # same shaping function the mobile API and the public product page use,
-            # rather than from raw rows formatted here. That costs one extra query for
-            # the media rows and buys the thing that matters on a page Google reads: a
-            # card cannot disagree with the product page it links to about the title,
-            # the image or the price.
-            listing_ids = [int(row.get("id") or 0) for row in listings]
-            media_by_listing = pulse_marketplace_media_rows_for_listings(cur, listing_ids)
-        except Exception:
-            conn.close()
-            app.logger.exception("marketplace public grid read failed")
-            return _marketplace_storefront_unavailable_response(
-                marketplace_storefront.render_discovery(
-                    listings=[],
-                    variants_by_listing={},
-                    filters=marketplace_storefront.Filters.from_args(request.args),
-                    viewer=marketplace_storefront.Viewer(),
-                    app_cta_html=marketplace_storefront_app_cta("marketplace"),
-                    load_error=True,
-                ),
-                user,
-            )
-        conn.close()
-        return _marketplace_public_index_response([
-            pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), []))
-            for row in listings
-        ])
+    # One query, one renderer, both audiences. The anonymous reader used to get a
+    # narrower 40-row read of its own, shaped into cards by `marketplace_seo` and
+    # rendered by a Jinja template -- a second implementation of this page that
+    # could not filter, sort or page, and that priced its cards from
+    # `price_label` alone while this read prices them from the variant rows. Four
+    # live listings disagreed between the two, one of them by $8.41 against the
+    # buyer. The difference between a member and a visitor belongs in the frame
+    # and in the affordances, not in the catalogue.
+    load_error = False
+    listings = []
+    variants_by_listing = {}
+    cart_count = None
     # The member grid that used to live here is replaced, not extended. It built
     # its own cards from raw rows -- a hand-rolled price pill, a seller line, an
     # empty state reading "Marketplace is warming up." and a caption promising
@@ -59553,10 +59751,6 @@ def pulse_marketplace_page():
     # What replaces it reads the same two visibility predicates and renders through
     # the storefront engine, so the member sees the catalogue the app sees, with
     # the facets in the query string where they can be shared and bookmarked.
-    load_error = False
-    listings = []
-    variants_by_listing = {}
-    cart_count = None
     try:
         cur.execute(
             f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}
@@ -59576,7 +59770,12 @@ def pulse_marketplace_page():
         # closes; safe here because the helper swallows its own failures and
         # answers `None`, so a cart it could not read cannot turn the whole
         # catalogue into an error page.
-        cart_count = marketplace_storefront_cart_count(cur, user.get("user_id"))
+        #
+        # For a visitor too. This was members-only on the then-true grounds that
+        # a cart was owned by a `users` row, so the buttons were withheld from
+        # everyone else rather than rendering controls that would 401. A visitor
+        # now has an owner id of their own, so there is a cart to count.
+        cart_count = marketplace_storefront_cart_state(cur, user)
     except Exception:
         # A failed read is an error state, never an empty one. "No products are
         # listed yet" is a claim about the catalogue, and a page that could not
@@ -59591,42 +59790,48 @@ def pulse_marketplace_page():
     # to a surface that exists, and the wording states the visitor's actual
     # position -- no merchant record, an application under review, or approved --
     # rather than a generic invitation that is wrong for two of the three.
-    # No `if user` guard: the anonymous branch above has already returned, so
-    # every reader reaching this line has an account and all three states below
-    # are reachable.
-    merchant_actions = [
-        f'<a class="mkt-ghost" href="{html_escape(app_first_href("seller_dashboard"))}">'
-        f"Merchant dashboard</a>"
-    ]
-    if seller and seller.get("status") == "approved":
-        merchant_actions.insert(
-            0,
-            f'<a class="mkt-cta" href="{html_escape(app_first_href("marketplace_create"))}">'
-            f"Create a product</a>",
+    #
+    # Member-only, and this is the one part of the page that genuinely depends on
+    # who is asking: all three states are statements about the reader's own
+    # merchant record, and all three link to surfaces that need a session. A
+    # visitor gets no panel rather than a fourth, logged-out variant of it --
+    # which is also what keeps the anonymous document shared-cacheable, since
+    # nothing left on it varies by reader.
+    merchant_html = ""
+    if user:
+        merchant_actions = [
+            f'<a class="mkt-ghost" href="{html_escape(app_first_href("seller_dashboard"))}">'
+            f"Merchant dashboard</a>"
+        ]
+        if seller and seller.get("status") == "approved":
+            merchant_actions.insert(
+                0,
+                f'<a class="mkt-cta" href="{html_escape(app_first_href("marketplace_create"))}">'
+                f"Create a product</a>",
+            )
+            merchant_note = "You are an approved merchant."
+        elif seller:
+            merchant_note = (
+                "Your merchant application is "
+                f"{html_escape(clean_html(seller.get('status') or 'pending_review'))}. "
+                "Products unlock after approval."
+            )
+        else:
+            merchant_actions.insert(
+                0,
+                f'<a class="mkt-cta" href="{html_escape(app_first_href("seller_apply"))}">'
+                f"Apply as a merchant</a>",
+            )
+            merchant_note = (
+                "Sell on PulseSoc. Applications are reviewed before a store can list products."
+            )
+        merchant_html = (
+            '<section class="mkt-merchant" aria-labelledby="mkt-merchant-h">'
+            '<h2 id="mkt-merchant-h">Sell on PulseSoc</h2>'
+            f"<p>{merchant_note}</p>"
+            f'<div class="mkt-actions">{"".join(merchant_actions)}</div>'
+            "</section>"
         )
-        merchant_note = "You are an approved merchant."
-    elif seller:
-        merchant_note = (
-            "Your merchant application is "
-            f"{html_escape(clean_html(seller.get('status') or 'pending_review'))}. "
-            "Products unlock after approval."
-        )
-    else:
-        merchant_actions.insert(
-            0,
-            f'<a class="mkt-cta" href="{html_escape(app_first_href("seller_apply"))}">'
-            f"Apply as a merchant</a>",
-        )
-        merchant_note = (
-            "Sell on PulseSoc. Applications are reviewed before a store can list products."
-        )
-    merchant_html = (
-        '<section class="mkt-merchant" aria-labelledby="mkt-merchant-h">'
-        '<h2 id="mkt-merchant-h">Sell on PulseSoc</h2>'
-        f"<p>{merchant_note}</p>"
-        f'<div class="mkt-actions">{"".join(merchant_actions)}</div>'
-        "</section>"
-    )
 
     page = marketplace_storefront.render_discovery(
         listings=listings,
@@ -59636,7 +59841,11 @@ def pulse_marketplace_page():
         # `Filters.from_args` parses and clamps; it never trusts.
         filters=marketplace_storefront.Filters.from_args(request.args),
         viewer=marketplace_storefront_viewer(user),
-        app_cta_html=marketplace_storefront_app_cta("marketplace"),
+        # The store badge only on the signed-out document: a member reading this
+        # page in a browser may still not have the app, but they have an account,
+        # and `app_promotion` already carries the install prompt on the surfaces
+        # a member sees. A visitor's first and possibly only visit is here.
+        app_cta_html=marketplace_storefront_app_cta("marketplace", store_badge=not user),
         merchant_html=merchant_html,
         load_error=load_error,
         # Turns on the cart link and the per-card Add to cart buttons. `None`
@@ -59647,7 +59856,21 @@ def pulse_marketplace_page():
     # 503, not 200, when the catalogue could not be read. Nothing indexes this
     # page, but a member-facing 200 over an apology is still a page claiming to
     # be the Marketplace, and the browser cache would keep it.
-    response = _marketplace_member_storefront_reply(page, status=503 if load_error else 200)
+    status = 503 if load_error else 200
+    if user:
+        response = _marketplace_member_storefront_reply(page, status=status)
+    else:
+        response = _marketplace_public_storefront_reply(
+            page,
+            # Withheld on a failed read, which suppresses the `ItemList`
+            # entirely. An empty list is a claim that the catalogue holds nothing
+            # worth ranking, and a page that could not read the catalogue has not
+            # earned it.
+            listings_by_id=None if load_error else {
+                int(row.get("id") or 0): row for row in listings
+            },
+            status=status,
+        )
     if load_error:
         # Two headers the success path must not carry and the failure path must.
         # `Retry-After` is the half of a 503 that says "come back" -- without it a
@@ -59656,11 +59879,33 @@ def pulse_marketplace_page():
         # of every visitor who follows the same link for two minutes.
         response.headers["Cache-Control"] = "no-store"
         response.headers["Retry-After"] = "120"
+        # Cleared after the public reply set it. The header above would survive
+        # on its own -- `add_pwa_headers` uses `setdefault` for a page that
+        # declared itself cacheable -- but the flag is the declaration, and a
+        # response that says "come back in two minutes" has withdrawn it. With
+        # it cleared the same hook also adds `Pragma` and `Expires`, which is
+        # what an HTTP/1.0 intermediary reads instead of `Cache-Control`.
+        g.pulse_public_cacheable = False
     return response
 
 
 def _marketplace_public_product_response(listing_id, listing):
-    """The product page for a reader with no session -- including Googlebot.
+    """The previous product page for a reader with no session.
+
+    No callers. Retained for one release, with
+    `templates/marketplace_product_public.html`, as the rollback for the
+    unification in `pulse_marketplace_listing_page`: that route now renders one
+    `RenderedPage` for both audiences and differs only in the wrapper. This is
+    the twin of `_marketplace_public_index_response` above and is kept for the
+    same reason -- the two pages a crawler reads should not both lose their way
+    back in one change.
+
+    Do not reach for it as an alternative renderer. It states a price through
+    `marketplace_seo.public_price`, which is a second opinion about the same
+    product: the price pill and the `Offer` are now both `marketplace_web`'s
+    `PriceView`, and that is what guarantees they agree. It also cannot render
+    a price range at all, which is why it answered a two-variant row by
+    printing no price rather than the span the row actually sells across.
 
     Everything rendered here comes out of ``listing``, which is
     ``pulse_marketplace_listing_payload``'s output -- the same dict the mobile
@@ -59685,7 +59930,7 @@ def _marketplace_public_product_response(listing_id, listing):
     robots = (search_visibility.robots_meta(request.path) if verdict.indexable
               else search_visibility.NOINDEX_FOLLOW)
 
-    price = marketplace_seo.parse_price(listing.get("price_label"), listing.get("currency"))
+    price = marketplace_seo.public_price(listing)
     images = [entry.get("media_url") for entry in (listing.get("media") or [])
               if (entry.get("media_type") or "image") == "image" and entry.get("media_url")]
     # Paragraphs, not one blob. Supplier descriptions arrive with blank-line
@@ -59788,7 +60033,7 @@ def _marketplace_public_product_response(listing_id, listing):
 # stricter pair; matching the looser grid would have made a shared link show
 # something the app would not.
 @webhook_app.route("/pulse/cart", methods=["GET"])
-@auth_required
+@public_route(reason="The web cart. A visitor has a cart of their own (services/marketplace_guest_customer) and must be able to read it; the page is noindex and never shared-cached, and checkout still requires an account.")
 def pulse_marketplace_cart_page():
     """The web Marketplace cart.
 
@@ -59808,8 +60053,24 @@ def pulse_marketplace_cart_page():
     so the browser is already an authenticated caller; that module's own
     `_error()` docstring says its messages stay human "because web and admin
     surfaces render it directly", and this is the surface it was anticipating.
+
+    Reachable without an account, because a cart that is only readable by
+    members is not a guest cart. A visitor owns their lines through
+    `marketplace_guest_customer`; the page below is the same markup for both
+    audiences and the only difference is the frame around it, exactly as on the
+    product page. What the *lane* allows is unchanged: `/checkout` still opens
+    with `_require_user()`, and `marketplace_cart_web.group_lines` reports that
+    refusal as the group's reason so the visitor reads it here rather than
+    discovering it as a 401 after committing.
+
+    Never shared-cacheable and never indexable on either path. A cart is one
+    browser's, and `g.pulse_public_cacheable` is deliberately not set below --
+    `add_pwa_headers` then leaves its `no-store` on, which is the correct
+    answer for a personal page served from a public URL.
     """
     init_db()
+    # Not a gate. The branch on this is the frame, once the body is built.
+    user = require_account()
     main = render_template(
         "marketplace_cart.html",
         app_href=app_links.open_interstitial_url("cart", source="web"),
@@ -59825,12 +60086,31 @@ def pulse_marketplace_cart_page():
     # cannot carry it: the shell interpolates that parameter *inside* a
     # `<script>` element, so a `<script src>` passed there would be nested and
     # never fetched.
-    return pulse_social_shell(
-        "Your cart",
-        "The items you have saved to buy on PulseSoc.",
-        main,
-        show_intro=False,
-    )
+    if user:
+        return pulse_social_shell(
+            "Your cart",
+            "The items you have saved to buy on PulseSoc.",
+            main,
+            show_intro=False,
+        )
+    # The public frame, for the same reason the product page uses it: it is a
+    # document, a masthead and a footer, and the body it wraps is the string
+    # above byte for byte. `indexable` stays at its default `False` -- a cart is
+    # one browser's and has nothing to put in an index.
+    response = webhook_app.make_response(marketplace_storefront.public_document(
+        marketplace_storefront.RenderedPage(
+            title="Your cart",
+            meta_description="The items you have saved to buy on PulseSoc.",
+            body_html=main,
+            canonical_path="/pulse/cart",
+            # No `assets_html`: the storefront bundle is the grid's and this
+            # body is the cart template, which brings its own script. The
+            # `pulseApi`/`toast` that script calls comes from the wrapper,
+            # which is where the shell puts it too.
+        ),
+    ))
+    response.headers["Content-Type"] = "text/html; charset=utf-8"
+    return response
 
 
 @webhook_app.route("/pulse/marketplace/<int:listing_id>", methods=["GET"])
@@ -59897,36 +60177,56 @@ def pulse_marketplace_listing_page(listing_id):
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [listing_id])
     seller_id = int(row.get("seller_user_id") or 0)
 
-    # Everything the member page needs beyond the row itself, read on this
-    # connection before the `close()` below. Gated on `user` because the
-    # anonymous reader never uses any of it -- that branch renders from
-    # `listing` alone -- and four extra queries per crawl of a public page is a
-    # cost with nothing on the other side of it.
+    # Variants are read for *both* readers, and this is a correction rather
+    # than an extra. The comment here used to say the anonymous branch "never
+    # uses any of it", and that was the defect: the member page prices from
+    # `marketplace_listing_variants.price_cents` and so does checkout, while
+    # the logged-out page and the Shopping feed priced from `price_label`. On
+    # 2026-10-01 four live listings disagreed, so the price Google and an
+    # anonymous visitor saw was not the price anyone would be charged. One
+    # query is what lets this page refuse a label its own variants contradict.
     variants = []
     related = []
     related_variants = {}
     cart_count = None
     seller_listing_count = 0
-    if user:
-        try:
-            variants = marketplace_storefront_variants(cur, [listing_id]).get(listing_id, [])
-            cart_count = marketplace_storefront_cart_count(cur, user.get("user_id"))
-            related, related_variants, seller_listing_count = (
-                marketplace_storefront_product_context(cur, row)
-            )
-        except Exception:
-            # None of these is the product. A related rail that could not be
-            # read is an absent rail; a cart that could not be read is a page
-            # with no cart link, which `render_product` already treats as the
-            # caller's opt-out. The listing itself is in hand, so there is
-            # nothing here worth turning into an error page.
-            app.logger.warning("marketplace product context unavailable", exc_info=True)
+    try:
+        variants = marketplace_storefront_variants(cur, [listing_id]).get(listing_id, [])
+    except Exception:
+        # Unreadable variants leave the page on its label, which is the answer
+        # it gave before this read existed. Degraded, not wrong.
+        app.logger.warning("marketplace product variants unavailable", exc_info=True)
+    # The related rail is read for both too. The comment here used to call it
+    # something "an anonymous crawl has no use for", which had the reader
+    # backwards twice over: the rail is how a shopper who is not ready to buy
+    # this one keeps shopping, and its links are how a crawler reaches the rest
+    # of a catalogue whose only other entry point is a paginated grid. The three
+    # queries are also not per crawl -- this response carries
+    # `public, max-age=300`, so they are amortised across five minutes of every
+    # reader rather than paid per visit.
+    try:
+        related, related_variants, seller_listing_count = (
+            marketplace_storefront_product_context(cur, row)
+        )
+    except Exception:
+        # Not the product. A related rail that could not be read is an absent
+        # rail, and the listing itself is in hand, so there is nothing here
+        # worth turning into an error page.
+        app.logger.warning("marketplace product context unavailable", exc_info=True)
+    try:
+        cart_count = marketplace_storefront_cart_state(cur, user)
+    except Exception:
+        # A cart that could not be read is a page with no cart link, which
+        # `render_product` already treats as the caller's opt-out. Kept
+        # separate from the read above so one failing does not blank the
+        # other -- when they shared a `try` an unreadable cart silently cost
+        # the member the related rail as well.
+        app.logger.warning("marketplace cart count unavailable", exc_info=True)
     conn.close()
     listing = pulse_marketplace_listing_payload(row, media_by_listing.get(listing_id, []))
+    listing["variants"] = variants
 
-    if not user:
-        return _marketplace_public_product_response(listing_id, listing)
-    owned = seller_id == int(user.get("user_id") or 0)
+    owned = bool(user) and seller_id == int(user.get("user_id") or 0)
 
     # Promote stays exactly where it was -- owner-only, same three data
     # attributes, same modal, same bundle -- because `pulsesoc_promotions.js`
@@ -59944,10 +60244,13 @@ def pulse_marketplace_listing_page(listing_id):
     # silently: a page missing a rule still renders a correct sentence, just
     # unstyled, so nothing fails.
     #
-    # Bump the `?v=` here AND in `marketplace_product_public.html` together.
-    # /static is served with a one-year immutable cache, so a one-sided bump
-    # ships two different versions of this file to the two product pages;
-    # `tests/delivery/test_delivery_web.py` fails if the tokens diverge.
+    # Rendered for both readers now, which is the point: the estimate is on the
+    # public page too and an unstyled, never-resolving sentence is worse than
+    # none. Bump the `?v=` here AND in `marketplace_product_public.html`
+    # together -- that template no longer serves anyone (it is the retained
+    # rollback for this route), but `tests/delivery/test_delivery_web.py` pins
+    # the two tokens to each other, and a rollback that ships a stale script is
+    # not a rollback.
     extra_html = (
         f"{delivery_web.style_tag()}"
         f"<script src='/static/js/pulse_delivery.js?v=1' defer></script>"
@@ -59970,23 +60273,31 @@ def pulse_marketplace_listing_page(listing_id):
             f"<script src='/static/js/pulsesoc_promotions.js?v=bare-asset-tokens-20260930a' defer></script>"
         )
 
-    # The delivery line, and this is the one product surface that may print a
-    # window resolved from the reader.
+    # The delivery line, and this is the one storefront surface that may print a
+    # window resolved from the reader -- but only for the reader it can resolve
+    # one *for*.
     #
     # `_marketplace_member_storefront_reply` sets `private, no-store` and
-    # `Vary: Cookie` on this response, so one rendering reaches exactly one
-    # member. That is why `buyer_user_id` and `headers` are passed here and
-    # deliberately are *not* passed by `_marketplace_public_product_response`,
-    # which answers the same URL with `public, max-age=300` and so may only state
-    # the corridor the platform's own checkout configuration implies. Same
-    # estimate, same sentences, different destination tier -- and the tier is a
-    # property of the response's cacheability rather than of the page.
+    # `Vary: Cookie`, so one member rendering reaches exactly one member and may
+    # name that member's own corridor. The public reply answers the same URL with
+    # `public, max-age=300`: one rendering is served to everyone behind the
+    # cache, so a window resolved from the first reader's country would be handed
+    # to the rest as though it were theirs. `shared_cache=True` makes
+    # `delivery.web` refuse a per-visitor destination -- it raises if handed one
+    # -- and fall back to the corridor PulseSoc's own checkout configuration
+    # implies, which is a fact about the platform rather than about the reader.
+    #
+    # Same estimate, same sentences, different destination tier, and the tier is
+    # a property of the response's cacheability rather than of the page.
     #
     # `cache_only` is set inside `delivery.web`, so this costs no supplier call
     # and no part of it is on this render's critical path: a cold product ships
     # the pending sentence and `pulse_delivery.js` fills it in from the endpoint.
-    delivery_line = delivery_web.context(
-        str(listing_id), buyer_user_id=user.get("user_id"), headers=request.headers)
+    if user:
+        delivery_line = delivery_web.context(
+            str(listing_id), buyer_user_id=user.get("user_id"), headers=request.headers)
+    else:
+        delivery_line = delivery_web.context(str(listing_id), shared_cache=True)
 
     # The storefront renderer, the same one the grid runs through. It was built
     # with this page in it and shipped without a caller, which is why following a
@@ -60011,7 +60322,13 @@ def pulse_marketplace_listing_page(listing_id):
         # exist in a real variant row, so a crafted query cannot inject one.
         selected_options=request.args,
         viewer=marketplace_storefront_viewer(user),
-        app_cta_html=marketplace_storefront_app_cta("product", listing_id),
+        # The App Store badge only for the reader who may not have the app.
+        # A member reading this page on the web is already an account holder
+        # and the contextual "open this product in PulseSoc" link is the whole
+        # of what they need; the badge is for the stranger who arrived from
+        # search. Same rule as the grid.
+        app_cta_html=marketplace_storefront_app_cta(
+            "product", listing_id, store_badge=not user),
         promote_html=promote_html,
         # Rendered markup rather than the estimate itself, for the same reason
         # `app_cta_html` is: the renderer stays unable to hold a second opinion
@@ -60026,7 +60343,42 @@ def pulse_marketplace_listing_page(listing_id):
         # "0" over an order in progress.
         cart_count=cart_count,
     )
-    return _marketplace_member_storefront_reply(page, extra_html=extra_html)
+
+    if user:
+        return _marketplace_member_storefront_reply(page, extra_html=extra_html)
+
+    # `render_product` hardcodes `indexable=True` and says why: the flag states
+    # that the page *shape* is the storefront's indexable unit. Whether this
+    # particular row has earned a ranking is a different question and it is the
+    # route's, because the answer has to be the same one the sitemap gives --
+    # `marketplace_public_listings` filters on this very verdict, and a product
+    # the sitemap submits while the page itself says `noindex` is a crawl budget
+    # spent to be told to go away.
+    #
+    # `noindex,follow` rather than `nofollow`: a thin listing's outbound links
+    # are the department, the seller's other products and the help pages, all
+    # real crawl paths. `search_visibility.robots_disallow_prefixes` only ever
+    # disallows `noindex,nofollow`, so this also keeps the section crawlable.
+    if not marketplace_seo.eligibility(listing).indexable:
+        page.indexable = False
+        page.robots_extra = search_visibility.NOINDEX_FOLLOW
+
+    # `render_product` emits a Product and a BreadcrumbList and nothing else;
+    # it renders a page and has no opinion about the site. The standalone
+    # template this route replaced also declared Organization, WebSite and
+    # WebPage, and dropping them on the one rendering a crawler actually reads
+    # would publish a product belonging to no site and published by nobody.
+    # Wrapped here rather than inside the renderer because the member rendering
+    # of this same URL is `private, no-store` and never indexed, so site
+    # identity on it would be bytes shipped to no reader.
+    page.jsonld = (marketplace_seo.storefront_product_graph(
+        page.jsonld,
+        canonical=f"{search_visibility.CANONICAL_ORIGIN}{page.canonical_path}",
+        title=page.title,
+        description=page.meta_description,
+        image=page.og_image,
+    ),)
+    return _marketplace_public_storefront_reply(page, extra_html=extra_html)
 
 
 def pulse_marketplace_gallery_urls(value):
@@ -115113,6 +115465,88 @@ def api_pulse_profile_avatar_remove():
     return jsonify({"ok": True, "message": "Profile picture removed.", "avatar_url": ""})
 
 
+#: Shares every validator with the profile-picture route directly above, which
+#: is why it lives here rather than beside the other marketplace routes: the
+#: four `_profile_*` helpers are module-private and a caller 55k lines away
+#: would be the kind of distance that invites a hand-copied second validator.
+#: What it does *not* share is the destination. A store logo is store identity
+#: and goes to `marketplace_sellers.logo_url`; it never touches `users`, and
+#: setting one must never change the account holder's profile picture.
+@webhook_app.route("/api/pulse/marketplace/store-logo", methods=["POST"])
+@auth_required
+def api_pulse_marketplace_store_logo():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    payload = request.get_json(silent=True) or {}
+    logo_url, _thumbnail, _media = _profile_media_payload_url(
+        user["user_id"], payload, "media_id", "media_url")
+    if not logo_url:
+        file_storage = request.files.get("logo")
+        filename = (getattr(file_storage, "filename", "") or "").lower()
+        ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+        if ext not in {"jpg", "jpeg", "png", "webp"}:
+            return api_error("Upload a jpg, png, or webp store logo.", 400)
+        if file_storage and file_storage.mimetype and not file_storage.mimetype.lower().startswith("image/"):
+            return api_error("That store logo type is not supported.", 400)
+        if not _profile_image_upload_signature_allowed(file_storage):
+            return api_error("That store logo file is not a valid image.", 400)
+        result, status = media_service.save_upload(
+            user["user_id"], file_storage,
+            context_type="marketplace_store_logo", context_id=str(user["user_id"]))
+        if not result.get("ok"):
+            return jsonify(result), status
+        uploaded = result.get("media") or {}
+        resolved = media_service.resolve_media(uploaded)
+        logo_url = clean_html(
+            resolved.get("valid_url") or resolved.get("media_url")
+            or uploaded.get("media_url") or "")[:1000]
+    if not _profile_media_is_cdn_safe(logo_url):
+        return api_error("Store logo was not saved to durable CDN media. Please upload again.", 502)
+    conn = db()
+    cur = conn.cursor()
+    # UPDATE only, never INSERT. Minting a `marketplace_sellers` row here would
+    # hand someone a seller account as a side effect of uploading a picture --
+    # the same reason `store_identity_sync.adopt_store_name` refuses to create
+    # one. No row means no approved merchant application, and the answer is to
+    # apply, not to acquire the row sideways.
+    cur.execute(
+        "UPDATE marketplace_sellers SET logo_url=?, updated_at=? WHERE user_id=?",
+        (logo_url, datetime.utcnow().isoformat(timespec="seconds"), user["user_id"]))
+    if not getattr(cur, "rowcount", 0):
+        conn.rollback()
+        conn.close()
+        return api_error("You do not have a seller account yet.", 403)
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "message": "Store logo updated.", "logo_url": logo_url})
+
+
+@webhook_app.route("/api/pulse/marketplace/store-logo/remove", methods=["POST"])
+@auth_required
+def api_pulse_marketplace_store_logo_remove():
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE marketplace_sellers SET logo_url=NULL, updated_at=? WHERE user_id=?",
+        (datetime.utcnow().isoformat(timespec="seconds"), user["user_id"]))
+    if not getattr(cur, "rowcount", 0):
+        conn.rollback()
+        conn.close()
+        return api_error("You do not have a seller account yet.", 403)
+    conn.commit()
+    conn.close()
+    # Removing the logo is not a downgrade to the personal avatar -- it is a
+    # downgrade to the store-name monogram. See
+    # `services/marketplace_seller_identity`.
+    return jsonify({"ok": True, "message": "Store logo removed.", "logo_url": ""})
+
+
 @webhook_app.route("/api/pulse/profile/cover/remove", methods=["POST"])
 def api_pulse_profile_cover_remove():
     init_db()
@@ -123810,6 +124244,11 @@ def _init_db_impl():
     add_columns_if_missing(cur, "marketplace_sellers", [
         ("seller_type", "TEXT"),
         ("business_name", "TEXT"),
+        # The shop sign's picture, beside the shop sign's name. Buyer surfaces
+        # rendered `users.avatar_url` here until this column existed, which put
+        # the account holder's face on the storefront -- see
+        # `services/marketplace_seller_identity`.
+        ("logo_url", "TEXT"),
         ("website", "TEXT"),
         ("country", "TEXT"),
         ("state_region", "TEXT"),

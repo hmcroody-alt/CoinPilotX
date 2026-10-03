@@ -43,6 +43,31 @@ never joined to ``marketplace_listings``, and its table is created lazily by
 that module — joining it into hot buyer queries would risk "relation does not
 exist" on any instance where the dashboard has not been opened.
 
+The shop sign has a picture on it too
+-------------------------------------
+The same argument settles the logo, and it had gone the other way. Buyer
+surfaces rendered ``users.avatar_url`` — the account holder's selfie — under a
+``seller_avatar_url`` alias and a comment calling it "the store avatar". A
+shop trading as "Roody's Shop" showed its owner's face to every buyer and
+every crawler, which is the leak this module was written to close, arriving
+through the one field nobody had audited.
+
+There was no store logo to show instead, because nothing stored one. Three
+surfaces claimed otherwise: the seller-tools checklist listed "Store logo
+uploaded" with its value hardcoded ``False``, Business OS counted a "Business
+logo" towards profile completeness by reading the personal avatar, and the
+marketplace rendered that same avatar. So ``marketplace_sellers.logo_url`` is
+the column, chosen to sit beside ``display_name`` for one reason: the buyer
+queries already join ``marketplace_sellers`` to decide whether a listing may
+publish at all, so the logo costs no new join. ``pulsesoc_seller_stores``
+stays excluded for the reason given above — its table is created lazily.
+
+A seller with no logo gets a monogram of their store name, never the personal
+avatar. That is a plainer page than before and it is the honest one: the
+previous picture was answering a question the seller had never been asked.
+:func:`store_logo_url` therefore has no fallback chain at all, which is the
+point — a fallback is how the personal avatar got here.
+
 The wire contract
 -----------------
 Buyer payloads carry ``seller_store_name`` explicitly. The native client reads
@@ -78,6 +103,25 @@ def store_name_sql(seller_alias: str = "ms") -> str:
 def store_name_select(seller_alias: str = "ms", column: str = "seller_store_name") -> str:
     """The ``SELECT`` fragment every buyer-facing marketplace query should use."""
     return f"{store_name_sql(seller_alias)} AS {column}"
+
+
+def store_logo_sql(seller_alias: str = "ms") -> str:
+    """SQL for the store logo, or NULL when the seller has not set one."""
+    return f"NULLIF(TRIM({seller_alias}.logo_url),'')"
+
+
+def store_logo_select(seller_alias: str = "ms", column: str = "seller_logo_url") -> str:
+    """The ``SELECT`` fragment buyer-facing queries should use for the logo.
+
+    Never ``u.avatar_url``. See the module docstring: that alias is what put a
+    seller's face on their shop sign.
+    """
+    return f"{store_logo_sql(seller_alias)} AS {column}"
+
+
+def store_logo_url(row: Mapping[str, Any] | None) -> str:
+    """The logo a buyer sees, or "" — and "" means render a monogram."""
+    return str((row or {}).get("seller_logo_url") or "").strip()
 
 
 def store_name(row: Mapping[str, Any] | None) -> str:

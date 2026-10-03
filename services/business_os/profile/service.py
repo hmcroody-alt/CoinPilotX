@@ -421,6 +421,24 @@ def _user_row(conn, user_id: int) -> Dict[str, Any]:
         return {}
 
 
+def _store_logo_url(conn, user_id: int) -> str:
+    """The seller's buyer-facing store logo, or "".
+
+    This checklist item used to be satisfied by ``users.avatar_url``, which
+    counted a personal profile picture as a *business* logo and so told an
+    owner their brand identity was complete when they had never supplied one.
+    ``marketplace_sellers.logo_url`` is the column a buyer actually sees -- see
+    ``services/marketplace_seller_identity``.
+    """
+    try:
+        return str(_row(conn.execute(
+            "SELECT logo_url FROM marketplace_sellers WHERE user_id=? LIMIT 1",
+            (int(user_id),),
+        )).get("logo_url") or "").strip()
+    except Exception:
+        return ""
+
+
 def hours_view(rows: Iterable[Mapping[str, Any]], mode: str) -> List[Dict[str, Any]]:
     """Seven entries, always, in week order.
 
@@ -1017,7 +1035,7 @@ def owner_profile(user_id: int, *, conn=None) -> Dict[str, Any]:
         locks = verification_locks(verification["state"])
         hours = hours_view(hours_rows, str(profile.get("hours_mode") or "unset"))
 
-        has_logo = bool(user.get("avatar_url") or user.get("avatar_thumbnail_url"))
+        has_logo = bool(_store_logo_url(conn, user_id))
         completion = completeness(
             profile, hours=hours, links=links, has_logo=has_logo,
             has_policies=bool(_text(profile.get("return_summary"), SHORT_MAX)),

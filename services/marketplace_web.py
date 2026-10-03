@@ -106,13 +106,24 @@ _SIZE_TOKENS = frozenset({
     "2xl", "3xl", "4xl", "5xl", "6xl", "7xl", "8xl",
     "one size", "onesize", "free size", "os",
 })
-_SIZE_PATTERN = re.compile(r"^(?:\d{1,2}(?:\.\d)?|[2-8]xl|x{0,3}[sml]|eu\s?\d{2}|uk\s?\d{1,2}|us\s?\d{1,2})$")
+_SIZE_PATTERN = re.compile(r"^(?:\d{1,2}(?:\.\d)?|[1-8]xl|x{0,3}[sml]|eu\s?\d{2}|uk\s?\d{1,2}|us\s?\d{1,2})$")
+# Every entry is a colour in ordinary English. Because a group is only labelled
+# "Color" when this vocabulary vouches for all of its values, a word missing here
+# costs a whole group its label -- so the list is kept wide. It is still a list
+# of colours and not of things that come in colours: "denim" and "camouflage"
+# are deliberately absent, since admitting them would let "Denim Unlined Long
+# Gown" back in as a colour, which is the defect this guards.
 _COLOR_WORDS = frozenset({
     "black", "white", "red", "blue", "green", "grey", "gray", "navy", "beige",
     "pink", "purple", "violet", "yellow", "orange", "brown", "khaki", "burgundy",
     "ivory", "gold", "silver", "olive", "teal", "cream", "apricot", "wine",
     "coffee", "camel", "rose", "mint", "lavender", "turquoise", "maroon",
     "champagne", "charcoal", "transparent", "multicolor", "colorful",
+    "lilac", "claret", "caramel", "cyan", "magenta", "indigo", "amber",
+    "bronze", "copper", "coral", "crimson", "emerald", "fuchsia", "jade",
+    "lime", "mustard", "peach", "plum", "sapphire", "scarlet", "tan", "taupe",
+    "aqua", "azure", "sand", "blush", "chocolate", "mauve", "pearl", "rouge",
+    "platinum", "ruby", "sky", "slate", "smoke", "steel",
 })
 _QUANTITY_PATTERN = re.compile(r"^\d+\s*(?:pcs?|pairs?|sets?|packs?|boxes|bags?|rolls?)$", re.IGNORECASE)
 _STYLE_PATTERN = re.compile(r"^(?:style|model|type|pattern)\s*\d*$", re.IGNORECASE)
@@ -135,6 +146,64 @@ def esc(value: Any) -> str:
 
 def _clean(value: Any) -> str:
     return _WHITESPACE.sub(" ", str(value if value is not None else "")).strip()
+
+
+_TITLE_SEPARATOR = re.compile(r"\s*[,|]\s+|\s+[-–—]\s+")
+# A head opening with one of these is a lead-in, not a name. The case this
+# guard actually catches in production is listing 50, "New Arrival Flower Oil
+# Dripping Open Ring, Alloy Hot Sale Butterfly Diamond": the head parses as a
+# ring, so every other guard passes it, and the shopper would be shown a
+# heading that opens on the supplier's marketing rather than the product.
+# Compatibility lead-ins ("Compatible with Apple, ...") are listed for the same
+# reason, though today's one such listing is short enough to never reach here.
+_TITLE_LEAD_IN = re.compile(
+    r"^(?:compatible|suitable|applicable|universal|for|fit|fits|new|hot)\b",
+    re.IGNORECASE,
+)
+_TITLE_NEEDS_SHORTENING = 70
+_TITLE_NAME_RANGE = (16, 70)
+
+
+def display_title(value: Any) -> tuple[str, str]:
+    """Split a supplier title into the name to show and the rest, or don't.
+
+    Why this is not a general shortener
+    -----------------------------------
+    Supplier titles are keyword runs, and the product noun is wherever the
+    keyword run happened to put it: production has "European And American Rib
+    Slim V-neck Elegant Long Sleeve Spring And Summer T-shirt", where cutting
+    at any word budget names the product "...Elegant Long" and loses the
+    T-shirt. There is no length at which a blind cut is safe, so there is no
+    blind cut. 191 of the 196 published titles come back whole.
+
+    What makes a split safe is that the supplier already made it. A comma, a
+    pipe or a spaced dash is punctuation the seller typed, so the text in front
+    of it is a phrase they chose to end -- not one this function found. Both
+    halves are returned verbatim; nothing is reworded, abbreviated or inferred.
+
+    The guards are there because a supplier-authored break is necessary and not
+    sufficient. A title short enough to read already does not need splitting, a
+    two-word head is not a product name, and a head that opens with a lead-in
+    is a qualifier the seller front-loaded. Each guard is allowed to be
+    over-strict: refusing to split leaves a long title, while splitting wrongly
+    renames the product, and only one of those is a lie.
+
+    Returns ``(name, subtitle)``. ``subtitle`` is empty when the title stands
+    whole. The caller keeps the original for ``<title>``, ``og:title`` and
+    anything else a search engine reads -- the canonical string is unchanged by
+    this function and remains what the listing is actually called.
+    """
+    title = _clean(value)
+    if len(title) <= _TITLE_NEEDS_SHORTENING:
+        return title, ""
+    match = _TITLE_SEPARATOR.search(title)
+    if not match:
+        return title, ""
+    name, subtitle = title[: match.start()].strip(), title[match.end():].strip()
+    low, high = _TITLE_NAME_RANGE
+    if not subtitle or not (low <= len(name) <= high) or _TITLE_LEAD_IN.match(name):
+        return title, ""
+    return name, subtitle
 
 
 def slugify(value: Any) -> str:
@@ -403,23 +472,24 @@ class OptionGroup:
 
 
 def _looks_like_size(values: Sequence[str]) -> bool:
-    hits = sum(1 for v in values if v.strip().lower() in _SIZE_TOKENS or _SIZE_PATTERN.match(v.strip().lower()))
-    return bool(values) and hits / len(values) >= 0.6
+    return bool(values) and all(
+        v.strip().lower() in _SIZE_TOKENS or _SIZE_PATTERN.match(v.strip().lower())
+        for v in values
+    )
 
 
 def _looks_like_color(values: Sequence[str]) -> bool:
-    hits = sum(1 for v in values if any(word in v.lower().split() for word in _COLOR_WORDS))
-    return bool(values) and hits / len(values) >= 0.6
+    return bool(values) and all(
+        any(word in v.lower().split() for word in _COLOR_WORDS) for v in values
+    )
 
 
 def _looks_like_quantity(values: Sequence[str]) -> bool:
-    hits = sum(1 for v in values if _QUANTITY_PATTERN.match(v.strip()))
-    return bool(values) and hits / len(values) >= 0.6
+    return bool(values) and all(_QUANTITY_PATTERN.match(v.strip()) for v in values)
 
 
 def _looks_like_style(values: Sequence[str]) -> bool:
-    hits = sum(1 for v in values if _STYLE_PATTERN.match(v.strip()))
-    return bool(values) and hits / len(values) >= 0.6
+    return bool(values) and all(_STYLE_PATTERN.match(v.strip()) for v in values)
 
 
 def _option_kind(values: Sequence[str]) -> str:
@@ -431,6 +501,19 @@ def _option_kind(values: Sequence[str]) -> str:
     answerable from the data: a group is "Size" because its members are sizes.
     When the values do not clearly belong to any vocabulary the group keeps its
     positional name rather than being guessed into one.
+
+    Why every value must match, and not merely most
+    -----------------------------------------------
+    The label is a claim about each option sitting under it, so a vote lets the
+    majority make that claim on the minority's behalf. Production had a group of
+    twenty colourways plus "Denim Unlined Long Gown": eighteen matched, the vote
+    carried, and the page told shoppers a gown was a colour. The swatch beside
+    each value already refuses to guess for exactly this reason -- see
+    :func:`_swatch_for` -- and the label it sits next to now refuses too.
+
+    The cost is a group that falls back to "Option" because one member is
+    outside the vocabulary, which is vague rather than wrong, and the direction
+    to err in when the alternative is telling a shopper something untrue.
     """
     if _looks_like_size(values):
         return "size"
@@ -924,7 +1007,6 @@ def stock_line(listing: Mapping[str, Any], variants: Sequence[Mapping[str, Any]]
 #: ``POST /api/pulse/marketplace/cart`` would have answered with, so the reason a
 #: button is missing can be read against the lane that would have refused it
 #: rather than against this module's own vocabulary.
-CART_HIDDEN_ANONYMOUS = "anonymous"      # the route answers 401
 CART_HIDDEN_OWN_LISTING = "own_listing"  # OWN_LISTING
 CART_HIDDEN_UNAVAILABLE = "unavailable"  # SELLER_UNAVAILABLE / OUT_OF_STOCK, 409
 CART_HIDDEN_NO_PRICE = "no_price"        # ITEM_UNAVAILABLE, 400, price_minor <= 0
@@ -1009,7 +1091,6 @@ def cart_affordance(
     payload: Mapping[str, Any],
     *,
     price: PriceView,
-    signed_in: bool,
     viewer_user_id: Any = 0,
     variants: Sequence[Mapping[str, Any]] = (),
     chosen_variant: Optional["VariantView"] = None,
@@ -1019,8 +1100,6 @@ def cart_affordance(
     Each test below is a *mirror of a specific server refusal*, and deliberately
     not a judgement of its own:
 
-    * Not signed in — the cart route's ``_require_user()`` answers 401. A button
-      that always 401s is a button that never works.
     * The viewer is the seller — ``OWN_LISTING``. Nobody buys their own listing,
       and the refusal arrives as an error toast rather than as a cart line.
     * The listing is not buyer-reachable, or is out of stock — 409
@@ -1056,6 +1135,17 @@ def cart_affordance(
     that 409s costs them their trust in the page. Withholding is also why every
     check reads a fail-closed source — ``buyer_visible`` is ``False`` for a row
     whose seller status was never projected, and that is the answer this wants.
+
+    There is no longer a refusal for *not being signed in*. There used to be,
+    and it was the correct mirror of the route at the time: ``POST
+    /api/pulse/marketplace/cart`` began with ``_require_user()`` and answered
+    401, so the button could only ever have failed. The route now allocates a
+    guest cart owner instead (``services/marketplace_guest_customer``), so the
+    add succeeds, and withholding the control would be this module refusing
+    something the server is willing to do. Every refusal that remains is a
+    property of the listing or of the choice, not of who is asking — which is
+    the point: authentication decides whose cart it is, not whether there is
+    one.
     """
     try:
         listing_id = int(payload.get("listing_id") or payload.get("id") or 0)
@@ -1064,8 +1154,6 @@ def cart_affordance(
     if listing_id <= 0:
         # Not a reason a buyer needs told; a card with no id cannot post anything.
         return None, CART_HIDDEN_UNAVAILABLE
-    if not signed_in:
-        return None, CART_HIDDEN_ANONYMOUS
     try:
         seller_user_id = int(payload.get("seller_user_id") or 0)
     except (TypeError, ValueError):

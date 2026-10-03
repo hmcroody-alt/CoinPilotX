@@ -164,7 +164,7 @@ class PublicMarketplaceFixture(unittest.TestCase):
     def make_listing(self, *, status="published", approval_status="approved",
                      description=DESCRIPTION, price_label="$465.74", currency="USD",
                      cover="https://cdn.example/bed.jpg", quantity=12,
-                     product_type="physical"):
+                     product_type="physical", title="Linen Duvet Cover Set"):
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
         cur.execute(
@@ -173,7 +173,7 @@ class PublicMarketplaceFixture(unittest.TestCase):
             " quantity, product_type, listing_type, status, approval_status, cover_image_url,"
             " safety_score, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (SELLER, "Linen Duvet Cover Set", description, "Washed linen duvet set", "Home",
+            (SELLER, title, description, "Washed linen duvet set", "Home",
              price_label, currency, quantity, product_type, product_type, status, approval_status,
              cover, 7, NOW, NOW),
         )
@@ -182,21 +182,72 @@ class PublicMarketplaceFixture(unittest.TestCase):
         conn.close()
         return listing_id
 
+    def make_variant(self, listing_id, price_cents, *, status="active", currency="USD",
+                     variant_key="default"):
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO marketplace_listing_variants "
+            "(listing_id, seller_user_id, variant_key, price_cents, currency, status,"
+            " position, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            (listing_id, SELLER, variant_key, price_cents, currency, status, 0, NOW, NOW),
+        )
+        variant_id = int(cur.lastrowid)
+        conn.commit()
+        conn.close()
+        return variant_id
+
     def get(self, listing_id):
         return self.client.get(f"/pulse/marketplace/{listing_id}")
 
     def ld_json(self, response):
-        """The page's one JSON-LD block, parsed."""
+        """The page's *first* JSON-LD block, parsed."""
         body = response.get_data(as_text=True)
         match = re.search(r'<script type="application/ld\+json">(.*?)</script>', body, re.S)
         self.assertIsNotNone(match, "the page carries no ld+json block")
         return json.loads(match.group(1))
 
+    def ld_nodes(self, response):
+        """Every structured-data node the page declares, however it packaged them.
+
+        The two pages package identically-valid structured data differently:
+        the grid emits one block wrapping an ``@graph`` array, while the product
+        page emits one ``<script>`` per node. Google reads both the same way, so
+        pinning either shape would be asserting the wrapper rather than the
+        claim -- and it is the claim (one Product, carrying an Offer, and no
+        app or service node riding alongside it) that these tests exist for.
+        """
+        body = response.get_data(as_text=True)
+        blocks = re.findall(
+            r'<script type="application/ld\+json">(.*?)</script>', body, re.S)
+        self.assertTrue(blocks, "the page carries no ld+json block")
+        nodes = []
+        for block in blocks:
+            parsed = json.loads(block)
+            nodes.extend(parsed["@graph"] if "@graph" in parsed else [parsed])
+        return nodes
+
     def product_node(self, response):
-        graph = self.ld_json(response)["@graph"]
-        nodes = [node for node in graph if node.get("@type") == "Product"]
+        nodes = [node for node in self.ld_nodes(response)
+                 if node.get("@type") == "Product"]
         self.assertEqual(len(nodes), 1, "expected exactly one Product node")
         return nodes[0]
+
+    def assertPricePill(self, response, amount):
+        """The visible price, asserted through the element that carries it.
+
+        A bare substring search for the amount would also match the ``Offer``
+        in the page's structured data, so it would pass on a page that told
+        Google a price and showed the buyer nothing -- which is one of the two
+        halves this file exists to keep in step. ``data-mkt-price`` is the hook
+        the storefront's own script reads, so matching it means the pill is
+        both present and the one the page treats as the price.
+        """
+        self.assertRegex(
+            response.get_data(as_text=True),
+            r"data-mkt-price[^>]*>[^<]*%s" % re.escape(amount),
+            "the price pill does not show %s" % amount,
+        )
 
 
 class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
@@ -236,38 +287,65 @@ class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
         self.assertIn("M&amp;W Store", response.get_data(as_text=True))
 
     def test_the_page_promotes_the_ios_app(self):
-        """Standing product requirement: every public web surface routes to the app."""
-        body = self.get(self.make_listing()).get_data(as_text=True)
-        self.assertIn("Open in the PulseSoc app", body)
+        """Standing product requirement: every public web surface routes to the app.
 
-    def test_the_page_offers_sign_in_rather_than_a_dead_buy_button(self):
+        Pinned on the two links rather than their wording. The wording is
+        ``services/app_links.py``'s to choose and it changed when this page
+        moved onto the shared storefront renderer; what must not change is that
+        a reader already looking at this product can open *this product* in the
+        app, and that someone without the app can get it.
+        """
+        body = self.get(self.make_listing()).get_data(as_text=True)
+        self.assertRegex(body, r'data-app-link="product"',
+                         "no deep link into this listing in the app")
+        self.assertRegex(body, r'data-app-link="app-store"',
+                         "no way to install the app from this page")
+
+    def test_the_page_offers_no_control_the_next_click_would_refuse(self):
         """Contact Seller / Save / Report are each a POST needing a session.
 
         Rendering them would either fail on click or bounce to /login after the
         reader had already committed to an action, so the requirement is stated
         before the click instead.
+
+        Add to cart used to be in that company and no longer is: a visitor has a
+        cart of their own, so the button works where it stands. What is left
+        here is the set of verbs that genuinely need two named parties or a
+        place to save to -- and messaging is offered as an honest sign-in link
+        rather than as a control that fails.
         """
-        body = self.get(self.make_listing()).get_data(as_text=True)
-        self.assertIn("Sign in to add to cart", body)
+        listing_id = self.make_listing()
+        body = self.get(listing_id).get_data(as_text=True)
         self.assertNotIn("Contact Seller", body)
+        self.assertNotIn("Sign in to add to cart", body)
+        self.assertIn("Sign in to message seller", body)
+        self.assertRegex(body, r'<button\b[^>]*\bdata-mkt-add="%d"' % listing_id)
 
-    def test_the_sign_in_promise_is_one_the_next_page_keeps(self):
-        """The CTA used to read "Sign in to buy" and lead nowhere near buying.
+    def test_the_buy_control_is_the_same_one_on_both_renderings(self):
+        """This test has now contradicted itself twice, and both reversals were
+        the same bug receding.
 
-        Signing in landed on the member product page, whose only verbs were
-        Contact Seller, Save and Report -- a promise broken *after* the reader
-        had created an account, which is the most expensive place to break one.
+        It began as "Sign in to buy", which led nowhere near buying: signing in
+        landed on a member page whose only verbs were Contact Seller, Save and
+        Report. A promise broken *after* the reader had created an account,
+        which is the most expensive place to break one. The repair was to make
+        the promise true -- a member got a cart -- and the assertion became
+        "Sign in to add to cart" present on the public page, pinned against the
+        member page's button so the wording could not outlive the capability.
 
-        So the wording is pinned against the thing that makes it true rather
-        than on its own: the member rendering of the same URL must carry the
-        add-to-cart control. Asserting the string alone would go green again the
-        moment someone removed the button, which is exactly the state this test
-        exists to make impossible.
+        What is left is the last of it. The promise has not been made truer, it
+        has been made unnecessary: the visitor gets the button, not a coupon for
+        one. So the pairing survives and the direction flips -- both renderings
+        must carry the same control, and asserting it on either side alone would
+        be the mismatch this test exists to catch.
         """
         listing_id = self.make_listing()
         anonymous = self.get(listing_id).get_data(as_text=True)
-        self.assertIn("Sign in to add to cart", anonymous)
-        self.assertNotIn("data-mkt-add", anonymous)
+        self.assertNotIn("Sign in to add to cart", anonymous)
+        self.assertRegex(anonymous, r'<button\b[^>]*\bdata-mkt-add="%d"' % listing_id,
+                         "a visitor is shown a product page with no way to buy")
+        self.assertIn("/static/js/pulse_marketplace.js", anonymous,
+                      "the visitor's add-to-cart control is wired to nothing")
 
         self.login()
         member = self.get(listing_id).get_data(as_text=True)
@@ -485,6 +563,367 @@ class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
         self.assertEqual(self.get(listing_id).status_code, 404)
 
 
+class PublicProductTitleTestCase(PublicMarketplaceFixture):
+    """The canonical title and the displayed name are two jobs, one string.
+
+    ``marketplace_web.display_title`` is unit-tested in
+    ``tests/test_marketplace_storefront.py``; what is asserted here is the
+    wiring, because the risk of this change was never the split itself. It was
+    that shortening the heading would also shorten what a search engine reads,
+    which would be a silent SEO regression on every long listing -- visible to
+    nobody looking at the page.
+    """
+
+    #: Listing 14 in production, verbatim. 160 characters, split at the
+    #: seller's own first comma.
+    LONG = (
+        "Upholstered Bed 135 X 190 Cm With LED Lighting, USB Type-C Charging, "
+        "Storage Headboard For Cellphones And Tablets, 4ft6 Hydraulic Storage "
+        "Bed With Metal Slatted"
+    )
+    HEAD = "Upholstered Bed 135 X 190 Cm With LED Lighting"
+
+    def test_the_heading_is_shortened_and_the_rest_is_kept_as_a_qualifier(self):
+        """Nothing the seller wrote stops being on the page; it is re-divided."""
+        body = self.get(self.make_listing(title=self.LONG)).get_data(as_text=True)
+        self.assertIn(f'<h1 class="mkt-title">{self.HEAD}</h1>', body)
+        self.assertIn('class="mkt-title-qualifier"', body)
+        self.assertIn("4ft6 Hydraulic Storage Bed With Metal Slatted", body)
+
+    def test_a_search_engine_still_reads_the_whole_canonical_title(self):
+        """The regression this class exists for.
+
+        ``<title>``, ``og:title`` and the ``Product`` node all keep the full
+        string. A crawler matching "Hydraulic Storage Bed" must still find this
+        page, and the structured-data ``name`` is what a shopping result shows.
+        """
+        response = self.get(self.make_listing(title=self.LONG))
+        body = response.get_data(as_text=True)
+        self.assertEqual(self.product_node(response)["name"], self.LONG)
+        self.assertRegex(body, r"<title>%s" % re.escape(self.LONG))
+        self.assertRegex(
+            body, r'<meta property="og:title" content="%s' % re.escape(self.LONG))
+
+    def test_the_breadcrumb_does_not_restate_the_heading_at_full_length(self):
+        """The duplication that prompted this: the same sentence twice, the
+        first time in 12px grey directly above the ``<h1>``."""
+        body = self.get(self.make_listing(title=self.LONG)).get_data(as_text=True)
+        self.assertIn(f'<li aria-current="page">{self.HEAD}</li>', body)
+        self.assertNotIn(f'<li aria-current="page">{self.LONG}</li>', body)
+
+    def test_a_title_that_does_not_split_renders_no_empty_qualifier(self):
+        """An empty ``<p>`` under the heading is a gap with no explanation."""
+        body = self.get(self.make_listing()).get_data(as_text=True)
+        self.assertIn('<h1 class="mkt-title">Linen Duvet Cover Set</h1>', body)
+        self.assertNotIn("mkt-title-qualifier", body)
+
+
+class PublicProductStoreIdentityTestCase(PublicMarketplaceFixture):
+    """A buyer is shown the store, never the person who owns it.
+
+    ``tests/test_marketplace_store_identity.py`` already guards the store
+    *name*, and guards it well — but entirely through unit calls and source-text
+    greps, with nothing that renders a page. That is precisely how the picture
+    and the handle got through: ``users.avatar_url`` was selected under a
+    ``seller_avatar_url`` alias with a comment calling it "the store avatar",
+    and ``@roody`` was printed under the shop name. Both read as ordinary
+    seller-card code. Neither was covered by a single assertion, in any suite.
+
+    So these render the real page and read what a buyer would see. The
+    anonymous rendering is the one asserted hardest: it is what a crawler
+    indexes and what a shared link opens, so a personal name or face leaking
+    there leaks furthest.
+    """
+
+    AVATAR = "https://cdn.example/personal-selfie.jpg"
+    LOGO = "https://cdn.example/mw-store-logo.png"
+
+    def set_seller_media(self, *, avatar=None, logo=None):
+        conn = sqlite3.connect(self.db_path)
+        if avatar is not None:
+            conn.execute("UPDATE users SET avatar_url=? WHERE user_id=?", (avatar, SELLER))
+        if logo is not None:
+            conn.execute("UPDATE marketplace_sellers SET logo_url=? WHERE user_id=?", (logo, SELLER))
+        conn.commit()
+        conn.close()
+
+    def test_the_personal_profile_picture_never_reaches_a_buyer(self):
+        """The seller's selfie is set, and must appear nowhere on either page.
+
+        Asserted for the member rendering too. The member page is not indexed,
+        but the leak is a privacy leak rather than an SEO one — the owner never
+        agreed to put their face on a shop sign, and which stranger is looking
+        does not change that.
+        """
+        self.set_seller_media(avatar=self.AVATAR)
+        listing_id = self.make_listing()
+        for label, sign_in in (("anonymous", False), ("member", True)):
+            with self.subTest(label):
+                self.login() if sign_in else self.logout()
+                body = self.get(listing_id).get_data(as_text=True)
+                self.assertNotIn(self.AVATAR, body)
+                self.assertNotIn("personal-selfie", body)
+
+    def test_the_store_logo_is_what_appears_instead(self):
+        """And it is the store's own column that supplies it.
+
+        Both are set, so this distinguishes "renders the logo" from "renders
+        whichever picture it finds first" — a fallback chain from logo to avatar
+        would pass an assertion that only checked the logo was present.
+        """
+        self.set_seller_media(avatar=self.AVATAR, logo=self.LOGO)
+        listing_id = self.make_listing()
+        body = self.get(listing_id).get_data(as_text=True)
+        self.assertIn(self.LOGO, body)
+        self.assertNotIn(self.AVATAR, body)
+
+    def test_a_seller_with_no_logo_gets_a_monogram_not_a_face(self):
+        """The empty state is the one the fallback chain used to fill.
+
+        Every seller has a logo column of NULL today, so this is not an edge
+        case — it is the whole catalogue, and it is the state in which reaching
+        for ``users.avatar_url`` looked most reasonable.
+        """
+        self.set_seller_media(avatar=self.AVATAR, logo=None)
+        listing_id = self.make_listing()
+        body = self.get(listing_id).get_data(as_text=True)
+        self.assertNotIn(self.AVATAR, body)
+        # "M&W Store" escaped, so the monogram is the "M" inside the figure.
+        self.assertRegex(body, r'<figure class="mkt-seller-figure" aria-hidden="true">M</figure>')
+
+    def test_the_handle_is_not_presented_to_an_anonymous_buyer(self):
+        """``@public_page_seller`` used to print under the shop name.
+
+        A handle is the person's identity on the social product, not the
+        store's identity on the commercial one. The anonymous page is also the
+        one where it was most useless: ``/pulse/u/<handle>`` redirects a
+        signed-out visitor to /login, so the handle named a destination this
+        reader could not reach.
+        """
+        listing_id = self.make_listing()
+        body = self.get(listing_id).get_data(as_text=True)
+        self.assertNotIn("@public_page_seller", body)
+        self.assertIn("M&amp;W Store", body)
+
+    def test_the_handle_survives_as_a_route_and_not_as_a_label(self):
+        """Removing it from the page must not break "Message seller".
+
+        That control is a working anchor to ``/pulse/messages/new?q=<handle>``
+        precisely so it functions without JavaScript, so the handle still has
+        to be *selected* — the rule is that it is only ever spent as a URL.
+        Pinning both halves here stops the next person from deleting the column
+        from the projection to make the test above pass.
+        """
+        self.login()
+        listing_id = self.make_listing()
+        body = self.get(listing_id).get_data(as_text=True)
+        self.assertIn("/pulse/messages/new?q=public_page_seller", body)
+        self.assertNotIn("@public_page_seller", body)
+
+
+class StoreLogoWriteRouteTestCase(PublicMarketplaceFixture):
+    """Setting a store logo writes store identity and nothing else.
+
+    Here rather than in a seller-side file because this fixture already is the
+    shape these need: an approved ``marketplace_sellers`` row, a member with no
+    such row, and a Flask client. The tests above prove the buyer never sees the
+    personal avatar; these prove the only route that can fill the column it sees
+    instead cannot reach across into ``users`` or hand anybody a seller account.
+    """
+
+    LOGO = "https://cdn.example/uploaded-store-logo.png"
+
+    def post(self, path, **json_body):
+        return self.client.post(path, json=json_body)
+
+    def seller_row(self, user_id=SELLER):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM marketplace_sellers WHERE user_id=?", (user_id,)).fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def test_a_logo_lands_on_the_column_buyers_read(self):
+        self.login(user_id=SELLER, username="public_page_seller")
+        response = self.post("/api/pulse/marketplace/store-logo", media_url=self.LOGO)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.seller_row()["logo_url"], self.LOGO)
+        # And the buyer page renders it, through the same authority the listing
+        # queries use -- a write that no read can see is not a fix.
+        listing_id = self.make_listing()
+        self.logout()
+        self.assertIn(self.LOGO, self.get(listing_id).get_data(as_text=True))
+
+    def test_setting_a_store_logo_does_not_change_the_personal_avatar(self):
+        """The two pictures are separate identities and this is the seam.
+
+        A seller choosing a shop logo has not chosen a new profile picture, and
+        the reverse is what this whole change undoes. Asserted explicitly
+        because the route was written next to the avatar route and shares four
+        of its validators -- the destination is the only part that differs.
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("UPDATE users SET avatar_url=? WHERE user_id=?",
+                     ("https://cdn.example/selfie.jpg", SELLER))
+        conn.commit()
+        conn.close()
+        self.login(user_id=SELLER, username="public_page_seller")
+        self.post("/api/pulse/marketplace/store-logo", media_url=self.LOGO)
+        conn = sqlite3.connect(self.db_path)
+        avatar = conn.execute(
+            "SELECT avatar_url FROM users WHERE user_id=?", (SELLER,)).fetchone()[0]
+        conn.close()
+        self.assertEqual(avatar, "https://cdn.example/selfie.jpg")
+
+    def test_removing_the_logo_clears_it_and_nothing_else(self):
+        self.login(user_id=SELLER, username="public_page_seller")
+        self.post("/api/pulse/marketplace/store-logo", media_url=self.LOGO)
+        response = self.post("/api/pulse/marketplace/store-logo/remove")
+        self.assertEqual(response.status_code, 200)
+        row = self.seller_row()
+        self.assertFalse(row["logo_url"])
+        self.assertEqual(row["display_name"], "M&W Store")
+        self.assertEqual(row["status"], "approved")
+
+    def test_uploading_a_logo_cannot_mint_a_seller_account(self):
+        """The reason both routes are UPDATE-only.
+
+        ``MEMBER`` has no ``marketplace_sellers`` row because they never applied
+        to sell. An INSERT here -- or an UPSERT, which is the natural way to
+        write this -- would hand them an approved-shaped seller row as a side
+        effect of uploading a picture, bypassing merchant review entirely. The
+        answer to "no row" is to apply, so the route refuses.
+        """
+        self.login(user_id=MEMBER, username="public_page_member")
+        for path in ("/api/pulse/marketplace/store-logo",
+                     "/api/pulse/marketplace/store-logo/remove"):
+            with self.subTest(path):
+                response = self.post(path, media_url=self.LOGO)
+                self.assertEqual(response.status_code, 403)
+                self.assertIsNone(self.seller_row(MEMBER))
+
+    def test_a_signed_out_caller_cannot_set_a_logo(self):
+        self.logout()
+        response = self.post("/api/pulse/marketplace/store-logo", media_url=self.LOGO)
+        self.assertEqual(response.status_code, 401)
+        self.assertFalse(self.seller_row()["logo_url"])
+
+
+class PublicProductPriceAuthorityTestCase(PublicMarketplaceFixture):
+    """The logged-out page may not advertise a price checkout will not charge.
+
+    This page priced from ``price_label`` while the member page and
+    ``marketplace_cart_routes._line_price_minor`` priced from
+    ``marketplace_listing_variants.price_cents``, and the variants were loaded
+    only for signed-in readers -- so the two pages for one product could name
+    different numbers and nothing noticed. Against production on 2026-10-01,
+    four of the 35 listings in the live Shopping feed did.
+
+    The first fix was a refusal: print no price at all when the label and the
+    variants disagreed. That was a concession to the page's own architecture
+    rather than the answer anyone wanted. ``Price`` held one amount and two of
+    those four rows were ranges, so there was no single number to fall back to;
+    rendering a range needed ``marketplace_web.PriceView``, and standing up a
+    second price renderer on this page was the thing that caused the defect in
+    the first place.
+
+    Unifying this route onto ``marketplace_storefront.render_product`` removed
+    the constraint rather than working around it. There is now one price
+    renderer for both readers, it is ``PriceView``, and it can state a range.
+    So the assertions below are no longer "says nothing" but the stronger
+    property the refusal was standing in for: **the page states the price
+    checkout will charge, and states the same one in both formats.** A
+    contradicted label yields the variant price; two variants yield an
+    ``AggregateOffer`` spanning them.
+
+    The pill and the ``Offer`` node are asserted together throughout, because
+    they are one claim in two formats -- a buyer reads the first and Merchant
+    Center reads the second, and a page that dropped the pill while keeping the
+    Offer would still be making the claim to Google.
+    """
+
+    def test_a_label_its_variants_agree_with_is_printed_normally(self):
+        listing_id = self.make_listing(price_label="$465.74")
+        self.make_variant(listing_id, 46574)
+        response = self.get(listing_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertPricePill(response, "465.74")
+        self.assertEqual(self.product_node(response)["offers"]["price"], "465.74")
+
+    def test_a_label_its_variants_contradict_is_not_printed(self):
+        """Production listing 36's shape: advertised $38.00, charged $2.29."""
+        listing_id = self.make_listing(price_label="$38.00")
+        self.make_variant(listing_id, 229)
+        response = self.get(listing_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("38.00", response.get_data(as_text=True))
+
+    def test_the_contradicted_label_yields_the_price_checkout_charges(self):
+        """The half a visual check cannot see, and the half Google reads.
+
+        Both halves are asserted here rather than only the structured one.
+        Dropping the label is necessary and not sufficient -- a page that
+        printed nothing would also satisfy the test above while telling a buyer
+        less than it knows, and the row's real price is not a secret: $2.29 is
+        what ``marketplace_cart_routes`` will charge for it.
+        """
+        listing_id = self.make_listing(price_label="$38.00")
+        self.make_variant(listing_id, 229)
+        response = self.get(listing_id)
+        self.assertPricePill(response, "2.29")
+        self.assertEqual(self.product_node(response)["offers"]["price"], "2.29")
+
+    def test_two_variants_publish_the_range_rather_than_one_end_of_it(self):
+        """Production listing 112, the row that overcharged by $8.41.
+
+        Naming either end as *the* price is the same class of false claim as
+        the label was -- ``$27.84`` undersells the large and ``$37.72``
+        oversells the small. ``AggregateOffer`` is the construct schema.org
+        provides for exactly this, and the pill says the same thing in words.
+        """
+        listing_id = self.make_listing(price_label="$29.31")
+        self.make_variant(listing_id, 2784)
+        self.make_variant(listing_id, 3772, variant_key="large")
+        response = self.get(listing_id)
+        offer = self.product_node(response)["offers"]
+        self.assertEqual(offer["@type"], "AggregateOffer")
+        self.assertEqual((offer["lowPrice"], offer["highPrice"]), ("27.84", "37.72"))
+        self.assertPricePill(response, "27.84")
+        self.assertPricePill(response, "37.72")
+        # The label was between the two ends, which is why it looked plausible.
+        self.assertNotIn("29.31", response.get_data(as_text=True))
+
+    def test_the_page_still_renders_and_stays_indexable(self):
+        """Out of the feed, still a real page: the row is otherwise complete,
+        and the member page prices it correctly from the same variants."""
+        listing_id = self.make_listing(price_label="$38.00")
+        self.make_variant(listing_id, 229)
+        response = self.get(listing_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Linen Duvet Cover Set", response.get_data(as_text=True))
+        self.assertNotIn("noindex", response.get_data(as_text=True))
+
+    def test_a_listing_with_no_variants_prices_from_its_label_as_before(self):
+        """Most of the catalogue, and the regression this must not cause."""
+        listing_id = self.make_listing(price_label="$465.74")
+        self.assertPricePill(self.get(listing_id), "465.74")
+
+    def test_the_anonymous_branch_is_what_loads_the_variants(self):
+        """Names the plumbing: the read used to be inside ``if user:``.
+
+        Without it the predicate fails open and this whole class passes while
+        the page is still wrong, so the load is asserted through its effect on
+        a request that carries no session.
+        """
+
+        listing_id = self.make_listing(price_label="$38.00")
+        self.make_variant(listing_id, 229)
+        with self.client.session_transaction() as session:
+            session.clear()
+        self.assertNotIn("38.00", self.get(listing_id).get_data(as_text=True))
+
+
 class MarketplacePublicIndexPageTestCase(PublicMarketplaceFixture):
     """``GET /pulse/marketplace`` -- the grid, which exists for the crawler.
 
@@ -555,11 +994,24 @@ class MarketplacePublicIndexPageTestCase(PublicMarketplaceFixture):
         self.assertNotIn("Request access", body)
 
     def test_the_grid_promotes_the_ios_app_once_rather_than_per_card(self):
-        """Standing product requirement, met without taxing every link."""
-        self.make_listing()
+        """Standing product requirement, met without taxing every link.
+
+        Both halves, because they are different promises and the store link is
+        only ever allowed beside the contextual one: "Open Marketplace in
+        PulseSoc" opens the surface the visitor is already looking at, while
+        the badge tells someone who does not have the app where to get it.
+
+        Counted rather than merely found. The requirement is that the page
+        promotes the app, not that it nags -- one promotion for a whole grid,
+        never one per card -- so three listings are published and the count is
+        still expected to be one.
+        """
+        for _ in range(3):
+            self.make_listing()
         body = self.index().get_data(as_text=True)
-        self.assertIn("Open the marketplace in the app", body)
-        self.assertIn("Download on the App Store", body)
+        self.assertEqual(body.count('data-app-link="marketplace"'), 1)
+        self.assertIn("Open Marketplace in PulseSoc", body)
+        self.assertEqual(body.count("Download on the App Store"), 1)
 
     def test_the_grid_renders_no_buttons_that_need_a_session(self):
         """Contact Seller, Save, Report and Promote are each a POST.
@@ -639,7 +1091,7 @@ class MarketplacePublicIndexPageTestCase(PublicMarketplaceFixture):
         """
         body = self.index().get_data(as_text=True)
         self.assertIn('content="noindex,follow"', body)
-        self.assertIn("No products are published right now", body)
+        self.assertIn("No products are listed yet", body)
 
     def test_the_grid_is_cacheable(self):
         self.make_listing()
@@ -684,7 +1136,7 @@ class MarketplacePublicIndexPageTestCase(PublicMarketplaceFixture):
         hidden_id = self.make_listing(status="draft")
         body = self.index().get_data(as_text=True)
         self.assertNotIn(f'href="/pulse/marketplace/{hidden_id}"', body)
-        self.assertIn("No products are published right now", body)
+        self.assertIn("No products are listed yet", body)
 
 
 class MarketplaceProductsSitemapTestCase(PublicMarketplaceFixture):

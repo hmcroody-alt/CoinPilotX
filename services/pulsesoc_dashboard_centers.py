@@ -986,6 +986,26 @@ def save_goal(conn: Any, user: dict[str, Any], payload: dict[str, Any]) -> dict[
     return {"ok": True, "message": "Goal saved.", "goals": _goal_count(conn.cursor(), user_id)}
 
 
+def _has_store_logo(cur: Any, user_id: int) -> bool:
+    """Whether this seller has set a buyer-facing store logo.
+
+    Reads ``marketplace_sellers``, not ``pulsesoc_seller_stores``, because the
+    logo buyers actually see is the one on the marketplace seller row -- see
+    ``services/marketplace_seller_identity``. A seller with no marketplace row
+    has no buyer-facing store at all, so "no logo" is the right answer rather
+    than an error.
+    """
+    if not _table_exists(cur, "marketplace_sellers"):
+        return False
+    try:
+        cur.execute(
+            "SELECT logo_url FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user_id,))
+        row = cur.fetchone()
+    except Exception:
+        return False
+    return bool(row and str(_row_dict(row).get("logo_url") or "").strip())
+
+
 def build_seller_tools(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
     ensure_tables(conn)
     cur = conn.cursor()
@@ -997,7 +1017,9 @@ def build_seller_tools(conn: Any, user: dict[str, Any]) -> dict[str, Any]:
     store_checklist = _checklist(
         [
             ("store_name", "Store name completed", bool(store.get("store_name")), "/dashboard/economy/seller-tools"),
-            ("store_logo", "Store logo uploaded", False, "/dashboard/economy/seller-tools"),
+            # Hardcoded `False` until `marketplace_sellers.logo_url` existed, so
+            # this box could not be ticked by anyone. Now a real read.
+            ("store_logo", "Store logo uploaded", _has_store_logo(cur, user_id), "/dashboard/economy/seller-tools"),
             ("store_banner", "Store banner uploaded", False, "/dashboard/economy/seller-tools"),
             ("description", "Store description completed", bool(store.get("description")), "/dashboard/economy/seller-tools"),
             ("contact", "Contact information added", bool(store.get("contact_email")), "/dashboard/economy/seller-tools"),

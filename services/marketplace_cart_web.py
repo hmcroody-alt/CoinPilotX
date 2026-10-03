@@ -175,12 +175,22 @@ def _lane_question(lines: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     return {"kind": kind, "options": [dict(o) for o in fulfillment.lane_options(kind)]}
 
 
-def group_lines(lines: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def group_lines(
+    lines: Iterable[Mapping[str, Any]], *, can_pay: bool = True
+) -> list[dict[str, Any]]:
     """Cart lines -> one entry per seller, in the order the seller first appears.
 
     First-appearance order rather than a sort: the cart is already ordered by
     when each line was added, and re-sorting by store name would move a group
     the buyer is looking at when an unrelated line arrives.
+
+    ``can_pay`` is false for a guest. A visitor now gets a real cart of their
+    own and can fill it, but ``cart_checkout`` still opens with
+    ``_require_user()``, so the pre-flight has to report that refusal like any
+    other -- the alternative is a pay button that 401s, which is the thing this
+    module exists to prevent. A parameter rather than something derived here
+    because this module is deliberately Flask-free and knows nothing about
+    sessions.
     """
     order: list[int] = []
     buckets: dict[int, list[Mapping[str, Any]]] = {}
@@ -193,11 +203,13 @@ def group_lines(lines: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
 
     groups = []
     for seller in order:
-        groups.append(_describe(seller, buckets[seller]))
+        groups.append(_describe(seller, buckets[seller], can_pay=can_pay))
     return groups
 
 
-def _describe(seller_user_id: int, lines: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+def _describe(
+    seller_user_id: int, lines: Sequence[Mapping[str, Any]], *, can_pay: bool = True
+) -> dict[str, Any]:
     states = [str(l.get("state") or "") for l in lines]
     blocking = [l for l, state in zip(lines, states)
                 if state in BLOCKING_STATES
@@ -220,7 +232,13 @@ def _describe(seller_user_id: int, lines: Sequence[Mapping[str, Any]]) -> dict[s
     # question before the one-at-a-time rule, because the lane's `resolve_choice`
     # loop returns LANE_REQUIRED before it ever reaches its scheduled check.
     reason = ""
-    if blocking:
+    if not can_pay:
+        # First, because it is the first thing `cart_checkout` refuses on --
+        # `_require_user()` is its opening statement, before it has looked at a
+        # single line. Reporting a sold-out line ahead of it would describe a
+        # refusal the lane never reaches.
+        reason = "Sign in to check out. Your cart comes with you."
+    elif blocking:
         reason = ("Some items from this seller are no longer available. "
                   "Remove them to check out.")
     elif price_changed:
@@ -261,6 +279,11 @@ def _describe(seller_user_id: int, lines: Sequence[Mapping[str, Any]]) -> dict[s
         "price_changed_line_ids": [_minor(l.get("line_id")) for l in price_changed],
         "checkoutable": not reason,
         "reason": reason,
+        # Distinct from `reason` because the two call for different controls.
+        # Every other refusal is answered on this page or in the app; this one
+        # is answered at `/login`, and offering "Check out in the app" for it
+        # would send a visitor to a surface that asks them the same question.
+        "sign_in_required": not can_pay,
         "lane_question": lane,
         "forms": forms,
     }

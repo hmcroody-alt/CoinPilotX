@@ -165,7 +165,21 @@ body:has(.mkt) .layout > aside {
  *     same relationship.
  * ---------------------------------------------------------------- */
 
-.mkt {
+/* Palette only. `body.mkt-public` shares this block rather than getting a copy
+ * of it. `marketplace_storefront.public_document` sets that class on the
+ * signed-out storefront document, which has no member shell around it and
+ * therefore no other source for these tokens. Sharing the declaration keeps
+ * one palette: `tests/test_marketplace_light_parity.py` scans the whole
+ * stylesheet for `--store-*` declarations, so a second block would be a second
+ * thing to keep in step with `storeLight.ts`, and the one that drifted would be
+ * the one strangers see. The member body is deliberately not listed — it is
+ * the dark shell, and only the storefront subtree inside it turns light.
+ *
+ * Add colours here; add layout to the `.mkt` block below it. A document
+ * element and a content slab want the same colours and emphatically not the
+ * same box. */
+.mkt,
+body.mkt-public {
   /* -- storeLight.bg -- */
   --store-bg-page: #eaeded;
   --store-bg-card: #ffffff;
@@ -333,19 +347,65 @@ body:has(.mkt) .layout > aside {
    * islands floating on the shell's dark gradient. */
   background: var(--store-bg-page);
   color: var(--store-text-primary);
-  /* The light page needs its own inset, because `.mkt` is now a surface
-   * rather than a transparent pass-through: without it the first card sits
-   * flush against the edge of the colour change. The negative inline margin
-   * pushes the slab back out to the shell's own gutter so the storefront
-   * reads as a page that happens to be light rather than as one more card
-   * floating on the feed's dark background. That is the relationship the app
-   * has, where `bg.page` is the window and the cards sit inside it. */
+}
+
+/* Layout, and deliberately NOT shared with `body.mkt-public`.
+ *
+ * Everything above is palette — tokens, a colour scheme, a background — and a
+ * document that has no member shell around it needs all of it. None of what
+ * follows is palette, and the first arrangement of this file handed the body
+ * the whole declaration list. The body then inherited a -16px inline margin
+ * and started at x=-16 instead of 0: measured at 390px, `.mkt` landed at
+ * left=-4 with 28px of dead space on the right, and `overflow-x:hidden` in the
+ * public document's base rules hid the overflow rather than the asymmetry. */
+.mkt {
+  /* The light page needs its own inset, because `.mkt` is a surface rather
+   * than a transparent pass-through: without it the first card sits flush
+   * against the edge of the colour change. */
   padding: var(--spacing-md, 16px);
-  margin-inline: calc(-1 * var(--spacing-md, 16px));
   border-radius: var(--pulse-radius-sm, 12px);
   display: grid;
   gap: var(--spacing-lg, 24px);
   min-width: 0;
+
+  /* There is deliberately no full-bleed `margin-inline` here, though this rule
+   * carried `calc(-1 * var(--spacing-md, 16px))` for most of its life. It was
+   * meant to push the light slab back out to the member shell's own gutter so
+   * the storefront read as a page that happens to be light rather than as one
+   * more card on the feed's dark background. It never did that, for two
+   * independent reasons, and measuring it is what showed both:
+   *
+   *   - The shell applies `max-width:100%` to everything, and `.mkt` is a grid
+   *     item in `section.layout`'s single track. A negative margin can only
+   *     widen a box that is allowed to grow past its containing block; clamped,
+   *     it degrades into a pure leftward shift. At 430px the slab sat at
+   *     left=-6 with the SAME 410px width as its parent — 6px of background
+   *     pushed off the left edge and a 26px dark band left behind on the right.
+   *     Asymmetric, which is worse than the symmetric inset it replaced.
+   *
+   *   - The number was wrong anyway. The shell's gutter is `main.wrap`'s 10px
+   *     padding, not 16px, so even unclamped the arithmetic cancelled a gutter
+   *     that was never there.
+   *
+   * Without it the slab simply takes the measure its parent gives it, which is
+   * the same 10px inset every other member surface sits on. The remaining
+   * `border-radius` is then doing real work: it reads as the shell's own card
+   * rhythm instead of as a page that failed to reach the edge. */
+}
+
+/* In the public document the slab's inline padding is a second gutter.
+ *
+ * On the member page `.mkt` is a light surface inset in a dark one, so its
+ * padding is the surface's own edge and has to be there. In
+ * `public_document` the body is already `--store-bg-page`: the slab is the
+ * same colour as the page behind it, there is no edge for the padding to hold
+ * off, and `.mkt-doc` (`width:min(100% - 24px,1180px)`, centred) has already
+ * supplied a 12px gutter. Keeping both indents the catalogue to 28px while the
+ * masthead links and the footer sit at 12px — a misalignment a reader sees
+ * even though neither value is wrong on its own. The block padding stays:
+ * that is vertical rhythm, not a gutter. */
+body.mkt-public .mkt {
+  padding-inline: 0;
 }
 
 /* `hidden` is this storefront's no-JavaScript contract, and it needs an
@@ -468,8 +528,28 @@ body:has(.mkt) .layout > aside {
   text-decoration: underline;
 }
 
+/* Truncated on the same terms as the links beside it. This crumb carries the
+ * product heading, which can be a whole supplier sentence; left unclamped it
+ * wraps the trail onto three lines and restates the `<h1>` directly above it. */
 .mkt-crumbs [aria-current="page"] {
   color: var(--text-primary, #0f1111);
+  /* `inline-block` and not the `inline-flex` it inherits from `.mkt-crumbs li`:
+   * `text-overflow` only applies to a block container, so on a flex container
+   * it is silently inert and the crumb clips mid-word with no ellipsis --
+   * which reads as a rendering fault rather than as shortened text. */
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 22ch;
+  vertical-align: bottom;
+}
+
+/* `gap` is a flex property, and the rule above takes this one crumb out of
+ * flex layout, so its separator loses the space every other crumb gets from
+ * `.mkt-crumbs li` and renders as "/Upholstered". */
+.mkt-crumbs [aria-current="page"]::before {
+  margin-right: var(--spacing-2xs, 4px);
 }
 
 /* The heading and the cart link share one row. `align-items: flex-start`
@@ -545,7 +625,22 @@ body:has(.mkt) .layout > aside {
   color: var(--text-primary, #0f1111);
   /* Supplier titles in this catalogue run to ~160 characters. They are
    * reproduced verbatim (they are the product's real name), so the
-   * heading has to wrap gracefully rather than be rewritten. */
+   * heading has to wrap gracefully rather than be rewritten. `display_title`
+   * moves the tail into `.mkt-title-qualifier` where the seller's own
+   * punctuation allows it, but most titles have none and still land here
+   * whole. */
+  overflow-wrap: anywhere;
+}
+
+/* The rest of a title the seller had already broken with a comma. Quieter than
+ * the heading because it is a qualifier, and it must not read as a second
+ * heading -- that was the problem it exists to solve. */
+.mkt-title-qualifier {
+  margin: 4px 0 0;
+  font-size: var(--font-size-sm, 14px);
+  line-height: 1.4;
+  font-weight: 500;
+  color: var(--mkt-muted);
   overflow-wrap: anywhere;
 }
 

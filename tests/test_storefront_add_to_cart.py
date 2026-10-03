@@ -126,7 +126,6 @@ def affordance(row=None, viewer=BUYER):
     return mw.cart_affordance(
         row,
         price=mw.derive_price(row, []),
-        signed_in=viewer.signed_in,
         viewer_user_id=viewer.user_id,
     )
 
@@ -159,11 +158,24 @@ def test_the_affordance_carries_the_listing_id_the_cart_api_takes():
     assert control.listing_id == 812
 
 
-def test_an_anonymous_reader_is_offered_nothing():
-    """`_require_user()` answers 401, so the button could only ever fail."""
+def test_an_anonymous_reader_is_offered_the_same_button_as_a_member():
+    """The refusal this replaces was real and is now gone.
+
+    It read: "`_require_user()` answers 401, so the button could only ever
+    fail." That was true of the route it mirrored. The cart route allocates a
+    guest owner instead (``services/marketplace_guest_customer``), so the add
+    succeeds, and `cart_affordance` withholding the control would be this
+    module refusing something the server is willing to do.
+
+    Asserted as *the same answer*, not merely a non-empty one: the identity of
+    the control is the claim. One marketplace, one card, one button -- what
+    authentication decides is whose cart the line lands in, which is not
+    something a card can show.
+    """
+    assert affordance(viewer=ANON) == affordance(viewer=BUYER)
     control, reason = affordance(viewer=ANON)
-    assert control is None
-    assert reason == mw.CART_HIDDEN_ANONYMOUS
+    assert reason == ""
+    assert control is not None and control.listing_id == 5
 
 
 def test_a_seller_is_not_offered_their_own_listing():
@@ -232,7 +244,7 @@ def test_the_owner_check_needs_a_real_viewer_id():
 @pytest.mark.parametrize("bad", ["", None, "not-a-number", []])
 def test_an_unparseable_viewer_id_is_not_an_owner(bad):
     control, reason = mw.cart_affordance(
-        payload(), price=mw.derive_price(payload(), []), signed_in=True, viewer_user_id=bad
+        payload(), price=mw.derive_price(payload(), []), viewer_user_id=bad
     )
     assert reason == ""
     assert control is not None
@@ -282,13 +294,12 @@ def test_the_products_title_is_escaped_into_the_accessible_name():
 @pytest.mark.parametrize(
     "row,viewer",
     [
-        (payload(), ANON),
         (payload(), OWNER),
         (payload(buyer_visible=False), BUYER),
         (payload(inventory_state="out_of_stock"), BUYER),
         (payload(price_label=""), BUYER),
     ],
-    ids=["anonymous", "own-listing", "not-visible", "out-of-stock", "unpriced"],
+    ids=["own-listing", "not-visible", "out-of-stock", "unpriced"],
 )
 def test_the_grid_renders_no_button_where_the_facts_withhold_one(row, viewer):
     """Asserted through the renderer as well as the facts layer.
@@ -296,8 +307,27 @@ def test_the_grid_renders_no_button_where_the_facts_withhold_one(row, viewer):
     A markup layer that forgot to pass `cart` through, or derived its own answer,
     would pass every `cart_affordance` test above and still put a button on a
     suspended seller's listing.
+
+    `ANON` used to head this list. Every reason that remains is a property of the
+    listing; being a visitor was the only one that was a property of the asker,
+    and it is the one that went away.
     """
     assert "data-mkt-add" not in discovery([row], viewer=viewer, cart_count=0)
+
+
+def test_the_grid_gives_a_visitor_the_very_same_card_as_a_member():
+    """The renderer's half of `cart_affordance`'s equality claim.
+
+    Asserted as byte identity of the whole card rather than as "the visitor has a
+    button too", because the claim is one marketplace rather than two that happen
+    to agree today. Anything the grid learned to vary on sign-in -- a different
+    label, a hidden price, an extra nudge -- fails here even if the button
+    survives. The card cannot show whose cart the line lands in, which is the
+    only thing authentication decides.
+    """
+    row = payload()
+    assert discovery([row], viewer=ANON, cart_count=0) == discovery(
+        [row], viewer=BUYER, cart_count=0)
 
 
 def test_a_caller_that_does_not_ask_for_the_cart_gets_no_buttons():
@@ -654,7 +684,6 @@ def choice(variants, row=None):
     return mw.cart_affordance(
         row,
         price=mw.derive_price(row, variants),
-        signed_in=True,
         viewer_user_id=3,
         variants=variants,
     )
@@ -672,7 +701,7 @@ def test_needing_a_choice_is_a_distinct_reason_from_being_unavailable():
     """
     reasons = [
         mw.CART_HIDDEN_NEEDS_CHOICE, mw.CART_HIDDEN_UNAVAILABLE,
-        mw.CART_HIDDEN_ANONYMOUS, mw.CART_HIDDEN_OWN_LISTING, mw.CART_HIDDEN_NO_PRICE,
+        mw.CART_HIDDEN_OWN_LISTING, mw.CART_HIDDEN_NO_PRICE,
     ]
     assert len(set(reasons)) == len(reasons), reasons
 
@@ -747,15 +776,20 @@ def test_an_unavailable_reason_still_beats_needing_a_choice():
     assert reason == mw.CART_HIDDEN_UNAVAILABLE
 
 
-def test_an_anonymous_visitor_is_told_to_sign_in_before_being_told_to_choose():
+def test_a_visitor_is_told_to_choose_for_the_same_reason_a_member_is():
+    """This test used to assert the opposite -- that not being signed in outranked
+    needing a size. That ordering was right while the add would have answered 401:
+    there was no point sending someone to a picker to configure a purchase the
+    route would refuse. A visitor now gets a cart of their own, so the only thing
+    between them and this listing is the thing between a member and it: they have
+    not said which size."""
     control, reason = mw.cart_affordance(
         payload(),
         price=mw.derive_price(payload(), []),
-        signed_in=False,
         variants=[variant(1, opts(("Size", "S"))), variant(2, opts(("Size", "M")))],
     )
     assert control is None
-    assert reason == mw.CART_HIDDEN_ANONYMOUS
+    assert reason == mw.CART_HIDDEN_NEEDS_CHOICE
 
 
 # --- and the same again through the renderer, which can disagree -------------
@@ -859,18 +893,21 @@ SIZED = [variant(1, opts(("Size", "S"))), variant(2, opts(("Size", "M")))]
     ("out of stock", payload(inventory_state="out_of_stock"), BUYER, SIZED),
     ("unpriced", payload(price_label="", price_cents=None), BUYER, UNPRICED_SIZES),
     ("the seller's own listing", payload(), OWNER, SIZED),
-    ("nobody signed in", payload(), ANON, SIZED),
 ])
 def test_an_unbuyable_listing_with_sizes_renders_no_action_at_all(label, row, viewer, variants):
-    """The other four reasons render *nothing* -- not a picker link.
+    """The other reasons render *nothing* -- not a picker link.
 
     Each of these rows is sold in two sizes, so `requires_variant_choice` is true
     for all of them; what has to decide the markup is the reason that won. A
     renderer that offered the link for any withheld reason, or one that could not
     tell "needs configuring" from "cannot be bought", would invite the buyer to
-    pick a size for a product with no price, a suspended seller, or no session --
-    and then refuse them on the next page. Both of those are mutations the
-    positive `Choose options` tests above pass happily.
+    pick a size for a product with no price or a suspended seller -- and then
+    refuse them on the next page. That is a mutation the positive `Choose
+    options` tests above pass happily.
+
+    "nobody signed in" was a fifth case here and is now the opposite: a visitor
+    looking at a two-size listing gets the picker, because a picker is where
+    their purchase actually continues.
     """
     row = dict(row, id=5, listing_id=5)
     html = sf.render_discovery(
@@ -884,6 +921,21 @@ def test_an_unbuyable_listing_with_sizes_renders_no_action_at_all(label, row, vi
     assert "Choose options" not in html, label
     assert "data-mkt-add=" not in html, label
     assert "mkt-card-actions" not in html, label
+
+
+def test_a_visitors_sized_listing_renders_the_picker_not_a_dead_end():
+    """The inversion of the case removed from the list above, asserted positively
+    so the removal cannot be read as the coverage merely going away."""
+    row = payload(id=5, listing_id=5)
+    html = sf.render_discovery(
+        listings=[row],
+        variants_by_listing={5: SIZED},
+        filters=sf.Filters(),
+        viewer=ANON,
+        cart_count=0,
+    ).body_html
+    assert 'data-mkt-choose="5"' in html
+    assert "Choose options" in html
 
 
 def test_product_card_shows_one_action_when_handed_both():
@@ -1186,7 +1238,6 @@ def _affordance_for(chosen, variants=None):
     return mw.cart_affordance(
         row,
         price=mw.derive_price(row, variants),
-        signed_in=True,
         viewer_user_id=3,
         variants=variants,
         chosen_variant=chosen,
@@ -1233,9 +1284,12 @@ def test_a_route_that_could_not_read_the_cart_offers_no_add():
     assert "data-mkt-add" in product(cart_count=0)
 
 
-@pytest.mark.parametrize("label,viewer", [("anonymous", ANON), ("the seller", OWNER)])
-def test_nobody_who_cannot_buy_is_offered_the_add(label, viewer):
-    assert "data-mkt-add" not in product(viewer=viewer, cart_count=0)
+def test_the_seller_is_not_offered_the_add_on_their_own_listing():
+    """`ANON` was the other half of this and has moved to
+    `test_the_product_panel_offers_a_visitor_the_same_add_as_a_member`. A seller
+    still cannot buy from themselves; that is a fact about the pair of parties,
+    not about having an account."""
+    assert "data-mkt-add" not in product(viewer=OWNER, cart_count=0)
 
 
 def test_message_seller_steps_aside_when_the_add_is_present():
@@ -1292,10 +1346,43 @@ def test_exactly_one_filled_call_to_action_exists_in_the_panel(label, kw):
 
 
 @pytest.mark.parametrize("label,viewer,expected", [
-    ("anonymous gets the sign-in", ANON, "Sign in to buy"),
+    ("a visitor gets the add, same as anyone", ANON, 'data-mkt-add="5"'),
     ("the seller gets neither", OWNER, "This is your listing"),
 ])
 def test_the_one_filled_action_is_the_right_one_for_the_viewer(label, viewer, expected):
+    """The anonymous row used to expect "Sign in to add to cart" as the panel's
+    one filled action. That label was the whole problem in a single string: the
+    most prominent control on a product page was a demand for an account. The
+    filled action for a visitor is now the add itself."""
     html = product(viewer=viewer, cart_count=0)
     assert expected in html
     assert html.count('class="mkt-cta"') == 1
+
+
+def test_the_product_panel_offers_a_visitor_the_same_add_as_a_member():
+    """Not byte identity, unlike the grid: this panel genuinely differs further
+    down. Message seller needs two named sides and Save needs somewhere to save
+    to, so a visitor gets a sign-in link for the one and nothing for the other.
+    Those are account capabilities. Buying is not, and the buy control is
+    asserted here as the very same markup both viewers get.
+    """
+    buy = re.compile(r'<div class="mkt-actions-buy">.*?</div>', re.S)
+    anon = buy.search(product(viewer=ANON, cart_count=0))
+    member = buy.search(product(viewer=BUYER, cart_count=0))
+    assert anon is not None and anon.group(0) == member.group(0)
+    assert 'data-mkt-add="5"' in anon.group(0)
+
+
+def test_a_visitor_is_pointed_at_sign_in_only_for_what_sign_in_unlocks():
+    """The surviving sign-in link, pinned to its subject.
+
+    A messaging thread has two named sides and a visitor has no name, so this
+    one is honest. It stays a ghost -- `mkt-ghost`, never `mkt-cta` -- so it
+    cannot outrank the add beside it, and it returns the visitor to the product
+    rather than dropping them on a feed.
+    """
+    html = product(viewer=ANON, cart_count=0)
+    assert '<a class="mkt-ghost" href="/login?next=/pulse/marketplace/5">' \
+        "Sign in to message seller</a>" in html
+    assert "Sign in to add to cart" not in html
+    assert "/login" not in html.split('<div class="mkt-actions">')[0]

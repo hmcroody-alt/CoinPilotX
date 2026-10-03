@@ -184,6 +184,90 @@ class EligibilityTestCase(unittest.TestCase):
         self.assertEqual(verdict.reason, "no title")
 
 
+def variant(price_cents, status="active", **overrides):
+    row = {"id": 1, "listing_id": 777, "price_cents": price_cents,
+           "status": status, "currency": "USD"}
+    row.update(overrides)
+    return row
+
+
+class PriceAuthorityAgreementTestCase(unittest.TestCase):
+    """The feed may only publish a price the product page will also show.
+
+    Two authorities read money off a listing. ``parse_price`` reads
+    ``price_label``, a string a human typed at publish time, and it is what the
+    Merchant Center feed sends. ``marketplace_web.derive_price`` prefers
+    ``marketplace_listing_variants.price_cents``, which is what the page renders
+    and what ``marketplace_cart_routes._line_price_minor`` charges.
+
+    Measured against production on 2026-10-01, four of the 35 items in the live
+    feed disagreed, and the numbers in these tests are those rows. Listing 112
+    is the harmful direction and the reason this is a defect rather than an
+    inconsistency: a buyer selecting the top option paid $8.41 more than Google
+    was told. The tests assert the row leaves *Shopping* and keeps *Search*,
+    because the page priced from ``derive_price`` is correct -- it is only the
+    feed's number that cannot be substantiated.
+    """
+
+    def test_a_listing_whose_label_matches_its_variants_is_still_feedable(self):
+        verdict = marketplace_seo.eligibility(listing(
+            price_label="$465.74", variants=[variant(46574), variant(46574, id=2)]))
+        self.assertTrue(verdict.feed_eligible)
+
+    def test_a_label_cheaper_than_the_variant_leaves_the_feed(self):
+        """Production listing 36: advertised $38.00, charged $2.29."""
+        verdict = marketplace_seo.eligibility(listing(
+            price_label="$38.00", variants=[variant(229)]))
+        self.assertTrue(verdict.indexable)
+        self.assertFalse(verdict.feed_eligible)
+        self.assertEqual(verdict.reason, "price_label disagrees with variant prices")
+
+    def test_a_label_matching_only_the_cheapest_of_a_range_leaves_the_feed(self):
+        """Production listing 112: advertised $29.31, charged $27.84-$37.72.
+
+        The label is inside the range, so a check that only compared the
+        minimum would pass this row -- and this is the row that overcharged.
+        """
+        verdict = marketplace_seo.eligibility(listing(
+            price_label="$29.31",
+            variants=[variant(2784), variant(3772, id=2)]))
+        self.assertTrue(verdict.indexable)
+        self.assertFalse(verdict.feed_eligible)
+
+    def test_an_inactive_variant_cannot_disqualify_a_row_it_cannot_sell(self):
+        """``derive_price`` ignores non-active variants, so this check must too."""
+        verdict = marketplace_seo.eligibility(listing(
+            price_label="$465.74",
+            variants=[variant(46574), variant(99, id=2, status="draft")]))
+        self.assertTrue(verdict.feed_eligible)
+
+    def test_a_listing_with_no_variants_is_judged_on_its_label_alone(self):
+        """Most of the catalogue. The label is the only authority here."""
+        verdict = marketplace_seo.eligibility(listing(variants=[]))
+        self.assertTrue(verdict.feed_eligible)
+
+    def test_an_unpriced_variant_set_falls_back_to_the_label_without_conflict(self):
+        """``derive_price`` reports ``source="label"``, so there is one claim."""
+        verdict = marketplace_seo.eligibility(listing(
+            price_label="$465.74", variants=[variant(None)]))
+        self.assertTrue(verdict.feed_eligible)
+
+    def test_the_same_number_in_another_currency_is_still_two_claims(self):
+        verdict = marketplace_seo.eligibility(listing(
+            price_label="$465.74",
+            variants=[variant(46574, currency="EUR")]))
+        self.assertFalse(verdict.feed_eligible)
+
+    def test_a_caller_that_loads_no_variants_keeps_the_old_verdict(self):
+        """Fail-open, deliberately: see ``price_label_contradicts_variants``.
+
+        A listing page must not stop rendering because some caller skipped a
+        join. ``bot.marketplace_public_listings`` is the loader that populates
+        the key, and it feeds both the sitemap and the feed.
+        """
+        self.assertFalse(marketplace_seo.price_label_contradicts_variants(listing()))
+
+
 class ProductPageMetaTestCase(unittest.TestCase):
     def test_the_canonical_is_the_one_product_path(self):
         self.assertEqual(marketplace_seo.product_page_meta(listing())["canonical"],

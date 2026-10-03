@@ -968,9 +968,237 @@ def test_option_groups_are_derived_from_the_variant_rows():
     assert by_label["Color"] == ["Blue"], "one value appearing twice is one control"
 
 
+def test_a_group_is_only_called_color_when_every_value_is_one():
+    """The real production shape behind "Color: Chuck air outlet accessories".
+
+    Suppliers name every group `option1`, so the label is inferred from the
+    values -- and inferring it by majority let eighteen colourways vote a
+    workwear description into being a colour. The values here are a verbatim
+    slice of listing 174 in production, which rendered "Color: Denim Unlined
+    Long Gown" on the live product page.
+    """
+    values = [
+        "Police Blue Tweed", "Rose Red Tweed", "Bright Blue Thickened",
+        "Gray Polyester Card", "Purplish Blue Polyester Card",
+        "Denim Unlined Long Gown",
+    ]
+    variants = [
+        {"id": i, "status": "active", "price_cents": 1200, "variant_key": str(i),
+         "options_json": opts(("option1", value))}
+        for i, value in enumerate(values, start=1)
+    ]
+    group = mw.build_option_groups(variants)[0]
+    assert group.kind == "option"
+    assert group.label == "Option", "vague beats wrong: a gown is not a colour"
+    assert [o.value for o in group.options] == values, "every choice is still offered"
+    assert all(o.swatch == "" for o in group.options), (
+        "a demoted group must not keep drawing colour chips"
+    )
+
+
+def test_a_run_of_real_colours_still_gets_the_colour_treatment():
+    """Strictness must not cost shoppers the label when the values earn it.
+
+    Lilac and caramel are the interesting ones: both are ordinary colour words
+    that the vocabulary did not know, and under an all-must-match rule a single
+    gap like that silently demotes the whole group.
+    """
+    values = ["Lilac", "Caramel", "Sapphire Blue", "Charcoal Gray"]
+    variants = [
+        {"id": i, "status": "active", "price_cents": 1200, "variant_key": str(i),
+         "options_json": opts(("option1", value))}
+        for i, value in enumerate(values, start=1)
+    ]
+    group = mw.build_option_groups(variants)[0]
+    assert group.label == "Color"
+    assert [o.value for o in group.options] == values
+
+
+def test_one_non_size_in_a_size_run_demotes_the_whole_group():
+    values = ["S", "M", "L", "Gift Wrap"]
+    variants = [
+        {"id": i, "status": "active", "price_cents": 1200, "variant_key": str(i),
+         "options_json": opts(("option1", value))}
+        for i, value in enumerate(values, start=1)
+    ]
+    assert mw.build_option_groups(variants)[0].label == "Option"
+
+
+def test_a_size_run_starting_at_1xl_is_still_a_size():
+    """`1XL` is a size every supplier ships and the pattern used to reject it.
+
+    Under a majority vote one unrecognised token was outvoted and invisible.
+    Requiring every value to match turns that same gap into a lost label, so
+    the vocabulary has to actually be right.
+    """
+    variants = [
+        {"id": i, "status": "active", "price_cents": 1200, "variant_key": str(i),
+         "options_json": opts(("option1", value))}
+        for i, value in enumerate(["1XL", "2XL", "3XL"], start=1)
+    ]
+    assert mw.build_option_groups(variants)[0].label == "Size"
+
+
 def test_a_listing_with_no_variants_has_no_option_controls():
     assert mw.build_option_groups([]) == []
     assert sf.options_html([], {}) == "", "an empty fieldset is still a visible box"
+
+
+# --- product titles ---------------------------------------------------------
+#
+# Every title below is a verbatim published production title, because the whole
+# design claim is about what supplier titles are actually shaped like. A
+# plausible-looking invented title would let a cut that is unsafe on the real
+# catalogue pass here.
+
+def test_a_long_title_splits_only_where_the_seller_already_broke_it():
+    """Listing 14: 160 characters, and the seller's own comma does the work.
+
+    Nothing is reworded or abbreviated. Both halves are substrings of the
+    input, and concatenating them with the separator gives the title back --
+    which is what makes this a re-division rather than a rewrite.
+    """
+    title = (
+        "Upholstered Bed 135 X 190 Cm With LED Lighting, USB Type-C Charging, "
+        "Storage Headboard For Cellphones And Tablets, 4ft6 Hydraulic Storage "
+        "Bed With Metal Slatted"
+    )
+    name, subtitle = mw.display_title(title)
+    assert name == "Upholstered Bed 135 X 190 Cm With LED Lighting"
+    assert subtitle == (
+        "USB Type-C Charging, Storage Headboard For Cellphones And Tablets, "
+        "4ft6 Hydraulic Storage Bed With Metal Slatted"
+    )
+    assert f"{name}, {subtitle}" == title, "a re-division, not a rewrite"
+
+
+def test_the_split_keeps_the_product_noun_in_the_name():
+    """The point of splitting at all: the heading still says what it is.
+
+    Listing 52 and listing 110 are the other two production titles that split.
+    Both keep their noun -- "Ring", "Earrings" -- because the seller ended the
+    first clause on it. That is the property a word budget cannot promise.
+    """
+    name, subtitle = mw.display_title(
+        "Women's 3D Butterfly Ring, Elegant Fairy Style Index Finger Ring, "
+        "Korean INS Trend, Unique Minimalist Fashion Ring"
+    )
+    assert name == "Women's 3D Butterfly Ring"
+    assert subtitle.startswith("Elegant Fairy Style Index Finger Ring")
+
+    name, subtitle = mw.display_title(
+        "1 Pair Vintage Boho Style Leaf Dangle Earrings, Elegant & Chic, For "
+        "Women's Daily Wear, Banquets & Vacations, Exquisite Female Jewelry Gift"
+    )
+    assert name == "1 Pair Vintage Boho Style Leaf Dangle Earrings"
+    assert subtitle.startswith("Elegant & Chic")
+
+
+def test_a_title_with_no_seller_separator_is_never_cut():
+    """The case that rules out every length-based shortener.
+
+    This production title is 94 characters of keyword run with the product noun
+    last. Any budget that shortens it names the product "...Elegant Long" and
+    loses the T-shirt, so the only correct answer is to return it whole and let
+    CSS deal with the length.
+    """
+    title = (
+        "European And American Rib Slim V-neck Elegant Long Sleeve Spring And "
+        "Summer T-shirt"
+    )
+    assert mw.display_title(title) == (title, "")
+
+
+def test_a_head_that_opens_on_marketing_is_not_promoted_to_the_name():
+    """Listing 50 -- the one production title the lead-in guard actually saves.
+
+    The head parses as a ring and is a sane length, so length and separator
+    both pass it; only the lead-in check notices that "New Arrival" is the
+    supplier's banner rather than the start of the product's name.
+    """
+    title = (
+        "New Arrival Flower Oil Dripping Open Ring, Alloy Hot Sale Butterfly "
+        "Diamond"
+    )
+    assert mw.display_title(title) == (title, "")
+
+
+def test_a_title_short_enough_to_read_is_left_alone():
+    """Splitting is a remedy for length, so a short title is not a candidate.
+
+    The fixture is constructed rather than taken from production, and that is
+    worth saying out loud: exactly one published title is both short and
+    comma-broken (listing 161, "Compatible with Apple , Anti-peeping Toughened
+    Film ..."), and the lead-in guard would refuse that one anyway. So nothing
+    in today's catalogue exercises this check.
+
+    It is still the first thing the function tests, because the cost of
+    splitting is paid in the heading -- the tail moves into smaller, quieter
+    type -- and a title that already fits has nothing to buy with it. Without
+    this check the 151 titles under the threshold become candidates the moment
+    a seller types a comma.
+    """
+    title = "Linen Duvet Cover Set, washed and stonewashed in eight colours"
+    assert len(title) < 70
+    assert mw._TITLE_SEPARATOR.search(title), "the fixture must be splittable"
+    assert mw.display_title(title) == (title, "")
+
+
+def test_the_current_crumb_is_clamped_like_the_links_beside_it():
+    """Splitting the heading is only half of the de-duplication.
+
+    The breadcrumb carries the same shortened heading, and on a 320px screen
+    even 45 characters wraps the trail onto three lines directly above the
+    `<h1>` -- the duplication, smaller. Its sibling `.mkt-crumbs a` has been
+    clamped since the trail was built; the current-page crumb is not an anchor
+    and so was never covered by that rule.
+    """
+    with open(os.path.join(ROOT, "static/css/pulse_marketplace.css"), encoding="utf-8") as handle:
+        css = handle.read()
+    current = _css_block(css, '.mkt-crumbs [aria-current="page"]')
+    assert current, "the current-page crumb has no rule of its own"
+    for declaration in ("overflow: hidden", "text-overflow: ellipsis",
+                        "white-space: nowrap", "max-width:"):
+        assert declaration in current, (
+            f"the current crumb is missing {declaration!r}; without the whole "
+            "set it still wraps or still overflows")
+    # The same trap `test_a_thumbnail_is_sized_by_a_rule_that_can_actually_apply_to_it`
+    # guards one rule over: `.mkt-crumbs li` is `inline-flex`, and
+    # `text-overflow` applies only to a block container, so inheriting that
+    # display makes the ellipsis above inert -- the crumb then clips mid-word,
+    # which looks like a rendering fault rather than shortened text.
+    assert re.search(r"display:\s*(inline-)?block", current), (
+        "a flex container ignores the text-overflow above it")
+
+
+def test_the_qualifier_is_quieter_than_the_heading_it_follows():
+    """It must not read as a second headline -- that is the defect it fixes.
+
+    Asserted as a contrast against `.mkt-title` rather than as an absolute
+    size, because what matters is the relationship: a qualifier set in the
+    heading's own weight and colour restages the duplication in one line.
+    """
+    with open(os.path.join(ROOT, "static/css/pulse_marketplace.css"), encoding="utf-8") as handle:
+        css = handle.read()
+    qualifier = _css_block(css, ".mkt-title-qualifier")
+    assert qualifier, "the qualifier has no styling and inherits the body's"
+    assert "--mkt-muted" in qualifier, "the qualifier is as loud as the heading"
+    heading = _css_block(css, ".mkt-title")
+    assert "--mkt-muted" not in heading, "the heading went quiet instead"
+
+
+def test_a_two_word_head_is_a_category_not_a_product_name():
+    """The lower bound on the name, which no production title trips today.
+
+    It is here because the upstream feed changes without warning: a supplier
+    writing "Dress, long-sleeve ..." would otherwise have the whole listing
+    reduced to the word "Dress" in the heading.
+    """
+    title = "Dress, long sleeve autumn winter knitted midi with belt and pockets"
+    assert len(title) < 70  # the length guard is not what refuses this
+    long_title = title + " in eight colourways for everyday and occasion wear"
+    name, subtitle = mw.display_title(long_title)
+    assert (name, subtitle) == (long_title, ""), "a bare category is not a name"
 
 
 def test_a_variant_a_seller_retired_is_not_offered():
@@ -1576,12 +1804,12 @@ def test_the_panel_survives_a_row_that_answers_nothing():
 #: Update these *and* the token in the same commit. See the docstring on
 #: `CSS_HREF` for why the pair has to move together.
 ASSET_DIGESTS = {
-    "static/css/pulse_marketplace.css": "fd62405f07d9",
+    "static/css/pulse_marketplace.css": "862bf4222797",
     "static/js/pulse_marketplace.js": "d2d20c58cd87",
 }
 
 #: The token those digests were recorded against.
-ASSET_TOKEN = "storefront-20260928b"
+ASSET_TOKEN = "storefront-20261002b"
 
 
 def test_editing_a_storefront_asset_forces_its_cache_token_to_move():
