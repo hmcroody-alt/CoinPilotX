@@ -464,6 +464,9 @@ from services import business_web_sections
 from seo import schema as seo_schema
 from seo import features as seo_features
 from seo import commerce_policies as seo_commerce_policies
+from seo import app_legal as seo_app_legal
+from seo import about as seo_about
+from seo import safety as seo_safety
 from seo.content import (
     all_public_paths,
     article_page,
@@ -2202,31 +2205,118 @@ def legal_guidelines_canonical_page():
     return redirect("/community-rules", code=301)
 
 
+# The other two URLs the app names the same way, and the reason they render
+# instead of redirecting: there was no page to redirect them to. Both returned
+# 404 while `legalContent.ts` told members they carried the operative version.
+#
+# One closure rather than two handlers, following the commerce policy block
+# below, so the two cannot drift apart in their cache header, their robots
+# source or their schema. `commerce_policy_graph` is reused rather than copied
+# because its node set is the one these pages want -- publisher, site, page,
+# breadcrumb -- and in particular because it is the one graph builder that does
+# *not* attach a MobileApplication or a "AI intelligence" Service node, both of
+# which would be false on a cookie notice.
+def _register_app_legal_route(slug):
+    def handler(slug=slug):
+        page = seo_app_legal.page(slug, search_visibility.canonical_url)
+        if not page:
+            abort(404)
+        page["image"] = seo_schema.SHARE_IMAGE_URL
+        response = webhook_app.make_response(render_template(
+            "app_legal.html",
+            page=page,
+            robots=search_visibility.robots_meta(seo_app_legal.canonical_path(slug)),
+            schema_json=seo_schema.commerce_policy_graph(page),
+        ))
+        response.headers["Cache-Control"] = "public, max-age=600"
+        return response
+
+    handler.__name__ = f"app_legal_{slug.replace('-', '_')}_page"
+    handler.__doc__ = (
+        f"`{seo_app_legal.canonical_path(slug)}` -- a legal document the shipped "
+        "iPhone app links to as canonical. Content and the sourcing for every "
+        "claim on it live in `seo/app_legal.py`."
+    )
+    handler = public_route(
+        reason=(
+            "Legal document the shipped iPhone app names as the canonical version and "
+            "opens in an external browser. It must be readable with no account, because "
+            "a cookie notice that required one would be unreadable by the people "
+            "deciding whether to create one. No account state is read."
+        )
+    )(handler)
+    webhook_app.route(seo_app_legal.canonical_path(slug), methods=["GET"])(handler)
+
+
+for _document in seo_app_legal.DOCUMENTS:
+    _register_app_legal_route(_document["slug"])
+
+
 @webhook_app.route("/about", methods=["GET"])
+@public_route(reason="The page whose subject is the publisher: who PulseSoc is, which company bills you, and what the app does not do. It has to be readable with no account, because the people it is for are deciding whether to install and whether a charge they do not recognise is legitimate. No account state is read.")
 def about_page():
-    # The canonical node, not a local copy of one. What was here named the
-    # company where every other page names the brand, carried no `@id` so it
-    # joined nothing, gave `url` as /about rather than the site root, and listed
-    # a page on this same domain under `sameAs` -- a field for profiles that
-    # identify this entity somewhere else.
-    #
-    # Its `description` is the reason to take the whole node rather than patch
-    # the name: it described an educational crypto simulation platform. Under
-    # the canonical `@id` that description would not sit beside the WebSite's,
-    # it would merge with it, and Google would resolve the contradiction by
-    # crawl order.
-    schema = dict(seo_schema.organization_schema(), **{"@context": "https://schema.org"})
-    sections = [
-        ("Mission", "CoinPlotXAI helps people train discipline, understand risk, practice decision-making, improve market awareness, and protect themselves from crypto scams in a simulation-first environment."),
-        ("AI + Human Psychology", "The platform combines live/cached market context, AI tactical summaries, psychology checks, and risk education so users can slow down, recognize pressure, and make clearer educational decisions."),
-        ("Arena Training Ecosystem", "CoinPlotXAI Arena is a Pro training world with virtual portfolio battles, live rooms, AI commentary, Scam Hunter drills, boss challenges, leaderboards, and cinematic match rooms. It uses virtual dollars only and rewards discipline, scam defense, and learning."),
-        ("Scam Protection", "Scam Shield teaches users to recognize phishing, fake support, wallet drainers, impersonation, malicious approvals, urgency manipulation, and suspicious links. CoinPlotXAI never asks for seed phrases or private keys."),
-        ("Privacy + Security", "Arena uses public player identities instead of exposing email addresses, payment details, real names, or internal account IDs. Security logging, admin audit trails, rate-aware APIs, and browser protections help keep the platform accountable."),
-        ("Continuous Innovation", "CoinPlotXAI is evolving into a realtime intelligence operating system: live market context, social Arena presence, push-ready alerts, education paths, and AI coaching continue to improve without promising profits."),
-        ("Educational Disclaimer", "CoinPlotXAI Inc. provides educational AI intelligence and simulations only. It is not financial, investment, legal, betting, or tax advice. No real-money trading execution occurs inside Arena."),
-    ]
-    cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(title))}</h2><p>{html_escape(clean_html(text))}</p></article>" for title, text in sections)
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About CoinPlotXAI | AI Crypto Intelligence, Scam Protection and Arena Training</title><meta name="description" content="CoinPlotXAI is an educational AI crypto intelligence platform with Scam Shield, live market context, Pro Arena simulations, virtual portfolio battles, psychology training, and privacy-safe social learning."><link rel="canonical" href="https://pulsesoc.com/about"><meta property="og:title" content="About CoinPlotXAI"><meta property="og:description" content="AI crypto intelligence, Scam Shield, risk psychology education, and Pro Arena virtual-dollar training."><meta property="og:url" content="https://pulsesoc.com/about"><meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-og-20260913.png"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{json.dumps(schema)}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 30px,1120px);margin:auto;padding:28px 0 90px}}a{{color:#6edff6}}.hero{{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin:30px 0}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.28);padding:20px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}h1{{font-size:clamp(42px,7vw,78px);line-height:.96;margin:0 0 14px}}p{{color:#9fb5c0}}.kicker{{color:#36e58f;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}.button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(110,223,246,.24);padding:10px 14px;font-weight:900;text-decoration:none;color:#f2fbff}}.primary{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><section class="hero"><article class="card"><div class="kicker">About CoinPlotXAI</div><h1>A safer AI command center for crypto learning, risk awareness, and simulation.</h1><p>CoinPlotXAI is built for people who want sharper market awareness without hype, gambling language, or fake profit promises.</p><div class="actions"><a class="button primary" href="/signup">Start Free</a><a class="button" href="/arena-preview">Preview Arena</a><a class="button" href="/scam-shield/scan">Open Scam Shield</a></div></article><article class="card"><h2>What We Optimize For</h2><p>Clarity, emotional control, scam defense, privacy-safe social learning, and educational practice before real-world risk.</p></article></section><section class="grid">{cards}</section></main></body></html>""")
+    """`/about` -- the publisher, the two names, and the plain product account.
+
+    Content and the sourcing for every claim on it live in `seo/about.py`. What
+    was here was a single `Response(f"...")` carrying its own inline CSS, its own
+    hardcoded canonical and no robots directive, which made it the fourth
+    independent design for a public page on this domain.
+
+    The schema is the canonical Organization node by way of
+    `commerce_policy_graph`, not a local copy of one. What was here named the
+    company where every other page names the brand, carried no `@id` so it
+    joined nothing, gave `url` as /about rather than the site root, and listed a
+    page on this same domain under `sameAs` -- a field for profiles that
+    identify this entity somewhere else.
+
+    Its `description` is the reason the whole node had to go rather than have
+    its name patched: it described an educational crypto simulation platform.
+    Under the canonical `@id` that description would not sit beside the
+    WebSite's, it would merge with it, and Google would resolve the
+    contradiction by crawl order.
+    """
+    page = seo_about.page(search_visibility.canonical_url)
+    page["image"] = seo_schema.SHARE_IMAGE_URL
+    response = webhook_app.make_response(render_template(
+        "about.html",
+        page=page,
+        robots=search_visibility.robots_meta(seo_about.CANONICAL_PATH),
+        schema_json=seo_schema.commerce_policy_graph(page),
+    ))
+    response.headers["Cache-Control"] = "public, max-age=600"
+    return response
+
+
+@webhook_app.route("/safety", methods=["GET"])
+@public_route(reason="The page a member reaches when someone is harassing them, when they think their account is compromised, or when they are deciding whether a listing is a scam. It must be readable with no account and no session, because a person locked out of theirs is one of the readers it is written for. No account state is read.")
+def safety_page():
+    """`/safety` -- the safety controls that exist, named only where code enforces them.
+
+    Content and the sourcing for every claim live in `seo/safety.py`. This route
+    exists so that a static rule wins over the `/<slug>` catch-all, which used to
+    serve this path out of the `safety` entry in `seo/content.py`.
+
+    That entry described the retired crypto product: the title was "PulseSoc
+    Safety Center | Crypto Risk and Account Protection" and the four things it
+    offered a reader were "Never holds funds", "Public wallet data only", "Stripe
+    website billing" and "Educational AI intelligence only". Not one of those is
+    a control a member of a social app can use on another member.
+
+    `seo/safety.py` records which controls were verified in the source and, more
+    importantly, the three that were checked and deliberately left out because
+    nothing enforces them -- two-factor authentication, message-request
+    filtering, and a minimum age.
+    """
+    page = seo_safety.page(search_visibility.canonical_url)
+    page["image"] = seo_schema.SHARE_IMAGE_URL
+    response = webhook_app.make_response(render_template(
+        "safety.html",
+        page=page,
+        robots=search_visibility.robots_meta(seo_safety.CANONICAL_PATH),
+        schema_json=seo_schema.commerce_policy_graph(page),
+    ))
+    response.headers["Cache-Control"] = "public, max-age=600"
+    return response
 
 
 @webhook_app.route("/search", methods=["GET"])
@@ -106264,7 +106354,7 @@ def admin_pulse_post_debug_page():
 
 
 def trust_public_page(title, headline, body_html, cta="/signup"):
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name="description" content="{html_escape(clean_html(headline))}"><meta name="robots" content="index,follow"><link rel="canonical" href="https://pulsesoc.com{html_escape(clean_html(request.path))}"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-favicon-32-20260913.png"><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 15% 0,rgba(110,223,246,.18),transparent 26rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:22px 0 80px}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px}}a{{color:inherit}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{padding:42px 0 18px}}h1{{font-size:clamp(38px,7vw,74px);line-height:.95;margin:8px 0}}p{{color:var(--muted);line-height:1.6}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.84));padding:16px}}.button{{min-height:46px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;text-decoration:none;font-weight:950;padding:12px 15px;display:inline-flex;align-items:center;justify-content:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}li{{margin:8px 0;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">CoinPlotXAI</a><a class="button" href="{html_escape(clean_html(cta))}">Get Started</a></nav><section class="hero"><span class="badge">Trust-first platform</span><h1>{html_escape(clean_html(headline))}</h1></section>{body_html}</main></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name="description" content="{html_escape(clean_html(headline))}"><meta name="robots" content="index,follow"><link rel="canonical" href="https://pulsesoc.com{html_escape(clean_html(request.path))}"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-favicon-32-20260913.png"><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 15% 0,rgba(110,223,246,.18),transparent 26rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:22px 0 80px}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px}}a{{color:inherit}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{padding:42px 0 18px}}h1{{font-size:clamp(38px,7vw,74px);line-height:.95;margin:8px 0}}p{{color:var(--muted);line-height:1.6}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.84));padding:16px}}.button{{min-height:46px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;text-decoration:none;font-weight:950;padding:12px 15px;display:inline-flex;align-items:center;justify-content:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}li{{margin:8px 0;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-mark-20260913.png" alt="">PulseSoc</a><a class="button" href="{html_escape(clean_html(cta))}">Get Started</a></nav><section class="hero"><span class="badge">Trust-first platform</span><h1>{html_escape(clean_html(headline))}</h1></section>{body_html}</main></body></html>""")
 
 
 #: The Privacy Center's four controls, and the value a member has before they have

@@ -236,27 +236,60 @@ POLICIES = (
         "h1": "Shipping and delivery",
         "title": "Shipping and delivery | PulseSoc Marketplace",
         "description": (
-            "How delivery works on the PulseSoc Marketplace: each seller sets the delivery "
-            "method and cost for their own listing, and the full cost is shown at checkout "
-            "before you pay."
+            "Delivery on the PulseSoc Marketplace is free to the buyer. What you authorise "
+            "at checkout is the item price and nothing else: no shipping line, and no fee "
+            "added by PulseSoc."
         ),
         "lede": (
-            "There is no single shipping rate, because there is no single shipper. Each "
-            "listing carries its own delivery method and cost, and you see the total before "
-            "you authorise payment."
+            "Shipping is free to you. Not discounted, not free over a threshold &mdash; there "
+            "is no shipping line on a PulseSoc order, and the total you see is the total "
+            "before you authorise payment."
         ),
         "sections": [
             {
-                "heading": "Cost is shown before you pay, always",
+                "heading": "Shipping is free to the buyer",
                 "body": [
-                    "This is the part that is a guarantee rather than a description. An order "
-                    "cannot enter payment until the seller and listing are approved and the "
-                    "current price, currency, stock, delivery method, shipping cost, tax and "
-                    "final total have all been validated on the server.",
-                    "So checkout shows you the seller and store, the items and quantities, "
-                    "any discount, the delivery method, the shipping cost, tax, the total and "
-                    "the payment method &mdash; before authorisation, not after it. There is "
-                    "no step where a shipping charge appears later.",
+                    "Every checkout path on this platform builds the amount you authorise "
+                    "from the item price, the quantity, and any discount the seller applied. "
+                    "The shipping component of that sum is zero. There is no threshold to "
+                    "clear, no express tier to decline, and no per-seller rate card.",
+                    "This is a property of how orders are priced rather than a promotion. "
+                    "Where the platform shows a delivery estimate at all, the price beside it "
+                    "is the literal word <strong>FREE</strong> rather than a formatted zero, "
+                    "specifically so that no surface can render it as a charge of $0.00 next "
+                    "to a total and invite the question of when it stops being zero.",
+                    "The guarantee that survives any future change is the one about "
+                    "disclosure, not the one about the number: an order cannot enter payment "
+                    "until the server has validated the current price, currency, stock, "
+                    "fulfilment method and final total. A cost that is not in the total you "
+                    "were shown is not a cost you have agreed to.",
+                ],
+            },
+            {
+                "heading": "What the platform pays, and why you are told",
+                "body": [
+                    "Free to you is not free. Someone pays a courier, and on the "
+                    "supplier-fulfilled part of the catalogue that is the platform. The "
+                    "internal cost is tracked separately from anything a buyer or a seller "
+                    "sees, which is deliberate: the two numbers answer different questions "
+                    "and a single figure serving both is how a buyer ends up reading a "
+                    "freight cost as their own.",
+                    "It is stated here because a buyer who does not know who pays cannot "
+                    "tell the difference between free delivery and delivery that has not "
+                    "been quoted yet. Those are different situations and only one of them "
+                    "ends in an unexpected charge.",
+                ],
+            },
+            {
+                "heading": "What you do pay",
+                "body": [
+                    "The item price multiplied by the quantity, less any discount the seller "
+                    "has set. PulseSoc adds no commission, service charge or handling fee of "
+                    "its own to the buyer&rsquo;s total &mdash; the amount the card is "
+                    "authorised for is the merchandise total.",
+                    "Where a payment provider or a jurisdiction requires tax to be collected "
+                    "on an order, it is computed and shown at checkout as its own line "
+                    "before authorisation. It is never folded into the item price.",
                 ],
             },
             {
@@ -264,11 +297,27 @@ POLICIES = (
                 "body": [
                     "A listing is fulfilled as a physical shipment, as a digital delivery, or "
                     "by local pickup, and which one applies is set by the seller on the "
-                    "listing. Digital items have no shipping cost at all.",
+                    "listing. A digital item has nothing to ship, so the question of delivery "
+                    "cost does not arise for it at all.",
                     "Where a listing is collected in person, the precise pickup details are "
                     "revealed at the appropriate stage of a paid order rather than published "
                     "on the listing, which protects the address of whoever is handing the "
                     "item over.",
+                ],
+            },
+            {
+                "heading": "Where an order can be delivered",
+                "body": [
+                    "PulseSoc does not deliver everywhere. Checkout will only accept a "
+                    "delivery address in the countries the marketplace currently serves, and "
+                    "the address step is the authoritative list &mdash; it is the same list "
+                    "the payment provider enforces, so an address accepted there cannot be "
+                    "refused at payment.",
+                    "The list is short today and this page does not reproduce it, because a "
+                    "country list copied onto a policy page is a country list that goes out "
+                    "of date without anyone noticing. If your country is not offered at the "
+                    "address step, the order cannot be placed rather than placed and then "
+                    "cancelled.",
                 ],
             },
             {

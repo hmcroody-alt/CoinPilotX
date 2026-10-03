@@ -1,0 +1,55 @@
+{#
+  /safety -- the safety controls that exist, and the limits that come with them.
+
+  Extends the shared public shell. What this replaced was a `seo/content.py`
+  entry rendered through the `/<slug>` catch-all, which is why the page used to
+  be shaped like a marketing landing page: an eyebrow, a one-line "answer", four
+  bullet `points` and a block of FAQs shared with every other topic page. That
+  shape is wrong for this content. A person on /safety is looking for a specific
+  control or a specific limit, so the page is prose under headings they can scan.
+
+  Section bodies render `|safe` for the same reason `about.html` and
+  `commerce_policy.html` do: they carry internal links, `mailto:` links and
+  <strong>, and they come from `seo/safety.py`, which is source code. Nothing
+  here came from a user or from the database.
+
+  Unlike `about.html` this page carries no App Store badge and no install CTA.
+  `about.html` records the distinction: a page someone reads while deciding
+  whether to install is a page to put the store link on, and a page someone is
+  sent to when something has gone wrong is not. Someone who arrived here because
+  they are being harassed is not a person to sell the app to.
+#}
+{% extends "_public_shell.html" %}
+
+{% block content %}
+
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="/">Home</a> › {{ page.breadcrumb }}
+  </nav>
+
+  <section>
+    <h1>{{ page.h1 }}</h1>
+    <p class="lede">{{ page.lede }}</p>
+  </section>
+
+  {% for section in page.sections %}
+  <section class="prose">
+    <h2>{{ section.heading }}</h2>
+    {% for paragraph in section.body %}
+    <p>{{ paragraph|safe }}</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  <section>
+    <h2>Related</h2>
+    <div class="grid">
+      {% for item in page.related %}
+      <article class="card">
+        <h3><a href="{{ item.path }}">{{ item.label }}</a></h3>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+{% endblock %}

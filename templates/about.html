@@ -1,0 +1,66 @@
+{#
+  /about -- the page whose subject is the publisher.
+
+  Extends the shared public shell rather than carrying its own document, which
+  is what it did before: `bot.about_page` was a single `Response(f"...")` with
+  its own inline CSS, its own hardcoded canonical and no robots directive. That
+  made four designs for a public page on one domain, and the one that drifted
+  would still be the one a visitor was shown.
+
+  Section bodies render `|safe` for the same reason `commerce_policy.html` and
+  `app_legal.html` do: they carry internal links, `mailto:` links and <strong>,
+  and they come from `seo/about.py`, which is source code. Nothing here came
+  from a user or from the database.
+
+  This page *does* carry the App Store badge, unlike the policy and legal
+  pages. The distinction those pages make is that someone sent to read what the
+  app stores on their phone is not a person to sell the app to -- which is not
+  true here. /about is a page a person reads while deciding, so the install
+  link belongs on it. It is the store badge plus a link to /app rather than a
+  contextual app-opening CTA, following `feature_page.html`: there is no
+  specific destination inside the app that corresponds to this page.
+#}
+{% extends "_public_shell.html" %}
+{% from "_app_link_cta.html" import app_store_badge with context %}
+
+{% block content %}
+
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="/">Home</a> › {{ page.breadcrumb }}
+  </nav>
+
+  <section>
+    <h1>{{ page.h1 }}</h1>
+    <p class="lede">{{ page.lede }}</p>
+  </section>
+
+  {% for section in page.sections %}
+  <section class="prose">
+    <h2>{{ section.heading }}</h2>
+    {% for paragraph in section.body %}
+    <p>{{ paragraph|safe }}</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  <section>
+    <h2>Get the app</h2>
+    <p>PulseSoc is free to download and runs on iOS 15.1 or later.</p>
+    <div class="actions">
+      {{ app_store_badge(classes="button primary") }}
+      <a class="button" href="/app">About the app</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Related</h2>
+    <div class="grid">
+      {% for item in page.related %}
+      <article class="card">
+        <h3><a href="{{ item.path }}">{{ item.label }}</a></h3>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+{% endblock %}

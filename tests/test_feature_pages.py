@@ -21,8 +21,13 @@ say a thing is missing. Those sentences are load-bearing:
   honour, and it is the single worst thing that could regress here.
 * Screen sharing is not implemented on calls or on live video.
 * Group calls are gated off in production.
-* Marketplace card checkout is hard-paused.
 * There are no hashtags, no @-mentions, and no story highlights.
+
+Marketplace card checkout used to be on that list and has been removed from it,
+because it was never that kind of fact. It is a flag, it was on in production
+while this file asserted it was off, and a claim that can be flipped by an
+environment variable cannot be pinned by a sentence in a docstring. It is
+checked against the flag instead.
 
 So the tests do not merely ban those phrases -- the pages have to *discuss*
 them. They assert that wherever such a phrase appears, it appears negated. A
@@ -171,12 +176,21 @@ def test_each_page_carries_enough_of_its_own_writing_to_be_worth_indexing(bodies
 
 
 def test_every_page_has_its_own_title_and_description():
-    titles = [f["title"] for f in seo_features.FEATURES]
-    descriptions = [f["description"] for f in seo_features.FEATURES]
+    """Read off the built pages, not the `FEATURES` table.
+
+    The Marketplace entry no longer carries a literal `description`: it is
+    supplied per build from the live card-payment configuration, so the table
+    is no longer the whole truth about any page. Asserting against the table
+    would exempt the one page whose copy can change.
+    """
+
+    pages = [seo_features.detail_page(f["slug"], sv.canonical_url) for f in seo_features.FEATURES]
+    titles = [p["title"] for p in pages]
+    descriptions = [p["description"] for p in pages]
     assert len(set(titles)) == len(titles)
     assert len(set(descriptions)) == len(descriptions)
-    for feature in seo_features.FEATURES:
-        assert len(feature["description"]) <= 320, feature["slug"]
+    for feature, page in zip(seo_features.FEATURES, pages):
+        assert len(page["description"]) <= 320, feature["slug"]
 
 
 # ---------------------------------------------------------------------------
@@ -293,14 +307,45 @@ def test_the_calls_page_does_not_offer_group_calling(bodies):
     assert ok, f"the calls page appears to offer group calling: ...{context}..."
 
 
-def test_the_marketplace_page_leads_with_the_payment_pause(bodies):
-    """`MARKETPLACE_CARD_PAYMENTS_ENABLED` is unset in production, and the flag
-    fails closed, so a buyer cannot start a card checkout. A page that promises
-    one sends somebody to a dead end with their wallet out."""
+def test_the_marketplace_page_agrees_with_the_card_flag_either_way(client, monkeypatch):
+    """The test that used to be here asserted the opposite of production.
 
-    text = _visible(bodies["/features/marketplace"]).lower()
-    assert "temporarily" in text and "card" in text
-    assert "stripe" not in text, "the marketplace page must not promise a card processor"
+    Its docstring read "`MARKETPLACE_CARD_PAYMENTS_ENABLED` is unset in
+    production, and the flag fails closed" and it required the word
+    "temporarily" on the page. The flag was in fact set to `true` in production
+    against a live key, with every published listing belonging to one seller
+    whose onboarding was complete and charges enabled -- so card payment worked
+    on the whole catalogue while the page said it did not, and this test held
+    the false copy in place. It passed throughout, because it only ever
+    rendered with the CI default.
+
+    So it no longer encodes a premise. It renders the page under both settings
+    of the flag and checks that each one tells the truth about itself, which is
+    a property no future flip can falsify.
+    """
+
+    def rendered(flag):
+        monkeypatch.setenv("MARKETPLACE_CARD_PAYMENTS_ENABLED", flag)
+        return _visible(client.get("/features/marketplace").get_data(as_text=True)).lower()
+
+    card_on = rendered("true")
+    assert "pay by card" in card_on, "the page hides a card lane that is switched on"
+    assert "switched off" not in card_on
+    assert "not at the moment" not in card_on
+    assert "temporarily" not in card_on
+
+    card_off = rendered("")
+    assert "switched off" in card_off, "the page offers a card lane that is switched off"
+    assert "cash" in card_off and "pickup" in card_off
+    assert "pay by card in the app" not in card_off
+
+    for text in (card_on, card_off):
+        assert "stripe" not in text, "the marketplace page must not promise a card processor"
+        # `PROPOSED_PLATFORM_FEE_BPS` is 500. A marketing page is the wrong
+        # place for a commission rate to appear for the first time, and the
+        # owner's standing instruction is that no fee percentage is published.
+        assert "5%" not in text and "10%" not in text
+        assert "no platform fee" in text
 
 
 def test_the_app_page_no_longer_promises_stripe_marketplace_checkout(client):

@@ -147,24 +147,25 @@ and the one that drifts is still the one a user was shown.
 `canonicalUrl` values out of the app's own `legalContent.ts` rather than restating
 them, so a sixth in-app document pointing at an unserved URL fails the gate.
 
-**`/legal/cookies` and `/legal/licenses` remain 404 — OWNER DECISION REQUIRED.**
-There is nothing to redirect them to: the Cookie & Tracking Notice and the
-open-source licence list exist only inside the app, and writing web versions would
-mean drafting and publishing legal text, which §2 puts outside this mission. Two
-options, and they are not equivalent:
+**`/legal/cookies` and `/legal/licenses` are fixed too, on 2026-10-02.** They were
+the two with nothing to redirect to: the Cookie & Tracking Notice and the open-source
+licence list existed only inside the app. The alternative was correcting the app's
+canonical-URL claim in the next release, which leaves live build 1.0.2 pointing at
+nothing for as long as it is installed while its own text tells the member the web
+copy is "the one that is legally operative". So they are published, from
+`seo/app_legal.py` through `templates/app_legal.html`.
 
-1. Publish the app's existing text to the web at those URLs. Cheapest, and it makes
-   the app's claim true for the build already in users' hands. It also creates two
-   copies of each document to keep in step, which is the failure mode the three
-   redirects above were shaped to avoid — so it wants a single source both sides
-   render from, not a copy-paste.
-2. Correct the app's canonical-URL claim in the next release. Honest, but it leaves
-   live build 1.0.2 pointing at nothing for as long as it is installed, and the
-   in-app text tells the member the web copy is "the one that is legally operative".
+Not as a copy-paste, which is the failure mode the three redirects above were shaped
+to avoid. `seo/app_legal.py` is the single source, its `APP_TEXT_DIVERGENCES` names
+every place the shipped in-app wording and the web page differ and why, and
+`tests/protection/test_app_legal_parity.py` holds the two sides together rather than
+trusting them to stay in step.
 
-Both are recorded in the test as `PENDING_PUBLICATION`, which asserts they still
-404: publishing one without removing its entry fails, so the known-gap list cannot
-rot into a claim that is worse than reality.
+`PENDING_PUBLICATION` in `tests/web_surface/test_app_canonical_legal_urls.py` is
+consequently empty — and it is the mechanism that forced this entry to be rewritten.
+It asserted both URLs still 404, so publishing the pages turned the file red, and the
+edit it demanded was deleting the gap from the list. A known-gap list cannot rot into
+a claim that is worse than reality.
 
 ### D-L2 — Terms acceptance is validated and then discarded (HIGH)
 
@@ -450,13 +451,15 @@ No legal text has been drafted, no policy published, and no attestation variable
 set. `MARKETPLACE_STANDARD_V1_OWNER_APPROVED`, `…_SELLER_DISCLOSURE_READY` and
 `…_EFFECTIVE_AT` are untouched, so the platform fee remains 0%.
 
-Three repairs have landed. None of them writes, edits or publishes a sentence of
-policy, which is the line §2 draws and the reason these three were in scope and the
+Four repairs have landed. None of them drafts, edits or softens a sentence of
+policy, which is the line §2 draws and the reason these four were in scope and the
 rest are not:
 
-* **D-L1** is routing. The three canonical legal URLs that had a published page to
-  point at now point at it. It makes URLs the shipped app already advertises resolve
-  to text that was always there.
+* **D-L1** is routing and republication. Three canonical legal URLs now redirect to
+  the page that already published that text; the other two render it. Both halves
+  make URLs the shipped app already advertises resolve to text that was always
+  there — the words on `/legal/cookies` and `/legal/licenses` are the app's own,
+  moved to the address the app told members to look at, not new policy.
 * **D-L2** is persistence. Signup demanded agreement and then discarded the answer;
   it is now recorded against the version of each document the member actually read.
   The consent requirement is unchanged — what changed is that the platform can now

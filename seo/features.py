@@ -31,14 +31,140 @@ content on the page:
   production and defaults to false, so calls are one-to-one today. (The audio
   and video subflags read the same way but every real call site passes
   `default=True`, so those are on.)
-* Marketplace card checkout is hard-paused in
-  `services/marketplace_payment_pause.py`. Cash, local pickup and in-person
-  settlement are the live lanes, and they carry no platform fee.
+* Marketplace card checkout is a *configuration*, not a fact, and is therefore
+  not stated here at all. See `marketplace_payment_copy` below.
 * Profiles have no story-highlight surface.
 
 If one of those becomes false, the fix is to change the sentence here, not to
 quietly leave a stale claim in front of a search visitor.
+
+That instruction failed once, which is why the Marketplace entry is built
+differently from the other seven. This file used to carry a bullet saying card
+checkout was "hard-paused", and the Marketplace page said so in five places
+including an FAQ answer reading "Not at the moment." Production had
+`MARKETPLACE_CARD_PAYMENTS_ENABLED=true` against a live key, one seller holding
+every published listing with onboarding complete and charges enabled, so card
+payment worked on the entire catalogue while the only page a search visitor
+could read about it said they could not pay. Nobody edited the sentence because
+nothing made them: the claim was prose, and prose does not fail a build.
+
+The lesson taken was not "be more careful with this sentence". A fact that
+lives in a flag has to be read from the flag.
 """
+
+from services.business_os.marketplace.policy import platform_fee_bps
+from services.marketplace_payment_pause import marketplace_card_payments_enabled
+
+
+def _platform_fee_sentence():
+    """What the platform takes, without ever printing a rate.
+
+    Zero is safe to state plainly. A non-zero commission is deliberately *not*
+    rendered as a number: `PROPOSED_PLATFORM_FEE_BPS` is 500, and a marketing
+    page is the wrong place for a rate to make its first public appearance. The
+    rate a seller is charged has to be the rate that seller was shown when they
+    listed, so the page points at that disclosure instead of racing it.
+    """
+
+    if platform_fee_bps() == 0:
+        return (
+            "PulseSoc adds no platform fee to a Marketplace sale. Not a reduced one and not "
+            "one waived for a promotional period &mdash; the commission rate on this platform "
+            "is currently zero, on every payment method."
+        )
+    return (
+        "PulseSoc takes a commission on a Marketplace sale. The rate is the one shown to the "
+        "seller at the time they list, and the seller terms are the authoritative statement "
+        "of it."
+    )
+
+
+def marketplace_payment_copy():
+    """The Marketplace page's payment claims, read from the live configuration.
+
+    Returns the overlay applied to the static entry below. Both branches are
+    written out in full rather than assembled from fragments, because the two
+    situations are not the same sentence with a word changed: one of them is
+    telling a buyer they can pay and the other is telling them why they cannot.
+    """
+
+    fee = _platform_fee_sentence()
+    if marketplace_card_payments_enabled():
+        return {
+            "card_summary": (
+                "List something for sale and take payment by card, or settle it in cash on "
+                "pickup."
+            ),
+            "description": (
+                "List an item in the PulseSoc Marketplace and get paid by card, in cash, or on "
+                "local pickup. Delivery is free to the buyer and PulseSoc adds no platform fee "
+                "to the sale."
+            ),
+            "lede": (
+                "You can list something, and a buyer can pay for it by card without leaving the "
+                "app. Cash and pickup still work for the sales that are better settled in "
+                "person."
+            ),
+            "settlement": {
+                "heading": "How a sale settles",
+                "body": [
+                    "A buyer can pay by card in the app. The amount authorised is the item price "
+                    "times the quantity, less any discount the seller set: there is no shipping "
+                    "line and no service charge added on top.",
+                    "Taking card payment requires the seller to have finished payment "
+                    "onboarding, which is a verification step with the payment provider rather "
+                    "than a setting. Until a seller completes it their listings settle in cash "
+                    "or on pickup, so the payment options shown on the listing and at checkout "
+                    "are the authoritative answer for that particular item.",
+                    "Cash, local pickup and payment in person remain available and are often the "
+                    "right choice for something being handed over locally.",
+                    fee,
+                ],
+            },
+            "card_faq": {
+                "question": "Can I pay for a Marketplace item by card?",
+                "answer": (
+                    "Yes, where the seller has completed payment onboarding. The payment options "
+                    "offered on the listing and at checkout are authoritative for that item; "
+                    "cash and local pickup are available either way."
+                ),
+            },
+        }
+    return {
+        "card_summary": (
+            "List something for sale and settle it in cash or on pickup. Card payments are "
+            "switched off."
+        ),
+        "description": (
+            "List an item in the PulseSoc Marketplace and arrange payment face to face. Card "
+            "checkout is switched off; cash, local pickup and in-person settlement are the "
+            "live options."
+        ),
+        "lede": (
+            "You can list and sell today. You cannot take a card for it today, and this page "
+            "would rather tell you that than let you find out at checkout."
+        ),
+        "settlement": {
+            "heading": "How a sale settles right now",
+            "body": [
+                "Card payments in the Marketplace are switched off. A buyer cannot start a card "
+                "checkout on a listing, and no card flow will begin and then fail &mdash; the "
+                "option is simply not offered.",
+                "What works is cash, local pickup, and payment in person.",
+                "This affects Marketplace card checkout specifically. It is unrelated to "
+                "PulseSoc Premium, which is billed through your Apple ID and is unaffected.",
+                fee,
+            ],
+        },
+        "card_faq": {
+            "question": "Can I pay for a Marketplace item by card?",
+            "answer": (
+                "Not at the moment. Card checkout in the Marketplace is switched off. Cash, "
+                "local pickup and in-person payment are the available options."
+            ),
+        },
+    }
+
 
 FEATURES = (
     {
@@ -514,19 +640,14 @@ FEATURES = (
     {
         "slug": "marketplace",
         "card_title": "Marketplace",
-        "card_summary": "List something for sale and settle it in cash or on pickup. Card payments are paused.",
         "breadcrumb": "Marketplace",
         "h1": "Marketplace",
         "title": "PulseSoc Marketplace — list and sell from the app",
-        "description": (
-            "List an item in the PulseSoc Marketplace and arrange payment face to face. Card "
-            "checkout is temporarily unavailable; cash, local pickup and in-person settlement "
-            "are the live options and carry no platform fee."
-        ),
-        "lede": (
-            "You can list and sell today. You cannot take a card for it today, and this page "
-            "would rather tell you that than let you find out at checkout."
-        ),
+        # `card_summary`, `description`, `lede`, the settlement section and the
+        # card FAQ are supplied by `marketplace_payment_copy` rather than typed
+        # here. They are the five places that previously disagreed with
+        # production at the same time.
+        "derived": marketplace_payment_copy,
         "sections": [
             {
                 "heading": "Listing something",
@@ -537,28 +658,11 @@ FEATURES = (
                     "vanish.",
                 ],
             },
-            {
-                "heading": "How a sale settles right now",
-                "body": [
-                    "Card payments in the Marketplace are temporarily switched off. A buyer "
-                    "cannot start a card checkout on a listing, and no card flow will begin and "
-                    "then fail — the option is simply not offered.",
-                    "What works is cash, local pickup, and payment in person. Those settlements "
-                    "carry no platform fee, because the platform is not moving the money.",
-                    "This is a pause on Marketplace card checkout specifically. It is unrelated "
-                    "to PulseSoc Premium, which is billed through your Apple ID and is "
-                    "unaffected.",
-                ],
-            },
         ],
         "faqs": [
             {
-                "question": "Can I pay for a Marketplace item by card?",
-                "answer": "Not at the moment. Card checkout in the Marketplace is temporarily unavailable. Cash, local pickup and in-person payment are the available options.",
-            },
-            {
-                "question": "Is there a fee on a Marketplace sale?",
-                "answer": "Cash, pickup and in-person settlements carry no platform fee.",
+                "question": "What does delivery cost?",
+                "answer": "Nothing. Delivery is free to the buyer: there is no shipping line on a PulseSoc order.",
             },
             {
                 "question": "Do I need to do anything before I can sell?",
@@ -603,11 +707,24 @@ def hub_page(canonical_url):
     }
 
 
+def _derived(feature):
+    """The configuration-dependent half of a feature, or an empty overlay.
+
+    Called on every build rather than cached: the flag it reads is the same one
+    checkout reads per request, and a card summary cached at import time is the
+    stale sentence this indirection exists to prevent.
+    """
+
+    builder = feature.get("derived")
+    return builder() if builder else {}
+
+
 def feature_card(feature, canonical_url):
+    overlay = _derived(feature)
     return {
         "slug": feature["slug"],
         "card_title": feature["card_title"],
-        "card_summary": feature["card_summary"],
+        "card_summary": overlay.get("card_summary") or feature["card_summary"],
         "canonical_path": canonical_path(feature),
         "canonical": canonical_url(canonical_path(feature)),
     }
@@ -625,16 +742,23 @@ def detail_page(slug, canonical_url):
     feature = BY_SLUG.get(slug)
     if not feature:
         return None
+    overlay = _derived(feature)
+    sections = list(feature["sections"])
+    if overlay.get("settlement"):
+        sections.append(overlay["settlement"])
+    faqs = list(feature["faqs"])
+    if overlay.get("card_faq"):
+        faqs.insert(0, overlay["card_faq"])
     page = {
         "canonical": canonical_url(canonical_path(feature)),
         "breadcrumb": feature["breadcrumb"],
         "title": feature["title"],
-        "description": feature["description"],
+        "description": overlay.get("description") or feature["description"],
         "h1": feature["h1"],
-        "lede": feature["lede"],
-        "sections": feature["sections"],
+        "lede": overlay.get("lede") or feature["lede"],
+        "sections": sections,
         "limits": feature.get("limits"),
-        "faqs": feature["faqs"],
+        "faqs": faqs,
     }
     return page
 

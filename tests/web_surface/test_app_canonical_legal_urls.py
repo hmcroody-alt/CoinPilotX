@@ -7,20 +7,20 @@ sentence is a live claim made by a build nobody can edit -- the only side of the
 contract still under our control is this server.
 
 All five 404'd in production when this was audited (2026-09-29), against live
-build 1.0.2. Three are served now, as 301s to the pages that already publish
-that text: one document, one home. The remaining two have no web publication to
-redirect to, and inventing legal prose to fill a URL is the thing this mission is
-not allowed to do, so they are declared pending below rather than quietly
-skipped.
+build 1.0.2. All five resolve now: three as 301s to the pages that already
+publish that text, and ``/legal/cookies`` and ``/legal/licenses`` as pages of
+their own, which they had to be because there was nothing to redirect them to.
 
-The list cuts both ways on purpose:
+``PENDING_PUBLICATION`` is empty as a result, and it cuts both ways on purpose:
 
 * A sixth in-app document with a new ``canonicalUrl`` fails here until that URL
   is either served or added to ``PENDING_PUBLICATION`` with a reason. Shipping a
   document that points at nothing is the defect this test exists for.
-* Publishing ``/legal/cookies`` or ``/legal/licenses`` without removing it from
-  ``PENDING_PUBLICATION`` also fails. A list of known gaps that can go stale in
-  the direction of looking worse than reality is a list nobody trusts.
+* Leaving an entry in ``PENDING_PUBLICATION`` after publishing the page also
+  fails. A list of known gaps that can go stale in the direction of looking
+  worse than reality is a list nobody trusts -- and that is how it emptied: the
+  two entries below were deleted because this file started failing when the two
+  pages shipped.
 
 The URLs are read out of the app's own source rather than restated here, because
 a copy of them in this file would be a second thing to keep in step and the app
@@ -51,14 +51,12 @@ from services import search_visibility as sv  # noqa: E402
 REPO = pathlib.Path(__file__).resolve().parents[2]
 LEGAL_CONTENT = REPO / "mobile-native" / "src" / "screens" / "settings" / "legalContent.ts"
 
-# Nothing to redirect to. The in-app text for both is the only copy that exists,
-# and publishing it to the web -- or correcting the app's claim in the next
-# release -- is an owner decision, not a code fix. Tracked as D-L1 in
-# docs/legal/PULSE_LEGAL_SURFACE_AUDIT.md.
-PENDING_PUBLICATION = {
-    "/legal/cookies": "Cookie & Tracking Notice exists only in the app; no web page publishes it.",
-    "/legal/licenses": "Open-source licences are generated from the app's own dependency list.",
-}
+#: Canonical URLs the shipped app promises and this server does not yet answer,
+#: mapped to why. Empty, and meant to stay that way: an entry here is a live
+#: build telling a member that a 404 carries the operative version of a legal
+#: document. It held `/legal/cookies` and `/legal/licenses` until both were
+#: published on 2026-10-02 (D-L1 in docs/legal/PULSE_LEGAL_SURFACE_AUDIT.md).
+PENDING_PUBLICATION: dict[str, str] = {}
 
 
 def _canonical_urls() -> list[str]:

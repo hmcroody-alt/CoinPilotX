@@ -162,7 +162,14 @@ def app_page_graph(page, trail=()):
 
 
 def commerce_policy_graph(page):
-    """The graph for `/returns`, `/refund-policy`, `/shipping` and `/contact`.
+    """The graph for a public document page: the four commerce policies
+    (`/returns`, `/refund-policy`, `/shipping`, `/contact`), the two legal
+    documents the iPhone app names as canonical (`/legal/cookies`,
+    `/legal/licenses`), and `/about`.
+
+    Named for the first callers and kept that way, because what the name
+    describes is still the distinguishing property: this is the graph for a page
+    that is a *document* rather than a pitch.
 
     A third hand-composed graph rather than a reuse, and the omission is the
     reason. `app_page_graph` attaches `mobile_app_schema()` to every page it

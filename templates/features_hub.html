@@ -40,10 +40,13 @@
 
   <section class="prose">
     <h2>Why these pages say what is missing</h2>
+    {# This list used to end "Marketplace card payments are paused", which was
+       false in production. It was removed rather than reworded: whether a card
+       can be taken is configuration, so it cannot be asserted in a template at
+       all. The Marketplace card above states it, read from the live flag. #}
     <p>Each page above describes what that part of PulseSoc does, and several of
     them spend a section on what it does not. Messages are not end-to-end
-    encrypted; there are no hashtags; calls are one-to-one; Marketplace card
-    payments are paused.</p>
+    encrypted; there are no hashtags; calls are one-to-one.</p>
     <p>Those are the things people find out after installing, and finding them
     out then is worse for everyone than reading them here. A feature page that
     only lists capabilities is a page that has decided the reader is a target

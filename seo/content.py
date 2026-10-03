@@ -186,17 +186,15 @@ SEO_PAGES.update({
         "faqs": COMMON_FAQS,
         "related": ["/crypto-scams", "/crypto-scam-checker", "/crypto-safety"],
     },
-    "safety": {
-        "title": "PulseSoc Safety Center | Crypto Risk and Account Protection",
-        "description": "PulseSoc safety rules: never share seed phrases, never enter private keys, use public wallet data only, and review crypto risk carefully.",
-        "h1": "PulseSoc Safety Center",
-        "eyebrow": "Trust and Safety",
-        "intro": "PulseSoc is built around public data, account safety, educational AI intelligence, and clear limits.",
-        "answer": "CoinPlotXAI Inc. never holds user funds and never asks for private wallet credentials.",
-        "points": ["Never holds funds", "Public wallet data only", "Stripe website billing", "Educational AI intelligence only"],
-        "faqs": COMMON_FAQS,
-        "related": ["/support", "/privacy", "/terms", "/crypto-safety"],
-    },
+    # "safety" used to live here. It offered a member of a social app four
+    # things -- "Never holds funds", "Public wallet data only", "Stripe website
+    # billing" and "Educational AI intelligence only" -- and not one of them is
+    # a control you can use on someone who is harassing you. It now belongs to
+    # `seo/safety.py` and `bot.safety_page`, for the reason the `features` note
+    # below gives, plus one specific to this page: the landing-page shape this
+    # dict renders (an eyebrow, a one-line `answer`, four `points` and the
+    # shared `COMMON_FAQS`) cannot hold a safety page, which has to state what
+    # each control does and where it stops.
     "faq": {
         "title": "PulseSoc FAQ | AI Crypto Intelligence Platform",
         "description": "Answers about PulseSoc Pro, AI crypto intelligence, wallet safety, Scam Shield, portfolio tools, alerts, billing, and optional Telegram access.",
@@ -1107,7 +1105,12 @@ def search_pages(query, limit=12):
 
 
 def all_public_paths():
-    paths = ["/", "/app", "/about", "/signup", "/support", "/privacy", "/terms", "/quote", "/quote/crypto/BTC", "/quote/crypto/ETH", "/predictions/crypto", "/sports-edge", "/arena-preview"]
+    # `/safety` is listed here rather than reached through `SEO_PAGES` because
+    # its entry was removed from that dict when the page was extracted. Without
+    # this line the extraction would have silently dropped a live URL out of the
+    # sitemap, which is the one way a rewrite can leave a page worse than the
+    # crypto-era copy it replaced.
+    paths = ["/", "/app", "/about", "/safety", "/signup", "/support", "/privacy", "/terms", "/quote", "/quote/crypto/BTC", "/quote/crypto/ETH", "/predictions/crypto", "/sports-edge", "/arena-preview"]
     paths += features.all_paths()
     # The four commerce policy pages. They enter the sitemap through the same
     # list as every other written page rather than through a special case,

@@ -1,0 +1,60 @@
+{#
+  /legal/cookies and /legal/licenses -- the two documents the shipped iPhone app
+  links to as "the full canonical version" and which had no page behind them.
+
+  Section bodies render `|safe` for the same reason `commerce_policy.html` does:
+  they carry `mailto:` links, internal links, <code> and <strong>, and they come
+  from `seo/app_legal.py`, which is source code. Nothing here came from a user
+  or the database.
+
+  Extends the public shell rather than `legal_money_page()` next door in bot.py:
+  that helper builds its own inline-CSS document, which is a third design for
+  the same kind of page and carries no canonical link, no robots directive and
+  no structured data. A legal document a crawler cannot classify is a legal
+  document nobody finds.
+
+  No App Store badge and no install block, following the commerce policy pages:
+  someone sent here from the app to read what it stores on their phone is not a
+  person to sell the app to.
+#}
+{% extends "_public_shell.html" %}
+
+{% block content %}
+
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="/">Home</a> › {{ page.breadcrumb }}
+  </nav>
+
+  <section>
+    <h1>{{ page.h1 }}</h1>
+    <p class="lede">{{ page.lede }}</p>
+    <p class="meta">Effective {{ page.effective_date }}</p>
+  </section>
+
+  {% for section in page.sections %}
+  <section class="prose">
+    <h2>{{ section.heading }}</h2>
+    {% for paragraph in section.body %}
+    <p>{{ paragraph|safe }}</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  <section>
+    <h2>Related</h2>
+    <div class="grid">
+      {% for other in page.related %}
+      <article class="card">
+        <h3><a href="{{ other.path }}">{{ other.h1 }}</a></h3>
+      </article>
+      {% endfor %}
+      <article class="card">
+        <h3><a href="/privacy">Privacy policy</a></h3>
+      </article>
+      <article class="card">
+        <h3><a href="/terms">Terms of service</a></h3>
+      </article>
+    </div>
+  </section>
+
+{% endblock %}
