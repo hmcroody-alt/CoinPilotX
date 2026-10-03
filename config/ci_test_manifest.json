@@ -759,6 +759,7 @@
     "tests/web_surface/test_emoji_surfaces_render.py",
     "tests/web_surface/test_every_native_destination_resolves.py",
     "tests/web_surface/test_intelligence_subsystem_links.py",
+    "tests/web_surface/test_login_entry_experience.py",
     "tests/web_surface/test_login_preserves_where_you_were_going.py",
     "tests/web_surface/test_messenger_bubble_body.py",
     "tests/web_surface/test_no_floating_dock_on_desktop.py",

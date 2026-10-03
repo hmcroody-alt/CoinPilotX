@@ -6825,6 +6825,12 @@ AUTH_EVENT_CLASS = {
     "verification_email_failed": "friction",
     "verification_link_rejected": "friction",
     "unverified_email_change_failed": "friction",
+    # The password was right and the sign-in still stopped, to ask about a
+    # document rewritten since this member last agreed. Friction rather than
+    # security for that reason -- and because it is keyed on distinct accounts,
+    # a spike here is the signal that a new Terms version is costing people
+    # their way in, which is exactly what the friction level is for.
+    "login_legal_acceptance_required": "friction",
     # Progress, not a problem.
     "login_success": "neutral",
     "mobile_login_success": "neutral",
@@ -8126,6 +8132,95 @@ def signup_page():
     return render_account_page("signup", "Create Account")
 
 
+#: A sign-in that has passed the password and is waiting on the member to agree
+#: to a document that has been rewritten since they last agreed. Deliberately
+#: not `account_user_id`: `require_account()` never reads this key, so the
+#: half-finished state authorises nothing. It does stand in for a verified
+#: password, which is why it expires rather than sitting in the session forever.
+PENDING_LEGAL_SESSION_KEY = "pulse_pending_legal"
+PENDING_LEGAL_TTL_SECONDS = 900
+
+
+def pending_legal_acceptance_user_id():
+    """The member mid-acceptance, or 0 when there is no live pending sign-in."""
+    pending = session.get(PENDING_LEGAL_SESSION_KEY)
+    if not isinstance(pending, dict):
+        session.pop(PENDING_LEGAL_SESSION_KEY, None)
+        return 0
+    try:
+        user_id = int(pending.get("user_id") or 0)
+        started_at = float(pending.get("at") or 0)
+    except (TypeError, ValueError):
+        session.pop(PENDING_LEGAL_SESSION_KEY, None)
+        return 0
+    if not user_id or (time.time() - started_at) > PENDING_LEGAL_TTL_SECONDS:
+        session.pop(PENDING_LEGAL_SESSION_KEY, None)
+        return 0
+    return user_id
+
+
+def complete_web_login(user, preferred_language=""):
+    """Everything that happens once a web sign-in is fully authorised.
+
+    Shared by the ordinary path and by the acceptance step below so the two
+    cannot drift: a member who had to agree to a rewritten document gets the
+    same session, the same login notifications and the same tokens as one who
+    did not. A second copy of this would be how one of those silently stops
+    firing for the members who went the long way round.
+    """
+
+    email = user.get("email") or ""
+    session.pop(PENDING_LEGAL_SESSION_KEY, None)
+    session.permanent = True
+    session["account_user_id"] = user["user_id"]
+    session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
+    log_auth_event("login_success", email, user["user_id"], status="success", details={"db_engine": db_service.ENGINE_NAME})
+    conn = db()
+    cur = conn.cursor()
+    if user_is_owner_account(user):
+        ensure_owner_super_user(cur, conn)
+    cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
+    # Recording it is what makes the requirement mean something: a member who
+    # predates the acceptance table, or who last agreed to a superseded version,
+    # comes on file at the current one. Already on file is a no-op, not a second
+    # row -- so this is also the write that makes the question above stop being
+    # asked.
+    legal_acceptance.record(cur, user["user_id"], source="web_login")
+    cancel_scheduled_account_deletion(cur, user["user_id"])
+    notify_user(
+        cur,
+        user["user_id"],
+        "account_login",
+        "New login to PulseSoc",
+        "Your PulseSoc account was accessed successfully.",
+        "/pulse/settings/notifications",
+        actor_user_id=user["user_id"],
+        entity_type="account",
+        entity_id=str(user["user_id"]),
+        metadata={"ip_present": bool(request.remote_addr), "user_agent_present": bool(request.headers.get("User-Agent"))},
+    )
+    notify_user(
+        cur,
+        user["user_id"],
+        "new_device",
+        "Device activity detected",
+        "PulseSoc recorded a browser/device login for your account.",
+        "/pulse/settings/notifications",
+        actor_user_id=user["user_id"],
+        entity_type="account",
+        entity_id=str(user["user_id"]),
+        metadata={"event": "device_login", "user_agent_present": bool(request.headers.get("User-Agent"))},
+    )
+    conn.commit()
+    conn.close()
+    if preferred_language:
+        save_user_preferred_language(user["user_id"], preferred_language, user["user_id"])
+        user = load_account_by_id(user["user_id"]) or user
+    token_payload = issue_mobile_security_tokens(user, {"source": "web_login", "device_label": presence_device_label()})
+    response = redirect(safe_redirect_target("pulse_page"))
+    return set_persistent_session_cookie(response, token_payload.get("refresh_token") or "")
+
+
 @webhook_app.route("/login", methods=["GET", "POST"])
 def login_page():
     init_db()
@@ -8144,8 +8239,31 @@ def login_page():
         password = request.form.get("password", "")
         preferred_language = normalize_preferred_language(request.form.get("preferred_language") or request.form.get("language") or "", default="")
         terms_accepted = request.form.get("terms_accepted") == "on" or request.form.get("terms_accepted") == "true"
-        if not terms_accepted:
-            return render_account_page("login", "Login", error="Agree to the Terms, Privacy Policy, and no-tolerance safety rules before logging in.", resend_email=email), 400
+        if request.form.get("legal_acceptance_submit"):
+            # The second half of a sign-in that stopped to ask about a rewritten
+            # document. It carries no credentials -- the password was checked
+            # before the marker was written -- so everything it is allowed to do
+            # comes from that marker, and the marker expires.
+            pending_user_id = pending_legal_acceptance_user_id()
+            if not pending_user_id:
+                return render_account_page("login", "Login", error="That took too long. Please sign in again."), 400
+            if not terms_accepted:
+                return render_account_page("login", "Login", error="Agree to the Terms, Privacy Policy, and no-tolerance safety rules to continue.", legal_acceptance_required=True), 400
+            pending_user = load_account_by_id(pending_user_id)
+            if not pending_user:
+                session.pop(PENDING_LEGAL_SESSION_KEY, None)
+                return render_account_page("login", "Login", error="Email or password is incorrect."), 400
+            # Re-checked rather than trusted from before the pause: these are the
+            # two reasons a sign-in is refused *after* the password, and either
+            # can start being true while the member is reading the Terms.
+            pending_restriction = account_login_restriction_message(pending_user)
+            if pending_restriction:
+                session.pop(PENDING_LEGAL_SESSION_KEY, None)
+                return render_account_page("login", "Login", error=pending_restriction), 403
+            if pending_user.get("email") and not int(pending_user.get("email_verified") or 0):
+                session.pop(PENDING_LEGAL_SESSION_KEY, None)
+                return render_account_page("login", "Login", error="Please confirm your email before logging in.", resend_email=pending_user.get("email") or "")
+            return complete_web_login(pending_user, preferred_language)
         security_gate = login_security_preflight(email, enforce_challenge=False)
         if not security_gate.get("allowed"):
             return render_account_page(
@@ -8190,55 +8308,21 @@ def login_page():
         if user.get("email") and not int(user.get("email_verified") or 0):
             log_auth_event("login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
             return render_account_page("login", "Login", error="Please confirm your email before logging in.", resend_email=email)
-        session.permanent = True
-        session["account_user_id"] = user["user_id"]
-        session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
-        log_auth_event("login_success", email, user["user_id"], status="success", details={"db_engine": db_service.ENGINE_NAME})
-        conn = db()
-        cur = conn.cursor()
-        if user_is_owner_account(user):
-            ensure_owner_super_user(cur, conn)
-        cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
-        # This form has always required the tick to sign in and always discarded
-        # it, so every existing member has re-agreed on every visit with nothing
-        # kept. Recording it is what makes the requirement mean something: a
-        # member who predates the acceptance table, or who last agreed to a
-        # superseded version, comes on file at the current one the next time they
-        # sign in. Already on file is a no-op, not a second row.
-        legal_acceptance.record(cur, user["user_id"], source="web_login")
-        cancel_scheduled_account_deletion(cur, user["user_id"])
-        notify_user(
-            cur,
-            user["user_id"],
-            "account_login",
-            "New login to PulseSoc",
-            "Your PulseSoc account was accessed successfully.",
-            "/pulse/settings/notifications",
-            actor_user_id=user["user_id"],
-            entity_type="account",
-            entity_id=str(user["user_id"]),
-            metadata={"ip_present": bool(request.remote_addr), "user_agent_present": bool(request.headers.get("User-Agent"))},
-        )
-        notify_user(
-            cur,
-            user["user_id"],
-            "new_device",
-            "Device activity detected",
-            "PulseSoc recorded a browser/device login for your account.",
-            "/pulse/settings/notifications",
-            actor_user_id=user["user_id"],
-            entity_type="account",
-            entity_id=str(user["user_id"]),
-            metadata={"event": "device_login", "user_agent_present": bool(request.headers.get("User-Agent"))},
-        )
-        conn.commit()
-        conn.close()
-        if preferred_language:
-            save_user_preferred_language(user["user_id"], preferred_language, user["user_id"])
-            user = load_account_by_id(user["user_id"]) or user
-        token_payload = issue_mobile_security_tokens(user, {"source": "web_login", "device_label": presence_device_label()})
-        response = redirect(safe_redirect_target("pulse_page"))
-        return set_persistent_session_cookie(response, token_payload.get("refresh_token") or "")
+        # The tick this form used to demand on every single sign-in was always
+        # discarded, so it recorded nothing and asked everyone forever. Ask only
+        # the members who are not on file at the version now in force, and ask
+        # here -- after the password and after the confirmation check -- so the
+        # question never confirms to a stranger that an address has an account.
+        # A member already on file sees nothing, which is strictly less friction
+        # than today.
+        if legal_acceptance.outstanding(user["user_id"]) and not terms_accepted:
+            session[PENDING_LEGAL_SESSION_KEY] = {"user_id": int(user["user_id"]), "at": time.time()}
+            log_auth_event("login_legal_acceptance_required", email, user["user_id"], status="pending", details={"db_engine": db_service.ENGINE_NAME})
+            return render_account_page("login", "Login", legal_acceptance_required=True)
+        return complete_web_login(user, preferred_language)
+    # A fresh GET abandons any half-finished sign-in, which is what "Cancel and
+    # return to sign in" links to.
+    session.pop(PENDING_LEGAL_SESSION_KEY, None)
     return render_account_page("login", "Login")
 
 
