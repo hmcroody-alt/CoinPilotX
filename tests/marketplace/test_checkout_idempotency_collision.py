@@ -1271,3 +1271,177 @@ def test_mutation_an_idempotency_error_really_classifies_as_the_incident_copy():
     assert classified["message"] == (
         "Payments are temporarily unavailable. No card was charged.")
     assert classified["provider_error"]["type"] == "IdempotencyError"
+
+
+# --------------------------------------------------------------------------
+# §28 — the matrix cases that the lanes above do not already reach
+# --------------------------------------------------------------------------
+#
+# The §28 list is twenty cases. Most are covered by suites that predate this
+# incident and were re-run green against this branch: variant required and
+# invalid variant by `test_marketplace_cart_variants` (41) and
+# `test_supplier_variants`; seller capability false by
+# `tests/marketplace/test_card_capability.py`, which is fail-closed down to an
+# unparseable requirements blob; supplier refusal and DRAIN_BEHIND by
+# `test_supplier_checkout_gate` and `test_drain_observability`; invalid
+# destination by `test_marketplace_fulfillment` (83); reservation failure by
+# `test_reservation_lifecycle` (33); price change by
+# `test_charge_model_authority` and `test_quote_authority`; and session-creation
+# failure, idempotency duplicate, failed-attempt-then-retry and double tap by
+# the three lanes above, each mutation-proven.
+#
+# Two were genuinely unreached, and they are the two below. Each is here
+# because the existing coverage stops one step short of the thing that would
+# hurt, not because the word was missing from a test name.
+#
+# LAST UNIT was the third candidate and is deliberately *not* here. A test for
+# it was written, passed, and was then deleted for failing the standard this
+# branch already applied to `test_23` in `test_offer_checkout_identity.py`: it
+# could not be made to go red. Not by removing the claim dedupe, not by
+# removing the `AND quantity>=?` floor from the decrement, not by removing both
+# at once. The reason turned out to be worth more than the test: once a
+# listing's quantity reaches zero the cart marks that line ``state: 'sold'``
+# and refuses it in pre-flight — a third guard, independent of both the claim
+# and the decrement, and older than this incident. So the last unit was never
+# the exposure it looks like, and a green test implying this branch defends it
+# would have been claiming credit for someone else's work.
+#
+# The other half of that deleted test — that a sold-out listing must be refused
+# as *stock*, not as "payments are temporarily unavailable" — is a real
+# contract and a live risk, but it is a risk created by the taxonomy work
+# rather than caught by it. It belongs to that commit, with the rest of §19 and
+# §26, where it can be a guard on a change instead of a decoration on this one.
+
+
+class ConnectionFailingStripeStub(IdempotentStripeStub):
+    """Fails the way a timeout fails: before Stripe ever answers.
+
+    Distinct from ``fail_first_after_create`` in a way that matters for the
+    orphan-expiry path. There, Stripe committed and we hold the id, so the
+    failure handler can expire the session it cannot deliver. Here the call
+    never returns, so there is no id to expire and
+    ``created_payment_surface`` stays empty — the expiry correctly does not
+    fire, and a test that asserted "the failure path always expires something"
+    would be asserting a falsehood.
+
+    That is not a hole. A session we never learned the id of is unreachable by
+    exactly the argument that makes the post-create orphan safe — its URL was
+    never written to the DB, logged, or returned — and Stripe expires an
+    unpaid session on its own. What has to be true is the *recoverability*
+    claim, and that is what the test asserts.
+    """
+
+    def create(self, **kwargs):
+        self.calls.append({"idempotency_key": kwargs.get("idempotency_key"),
+                           "params": _canonical(kwargs), "kwargs": kwargs})
+        raise stripe.error.APIConnectionError("Request timed out")
+
+
+def test_a_timeout_before_stripe_answers_leaves_a_fully_recoverable_checkout(buyer):
+    """§28 STRIPE TIMEOUT and NETWORK INTERRUPTION — the same mechanism.
+
+    A timeout is the §9 defect reached through a different exception, and it is
+    the more dangerous entry because nothing local went wrong: no bad variant,
+    no missing address, no closed rail. If a dropped connection burns the claim
+    or the stock, the buyer is locked out by weather.
+
+    Asserts the whole recovery, not just the status code: the refusal is
+    retryable, no unanswered claim survives, no unit is held, and the retry
+    then actually goes through against a healthy provider. The last clause is
+    the one that fails if any of the earlier state is left behind.
+    """
+    client, listing_id, seller_id, buyer_id, physical_listing_id = buyer
+    _forget_claims(buyer_id)
+    _seed_one_line(client, physical_listing_id)
+
+    before = _listing_quantity(physical_listing_id)
+    held_before = _held_reservations(physical_listing_id)
+
+    dropped = ConnectionFailingStripeStub()
+    with card_rail(dropped):
+        failed = _checkout(client, seller_id, details=SHIPPING_DETAILS)
+
+    assert failed.status_code == 503, (
+        f"a dropped connection answered {failed.status_code}, which is not the "
+        f"retryable class: {failed.get_data(as_text=True)}")
+    # `error_code`, not `code`: that is the wire contract the client actually
+    # reads, and a test asserting `code` passes `None == None` against a
+    # response that never carried the field.
+    assert (failed.get_json() or {}).get("error_code") == "NETWORK_ERROR"
+    assert "no card was charged" in (
+        (failed.get_json() or {}).get("message", "").lower()), (
+        "a retryable network failure did not tell the buyer their card was safe")
+    assert dropped.created == [], "the stub claimed to create despite failing"
+    assert dropped.expired == [], (
+        "the lane tried to expire a session whose id it never received")
+
+    # Nothing of the buyer's was consumed by the weather.
+    assert _listing_quantity(physical_listing_id) == before, (
+        "a timeout before the provider answered still decremented the shelf")
+    assert _held_reservations(physical_listing_id) == held_before, (
+        "a timeout before the provider answered left an inventory hold")
+
+    cur = bot.db().cursor()
+    cur.execute("SELECT response_json FROM marketplace_cart_checkout_keys "
+                "WHERE user_id=?", (buyer_id,))
+    unanswered = [r for r in cur.fetchall() if not (dict(r).get("response_json") or "")]
+    assert unanswered == [], (
+        f"a timeout left {len(unanswered)} unanswered claim(s), so the buyer is "
+        "locked out by a dropped connection")
+
+    # The proof that recovery is real rather than merely plausible.
+    healthy = IdempotentStripeStub()
+    with card_rail(healthy):
+        retry = _checkout(client, seller_id, details=SHIPPING_DETAILS)
+    assert retry.status_code == 200, (
+        f"the retry after a timeout was refused: {retry.get_data(as_text=True)}")
+    assert len(healthy.created) == 1
+
+
+def test_a_buyer_who_backs_out_at_stripe_and_returns_resumes_one_checkout(buyer):
+    """§24 and §28 STRIPE CANCEL THEN RETRY — the *answered* claim branch.
+
+    Not the same path as the double tap above. That test allows either a replay
+    or ``CHECKOUT_IN_PROGRESS``, because a second tap can legitimately land
+    while the first attempt is still unfinished. This buyer's first attempt
+    *finished*: a session exists, the claim carries its answer, and the buyer
+    then hit Stripe's back button and tapped the CTA again. So the only correct
+    outcome is the replay — ``IN_PROGRESS`` here would be a false refusal, and
+    a fresh session would be a second payable page for one order.
+
+    Asserts the money-path consequences too. One decrement and one hold is the
+    difference between resuming a purchase and quietly making a second one.
+    """
+    client, listing_id, seller_id, buyer_id, physical_listing_id = buyer
+    _forget_claims(buyer_id)
+    _seed_one_line(client, physical_listing_id)
+
+    before = _listing_quantity(physical_listing_id)
+    # A delta, because the fixture is module-scoped and the listing carries the
+    # holds taken by every earlier test in this file. An absolute `== 1` here
+    # passes or fails on test ordering rather than on this lane's behaviour.
+    held_before = _held_reservations(physical_listing_id)
+    stub = IdempotentStripeStub()
+    with card_rail(stub):
+        opened = _checkout(client, seller_id, details=SHIPPING_DETAILS)
+        assert opened.status_code == 200, opened.get_data(as_text=True)
+        # The buyer reaches Stripe, changes their mind, and comes back. Nothing
+        # needs simulating on Stripe's side: cancel_url is a plain GET back to
+        # us, and what matters is the state we kept while they were away.
+        returned = _checkout(client, seller_id, details=SHIPPING_DETAILS)
+
+    assert returned.status_code == 200, (
+        "a buyer returning from Stripe's cancel was refused rather than "
+        f"resumed: {returned.get_data(as_text=True)}")
+    assert (returned.get_json() or {}).get("checkout_url") == \
+        opened.get_json()["checkout_url"], (
+        "the returning buyer was handed a different session than the one they "
+        "backed out of")
+    assert len(stub.created) == 1, (
+        f"a cancel-then-retry built {len(stub.created)} payable sessions for one "
+        "order")
+    assert _listing_quantity(physical_listing_id) == before - 1, (
+        "a cancel-then-retry decremented the shelf twice")
+    assert _held_reservations(physical_listing_id) == held_before + 1, (
+        f"a cancel-then-retry added "
+        f"{_held_reservations(physical_listing_id) - held_before} holds, not one")
