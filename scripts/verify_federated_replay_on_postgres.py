@@ -36,12 +36,29 @@ import sys
 import threading
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 if not os.environ.get("DATABASE_URL", "").startswith(("postgres://", "postgresql://")):
     print("refusing to run: DATABASE_URL must name a PostgreSQL server")
     print("(the entire point is the dialect; SQLite here would prove nothing)")
     sys.exit(2)
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from scripts.local_database_guard import require_local_database  # noqa: E402
+
+# Two refusals, because they rule out different things and either one alone
+# leaves a hole. The scheme check above rules out SQLite, without which the
+# whole proof is vacuous -- but it accepts *any* PostgreSQL host, production
+# included. This one rules out every host that is not loopback, which matters
+# because the checks below INSERT into and DELETE FROM a real application
+# table: run against prod, "exactly one of ten simultaneous presentations won"
+# would be ten real members' credentials consumed and the table then purged.
+#
+# Above the `services.db` import rather than after it, because `ENGINE_URL` is
+# resolved at import time and a refusal that arrives after the DSN is latched
+# has already lost. `tests/protection/test_fixture_audits_cannot_reach_production.py`
+# enforces both the guard and that ordering -- and it is what caught this
+# script running on nothing but the scheme check.
+require_local_database("verify_federated_replay_on_postgres")
 
 from services import db  # noqa: E402
 from services import federated_replay  # noqa: E402
