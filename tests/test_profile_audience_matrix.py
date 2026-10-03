@@ -808,6 +808,45 @@ class ShopSection(AudienceFixture):
         self.assertNotIn("/pulse/marketplace/listing/", raw)
 
 
+class LongContentDoesNotBreakTheLayout(AudienceFixture):
+    """A name, bio or product title can be one unbroken 200-character token.
+
+    Measured in a real browser at 320px: every text slot wraps and the document
+    reports zero horizontal overflow. What a static test can hold is the *way*
+    that was achieved, because the tempting fix is the forbidden one.
+    """
+
+    def test_overflowing_text_wraps_without_break_all(self):
+        """`word-break:break-all` splits mid-grapheme and will hyphenate a name
+        or a price into nonsense; `overflow-wrap:anywhere` only breaks a token
+        that cannot fit on its own line. The profile must keep using the second,
+        and the first must not appear anywhere in the served page."""
+        raw = self.page(STRANGER).get_data(as_text=True)
+        self.assertNotIn("break-all", raw)
+        self.assertIn("overflow-wrap:anywhere", raw)
+
+    def test_mobile_tab_targets_clear_the_touch_minimum(self):
+        """Tabs are the profile's primary content control and were 32px tall on
+        a phone, under the 44px minimum. The rule carrying that is the only
+        thing standing between a thumb and a miss."""
+        raw = self.page(STRANGER).get_data(as_text=True)
+        self.assertIn(".pulse-profile-tabs a{min-width:70px;display:grid;place-items:center;min-height:44px", raw)
+
+    def test_the_name_is_not_painted_behind_the_cover(self):
+        """The hero pulls the identity block up over the cover with a negative
+        margin. The cover is positioned and the identity block was not, so the
+        cover won the paint order and the person's name was drawn *underneath*
+        it -- invisible at every width, while the avatar survived only because
+        it carries its own `position`. Verified in a browser: with the identity
+        block static, the topmost element at the name is the cover; made
+        relative, it is the `h1`. Neither is positioned with a `z-index`, so
+        document order decides and the identity block simply has to be
+        positioned at all.
+        """
+        raw = self.page(STRANGER).get_data(as_text=True)
+        self.assertIn("margin-top:-66px;position:relative}", raw)
+
+
 class OneAuthority(AudienceFixture):
     """The page, the API and the resolver must not be able to disagree."""
 

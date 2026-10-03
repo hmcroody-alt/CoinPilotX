@@ -379,6 +379,36 @@ MUTATIONS = [
         replacement='''    shop_tab_html = "<a href='#profileShop'>Shop</a>"''',
         expect=["no_public_listing_means_no_shop_tab_and_no_section"],
     ),
+    Mutation(
+        name="long_titles_wrap_with_break_all",
+        defect="`word-break:break-all` is the tempting fix for an overflowing "
+               "product title and it splits mid-word, turning a name or a "
+               "price into nonsense rather than wrapping it.",
+        path="bot.py",
+        anchor=".pulse-profile-shop-grid strong{{font-size:14px;font-weight:850;line-height:1.3;overflow-wrap:anywhere}}",
+        replacement=".pulse-profile-shop-grid strong{{font-size:14px;font-weight:850;line-height:1.3;word-break:break-all}}",
+        expect=["overflowing_text_wraps_without_break_all"],
+    ),
+    Mutation(
+        name="mobile_tabs_drop_below_the_touch_minimum",
+        defect="Tabs at 32px tall on a phone are under the 44px touch minimum, "
+               "so the profile's primary content control is a thumb-miss.",
+        path="bot.py",
+        anchor=".pulse-profile-tabs a{{min-width:70px;display:grid;place-items:center;min-height:44px;padding:4px 10px;font-size:12px}}",
+        replacement=".pulse-profile-tabs a{{min-width:70px;padding:9px 10px;font-size:12px}}",
+        expect=["mobile_tab_targets_clear_the_touch_minimum"],
+    ),
+    Mutation(
+        name="identity_block_loses_its_stacking_position",
+        defect="The identity block is pulled up over the cover by a negative "
+               "margin. Unpositioned, the positioned cover paints on top of it "
+               "and the person's name disappears at every width -- the one "
+               "thing the page exists to show.",
+        path="bot.py",
+        anchor="padding:0 20px 18px;margin-top:-66px;position:relative}}",
+        replacement="padding:0 20px 18px;margin-top:-66px}}",
+        expect=["the_name_is_not_painted_behind_the_cover"],
+    ),
 ]
 
 
