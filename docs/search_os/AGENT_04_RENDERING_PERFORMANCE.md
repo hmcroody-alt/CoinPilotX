@@ -20,6 +20,11 @@ at 225–607 CSS px. One grid page carried 4.79 MB of image to show 24 cards.
 That is fixed, in `services/marketplace_storefront.py`, commit `ffb88a1ca`. Same page, same
 cards, same markup contract: **734,358 B catalogue-wide, 93.2% less**.
 
+Agent 1 reached the same conclusion about SSR independently and addressed it to this seat — their
+§9 is titled "SSR is already real. Verify before building." Two agents measuring the same surface
+by different methods and agreeing is worth more than either measurement alone, so I am naming it
+rather than quietly duplicating it.
+
 ## 2. What actually renders this page
 
 Two documents live at one URL, chosen by session cookie:
@@ -62,6 +67,7 @@ Anonymous, production, 2026-10-03. `prod` counts unique `/pulse/marketplace/<id>
 | `/pulse/marketplace?page=2` | 200 | 28,083 | 20 | 20 | `public, max-age=300` | `noindex,follow` | self |
 | `/pulse/marketplace?category=bags-shoes` | 200 | 11,741 | 2 | 2 | `public, max-age=300` | `index,follow,max-image-preview:large` | self |
 | `/pulse/marketplace/98` (PDP) | 200 | 21,323 | **0** | 1 | `public, max-age=300` | `index,follow,max-image-preview:large` | self |
+| `/pulse/marketplace/85` (PDP) | 200 | 18,878 | 1 | 2 | `public, max-age=300` | `index,follow,max-image-preview:large` | self |
 | `/pulse/cart` | 200 | 12,629 | 0 | 0 | `no-store, max-age=0` | `noindex,nofollow` | self |
 | `/pulse` | 302 | 223 | 0 | 0 | `no-store, max-age=0` | — | — |
 
@@ -76,6 +82,10 @@ Readings that matter:
 - **JavaScript is strictly additive.** `static/js/pulse_marketplace.js` binds an image-error
   fallback and add-to-cart. Progressive enhancement is already correct here, and the one thing
   that could have broken it — my change — was checked against it (§6.3).
+- **Both PDP rows are in the table because one PDP is not representative.** 98 renders no
+  related-products rail and one image; 85 renders a rail and two. Across all 24 page-1 PDPs the
+  split is 16 with no rail and one image, 8 with a rail and two. Sampling a single PDP here
+  produces a wrong generalisation in either direction — §8 is where that bit me.
 
 ## 4. The image-weight defect
 
@@ -197,6 +207,18 @@ invisible to every consumer except the browser doing layout.
 byte-identical — and `%2C` means a reader never has to work out whether HTML's `srcset`
 comma-splitting rule reads `resize,w_400` as one candidate or two.
 
+### 5.2 One of the four call sites is dormant in production
+
+I wired `sizes` into all four image call sites. Only three fire today. **No production PDP renders
+a thumbnail strip** — across all 24 page-1 PDPs, `mkt-gallery-thumb` appears zero times, because
+no listing in the public catalogue carries enough images for one. So `THUMB_SIZES` is correct,
+tested, and currently unexercised on the live site.
+
+I kept it rather than deleting it because the thumbnail branch of `media_box` is live code reached
+by a data condition, not dead code: a listing with multiple photos renders it, and the catalogue
+will eventually have one. But it is measured-dormant, not measured-working, and that distinction
+belongs in the record rather than in a footnote someone discovers later.
+
 ## 6. Verification
 
 ### 6.1 Tests
@@ -291,29 +313,84 @@ needed.
 - **AVIF.** Spot-measured at −96% (6,994 B on a sample), better than webp. Deferred because it was
   spot-checked, not verified across all 44 images, and a `<source>` ordering mistake here fails to
   a 400, not to a fallback. It is a clean follow-up with a known method.
+- **The variant `<form method="get">`.** Turning those radios into anchors is a two-line render
+  change and I could have done it today. I did not: §8 shows it would mint 95 duplicate URLs for
+  one listing, and whether a variant is a search entity is Agent 3's call. A rendering change that
+  forces a product-model decision is not a rendering change.
 - **Agent 2's constraint** that a server-rendered page call `search_visibility.robots_meta(path)`
   rather than writing a directive literal. Not violated — I emitted no directive.
 
 ## 8. Escalations — not mine to fix
 
-### P1 — A product page is a crawl dead end
+### P1 — The related-products rail is keyed on the leaf category, so it is empty on two thirds of PDPs
 
-`/pulse/marketplace/98` contains **zero** anchors to any other product. The only outbound product
-path is the breadcrumb, and it is thinner than it looks:
+My first measurement of this was wrong and I am recording the correction rather than the
+conclusion. I sampled PDP 98, found **zero** outbound product anchors, and wrote it up as "a PDP
+is a crawl dead end." Then I found PDP 85 rendering an `<h2>More from this department</h2>` rail
+with a real anchor. The rail exists. The question was why it had not rendered.
+
+Measured across all 24 page-1 PDPs:
 
 ```
-PDP 98 -> ?category=bags-shoes                             -> {45, 98}   index,follow
-PDP 98 -> ?category=.../womens-shoes/woman-sandals         -> {98}       noindex,follow
+render the "More from this department" heading:   8 of 24
+outbound distinct product anchors per PDP:       {0: 16 PDPs, 1: 8 PDPs}
+total edges among the 24:                         8
+distinct products reachable from any PDP:         8
 ```
 
-From a PDP, a crawler can reach exactly **one** new product, via a top-level facet holding two
-items. The leaf facet surfaces only the page you came from and is `noindex`. So link equity does
-not circulate through the catalogue at all — every product is a leaf hanging off the grid.
+**The rail is keyed on the leaf category.** Leaf categories in this catalogue hold one or two
+products, so the rail self-starves even when the parent department is well populated:
 
-Owner: Agents 3 (product semantics — what "related" means) and 10 (graph shape). I can render
-whatever they define, in the same component, and the `sizes` plumbing is already in place for it.
-I did not invent a related-products rail, because choosing what is related is a product-semantics
-decision and inventing one would have created the second product truth the brief forbids.
+```
+PDP 85  leaf  womens-clothing/tops-sets/rompers        = {85, 97}        -> rail renders, 1 anchor
+        parent womens-clothing/tops-sets               = {26,51,85,86,92,97,104}   7 members
+        top    womens-clothing                         = 14 members
+
+PDP 98  leaf  bags-shoes/womens-shoes/woman-sandals    = {98}            -> rail absent, 0 anchors
+        parent bags-shoes/womens-shoes                 = {45, 98}
+        top    bags-shoes                              = {45, 98}
+```
+
+So PDP 85 gets 1 sibling where its parent department offers 7, and PDP 98 gets 0 where its parent
+offers 1. **This is not catalogue sparsity — `womens-clothing` alone holds 14 products.** It is
+the choice of key. The module works; it is asking too specific a question.
+
+The obvious change — key the rail on the parent, falling back up the breadcrumb until it finds
+siblings — is one I did **not** make. What counts as "related" is product semantics, and picking
+a level is picking a relevance model. Owner: Agent 3, with Agent 10 on graph shape. The renderer
+is ready for whatever they define and the `sizes` plumbing is already in place for its images.
+
+### P1 — Variant states are addressable but unreachable, and would be duplicates if linked
+
+Corroborating and extending Agent 1 §4 from the rendering side. Variants are real, server-rendered
+and URL-addressable via `?opt_option1=…`, but **zero `<a href>` on any PDP contains
+`opt_option`** — the selector is a `<form method="get">` with radio inputs, and a crawler does not
+submit forms. Confirmed on 113.
+
+Two things I can add that Agent 1 could not, because they are properties of the render:
+
+**The variant data is already in the initial HTML.** The form carries a `data-mkt-variants`
+attribute holding the entire variant table — id, option map, price, stock label — for all 8
+variants of 113. The *information* is server-rendered and present. Only the addressable *states*
+are unlinked. That is a narrower problem than "not crawlable".
+
+**A variant URL renders a near-duplicate page.** Sampled 113 (8 variants), 112 (4 variants, 4
+distinct prices) and 36 (95 variants):
+
+| Listing | Variants | Distinct prices | Image changes per variant? | Variant URL canonical | robots |
+| --- | --- | --- | --- | --- | --- |
+| 113 | 8 | 1 (`$46.06`) | no — identical `src` | → bare PDP | `index,follow` |
+| 112 | 4 | 4 | no — identical `src` | → bare PDP | `index,follow` |
+| 36 | 95 | 1 (`$2.29`) | no — identical `src` | → bare PDP | `index,follow` |
+
+**A variant URL never changes the rendered image.** For listing 36 that means 95 candidate URLs
+differing only in which radio carries `checked` — same photo, same price, same text. This is
+direct evidence for the caution Agent 1 attached to their own finding: minting variant URLs here
+is not a coverage win, it is 95 duplicates.
+
+Also worth knowing, and good news: a variant URL **already self-canonicalises to the bare PDP**.
+So if one is ever discovered it consolidates correctly today. Nothing is leaking. Agent 2 should
+have this; it means the variant question can be decided on merit rather than under pressure.
 
 ### P1 — `public, max-age=300` with no validator
 
@@ -355,9 +432,10 @@ is a larger change than this mission.
 
 | Agent | What they need from me |
 | --- | --- |
-| 0 | §8. The two P1s are policy calls I declined to make alone. |
-| 2 | I emitted no robots/canonical directive. §8's cache-validator question is yours. The indexable `?category=` facet with 2 products is yours too. |
-| 3 | Related-products semantics would close the P1 dead end; the renderer is ready for it. |
+| 0 | §8. The three P1s are policy calls I declined to make alone. |
+| 1 | Your §9 ("SSR is already real, verify before building") matches what I measured independently — §1 and §3 corroborate it. Your §4 variant finding is extended from the render side in §8: the data is already in a `data-mkt-variants` attribute, and a variant URL renders a byte-near-identical page that already self-canonicalises. |
+| 2 | I emitted no robots/canonical directive. §8's cache-validator question is yours. Two more: the indexable `?category=` facet holding 2 products, and the fact that `?opt_option…` variant URLs are `index,follow` but already canonical to the bare PDP — so the variant question is not urgent. |
+| 3 | §8's rail finding is the actionable one: the related-products module is keyed on the **leaf** category, which holds 1–2 products, while the parent department holds up to 14. Choosing the level is a relevance decision, so it is yours. The renderer and its image plumbing are ready. Also: for listing 36, 95 variants share one photo and one price — a variant is not a distinct entity here. |
 | 5 | Your `Product.image` is built in the data layer, not by `media_box`, and is unaffected — verified on PDP 98 as a bare `cf.cjdropshipping.com` URL with no directive. If anything downstream ever scrapes the rendered markup instead, read `img[src]`, never the first `srcset` candidate. |
 | 9 | The supplier-CDN dependency, and AVIF as a measured follow-up. |
 | 11 | Cross-origin resource timing is blind here (no `Timing-Allow-Origin`); byte telemetry must come from the server side. |
