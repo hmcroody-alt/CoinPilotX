@@ -49033,7 +49033,7 @@ def pulse_start_thread(cur, current_user_id, target_user_id=None, public_player_
     return {"ok": True, "thread_id": thread_id, "target_user_id": target_user_id, "next_url": f"/pulse/messages/{thread_id}"}, 200
 
 
-def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_player_id=""):
+def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_player_id="", conn=None):
     current_user_id = int(current_user_id or 0)
     if not target_user_id and public_player_id:
         target_user_id = pulse_user_id_from_public(cur, public_player_id)
@@ -49141,13 +49141,28 @@ def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_p
         cur.execute("UPDATE pulse_message_threads SET conversation_id=?, updated_at=? WHERE id=?", (conversation_id, now, thread_id))
     except Exception:
         pass
+    # Everything above writes the *legacy* stack, and `conversation_id` stays the
+    # legacy id because callers below this one write `pulse_messages` rows and
+    # `UPDATE pulse_conversations` with it -- handing them a v2 id would tag a
+    # message with a row id from a different table.
+    #
+    # No client reads that stack. Both of them -- `ChatScreen` via
+    # `messenger.ts` (`/api/pulse/communications/v2`) and the web
+    # `/pulse/messages/<id>` page via `pulse_messages_v2.html` -- resolve ids
+    # against `comm_v2_conversations`, so a legacy id reaches them as
+    # `404 Conversation not found`. That is what "Message seller" was handing
+    # the buyer. The id a *client* is meant to open is the canonical v2 one, and
+    # it is a separate key so the two audiences can never be confused again.
+    chat_conversation_id = pulse_chat_bridge.direct_thread(cur, conn, current_user_id, target_user_id)
+    open_conversation_id = chat_conversation_id or conversation_id
     return {
         "ok": True,
         "conversation_id": conversation_id,
+        "chat_conversation_id": chat_conversation_id,
         "thread_id": thread_id,
         "target_user_id": target_user_id,
-        "redirect_url": f"/pulse/messages/{conversation_id}",
-        "next_url": f"/pulse/messages/{conversation_id}",
+        "redirect_url": f"/pulse/messages/{open_conversation_id}",
+        "next_url": f"/pulse/messages/{open_conversation_id}",
     }, 200
 
 
@@ -99369,12 +99384,21 @@ def api_pulse_message_start():
         if int(target_user_id) == int(user["user_id"]):
             conn.close()
             return jsonify({"ok": False, "message": "You cannot message yourself.", "trace_id": trace_id}), 400
-        result, status = pulse_start_conversation(cur, user["user_id"], target_user_id=target_user_id)
+        result, status = pulse_start_conversation(cur, user["user_id"], target_user_id=target_user_id, conn=conn)
         result["trace_id"] = trace_id
         if result.get("ok"):
+            # This endpoint's audience is a client, and a client opens the
+            # conversation it is handed. So `conversation_id` on the wire is the
+            # canonical v2 id; the legacy row keeps its own key for anyone
+            # tracing a thread across the two stacks. Callers that write legacy
+            # rows call `pulse_start_conversation` directly and still read
+            # `conversation_id` off its return value, which is unchanged.
+            legacy_conversation_id = result.get("conversation_id")
+            result["legacy_conversation_id"] = legacy_conversation_id
+            result["conversation_id"] = result.get("chat_conversation_id") or legacy_conversation_id
             chat_health_service.record_trace(cur, user["user_id"], "/api/pulse/messages/direct/open", "ok", trace_id, {"target_user_id": target_user_id, "conversation_id": result.get("conversation_id"), "latency_ms": int((time.perf_counter() - started) * 1000)})
             conn.commit()
-            logging.info("PULSE_MESSAGE_START_OK trace_id=%s user_id=%s target_user_id=%s conversation_id=%s thread_id=%s", trace_id, user.get("user_id"), target_user_id, result.get("conversation_id"), result.get("thread_id"))
+            logging.info("PULSE_MESSAGE_START_OK trace_id=%s user_id=%s target_user_id=%s conversation_id=%s legacy_conversation_id=%s thread_id=%s", trace_id, user.get("user_id"), target_user_id, result.get("conversation_id"), legacy_conversation_id, result.get("thread_id"))
         else:
             chat_health_service.record_trace(cur, user["user_id"], "/api/pulse/messages/direct/open", "rejected", trace_id, {"target_user_id": target_user_id, "status": status, "latency_ms": int((time.perf_counter() - started) * 1000)})
             conn.rollback()
