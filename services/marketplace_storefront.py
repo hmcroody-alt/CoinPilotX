@@ -333,7 +333,7 @@ def cart_path() -> str:
 # resolve, and leave every other origin exactly as it was.
 _RESIZE_HOSTS = frozenset({"cf.cjdropshipping.com", "oss-cf.cjdropshipping.com"})
 
-# The rendered box is 225-396 CSS px for a grid card, 607 for the product hero
+# The rendered box is 146-396 CSS px for a grid card, 607 for the product hero
 # and 64 for a gallery thumbnail (measured in a browser, not read off the CSS,
 # because the grid is `auto-fill minmax(230px, 1fr)` and the column width is a
 # function of the container). At DPR 3 the widest card wants ~1,188 physical px,
@@ -346,7 +346,42 @@ _RESIZE_WIDTHS = (200, 400, 600, 800)
 # breakpoints the stylesheet defines. Over-stating a width costs bytes;
 # under-stating it ships a blurry image, so these round *up* to the widest
 # measurement in each range.
-CARD_SIZES = "(max-width: 560px) 100vw, 272px"
+#
+# The card's phone branch is `50vw`, not `100vw`, because the stylesheet turns
+# `.mkt-grid` into `repeat(2, minmax(0, 1fr))` under the same `max-width: 560px`
+# -- see `MKT_PHONE_GRID_COLUMNS` below, which exists so these two numbers
+# cannot drift apart silently. `100vw` was a 38,588-byte-per-card over-fetch:
+# at a 390px viewport it resolves to 390 CSS px, and Chrome then picks `w_800`
+# (51,846 B) where the `50vw` resolution of 195px picks `w_400` (13,258 B) and
+# is already sharp for the ~161px box the grid renders. Across a 24-card grid
+# that is ~0.88 MB, charged to exactly the device class the resizing is for.
+#
+# Provenance, because the obvious way to check this gives wrong answers: the
+# candidate weights and the two selections were measured in a real browser, but
+# on *cold* top-level documents whose `sizes` was the already-resolved `195px`
+# / `390px`, one unfetched URL each. Measuring the vw forms directly needs a
+# narrow viewport, and the two shortcuts both lie -- a width-constrained iframe
+# selects at preload-scan time, before the frame has a width, so it reports the
+# smallest candidate regardless of `sizes`; and a URL already in the HTTP cache
+# at a larger candidate gets that one reused, so a warm page reports the
+# largest. An earlier reading of this same defect was a cache artifact and
+# over-stated it. The vw -> px step is arithmetic and is not claimed as measured.
+#
+# The hero's `100vw` is *not* the same mistake -- that element really is
+# full-bleed on a phone.
+#
+# `100 / columns` deliberately ignores the grid gap and the container padding,
+# which is why it reads 195px at a 390px viewport against a real 161px box. That
+# residual over-statement is the safe direction and it is cheap -- it still lands
+# on `w_400` at DPR 2 -- whereas subtracting the gutters here would re-couple
+# this constant to spacing tokens that move for reasons that have nothing to do
+# with image bytes.
+MKT_PHONE_BREAKPOINT = 560
+MKT_PHONE_GRID_COLUMNS = 2
+CARD_SIZES = (
+    f"(max-width: {MKT_PHONE_BREAKPOINT}px) "
+    f"{100 // MKT_PHONE_GRID_COLUMNS}vw, 272px"
+)
 HERO_SIZES = "(max-width: 900px) 100vw, 608px"
 THUMB_SIZES = "64px"
 

@@ -408,6 +408,145 @@ def test_a_width_descriptor_is_never_emitted_without_a_sizes():
     assert "srcset" not in html and "sizes=" not in html
 
 
+#: Candidate weights for one real catalogue image, fetched from the CDN
+#: 2026-10-03 (`.../17007840/1727919878964383744.jpg`, 171,820 B original).
+#: These are here as evidence for the size of the mistake below, not as an
+#: assertion -- the supplier can re-encode its own files.
+_MEASURED_WEBP_BYTES = {200: 3_668, 400: 13_258, 600: 26_092, 800: 51_846}
+
+#: Rendered card width in CSS px at the two phone viewports the stylesheet's own
+#: comment calls out ("two columns survive down to ~360px"). Not read off the
+#: CSS: the width is the grid's, after gap and container padding. These came
+#: from a width-constrained iframe, which is trustworthy for *layout* -- the
+#: frame does get the width before style resolution -- and is NOT trustworthy
+#: for which `srcset` candidate gets picked, for the reason the `CARD_SIZES`
+#: comment sets out.
+_MEASURED_CARD_BOX = {360: 146, 390: 161}
+
+
+def _phone_columns(selector):
+    """`grid-template-columns`' repeat count for `selector` on a phone.
+
+    Read out of the stylesheet, under the same `max-width` that `CARD_SIZES`
+    names, so that the number this test compares against is the one that
+    actually lays the page out.
+    """
+    want = f"max-width: {sf.MKT_PHONE_BREAKPOINT}px"
+    found = []
+    for at_rules, rule_selector, declarations in _flatten_rules(
+            _strip_css_comments(_css())):
+        if rule_selector != selector or "grid-template-columns" not in declarations:
+            continue
+        if not any(want in at_rule for at_rule in at_rules):
+            continue
+        value = declarations["grid-template-columns"][0]
+        match = re.match(r"repeat\(\s*(\d+)\s*,", value)
+        assert match, (
+            f"{selector} under {want} declares `{value}`, which this test cannot "
+            f"read as a column count. It was written against `repeat(N, ...)`; a "
+            f"gate that cannot parse the rule it guards is not a gate.")
+        found.append(int(match.group(1)))
+    assert found, f"no `{selector}` rule with columns under `{want}`"
+    assert len(set(found)) == 1, f"{selector} declares {found} columns on a phone"
+    return found[0]
+
+
+def _chosen_width(sizes, viewport, dpr):
+    """The candidate a browser picks from `_RESIZE_WIDTHS` for `sizes`.
+
+    A deliberately small model of HTML's source-size list: first matching
+    `(max-width: Npx)` branch wins, else the bare fallback. Enough to tell
+    `w_400` from `w_800`, which is the whole question.
+    """
+    chosen = None
+    for part in sizes.split(","):
+        part = part.strip()
+        match = re.match(r"\(max-width:\s*(\d+)px\)\s*(\S+)$", part)
+        if match:
+            if viewport <= int(match.group(1)):
+                chosen = match.group(2)
+                break
+            continue
+        chosen = part
+        break
+    assert chosen, f"no source size in `{sizes}` applies at {viewport}px"
+    if chosen.endswith("vw"):
+        css_px = viewport * float(chosen[:-2]) / 100
+    else:
+        css_px = float(chosen.rstrip("px"))
+    needed = css_px * dpr
+    bigger = [w for w in sorted(sf._RESIZE_WIDTHS) if w >= needed]
+    return bigger[0] if bigger else max(sf._RESIZE_WIDTHS)
+
+
+def test_the_card_sizes_phone_branch_tracks_the_stylesheet_column_count():
+    """`CARD_SIZES` and the phone grid are one fact stored in two files.
+
+    `CARD_SIZES` said `(max-width: 560px) 100vw` while the stylesheet turned
+    `.mkt-grid` into two columns under that same `max-width: 560px`. Both were
+    written deliberately; neither was wrong on its own; the pair was. Nothing in
+    the suite could see it, because every other `sizes` assertion checks that
+    the string reaches the markup rather than that it describes the box.
+
+    So this reads the column count out of the stylesheet rather than restating
+    it, and the related rail is checked too -- it shares `CARD_SIZES`, so a
+    future one-column rail would silently halve its own image resolution.
+    """
+    for selector in (".mkt-grid", ".mkt-related .mkt-grid"):
+        assert _phone_columns(selector) == sf.MKT_PHONE_GRID_COLUMNS, (
+            f"`{selector}` lays out in {_phone_columns(selector)} columns on a "
+            f"phone but `CARD_SIZES` is built from "
+            f"MKT_PHONE_GRID_COLUMNS={sf.MKT_PHONE_GRID_COLUMNS}. Whichever is "
+            "right, a card's `sizes` no longer describes a card.")
+    branch, _, fallback = sf.CARD_SIZES.partition(",")
+    assert branch.strip() == (
+        f"(max-width: {sf.MKT_PHONE_BREAKPOINT}px) "
+        f"{100 // sf.MKT_PHONE_GRID_COLUMNS}vw")
+    assert fallback.strip() == "272px", "the desktop branch is measured, not derived"
+
+
+def test_a_phone_card_asks_for_the_candidate_it_can_actually_use():
+    """The over-fetch this pair caused, pinned as bytes rather than as a string.
+
+    `100vw` resolves to 390 CSS px at a 390px viewport, and a real browser then
+    selects `w_800` (51,846 B) for a box the grid renders at 161 px, which
+    `w_400` (13,258 B) already covers at DPR 2 -- 38,588 B per card, ~0.88 MB
+    across a 24-card grid, charged to the device class the resize ladder exists
+    for. The same `sizes` reaches the related rail, so it is doubly charged.
+
+    What was measured and what is derived, because the distinction bit once
+    already: the candidate weights are real fetches, and the two selections were
+    confirmed in Chrome on cold top-level documents carrying the *resolved*
+    `sizes` (`195px` -> `w_400`, `390px` -> `w_800`), one previously-unfetched
+    URL each. The vw -> px step is arithmetic. An earlier reading that appeared
+    to catch this on the live PDP was a warm-cache artifact -- Chrome reuses a
+    larger already-cached candidate of the same `srcset` -- and a
+    width-constrained iframe is worse still: it selects at preload-scan time
+    before the frame has a width, and reports the smallest candidate whatever
+    `sizes` says. Neither shortcut can confirm or refute a `sizes` change.
+
+    `sizes` must never *under*-state, so this also asserts the claim still
+    covers the real measured box. `50vw` over-states it (195px claimed against
+    161px rendered) and that is the intended direction.
+    """
+    for viewport, box in _MEASURED_CARD_BOX.items():
+        for dpr in (2, 3):
+            chosen = _chosen_width(sf.CARD_SIZES, viewport, dpr)
+            assert chosen >= min(box * dpr, max(sf._RESIZE_WIDTHS)), (
+                f"{viewport}px at DPR {dpr}: a {box}px box needs {box * dpr} "
+                f"physical px and `{sf.CARD_SIZES}` selects w_{chosen}. "
+                "Under-stating `sizes` ships a blurry photo.")
+        assert _chosen_width(sf.CARD_SIZES, viewport, 2) == 400, (
+            f"{viewport}px at DPR 2 should land on w_400 "
+            f"({_MEASURED_WEBP_BYTES[400]:,} B)")
+    # The regression itself, so the comparison is in the file and not only in
+    # the commit message.
+    assert _chosen_width("(max-width: 560px) 100vw, 272px", 390, 2) == 800
+    # The hero's `100vw` phone branch is correct -- it really is full-bleed --
+    # and must not be "fixed" by analogy with the card.
+    assert "100vw" in sf.HERO_SIZES
+
+
 def test_variants_are_refused_for_anything_that_would_break_the_url():
     """Each of these would produce a candidate that does not resolve."""
     refused = {
