@@ -92,6 +92,68 @@ export type ConfirmationStatusResponse = {
   message?: string;
 };
 
+/** The two credential providers the server will verify an assertion from. */
+export type FederatedProvider = "apple" | "google";
+
+/**
+ * What the server answers when a verified assertion belongs to nobody yet.
+ *
+ * It is a refusal, not a session: `federated_signup_required` arrives as a 403
+ * carrying a short-lived signed ticket, because neither Apple nor Google can
+ * answer the age question or agree to the Terms, and an account created before
+ * anybody was asked would record a consent that was never given.
+ */
+export type FederatedSignupTicket = {
+  signup_ticket: string;
+  provider: FederatedProvider;
+  email?: string;
+  display_name?: string;
+  expires_at?: number;
+  ttl_seconds?: number;
+};
+
+/**
+ * Exchange a provider assertion for a PulseSoc session.
+ *
+ * `nonce` must be the *same string* that was handed to the provider's sheet.
+ * The server compares it against the nonce claim inside the signed token by
+ * exact equality, so hashing or re-generating it on either side turns every
+ * sign-in into a verification failure.
+ */
+export function federatedSignIn(payload: {
+  provider: FederatedProvider;
+  id_token: string;
+  nonce: string;
+  /** Apple's first-authorisation name payload. Absent on every later sign-in. */
+  user?: string;
+  preferred_language?: string;
+}) {
+  return pulseApi<SessionResponse>("/api/mobile/auth/federated", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Finish a federated signup with the answers only the member can give.
+ *
+ * The ticket carries the verified identity; age and agreement travel in this
+ * request and nowhere else, for the reason above.
+ */
+export function federatedSignup(payload: {
+  signup_ticket: string;
+  age_confirmed: boolean;
+  terms_accepted: boolean;
+  email_opt_in?: boolean;
+  country?: string;
+  preferred_language?: string;
+}) {
+  return pulseApi<SessionResponse>("/api/mobile/auth/federated/signup", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
 export function getSession() {
   return pulseApi<SessionResponse>("/api/mobile/auth/session");
 }

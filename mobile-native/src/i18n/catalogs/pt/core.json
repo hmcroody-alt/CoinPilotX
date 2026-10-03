@@ -428,7 +428,8 @@
       "biometricFailedTitle": "A entrada por biometria falhou",
       "biometricFailedBody": "Não conseguimos verificar você. Tente de novo ou entre manualmente.",
       "enableBiometricLabel": "Ativar {{method}}",
-      "signInWithBiometric": "Entrar com {{method}}"
+      "signInWithBiometric": "Entrar com {{method}}",
+      "federatedDivider": "ou continue com"
     },
     "signUp": {
       "title": "Crie sua conta",
@@ -555,6 +556,18 @@
       "tagline": "Sua rede está pronta.",
       "loginLogoA11y": "Logo do PulseSoc. Acesso nativo. Sua rede está pronta.",
       "signupLogoA11y": "PulseSoc. Acesso nativo."
+    },
+    "federatedSignup": {
+      "title": "Falta só um passo",
+      "subtitle": "O {{provider}} verificou quem você é. O PulseSoc precisa de duas respostas antes de criar sua conta.",
+      "verifiedEmail": "Verificado pelo {{provider}}",
+      "ageConfirm": "Tenho 13 anos ou mais",
+      "termsAccept": "Concordo com os Termos de Serviço e a Política de Privacidade",
+      "emailOptIn": "Quero receber novidades e atualizações do PulseSoc",
+      "optional": "(opcional)",
+      "countryLabel": "País",
+      "countryPlaceholder": "Onde você mora",
+      "submit": "Criar minha conta"
     }
   },
   "errors": {
@@ -584,7 +597,12 @@
       "challengeRequired": "Por segurança, conclua a verificação para continuar.",
       "emailNotConfirmed": "Confirme seu e-mail antes de entrar.",
       "accountRestricted": "Esta conta não pode entrar agora. Fale com support@pulsesoc.com.",
-      "nonProductionBackend": "Esta versão está conectada a {{environment}} ({{host}}), que tem contas próprias."
+      "nonProductionBackend": "Esta versão está conectada a {{environment}} ({{host}}), que tem contas próprias.",
+      "providerUnavailable": "Essa opção de login não está disponível neste dispositivo no momento.",
+      "providerConfigError": "O PulseSoc ainda não está configurado para essa opção de login.",
+      "invalidProviderResponse": "Não foi possível verificar esse login. Tente novamente.",
+      "providerLinkRequired": "Já existe uma conta com esse endereço de e-mail. Entre nela para conectar este provedor.",
+      "federatedTicketExpired": "Esse login demorou demais. Toque no botão do provedor novamente."
     },
     "media": {
       "uploadFailed": "O envio não foi concluído. Tente de novo.",

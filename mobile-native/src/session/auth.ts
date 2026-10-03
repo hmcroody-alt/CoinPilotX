@@ -2,6 +2,10 @@ import { cancelMessageReconciliation } from "../core/messageNotificationReconcil
 import { createContext, useContext } from "react";
 import {
   acceptLegalDocuments,
+  federatedSignIn,
+  federatedSignup,
+  FederatedProvider,
+  FederatedSignupTicket,
   getSession,
   LegalAcceptanceChallenge,
   login,
@@ -12,6 +16,11 @@ import {
   SessionResponse,
   signup
 } from "../api/auth";
+import {
+  ProviderAssertion,
+  ProviderSignInCancelled,
+  signInWithProviderSheet
+} from "../auth/providerSheets";
 import { unregisterPushDevice } from "../api/push";
 import { revokeVoipPushRegistration } from "../calls/callKitBridge";
 import { PulseApiError, recoverNativeSession } from "../api/pulseApi";
@@ -409,6 +418,146 @@ export async function registerAccount(payload: {
  */
 export async function finalizeConfirmedSignup(email: string, password: string): Promise<AuthState> {
   return signIn(email, password);
+}
+
+/**
+ * Discriminated result of a provider sign-in. Separate from AuthState for the
+ * reason `RegisterOutcome` is: the shell renders `AuthNavigator` for every
+ * non-AUTHENTICATED phase, so a new phase is a routing change. Three of the
+ * five outcomes here are not "signed out" — they are mid-ceremony — and
+ * modelling them as phases would either strand the member on the login screen
+ * or require the shell to learn about federation.
+ *
+ * `linkRequired` is a refusal, deliberately. The server answers 409 when a
+ * verified provider email matches an existing account, because holding an
+ * address today does not prove you are the person who registered it. The member
+ * signs in with their password and connects the provider from Account Settings,
+ * which is the only ordering in which PulseSoc has evidence of both.
+ */
+export type FederatedOutcome =
+  | { kind: "signedIn"; state: AuthState }
+  | { kind: "legalAcceptanceRequired"; state: AuthState }
+  | { kind: "signupRequired"; ticket: FederatedSignupTicket }
+  | { kind: "linkRequired"; provider: FederatedProvider; message: string }
+  | { kind: "cancelled" };
+
+/**
+ * Read the signup ticket off the server's 403, or null if it is unusable.
+ *
+ * Mirrors `legalAcceptanceRefusal`: a refusal this app cannot act on has to stay
+ * an error the member sees, not a consent screen with no ticket to spend. The
+ * ticket is the only part that is load-bearing — `email` and `display_name` are
+ * prefill for the form and their absence is survivable, so they are not checked.
+ */
+function federatedSignupRefusal(error: unknown): FederatedSignupTicket | null {
+  if (!(error instanceof PulseApiError)) return null;
+  if (error.code !== "federated_signup_required") return null;
+  const ticket = error.details?.signup_ticket;
+  const provider = error.details?.provider;
+  if (typeof ticket !== "string" || !ticket) return null;
+  if (provider !== "apple" && provider !== "google") return null;
+  return {
+    signup_ticket: ticket,
+    provider,
+    email: typeof error.details?.email === "string" ? error.details.email : undefined,
+    display_name:
+      typeof error.details?.display_name === "string" ? error.details.display_name : undefined,
+    expires_at: typeof error.details?.expires_at === "number" ? error.details.expires_at : undefined,
+    ttl_seconds:
+      typeof error.details?.ttl_seconds === "number" ? error.details.ttl_seconds : undefined
+  };
+}
+
+/**
+ * Open the provider's sheet and turn the assertion into a session.
+ *
+ * The nonce travels from `signInWithProviderSheet` to the server untouched.
+ * The server compares it against the nonce claim in the token by exact string
+ * equality, so normalising it here — trimming, lowercasing, re-generating —
+ * would break every federated sign-in at once. It is passed through as the
+ * single value it is and never reconstructed.
+ *
+ * Backing out of the sheet resolves to `cancelled` rather than throwing,
+ * because a member who chose to close the sheet has not hit an error and must
+ * not be shown one.
+ */
+export async function signInWithProvider(provider: FederatedProvider): Promise<FederatedOutcome> {
+  let assertion: ProviderAssertion;
+  try {
+    assertion = await signInWithProviderSheet(provider);
+  } catch (error) {
+    if (error instanceof ProviderSignInCancelled) return { kind: "cancelled" };
+    throw error;
+  }
+
+  // Reset only once the provider has actually returned something. Doing it
+  // before opening the sheet would discard the current member's cached tier
+  // every time somebody opened a provider sheet and changed their mind.
+  resetCanonicalTier();
+
+  let session: SessionResponse;
+  try {
+    session = await federatedSignIn({
+      provider: assertion.provider,
+      id_token: assertion.idToken,
+      nonce: assertion.nonce,
+      // Apple discloses the name once, on the first authorisation. Sent only
+      // when there is one, so a later sign-in cannot blank a profile name.
+      ...(assertion.user ? { user: assertion.user } : {})
+    });
+  } catch (error) {
+    const challenge = legalAcceptanceRefusal(error);
+    if (challenge) return { kind: "legalAcceptanceRequired", state: legalAcceptanceState(challenge) };
+    const ticket = federatedSignupRefusal(error);
+    if (ticket) return { kind: "signupRequired", ticket };
+    if (error instanceof PulseApiError && error.code === "account_link_required") {
+      return { kind: "linkRequired", provider, message: error.message };
+    }
+    throw error;
+  }
+
+  return { kind: "signedIn", state: await admitFederatedSession(session) };
+}
+
+/**
+ * Finish a federated signup with the answers only the member can give.
+ *
+ * Age and agreement are passed through verbatim from what the member actually
+ * chose. They are never defaulted to true here: the entire reason the server
+ * refuses to create the account on the strength of a provider token is that
+ * nobody had been asked yet, and hardcoding the answer at this call site would
+ * reintroduce exactly the invented consent that refusal exists to prevent.
+ */
+export async function completeFederatedSignup(payload: {
+  signup_ticket: string;
+  age_confirmed: boolean;
+  terms_accepted: boolean;
+  email_opt_in: boolean;
+  country?: string;
+}): Promise<AuthState> {
+  resetCanonicalTier();
+  const session = await federatedSignup(payload);
+  return admitFederatedSession(session);
+}
+
+/**
+ * The one admission path both federated entry points share.
+ *
+ * Identical to the tail of `signIn`, and deliberately a shared function rather
+ * than two copies: the QA guard, the envelope write, the user cache and the
+ * remembered-account write are what make a session real on this device, and a
+ * federated path that admitted a member while skipping one of them would be a
+ * second, weaker definition of "signed in".
+ */
+async function admitFederatedSession(session: SessionResponse): Promise<AuthState> {
+  const user = sessionUser(session);
+  if (!user) return unauthenticatedState();
+  if (shouldRejectTemporaryQaUser(user)) return clearTemporaryQaSession();
+  await persistSessionEnvelope({ ...session, user });
+  await setCachedSessionUser(user);
+  await rememberAccount(user).catch(() => undefined);
+  void refreshEntitlementAfterSignIn();
+  return authenticatedState(user);
 }
 
 export type SignOutOptions = {

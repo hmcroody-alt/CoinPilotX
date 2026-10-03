@@ -75,3 +75,9 @@ outputs/.mutate*-original
 # Removing these lines re-opens a privacy leak, not a documentation gap.
 reports/graphite-chat/
 reports/graphite-profile/
+
+# `scripts/render_login_preview.py` is committed and writes this next to it, so
+# every run of the preview dirties the tree. The HTML is a generated artefact of
+# the stylesheet and templates -- reproducible on demand and stale the moment
+# either changes -- so it is deliberately not tracked.
+login_preview.html

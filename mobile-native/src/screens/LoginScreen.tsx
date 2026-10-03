@@ -6,7 +6,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { signIn, useAuth } from "../session/auth";
+import { signIn, signInWithProvider, useAuth } from "../session/auth";
+import { FederatedProvider, ProviderSignInFailed } from "../auth/providerSheets";
 import { createQaSimulatorLocalSession, isQaSimulatorAutoLoginEnabled, tryHandleQaSimulatorAuthUrl } from "../session/qaSimulatorAuth";
 import { getCachedSessionUser } from "../session/sessionStore";
 import { PulseUser } from "../api/auth";
@@ -28,6 +29,7 @@ import { LoginBackground } from "../components/auth/LoginBackground";
 import { PulseSocBrandHeader } from "../components/auth/PulseSocBrandHeader";
 import { BiometricLoginButton, BiometricButtonState } from "../components/auth/BiometricLoginButton";
 import { ManualLoginForm, ManualLoginFormHandle } from "../components/auth/ManualLoginForm";
+import { ProviderSignInButtons } from "../components/auth/ProviderSignInButtons";
 import { AuthStatusFooter } from "../components/auth/AuthStatusFooter";
 import { useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -63,6 +65,7 @@ export function LoginScreen() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | undefined>();
+  const [providerBusy, setProviderBusy] = useState<FederatedProvider | null>(null);
 
   const [biometricCapability, setBiometricCapability] = useState<BiometricCapability | null>(null);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
@@ -193,6 +196,52 @@ export function LoginScreen() {
       setSubmitting(false);
     }
   }, [identifier, password, submitting, setAuthState, biometricCapability, biometricEnabled, enableBiometricsForUser, navigation, t]);
+
+  /**
+   * Tapping Continue with Apple / Continue with Google.
+   *
+   * Each of the five outcomes is a different screen, and the reason they are
+   * handled here rather than inside `signInWithProvider` is that only this
+   * screen knows what is on top of it. Two are worth naming:
+   *
+   *  - `cancelled` does nothing at all. No alert, no error text, no haptic.
+   *    A member who tapped Cancel made a choice and already knows what they
+   *    did; telling them something went wrong is both untrue and alarming.
+   *  - `linkRequired` is shown as an explanation, not a failure. The server
+   *    has refused to attach the provider to an account it only matched by
+   *    email, which is the account-takeover invariant doing its job -- so the
+   *    copy has to send them to the password they already have, not imply
+   *    that PulseSoc is broken.
+   */
+  const handleProviderPress = useCallback(async (provider: FederatedProvider) => {
+    if (providerBusy || submitting) return;
+    Keyboard.dismiss();
+    setFormError(undefined);
+    setProviderBusy(provider);
+    try {
+      const outcome = await signInWithProvider(provider);
+      if (outcome.kind === "cancelled") return;
+      if (outcome.kind === "signedIn" || outcome.kind === "legalAcceptanceRequired") {
+        // Both are real states of the session, and the shell decides what to
+        // render from the phase. Legal acceptance is not an error here.
+        setAuthState(outcome.state);
+        return;
+      }
+      if (outcome.kind === "linkRequired") {
+        setFormError(outcome.message || t("errors:auth.providerLinkRequired"));
+        formRef.current?.focusIdentifier();
+        return;
+      }
+      // `signupRequired`: the provider verified somebody PulseSoc has never
+      // seen. The ticket is short-lived and carries the only proof we have, so
+      // it is handed straight to the consent screen rather than stored.
+      navigation.navigate("FederatedSignup", { ticket: outcome.ticket });
+    } catch (error) {
+      setFormError(describeProviderError(error));
+    } finally {
+      setProviderBusy(null);
+    }
+  }, [providerBusy, submitting, setAuthState, navigation, t]);
 
   const handleBiometricPress = useCallback(async () => {
     if (biometricState === "loading") return;
@@ -377,6 +426,12 @@ export function LoginScreen() {
                 formError={formError}
               />
 
+              {/* Directly under the password form, above "Join the network" --
+                  not behind a "more options" disclosure. A provider sign-in is
+                  a first-class way in, and burying it is what the current web
+                  login does wrong. */}
+              <ProviderSignInButtons onSelect={handleProviderPress} busyProvider={providerBusy} />
+
               <Pressable accessibilityRole="button" accessibilityLabel="Join the network" testID="create-account-button" onPress={() => navigation.navigate("Signup")} style={styles.joinAction}>
                 <Text style={styles.joinMuted}>New to PulseSoc? <Text style={styles.joinLink}>Join the network</Text></Text>
                 <Ionicons name="chevron-forward" size={16} color={colors.accentStrong} />
@@ -511,6 +566,49 @@ function describeLoginError(error: unknown): string {
     return error.message || translate("errors:auth.unableToSignIn");
   }
   return error instanceof Error ? error.message : translate("errors:auth.unableToSignIn");
+}
+
+/**
+ * Why a provider sign-in failed, in words the member can act on.
+ *
+ * Deliberately separate from `describeLoginError`: the two paths fail for
+ * genuinely different reasons and share almost no codes. A provider sign-in
+ * cannot produce `invalid_credentials` -- nobody typed anything -- and the
+ * password path cannot produce a sheet that refused to open. Folding them
+ * together would mean every new provider state inherits a password-shaped
+ * default, which is how "Email or password is incorrect" ends up on screen
+ * after a member taps an Apple button.
+ *
+ * Cancellation is absent on purpose. It never reaches here; the caller returns
+ * before the catch, because it is not a failure to describe.
+ */
+function describeProviderError(error: unknown): string {
+  // The sheet itself failed -- no assertion was ever produced, so the server
+  // was never asked. Distinguishing this from a server rejection matters: one
+  // is retryable on this device, the other is a decision about the account.
+  if (error instanceof ProviderSignInFailed) {
+    return translate("errors:auth.providerUnavailable");
+  }
+  if (error instanceof PulseApiError) {
+    if (error.code === "request_unreachable" || error.status === 503) {
+      return translate("errors:auth.unreachable");
+    }
+    if (error.code === "account_restricted") return translate("errors:auth.accountRestricted");
+    // A valid provider token that the server could not verify is not the
+    // member's fault and not retryable by typing harder.
+    if (error.code === "invalid_provider_token" || error.status === 400) {
+      return translate("errors:auth.invalidProviderResponse");
+    }
+    if (error.status === 429) return translate("errors:auth.tooManyAttempts");
+    if (error.status >= 500) return translate("errors:auth.serverTrouble");
+    // A code this build does not recognise: the server's own words beat a
+    // guess, for the same reason as on the password path.
+    if (error.code) return error.message || translate("errors:auth.unableToSignIn");
+    return translate("errors:auth.unableToSignIn");
+  }
+  // Reaching here means the provider module is missing from a build that
+  // advertised the button -- a configuration mistake, not a member mistake.
+  return translate("errors:auth.providerConfigError");
 }
 
 const styles = createThemedStyles(() => ({

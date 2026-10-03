@@ -123,6 +123,34 @@
         radial-gradient(circle at 52% 32%, rgba(110, 223, 246, .14), transparent 18rem),
         linear-gradient(180deg, #020710 0%, #061321 64%, #081d2b 100%);
     }
+    {%- if login_hero_art %}
+    /* The sign-in artwork, as a background and nothing else.
+       Deliberately placed AFTER the gradient rule above, which uses the
+       `background` shorthand and therefore resets `background-image`. Declared
+       any earlier in this stylesheet the photograph is silently discarded, and
+       the page looks exactly like the one without the asset -- a failure with
+       no error attached to it.
+
+       Two scrims sit between the photograph and the content, because the card
+       and the hero copy are white text over a night sky and the bright patches
+       are the ones the picture is good because of. The scrims are the layout's
+       job; the image itself is used unmodified and is never redrawn in CSS. */
+    .premium-auth-body {
+      background-image:
+        linear-gradient(to right, rgba(3, 6, 12, .40), rgba(3, 6, 12, .74)),
+        linear-gradient(to bottom, rgba(3, 6, 12, .55), rgba(3, 6, 12, .30) 38%, rgba(3, 6, 12, .80)),
+        image-set({% for variant in login_hero_art %}url("{{ variant.url }}") type("{{ variant.mime }}"){{ "," if not loop.last }}{% endfor %});
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+    }
+    @media (max-width: 860px) {
+      /* `fixed` is the expensive one and iOS ignores it outright, so the cost
+         buys nothing on the viewport that can least afford it. */
+      .premium-auth-body { background-attachment: scroll; }
+    }
+    {%- endif %}
     .premium-auth-main { min-height: 100vh; min-height: 100dvh; padding: max(28px, env(safe-area-inset-top)) 0 max(24px, env(safe-area-inset-bottom)); display: grid; align-items: center; }
     .auth-container { width: min(100% - 28px, 1180px); }
     .panel.auth-shell {
@@ -314,6 +342,44 @@
     .field-aside { justify-self: end; color: var(--cyan); font-size: 13px; font-weight: 800; text-decoration: none; }
     .auth-switch { margin: 16px 0 0; font-size: 14px; text-align: center; }
     .auth-switch a { color: var(--green); font-weight: 900; text-decoration: none; }
+    /* Federated sign-in buttons. The colours, the 44px minimum height and the
+       "Continue with X" wording are what Apple's and Google's brand guidelines
+       require; Apple's is black-on-white-text, Google's is white with dark text.
+
+       `.federated-mark` is deliberately `display: none`. Both providers require
+       their *official* logo asset, and an approximated SVG path drawn from
+       memory would be a wrong mark rather than a missing one -- which is the
+       worse of the two for app review. The real assets drop into
+       `static/brand/` and this rule becomes a background-image. Until then the
+       buttons carry correct text and no logo, and they are hidden anyway:
+       `federated_sign_in_options()` returns nothing until a client ID exists. */
+    .auth-federated { margin-top: 18px; display: grid; gap: 10px; }
+    /* A rule either side of the words rather than text alone. The divider is
+       separating two different ways to sign in, not labelling the thing below
+       it, and centred text with no rule reads as a caption for the buttons. */
+    .auth-divider {
+      margin: 0; display: grid; grid-template-columns: 1fr auto 1fr;
+      align-items: center; gap: 12px;
+      color: var(--muted); font-size: 12px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: .08em;
+    }
+    .auth-divider::before, .auth-divider::after {
+      content: ""; height: 1px; background: rgba(255, 255, 255, .12);
+    }
+    .federated-button {
+      width: 100%; min-height: 44px; display: inline-flex; align-items: center;
+      justify-content: center; gap: 10px; border-radius: 12px; font-weight: 800;
+      font-size: 15px; border: 1px solid transparent;
+    }
+    /* White rather than black. Apple's guidelines permit black, white, or
+       white-with-outline, so this is a choice rather than a requirement, and
+       the choice is that the two providers must not be ranked. A black Apple
+       button beside a white Google one reads as a primary and a secondary
+       option, which is a claim about the member's identity that PulseSoc has
+       no business making. */
+    .federated-apple { background: #fff; color: #1f1f1f; border-color: #e3e3e3; }
+    .federated-google { background: #fff; color: #1f1f1f; border-color: #dadce0; }
+    .federated-mark { display: none; width: 18px; height: 18px; }
     /* Progressive disclosure with no JavaScript in the path: the verification
        recovery forms are real and reachable, they just are not the first thing
        a returning member has to read past. */
@@ -403,6 +469,15 @@
       * { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
     }
   </style>
+  {%- if login_hero_art and page in ['signup', 'login'] %}
+  {#- The artwork is the LCP element and it is referenced from a CSS
+      background, so the browser cannot find it until the stylesheet is parsed
+      and the body is matched. Preloading the single best variant moves that
+      discovery to the first bytes of the document. Only the first is
+      preloaded: fetching all three would spend the saving three times over on
+      two files that will never be displayed. #}
+  <link rel="preload" as="image" href="{{ login_hero_art[0].url }}" type="{{ login_hero_art[0].mime }}" fetchpriority="high">
+  {%- endif %}
 </head>
 <body class="{% if page in ['signup', 'login'] %}premium-auth-body{% endif %}{% if is_ios_native %} ios-native-account{% endif %}">
   <header>
@@ -509,6 +584,21 @@
             <p class="muted">A phone number is not required. You can add one later in Account Settings if you choose to enable SMS or phone-based security features.</p>
             <button class="button primary" type="submit" data-i18n="createCta">Create Your PulseSoc Account</button>
           </form>
+          {% if federated_providers %}
+            <div class="auth-federated" aria-label="Other ways to create an account">
+              <p class="auth-divider" data-i18n="federatedDivider">or continue with</p>
+              {% for option in federated_providers %}
+                <form method="post" action="/auth/{{ option.provider }}/start" class="auth-form">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                  <input type="hidden" name="next" value="{{ next_target }}" />
+                  <button class="button federated-button federated-{{ option.provider }}" type="submit">
+                    <span class="federated-mark federated-mark-{{ option.provider }}" aria-hidden="true"></span>
+                    <span>Continue with {{ option.label }}</span>
+                  </button>
+                </form>
+              {% endfor %}
+            </div>
+          {% endif %}
           <p class="muted">Already have an account? <a href="/login">Log in</a>.</p>
           </section>
 
@@ -565,6 +655,27 @@
             {% endif %}
             <button class="button primary" type="submit" data-submitting-label="Signing in…" data-i18n="signinCta">Sign in</button>
           </form>
+          {% if federated_providers %}
+            {# Below the password form, not above it. Apple's Human Interface
+               Guidelines require Sign in with Apple be offered at least as
+               prominently as other options, which it is -- but the great
+               majority of existing members here have a password and no linked
+               provider, and putting a provider button first would send them to
+               Apple to be told no account matches. #}
+            <div class="auth-federated" aria-label="Other ways to sign in">
+              <p class="auth-divider" data-i18n="federatedDivider">or continue with</p>
+              {% for option in federated_providers %}
+                <form method="post" action="/auth/{{ option.provider }}/start" class="auth-form">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                  <input type="hidden" name="next" value="{{ next_target }}" />
+                  <button class="button federated-button federated-{{ option.provider }}" type="submit">
+                    <span class="federated-mark federated-mark-{{ option.provider }}" aria-hidden="true"></span>
+                    <span>Continue with {{ option.label }}</span>
+                  </button>
+                </form>
+              {% endfor %}
+            </div>
+          {% endif %}
           <p class="auth-switch">
             <span data-i18n="newToPulseSoc">New to PulseSoc?</span>
             <a href="/signup{% if next_target %}?next={{ next_target | urlencode }}{% endif %}" data-i18n="createAccount">Create an account →</a>
@@ -819,11 +930,80 @@
             <p class="muted" data-notification-status></p>
             <p class="muted" data-notification-message></p>
           </div>
+          {% if federated_connections %}
+            <div class="settings-card">
+              <h3>Sign-in methods</h3>
+              <p class="muted">Connect Apple or Google to sign in without typing a password. Your email address and password keep working either way.</p>
+              {% for connection in federated_connections %}
+                <div class="settings-row">
+                  <span>
+                    <strong>{{ connection.label }}</strong>
+                    {% if connection.linked %}
+                      <small class="muted">Connected{% if connection.email %} as {{ connection.email }}{% endif %}</small>
+                    {% elif connection.available %}
+                      <small class="muted">Not connected</small>
+                    {% else %}
+                      <small class="muted">Not available yet</small>
+                    {% endif %}
+                  </span>
+                  {% if connection.linked %}
+                    {# The button is hidden rather than disabled when this is the
+                       last credential: a disabled control invites a member to
+                       hunt for the reason, and the sentence below gives it. #}
+                    {% if connection.can_unlink %}
+                      <form method="post" action="/account/connections/{{ connection.provider }}/disconnect">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                        <button class="button" type="submit">Disconnect {{ connection.label }}</button>
+                      </form>
+                    {% else %}
+                      <small class="muted">This is currently the only way to sign in. Set a password with <a href="/forgot-password">Forgot password</a> before disconnecting it.</small>
+                    {% endif %}
+                  {% elif connection.available %}
+                    <form method="post" action="/auth/{{ connection.provider }}/start">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                      <input type="hidden" name="mode" value="link" />
+                      <button class="button" type="submit">Connect {{ connection.label }}</button>
+                    </form>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
           <div class="settings-card danger-zone">
             <h3>Delete Account</h3>
             <p>Permanently delete your PulseSoc account and remove your personal profile data. This cannot be undone.</p>
             <a class="button" href="/account/delete">Delete my account</a>
           </div>
+
+        {% elif page == "federated_finish" %}
+          {# A brand new account for an identity Apple or Google has already
+             verified. Deliberately not the `/signup` form: the address and the
+             password are both settled, and showing an editable email field
+             would invite the member to type one the provider never verified --
+             the account would then be created for the typed one. #}
+          <p>{{ federated_provider_label }} verified <strong>{{ federated_email }}</strong>. PulseSoc needs two more answers before creating your account.</p>
+          <form method="post" class="auth-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <input type="hidden" name="next" value="{{ next_target }}" />
+            <div class="field">
+              <label for="federated-country">Country</label>
+              <input id="federated-country" name="country" autocomplete="country-name" placeholder="Country" />
+            </div>
+            <label class="consent-row">
+              <input type="checkbox" name="age_confirmed" required />
+              <span>I confirm I meet the age requirements for my country.</span>
+            </label>
+            <label class="consent-row">
+              <input type="checkbox" name="terms_accepted" required />
+              <span>I agree to the <a href="/terms">Terms</a>, the <a href="/privacy">Privacy Policy</a>, and the PulseSoc no-tolerance rules for objectionable content and abusive users.</span>
+            </label>
+            <label class="consent-row">
+              <input type="checkbox" name="email_opt_in" />
+              <span>I agree to receive promotional emails from PulseSoc. I can unsubscribe anytime.</span>
+            </label>
+            <button class="button primary" type="submit">Create my PulseSoc account</button>
+          </form>
+          <p class="muted"><a href="/login">Cancel and return to sign in</a></p>
 
         {% elif page == "delete_account" %}
           <div class="settings-card danger-zone">
@@ -831,7 +1011,13 @@
             <p>This removes your PulseSoc profile, signs you out on this device, revokes notification access, and removes or anonymizes content tied to your identity.</p>
             <form method="post">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-              <input name="password" type="password" autocomplete="current-password" placeholder="Confirm your password" required />
+              {# Rendered only when there is a password to confirm. A `required`
+                 field on a federated-only account is not merely unhelpful: the
+                 browser refuses to submit the form at all, so the member cannot
+                 reach the server to be told what to do instead. #}
+              {% if has_password %}
+                <input name="password" type="password" autocomplete="current-password" placeholder="Confirm your password" required />
+              {% endif %}
               <label class="consent-row">
                 <input type="checkbox" name="confirm_delete" required />
                 <span>I understand this action is permanent and I want to delete my PulseSoc account.</span>
@@ -841,6 +1027,33 @@
                 <a class="button primary" href="/account/settings">Cancel</a>
               </div>
             </form>
+            {# Separate forms, after the one above rather than inside it: nested
+               forms are invalid HTML and the browser drops the inner one. #}
+            {% set confirmable = federated_connections | selectattr("linked") | list %}
+            {% if confirmable %}
+              <div class="settings-row">
+                <span>
+                  {% if has_password %}
+                    <small class="muted">Or confirm with a connected sign-in method instead of your password.</small>
+                  {% else %}
+                    <small class="muted">This account has no password. Confirm with your connected sign-in method to delete it.</small>
+                  {% endif %}
+                </span>
+                {% for connection in confirmable %}
+                  <form method="post" action="/auth/{{ connection.provider }}/start">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                    <input type="hidden" name="mode" value="verify" />
+                    <input type="hidden" name="next" value="/account/delete" />
+                    <button class="button" type="submit">Confirm with {{ connection.label }}</button>
+                  </form>
+                {% endfor %}
+              </div>
+            {% elif not has_password %}
+              {# No password and no linked provider is a member with no way to
+                 prove anything. Unreachable through the flows that exist, but
+                 silence here would be a dead end, so name the escape hatch. #}
+              <p class="muted">This account has no password and no connected sign-in method. Use <a href="/forgot-password">Forgot password</a> to set one, then return here.</p>
+            {% endif %}
           </div>
 
         {% elif page == "admin_users" %}

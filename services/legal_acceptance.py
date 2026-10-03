@@ -69,7 +69,30 @@ UNVERSIONED_DOCUMENTS = {
 #: Where an acceptance came from. Closed set because "which surface asked" is the
 #: part of this record a reviewer will question, and a free-text column fills up
 #: with three spellings of the same answer.
-SOURCES = ("web_signup", "web_login", "mobile_register", "mobile_login")
+#:
+#: `web_apple` and `web_google` are federated sign-in. Separate entries rather
+#: than folded into `web_login` because a federated member may never have seen
+#: the web login form at all -- the account was created from a provider
+#: assertion -- and "which surface asked" has to stay answerable for that case.
+#:
+#: `mobile_apple` and `mobile_google` are the same two providers reached through
+#: the native iOS sheet instead of the browser. They are not folded into the
+#: `web_*` pair even though the resulting account is identical, because the
+#: consent surface genuinely differs: on iOS the member accepts inside the app's
+#: own signup screen, and if a reviewer or a regulator asks where a particular
+#: member agreed, "Apple" is not the answer -- "the iOS app" is. Nor are they
+#: folded into `mobile_register`, for the reason the web pair is not folded into
+#: `web_signup`: a federated member never filled in a registration form.
+SOURCES = (
+    "web_signup",
+    "web_login",
+    "web_apple",
+    "web_google",
+    "mobile_register",
+    "mobile_login",
+    "mobile_apple",
+    "mobile_google",
+)
 
 #: Where a member reads each document. Site-relative so one deployment's host is
 #: not baked into a record or a mobile build; callers that need an absolute URL

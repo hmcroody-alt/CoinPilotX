@@ -428,7 +428,8 @@
       "biometricFailedTitle": "Koneksyon byometrik pa mache",
       "biometricFailedBody": "Nou pa t ka verifye w. Tanpri eseye ankò oswa konekte ak modpas ou.",
       "enableBiometricLabel": "Aktive {{method}}",
-      "signInWithBiometric": "Konekte ak {{method}}"
+      "signInWithBiometric": "Konekte ak {{method}}",
+      "federatedDivider": "oswa kontinye ak"
     },
     "signUp": {
       "title": "Kreye kont ou",
@@ -555,6 +556,18 @@
       "tagline": "Rezo w pare.",
       "loginLogoA11y": "Logo PulseSoc. Aksè natif. Rezo w pare.",
       "signupLogoA11y": "PulseSoc. Aksè natif."
+    },
+    "federatedSignup": {
+      "title": "Yon sèl etap ankò",
+      "subtitle": "{{provider}} verifye ki moun ou ye. PulseSoc bezwen de repons anvan li kreye kont ou.",
+      "verifiedEmail": "Verifye pa {{provider}}",
+      "ageConfirm": "Mwen gen 13 an oswa plis",
+      "termsAccept": "Mwen dakò ak Kondisyon Sèvis yo ak Règleman Konfidansyalite a",
+      "emailOptIn": "Voye nouvèl ak mizajou PulseSoc ban mwen",
+      "optional": "(opsyonèl)",
+      "countryLabel": "Peyi",
+      "countryPlaceholder": "Kote w ap viv",
+      "submit": "Kreye kont mwen"
     }
   },
   "errors": {
@@ -584,7 +597,12 @@
       "challengeRequired": "Pou sekirite w, fini verifikasyon an pou kontinye konekte.",
       "emailNotConfirmed": "Konfime adrès imèl ou anvan ou konekte.",
       "accountRestricted": "Kont sa a pa ka konekte kounye a. Kontakte support@pulsesoc.com.",
-      "nonProductionBackend": "Bild sa a konekte ak {{environment}} ({{host}}), ki gen pwòp kont pa l."
+      "nonProductionBackend": "Bild sa a konekte ak {{environment}} ({{host}}), ki gen pwòp kont pa l.",
+      "providerUnavailable": "Opsyon koneksyon sa a pa disponib sou aparèy sa a kounye a.",
+      "providerConfigError": "PulseSoc poko konfigire pou opsyon koneksyon sa a.",
+      "invalidProviderResponse": "Nou pa t kapab verifye koneksyon sa a. Tanpri eseye ankò.",
+      "providerLinkRequired": "Gen yon kont ki deja sèvi ak adrès imèl sa a. Konekte sou kont sa a pou w ka lye founisè sa a.",
+      "federatedTicketExpired": "Koneksyon sa a pran twòp tan. Tanpri peze bouton founisè a ankò."
     },
     "media": {
       "uploadFailed": "Fichye a pa t fin voye. Eseye ankò.",

@@ -5,6 +5,126 @@ Base: `c5e523d625166414573e618c1c043092794e7163`
 Baseline: `realtime-audio-stable-v1` (`fc25cd163b8802113df1b3b3d98cb7aab10891bb`)  
 Required label: `audio-critical-change`
 
+## Native federated sign-in addendum (2026-10-03)
+
+This addendum declares the `dependency_watch` changes on branch
+`claude/apple-identity-federation` (PR #163) that add Sign in with Apple and
+Sign in with Google to the iOS app. **No file in `categories[].paths` changed.**
+The declaration is required solely because three `dependency_watch.files` entries
+changed — `mobile-native/package.json`, `mobile-native/package-lock.json`, and
+`mobile-native/app.json` — which `scripts/realtime_audio_change_gate.py:172`
+folds into the protected set at the same severity as an audio path.
+
+### Why the change is required
+
+The iOS app can reach a PulseSoc account only with an email and password. The
+federated identity backend (`services/external_identity.py`,
+`POST /api/mobile/auth/federated`) already exists and is already used by the web
+surface, so the account a member reaches from Safari with Apple is unreachable
+from the app on the same phone. Closing that gap needs the two provider SDKs on
+the device, and adding a dependency is what trips this gate.
+
+Sign in with Apple additionally has to exist before the next submission: an app
+offering third-party sign-in on iOS must offer Apple's, and `usesAppleSignIn`
+plus the `com.apple.developer.applesignin` entitlement are how the capability is
+granted to the binary.
+
+### Which feature required it
+
+ONE TAP IDENTITY — Apple and Google sign-in on web and iOS. No audio-quality,
+AVAudioSession, microphone-publication, call, or livestream change was made or
+authorized. The `expo-av` legacy allowlist is untouched: this change adds zero
+`expo-av` call sites.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/package.json` | dependency_watch | Two dependencies added: `expo-apple-authentication@~8.0.8` and `@react-native-google-signin/google-signin@^16.1.5`. Nothing removed, no version of any existing package changed — in particular `react-native-agora`, `expo-av`, and the Expo/RN versions are byte-identical. |
+| `mobile-native/package-lock.json` | dependency_watch | 34 insertions / 3 deletions, consisting of exactly the two lock entries for the packages above. No transitive dependency was added and no existing resolution changed. |
+| `mobile-native/app.json` | dependency_watch | `ios.usesAppleSignIn: true` and the `expo-apple-authentication` config plugin. No change to `UIBackgroundModes` (`audio`, `voip`, `remote-notification` are unchanged), no change to the microphone or camera usage strings, no change to any other plugin entry. |
+
+Supporting non-protected files: `mobile-native/app.config.js` (conditionally
+appends the Google config plugin; **not** a `dependency_watch` file),
+`mobile-native/ios/PulseSoc/PulseSoc.entitlements`,
+`mobile-native/src/api/auth.ts`, `mobile-native/src/auth/providerSheets.ts` and
+its test, and `docs/apple/DECISIONS_SIGN_IN_WITH_APPLE.md`.
+
+### Expected behavior change
+
+No change to audio behaviour of any kind. The two new native modules present a
+provider sheet and return a signed JWT; neither contains a single reference to
+`AVAudioSession`, `setCategory`, or `AVAudioEngine` (verified by grep across
+both installed packages). Neither opens an audio session, captures the
+microphone, or creates a publication path.
+
+The Google button renders only in a build that configured an iOS OAuth client
+id, and `app.config.js` applies the Google config plugin from the same value, so
+a binary without the native module cannot show a button that opens nothing.
+
+### Regression risk
+
+Low, and not in the audio domain. The two realistic risks are both build-time
+rather than runtime:
+
+1. **A new pod changes the iOS build.** `ios/Podfile.lock` is itself a
+   `dependency_watch` file and has deliberately *not* been regenerated in this
+   change. When the release build runs `expo prebuild` / `pod install`, that
+   file will change and **this declaration must be extended at that point** —
+   the gate will correctly fail the build commit otherwise.
+2. **A malformed Google client id.** The config plugin throws when
+   `iosUrlScheme` is missing or not prefixed `com.googleusercontent.apps.`,
+   which would fail `expo prebuild` outright and take every other native build
+   down with it — including call and livestream builds. This is why the plugin
+   is appended conditionally in `app.config.js` rather than listed in
+   `app.json`; verified across the absent / valid / malformed cases with
+   `npx expo config --type prebuild --json`.
+
+Agora and livestream paths are untouched: zero lines of the diff fall inside
+`mobile-native/src/calls/`, `src/live/`, or `src/core/`.
+
+### Tests run
+
+- `src/auth/__tests__/providerSheets.test.ts`: 22/22 passed (new).
+- TypeScript (`npx tsc --noEmit`): passed. A negative control was used to
+  confirm the typecheck is load-bearing rather than vacuous: removing the
+  cancellation guard makes `tsc` fail with `TS18047`.
+- i18n catalog validation: passed, 11 locales, no new hardcoded strings.
+- `scripts/realtime_audio_change_gate.py --base origin/main --head HEAD`: run
+  after committing these files (see the push record on PR #163).
+- Backend federated suites on this branch: `test_federated_native_auth.py`
+  29/29, `test_legal_acceptance.py` 10, `test_mobile_legal_acceptance.py` 38,
+  `test_federated_signin_routes.py` 56, `test_external_identity.py` 85, plus a
+  12-mutation harness (`scripts/protection/mutate_federated_native.py`) at
+  12/12 caught.
+- **Not run:** the realtime-audio jest suites and a native iOS build. Neither is
+  claimed. They remain required release gates; see below.
+
+### Physical validation required
+
+Because the risk is a changed iOS dependency graph rather than changed audio
+code, the required validation is that audio still works *at all* in a binary
+built with the two new pods present:
+
+1. Build for the device and place a two-party call. Audio must be audible both
+   ways, and CallKit lock-screen controls must still work.
+2. Start a livestream and confirm host audio reaches a viewer.
+3. Sign in with Apple and with Google on the device, then confirm a call placed
+   immediately afterwards is still audible — i.e. presenting a provider sheet
+   has not disturbed the audio session.
+
+This declaration does not claim any of the above was performed.
+
+### Rollback procedure
+
+Revert the commit named in the push record on PR #163. Specifically: remove the
+two dependencies from `package.json`, restore `package-lock.json`, drop
+`usesAppleSignIn` and the `expo-apple-authentication` plugin from `app.json`,
+and rebuild. No AVAudioSession, permission, `UIBackgroundModes`, backend-flag,
+Agora, or livestream rollback is required, because none was changed. The
+server-side federated endpoints are additive and can remain deployed; an iOS
+build without these dependencies simply does not call them.
+
 ## App-review call-lifecycle addendum (2026-08-19)
 
 This addendum declares the protected-file changes in branch

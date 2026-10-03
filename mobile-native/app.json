@@ -12,6 +12,7 @@
       "bundleIdentifier": "com.pulsesoc.app",
       "buildNumber": "30",
       "supportsTablet": false,
+      "usesAppleSignIn": true,
       "associatedDomains": [
         "applinks:pulsesoc.com"
       ],
@@ -84,7 +85,8 @@
           "savePhotosPermission": "PulseSoc saves photos and videos you download to your photo library.",
           "isAccessMediaLocationEnabled": false
         }
-      ]
+      ],
+      "expo-apple-authentication"
     ],
     "extra": {
       "pulseApiBaseUrl": "https://pulsesoc.com",
