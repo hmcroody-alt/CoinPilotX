@@ -409,7 +409,12 @@ SEO_PAGES.update({
     },
     "pwa-crypto-app": {
         "title": "Crypto Intelligence PWA | PulseSoc",
-        "description": "Install CoinPlotXAI Inc. as a progressive web app for faster access to PulseSoc crypto intelligence and platform workflows.",
+        # "Install CoinPlotXAI Inc." named the company rather than the thing you
+        # install, which is the one place the legacy name survived in a meta
+        # description Google shows under a search result. Every other surviving
+        # mention is a legal statement about the operating entity -- who answers
+        # for the terms, who will never ask for a seed phrase -- and those stay.
+        "description": "Install PulseSoc as a progressive web app for faster access to crypto intelligence and platform workflows.",
         "h1": "Crypto Intelligence Progressive Web App",
         "eyebrow": "Installable App",
         "intro": "PulseSoc supports a mobile-friendly PWA experience for faster access to AI crypto intelligence, Scam Shield, Day Signal, and optional Telegram companion.",
