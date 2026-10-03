@@ -318,6 +318,38 @@ MUTATIONS = [
             + " · " + (teacher.get("verification_status") or "No teacher status"))))''',
         expect=["a_visitor_is_not_told_where_a_teacher_application_sits"],
     ),
+    Mutation(
+        name="rail_mutuals_are_not_viewer_scoped",
+        defect="Dropping the viewer's own leg of the join turns 'people you "
+               "both follow' into a readout of the subject's whole following "
+               "list -- follow-graph harvesting in a rail card.",
+        path="bot.py",
+        anchor='''                "JOIN pulse_follows theirs ON theirs.followed_user_id = mine.followed_user_id "''',
+        replacement='''                "JOIN pulse_follows theirs ON 1=1 "''',
+        expect=["the_mutuals_module_names_only_accounts_the_viewer_already_follows"],
+    ),
+    Mutation(
+        name="rail_completeness_reaches_visitors",
+        defect="A completeness checklist is a to-do list for one account. Shown "
+               "to a visitor it publishes which parts of someone else's profile "
+               "are unfinished.",
+        path="bot.py",
+        anchor="""    rail_modules = []
+    if is_owner:""",
+        replacement="""    rail_modules = []
+    if True:""",
+        expect=["the_owner_completeness_card_is_owner_only_and_asks_for_nothing_private"],
+    ),
+    Mutation(
+        name="rail_falls_back_to_the_shell_default",
+        defect="Passing a falsy side_html makes the shell substitute its generic "
+               "aside, putting the 'PulseSoc Intelligence' prose and the Premium "
+               "card back on every profile.",
+        path="bot.py",
+        anchor='''main, rail_html or "<!-- no contextual profile rail -->", script, show_intro=False)''',
+        replacement="""main, "", script, show_intro=False)""",
+        expect=["no_audience_is_shown_the_shell_default_rail"],
+    ),
 ]
 
 

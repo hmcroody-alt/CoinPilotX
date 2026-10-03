@@ -90,7 +90,15 @@ FRIEND = 96304           # accepted friendship with the subject
 BLOCKED_BY = 96305       # the subject has blocked this account
 BLOCKER = 96306          # this account has blocked the subject
 
-ALL_USERS = (SUBJECT, STRANGER, FOLLOWER, FRIEND, BLOCKED_BY, BLOCKER)
+# Two accounts the subject follows. The rail's mutuals module may name the one
+# the *viewer* also follows and must never name the other -- naming the second
+# would turn the module into a readout of the subject's following list, which is
+# the follow-graph harvesting the privacy architecture forbids.
+MUTUAL_FOLLOW = 96307    # followed by both the subject and FOLLOWER
+SUBJECT_ONLY_FOLLOW = 96308  # followed by the subject alone
+
+ALL_USERS = (SUBJECT, STRANGER, FOLLOWER, FRIEND, BLOCKED_BY, BLOCKER,
+             MUTUAL_FOLLOW, SUBJECT_ONLY_FOLLOW)
 
 PUBLIC_POST = 9963001
 PRIVATE_POST = 9963002
@@ -124,6 +132,15 @@ EARNED_BADGE_LABEL = "Harbourmaster Chronicler"
 UNEARNED_BADGE_KEY = "audience_fixture_unearned"
 UNEARNED_BADGE_LABEL = "Lighthouse Keeper Emeritus"
 TEACHER_CATEGORY = "Estuary Pilotage Instruction"
+# Distinct names, because the claim is about *which* of the subject's follows a
+# viewer may read. A shared placeholder would let the harvesting assertion pass
+# on a page that printed the wrong account.
+MUTUAL_FOLLOW_NAME = "Quillon Brackwater"
+SUBJECT_ONLY_FOLLOW_NAME = "Perpetua Sillanpaa-Drax"
+FOLLOW_TARGET_NAMES = {
+    MUTUAL_FOLLOW: MUTUAL_FOLLOW_NAME,
+    SUBJECT_ONLY_FOLLOW: SUBJECT_ONLY_FOLLOW_NAME,
+}
 
 NOW = "2026-09-01T00:00:00"
 
@@ -179,7 +196,8 @@ class AudienceFixture(unittest.TestCase):
                 "INSERT INTO users (user_id, username, display_name, full_name, email,"
                 " login_enabled, password_hash, account_status, profile_visibility)"
                 " VALUES (?,?,?,?,?,?,?,?,?)",
-                (user_id, f"audience_{user_id}", f"Audience {user_id}",
+                (user_id, f"audience_{user_id}",
+                 FOLLOW_TARGET_NAMES.get(user_id, f"Audience {user_id}"),
                  f"Audience Person {user_id}",
                  f"audience-{user_id}@audience-fixture.invalid",
                  1, "not-a-real-hash", "active", "public"),
@@ -197,10 +215,19 @@ class AudienceFixture(unittest.TestCase):
                 (post_id, author, "text", body, "", visibility, "approved", None,
                  "published", risk, NOW, NOW, 0),
             )
-        cur.execute(
-            "INSERT INTO pulse_follows (follower_user_id, followed_user_id, created_at)"
-            " VALUES (?,?,?)", (FOLLOWER, SUBJECT, NOW),
-        )
+        # The subject follows two accounts; FOLLOWER follows only one of them.
+        # That asymmetry is what makes "people you both follow" a claim the rail
+        # can get wrong, so it is seeded rather than assumed.
+        for follower, followed in (
+            (FOLLOWER, SUBJECT),
+            (SUBJECT, MUTUAL_FOLLOW),
+            (SUBJECT, SUBJECT_ONLY_FOLLOW),
+            (FOLLOWER, MUTUAL_FOLLOW),
+        ):
+            cur.execute(
+                "INSERT INTO pulse_follows (follower_user_id, followed_user_id, created_at)"
+                " VALUES (?,?,?)", (follower, followed, NOW),
+            )
         # `_friends` reads both tables the app writes to, so an accepted
         # friendship is seeded through the one `pulse_friend_graph` prefers.
         cur.execute(
@@ -595,6 +622,69 @@ class HeroProjection(AudienceFixture):
         stranger = visible_text(self.page(STRANGER).get_data(as_text=True))
         self.assertIn(TEACHER_CATEGORY, stranger)
         self.assertNotIn("approved", stranger.lower())
+
+
+class ContextualRail(AudienceFixture):
+    """The rail is audience-scoped, and the one graph query in it is viewer-scoped.
+
+    The profile used to inherit the shell's default aside, which is the same two
+    cards on all 96 shell pages: a paragraph about "PulseSoc Intelligence" and a
+    Premium card. Neither says anything about the person whose profile it is.
+    Replacing them put a follow-graph read in the rail, so the tests that matter
+    here are about *which* accounts it may name.
+    """
+
+    def test_the_mutuals_module_names_only_accounts_the_viewer_already_follows(self):
+        """The subject follows two accounts; FOLLOWER follows one of them. Naming
+        the other would make the module a readout of the subject's following
+        list, which is follow-graph harvesting -- the module is only safe because
+        every account it can name is one the viewer could already enumerate."""
+        follower = visible_text(self.page(FOLLOWER).get_data(as_text=True))
+        self.assertIn(MUTUAL_FOLLOW_NAME, follower)
+        self.assertNotIn(SUBJECT_ONLY_FOLLOW_NAME, follower)
+
+    def test_a_viewer_sharing_no_follow_gets_no_mutuals_module(self):
+        """STRANGER follows nobody, so the intersection is empty. An empty
+        intersection must omit the module, not render a heading over nothing --
+        and it must still not leak either name (§40, §67)."""
+        stranger = visible_text(self.page(STRANGER).get_data(as_text=True))
+        self.assertNotIn("People you both follow", stranger)
+        self.assertNotIn(MUTUAL_FOLLOW_NAME, stranger)
+        self.assertNotIn(SUBJECT_ONLY_FOLLOW_NAME, stranger)
+
+    def test_a_blocked_viewer_reaches_no_rail_at_all(self):
+        """A closed state renders the closed page, so the mutuals query never
+        runs. Asserted rather than assumed: the query is gated on
+        `can_view_public_activity`, and this is the audience that proves the gate
+        is the resolver's answer and not the handler's own opinion."""
+        for viewer in (BLOCKED_BY, BLOCKER):
+            with self.subTest(viewer=viewer):
+                body = visible_text(self.page(viewer).get_data(as_text=True))
+                self.assertNotIn(MUTUAL_FOLLOW_NAME, body)
+                self.assertNotIn(SUBJECT_ONLY_FOLLOW_NAME, body)
+
+    def test_the_owner_completeness_card_is_owner_only_and_asks_for_nothing_private(self):
+        """Completeness is for the one person who can act on it. It must also
+        never ask for a location, a phone number or a date of birth: §42's rule
+        is that privacy wins over completeness, and `users.date_of_birth` has no
+        writers at all, so a prompt for it would be asking for data the product
+        does not use."""
+        owner = visible_text(self.page(SUBJECT).get_data(as_text=True))
+        self.assertIn("Finish your profile", owner)
+        for asked in ("date of birth", "phone number", "your location", "home address"):
+            self.assertNotIn(asked, owner.lower())
+        stranger = visible_text(self.page(STRANGER).get_data(as_text=True))
+        self.assertNotIn("Finish your profile", stranger)
+
+    def test_no_audience_is_shown_the_shell_default_rail(self):
+        """The generic prose card and the Premium card are what this mission
+        removed from the profile. Entitlement truth is untouched -- it still
+        lives on /pulse/premium -- so the assertion is about this page only."""
+        for viewer in (SUBJECT, STRANGER, FOLLOWER, FRIEND):
+            with self.subTest(viewer=viewer):
+                body = visible_text(self.page(viewer).get_data(as_text=True))
+                self.assertNotIn("PulseSoc Intelligence", body)
+                self.assertNotIn("Unlock creator intelligence", body)
 
 
 class OneAuthority(AudienceFixture):

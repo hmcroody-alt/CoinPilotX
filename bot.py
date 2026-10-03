@@ -93004,8 +93004,44 @@ def pulse_profile_page_for_user(target_user_id):
         "SELECT badge_key, label, description FROM pulse_badges WHERE COALESCE(active,1)=1 ORDER BY id ASC"
     )
     badge_catalog = [dict(row) for row in cur.fetchall()]
-    conn.close()
     is_owner = int(target_user_id or 0) == int(viewer["user_id"])
+    # The rail's mutuals module, scoped to the viewer rather than to the subject:
+    # the intersection of who *this viewer* follows with who the subject follows.
+    # Every account it can name is one the viewer already follows, so it adds
+    # nothing to the set of accounts the viewer can enumerate -- which is the
+    # difference between a mutual list and the follow-graph harvesting §22
+    # forbids. Pointless for the owner, whose intersection with themselves is
+    # just their own following list.
+    mutuals = []
+    if not is_owner and permissions.get("can_view_public_activity"):
+        try:
+            cur.execute(
+                "SELECT theirs.followed_user_id AS user_id FROM pulse_follows mine "
+                "JOIN pulse_follows theirs ON theirs.followed_user_id = mine.followed_user_id "
+                "WHERE mine.follower_user_id=? AND theirs.follower_user_id=? "
+                "ORDER BY theirs.followed_user_id ASC LIMIT 6",
+                # Both columns are INTEGER. Binding whatever the session happens
+                # to hold would compare text to integer, which SQLite coerces and
+                # Postgres refuses outright -- so the suite could not see it and
+                # production would. `is_owner` casts the same value two lines up.
+                (int(viewer["user_id"]), int(target_user_id or 0)),
+            )
+            mutual_ids = [uid for uid in (int(dict(row).get("user_id") or 0) for row in cur.fetchall()) if uid]
+            mutual_identities = pulse_identities_for_users(cur, mutual_ids) if mutual_ids else {}
+            for uid in mutual_ids:
+                card = mutual_identities.get(uid) or {}
+                name = str(card.get("name") or "").strip()
+                key = str(card.get("public_player_id") or "").strip()
+                if name and key:
+                    mutuals.append((name, key))
+        except Exception as exc:
+            # A secondary rail module must never take the profile with it (§68),
+            # and this is the one rail query the handler did not already have.
+            logging.warning(
+                "PROFILE_RAIL_MUTUALS_FAILED target=%s error=%s", target_user_id, exc.__class__.__name__
+            )
+            mutuals = []
+    conn.close()
     public_id = html_escape(clean_html(ident["public_player_id"]))
     badge_priority = {"verified": 0, "founder": 1, "creator": 2, "vip": 3, "premium_verified_star": 4, "premium_verified_check": 4}
     earned_badges.sort(key=lambda badge: (badge_priority.get(str(badge.get("badge_key") or ""), 50), str(badge.get("label") or "")))
@@ -93125,6 +93161,79 @@ def pulse_profile_page_for_user(target_user_id):
     else:
         about_html = ""
     about_tab_html = "<a href='#profileAbout'>About</a>" if about_html else ""
+    # The rail. Every module below is built from a row this handler already read,
+    # so there is no number here the page cannot point at -- the mockup's 82%,
+    # 1.2K and "12 listings" are illustrative and are deliberately not reproduced
+    # (§40). A module with no real data is omitted rather than filled in.
+    #
+    # What this replaces is the shell's default: a paragraph of prose about
+    # "PulseSoc Intelligence" that said nothing about the person whose profile
+    # this is, plus a Premium card that told whoever was reading either that
+    # Premium is already active or that they should buy it. Neither is contextual
+    # to a profile, and entitlement truth is unchanged -- it still lives on
+    # /pulse/premium and the dashboard, which is where someone goes to act on it.
+    #
+    # `<aside>` follows `<div>{main_html}</div>` inside `.layout`, so none of
+    # this precedes the hero in document order and none of it can win LCP.
+    rail_modules = []
+    if is_owner:
+        # Named, real, and each one actionable by the owner from this page.
+        # Nothing here asks for a location, a phone number or a date of birth:
+        # a completeness meter that pushes someone to publish those is a privacy
+        # cost dressed as a nudge (§42), and a profile is complete without them.
+        completeness = [
+            ("Add a profile photo", bool(ident.get("avatar_url")), "/pulse/profile/edit"),
+            ("Add a cover image", bool(ident.get("banner_url")), "/pulse/profile/edit"),
+            ("Write a bio", bool(bio_text), "/pulse/profile/edit"),
+            ("Pick a username", bool(str(ident.get("username") or "").strip()), "/pulse/profile/edit"),
+            ("Publish your first post", post_count > 0, "/pulse#create"),
+        ]
+        remaining = [(label, href) for label, done, href in completeness if not done]
+        if remaining:
+            rail_modules.append(
+                "<article class='card pulse-profile-rail-card'><h2>Finish your profile</h2>"
+                f"<p class='muted'>{len(completeness) - len(remaining)} of {len(completeness)} done. "
+                "Only you can see this.</p><ul class='pulse-profile-rail-todo'>"
+                + "".join(
+                    f"<li><a href='{html_escape(href)}'>{html_escape(label)}</a></li>"
+                    for label, href in remaining
+                )
+                + "</ul></article>"
+            )
+    elif mutuals:
+        rail_modules.append(
+            "<article class='card pulse-profile-rail-card'><h2>People you both follow</h2>"
+            "<ul class='pulse-profile-rail-people'>"
+            + "".join(
+                f"<li><a href='/pulse/profile/{html_escape(clean_html(key))}'>{html_escape(clean_html(name))}</a></li>"
+                for name, key in mutuals
+            )
+            + "</ul></article>"
+        )
+    # One strip, both audiences, same source: the `public_sql`-gated listings the
+    # About card counts. A visitor sees exactly what they could reach from
+    # Marketplace, and `/pulse/marketplace/<id>` is the route that actually
+    # serves it rather than a store URL this page would be inventing.
+    if listings and permissions.get("can_view_marketplace"):
+        rail_modules.append(
+            "<article class='card pulse-profile-rail-card'><h2>"
+            + ("Your store" if is_owner else "Store")
+            + "</h2><ul class='pulse-profile-rail-products'>"
+            + "".join(
+                f"<li><a href='/pulse/marketplace/{int(listing.get('id') or 0)}'>"
+                f"<span>{html_escape(clean_html(listing.get('title') or 'Untitled listing'))}</span>"
+                + (
+                    f"<small>{html_escape(clean_html(listing.get('price_label')))}</small>"
+                    if str(listing.get("price_label") or "").strip()
+                    else ""
+                )
+                + "</a></li>"
+                for listing in listings[:4]
+                if int(listing.get("id") or 0)
+            )
+            + "</ul></article>"
+        )
+    rail_html = "".join(rail_modules)
     avatar_html =f"<img src='{html_escape(clean_html(ident.get('avatar_url')))}' alt=''>" if ident.get("avatar_url") else clean_html(ident["name"][:1])
     cover_style = f" style=\"background-image:linear-gradient(135deg,rgba(5,11,20,.38),rgba(5,11,20,.22)),url('{clean_html(ident.get('banner_url'))}');background-size:cover;background-position:center\"" if ident.get("banner_url") else ""
     main = f"""
@@ -93142,6 +93251,7 @@ def pulse_profile_page_for_user(target_user_id):
     .pulse-profile-tabs{{display:flex;gap:4px;overflow-x:auto;padding:6px;border:1px solid rgba(110,223,246,.14);border-radius:16px;background:rgba(9,20,35,.88);scrollbar-width:none}}.pulse-profile-tabs a{{flex:1 0 auto;min-width:82px;padding:10px 12px;border-radius:11px;text-align:center;text-decoration:none;font-weight:900;color:#a9c5ce}}.pulse-profile-tabs a.active{{background:linear-gradient(135deg,rgba(54,229,143,.2),rgba(110,223,246,.18));color:#fff}}
     .pulse-profile-feed-card{{padding:10px;overflow-anchor:none}}.pulse-profile-feed-card h2{{margin:3px 4px 10px}}.pulse-profile-feed-frame{{display:block;width:100%;min-height:760px;border:0;border-radius:14px;background:#071321;overflow-anchor:none}}
     .pulse-profile-about h2{{margin:0 0 10px}}.pulse-profile-about-bio{{margin:0 0 12px;max-width:62ch}}.pulse-profile-about-list{{display:grid;gap:0;margin:0}}.pulse-profile-about-row{{display:grid;grid-template-columns:minmax(0,120px) minmax(0,1fr);gap:12px;padding:9px 0;border-top:1px solid rgba(255,255,255,.07)}}.pulse-profile-about-row dt{{color:#9fb5c0;font-weight:850;font-size:13px}}.pulse-profile-about-row dd{{margin:0;font-weight:850}}.pulse-profile-secondary details summary{{cursor:pointer;font-weight:950}}.pulse-profile-secondary .profile-tool-links{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:12px}}.profile-tool-links a{{text-decoration:none}}
+    .pulse-profile-rail-card h2{{margin:0 0 8px;font-size:17px}}.pulse-profile-rail-card ul{{list-style:none;margin:0;padding:0;display:grid;gap:2px}}.pulse-profile-rail-card li a{{display:grid;gap:1px;padding:9px 10px;border-radius:11px;text-decoration:none;font-weight:850;min-height:44px;align-content:center}}.pulse-profile-rail-card li a:hover,.pulse-profile-rail-card li a:focus-visible{{background:rgba(110,223,246,.09)}}.pulse-profile-rail-card small{{color:#9fb5c0;font-weight:700}}.pulse-profile-rail-todo li a{{color:#6edff6}}
     .profile-badges-modal,.profile-safety-modal{{position:fixed;inset:0;z-index:1800;display:none;place-items:end center;background:rgba(1,6,14,.72);backdrop-filter:blur(10px);padding:16px}}.profile-badges-modal.open,.profile-safety-modal.open{{display:grid}}.profile-badges-sheet,.profile-safety-sheet{{width:min(680px,100%);max-height:min(82dvh,760px);overflow:auto;border:1px solid rgba(110,223,246,.22);border-radius:24px;background:#071321;padding:16px;box-shadow:0 28px 100px rgba(0,0,0,.55)}}.profile-badges-head,.profile-safety-head{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:12px;align-items:center;position:sticky;top:-16px;background:#071321;padding:10px 0;z-index:2}}.profile-badges-head h2,.profile-safety-head h2{{margin:0}}.profile-badges-head button,.profile-safety-head button{{width:42px!important;min-width:42px!important;height:42px!important;min-height:42px!important;padding:0!important;border-radius:999px}}.profile-badges-list,.profile-report-reasons{{display:grid;gap:8px}}.profile-badge-row{{display:grid;grid-template-columns:42px minmax(0,1fr);gap:10px;border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:10px;background:rgba(255,255,255,.04)}}.profile-badge-row.locked{{opacity:.56}}.profile-badge-icon{{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(54,229,143,.24),rgba(110,223,246,.22));font-size:20px;font-weight:950}}.profile-badge-row p,.profile-badge-row small{{margin:2px 0}}.profile-report-reason{{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:center;min-height:48px;border:1px solid rgba(255,255,255,.09);border-radius:13px;padding:9px 11px;background:rgba(255,255,255,.035);font-weight:850}}.profile-report-reason input{{width:20px;height:20px;margin:0;accent-color:#36e58f}}.profile-safety-copy{{color:#a8bbc6;margin:0 0 12px}}.profile-safety-actions{{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}}.profile-danger-confirm{{background:#ff5b74!important;color:#16040a!important;border:0!important}}body.profile-sheet-open{{overflow:hidden}}
     /* The shell caps `.wrap` at 1180px, which after the 214px navigation rail
        and the 320px aside left this page a 614px reading column -- narrower
@@ -93205,7 +93315,12 @@ def pulse_profile_page_for_user(target_user_id):
     window.addEventListener('pagehide',closeProfileSheets,{once:true});
     """
     script = script.replace("__TARGET_USER_ID__", str(target_user_id))
-    return pulse_social_shell(f"{ident['name']} Profile", "PulseSoc social identity hub with posts, followers, groups, marketplace, teacher status, and safe messaging. Arena call signs stay in battle areas.", main, "", script, show_intro=False)
+    # `pulse_social_shell` substitutes its generic default whenever `side_html`
+    # is falsy, so a profile with no real rail module has to pass *something* to
+    # keep that default out -- otherwise omitting a module under §40 would bring
+    # the Premium card back in exactly the common case. The app-promotion card is
+    # appended to the aside either way, so the column is never truly empty.
+    return pulse_social_shell(f"{ident['name']} Profile", "PulseSoc social identity hub with posts, followers, groups, marketplace, teacher status, and safe messaging. Arena call signs stay in battle areas.", main, rail_html or "<!-- no contextual profile rail -->", script, show_intro=False)
 
 
 def pulse_commerce_card_html(post):
