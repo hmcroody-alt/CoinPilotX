@@ -34,20 +34,32 @@ is the worker's job; judging it is this one's.
 
 The honest problem with freshness in *this* deployment
 ------------------------------------------------------
-``supplier_worker`` now has a Procfile entry, but a process existing is not the
-same as a reconciler running. ``run_tick`` returns ``{"status": "disabled"}``
-until ``CJ_RECONCILIATION_ENABLED`` is set, and ``worker.run_once`` — the only
-thing that writes the drain latch — sits behind ``policy.require_network()`` as
-well, so with ``CJ_NETWORK_ENABLED`` unset the tick returns ``deferred`` and the
-latch still never moves. Both are unset in production. ``link_source`` also never
-writes ``last_synced_at``.
+This section used to say the reconciler was switched off — ``run_tick`` returning
+``{"status": "disabled"}`` until ``CJ_RECONCILIATION_ENABLED`` is set,
+``worker.run_once`` behind ``policy.require_network()``, both unset in production,
+so every listing carried a NULL confirmation and the latch read
+``NO_DRAIN_HAS_EVER_RUN``. **That is no longer true and has not been since
+2026-09-17**, when ``supplier_worker`` was given a Railway service of its own with
+both flags set. Measured 2026-10-01: the latch reads ``DRAINING``, and all 196
+drop-shipped sources are ``SYNCED`` with a non-NULL ``last_synced_at``.
 
-So on this deployment every drop-shipped listing has a NULL confirmation and a
-latch that reads ``NO_DRAIN_HAS_EVER_RUN``, exactly as before the Procfile entry
-existed. The entry removes one of three preconditions; it does not give this gate
-teeth, and anyone reading the Procfile alone will conclude otherwise. Every
-drop-shipped sale today goes through tier 2 as ``unverified``, annotated, and that
-is the most this gate can honestly say until something is re-reading.
+The premise going stale is what made the next defect invisible, so it is worth
+naming: every reasoning step below that begins "since nothing is re-reading"
+inverted the moment something was. The tier-2 strict path, which had never
+executed in production, became the path that *every* drop-shipped checkout takes.
+
+What that exposed is a third way for a reconciler to fail to refresh a
+confirmation, and the latch cannot see it. ``worker.run_once`` is bounded to 20
+reads a tick and ``supplier_worker`` ticks every 300s, so throughput is fixed at
+20 jobs per 300s no matter how large the catalogue is, while demand is two
+recurring jobs per product. A full sweep therefore costs ``2N / 20 * 300``
+seconds: 660s at the 22 listings this module shipped against, and 5925s at the 196
+it now serves. Past roughly 90 products the sweep is longer than
+:data:`CONFIRMATION_MAX_AGE_SECONDS` and the strict path refuses a growing share
+of the catalogue — not because anything is wrong with those listings, but because
+the gate's clock is faster than the reconciler it is measuring. See
+:data:`DRAIN_BEHIND`, which is the state that distinguishes the two, and §24: a
+freshness guarantee the queue was never going to deliver is not a safety property.
 
 A gate that demanded freshness anyway would take every drop-shipped listing off
 sale the moment it shipped. That is not this gate catching a real problem; it is
@@ -134,6 +146,7 @@ __all__ = [
     "CONFIRMATION_UNREADABLE",
     "DECISION_ALLOW",
     "DECISION_REFUSE",
+    "DRAIN_BEHIND",
     "NOT_APPLICABLE",
     "REASON_SOLD_OUT",
     "REASON_STALE_CONFIRMATION",
@@ -229,13 +242,42 @@ MESSAGES = {
 }
 
 #: Latch states from ``business_os.suppliers.fulfillment.drain_status`` that mean
-#: the reconciler is genuinely producing fresh confirmations. ``DRAIN_STALLED``
-#: and ``TICKING_BUT_NOT_COMPLETING`` are deliberately absent: a worker that is
-#: deployed but broken has stopped refreshing anything, so demanding freshness of
-#: it would refuse every checkout for as long as the incident lasted. Those
-#: states fall back to the unverified path, which is the same answer as "not
-#: deployed" because it is the same situation — nothing is re-reading.
+#: the reconciler is genuinely producing fresh confirmations. ``DRAIN_STALLED``,
+#: ``TICKING_BUT_NOT_COMPLETING`` and ``DRAIN_BEHIND`` are deliberately absent: a
+#: worker that is deployed but broken, or deployed but outrun by its own queue,
+#: has stopped refreshing anything *on the schedule this gate assumes*, so
+#: demanding freshness of it would refuse every checkout for as long as the
+#: condition lasted. Those states fall back to the unverified path, which is the
+#: same answer as "not deployed" because it is the same situation — nothing is
+#: re-reading this listing inside the window.
 RUNNING_STATES = ("DRAINING",)
+
+#: The reconciler is alive and completing ticks, but its own queue is further
+#: behind than the freshness this gate demands — so a stale confirmation is the
+#: queue's normal state rather than a fact about the listing.
+#:
+#: This is the third member of the same family as ``DRAIN_STALLED``, and it was
+#: missing for the same reason that one was: the latch answers "is a worker
+#: running", and the gate was reading that as "is a worker keeping up". Those
+#: decouple as soon as the catalogue outgrows the worker's throughput.
+#: ``worker.run_once`` is bounded to 20 reads a tick and ``supplier_worker`` ticks
+#: every 300s, so a catalogue of N products carries 2N recurring jobs and a full
+#: sweep costs ``2N / 20 * 300`` seconds. At the 22 listings this gate shipped
+#: against that is 660s and every cadence is met. At 196 it is 5925s, every
+#: confirmation spends most of its life older than
+#: :data:`CONFIRMATION_MAX_AGE_SECONDS`, and the strict branch below refuses
+#: roughly half the sellable catalogue at any instant — while telling each buyer
+#: to "try again shortly", which is the one thing that cannot help.
+#:
+#: Measured in production 2026-10-01: 196 dropship sources, all ``SYNCED``, all
+#: 3797 variants ``IN_STOCK``, zero job failures, snapshots 45s old — and yet
+#: 18 of the 37 purchasable listings refused, worst confirmation age 6146s
+#: against a worst inventory revisit lag of 6145s. The two numbers being the same
+#: is the proof: the staleness was the queue's, not the supplier's. Re-measured
+#: an hour later the refusals were 22 of 37, which is the other half of the
+#: proof — the count tracks how far the queue has drifted, so it grows on its own
+#: and no supplier event has to happen for a buyer to start seeing this.
+DRAIN_BEHIND = "DRAIN_BEHIND"
 
 #: Source states that are an affirmative report of a failure, as opposed to an
 #: absence of a recent success. ``STALE`` means the last read did not apply,
@@ -338,10 +380,53 @@ def reconciliation_evidence(cur, *, now: Any = None) -> dict:
         # is not refreshing anything, which is the same situation as one that was
         # never deployed, so it takes the same unverified path.
         state = "DRAIN_STALLED"
+    elif _queue_overdue_by(cur, now=now) > CONFIRMATION_MAX_AGE_SECONDS:
+        # A worker that is ticking, completing, and still losing. The latch above
+        # can only say a tick finished; it cannot say the queue is being kept
+        # inside the window the caller is about to demand. See `DRAIN_BEHIND`.
+        state = DRAIN_BEHIND
     else:
         state = "DRAINING"
     return {"state": state, "running": state in RUNNING_STATES,
             "completed_at": completed}
+
+
+def _queue_overdue_by(cur, *, now: Any = None) -> float:
+    """How long the reconciler's oldest unclaimed job has been due, in seconds.
+
+    The one measurement that separates "a worker is running" from "a worker is
+    keeping up". ``available_at`` is when a job next became eligible, so the
+    minimum across the table is the front of the queue, and ``now`` minus that is
+    how far behind the reconciler currently is. Covered by
+    ``idx_supplier_sync_due``, so this is an index read rather than a scan.
+
+    Returns ``0.0`` rather than raising or returning None, for three cases that
+    all mean the same thing — *nothing here proves the reconciler is behind*:
+    the table does not exist (a deployment without the supplier subsystem), it is
+    empty (no work is queued, so none is late), or the front of the queue is still
+    in the future. Zero is the value that leaves the caller's comparison falling
+    through to ``DRAINING``, which keeps this gate exactly as strict as it was
+    before this function existed.
+
+    That asymmetry is deliberate and it is the safety property of this change:
+    leniency is granted only on a positive, measured backlog, never on an absence
+    of evidence about one. It is the same rule tier 1 applies in the other
+    direction — the decision follows what was actually observed, so a read that
+    fails cannot quietly widen what this gate allows.
+    """
+    try:
+        cur.execute("SELECT MIN(available_at) AS oldest FROM "
+                    "business_os_supplier_sync_jobs")
+        row = cur.fetchone()
+    except Exception:
+        return 0.0
+    oldest = (dict(row) if row else {}).get("oldest")
+    if oldest is None:
+        return 0.0
+    try:
+        return max(0.0, _epoch(now) - float(oldest))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _orderable(rows: Sequence[Mapping[str, Any]]) -> list[dict]:

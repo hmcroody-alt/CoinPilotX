@@ -116,6 +116,18 @@ PERMISSIVE_MUTATIONS: list[tuple[str, str, str, str]] = [
         "    return [dict(row) for row in rows]",
     ),
     (
+        # `DRAIN_BEHIND` buys leniency with a measurement, and this is the edit that
+        # takes the leniency without making the measurement. `>= 0` is true of the
+        # 0.0 that `_queue_overdue_by` returns for every no-evidence case, so the
+        # branch stops meaning "the queue is demonstrably late" and starts meaning
+        # "a queue exists" — which switches the freshness half of the gate off on a
+        # deployment whose reconciler is keeping up perfectly.
+        "a backlog branch that fires without a backlog",
+        GATE,
+        "    elif _queue_overdue_by(cur, now=now) > CONFIRMATION_MAX_AGE_SECONDS:",
+        "    elif _queue_overdue_by(cur, now=now) >= 0:",
+    ),
+    (
         "a sell-out only refuses when the reconciler happens to be running",
         GATE,
         "    rows = _orderable(variants.variants_for(cur, int(source[\"listing_id\"])))",
@@ -215,6 +227,20 @@ STRICTNESS_MUTATIONS: list[tuple[str, str, str, str]] = [
         GATE,
         "RUNNING_STATES = (\"DRAINING\",)",
         "RUNNING_STATES = (\"DRAINING\", \"TICKING_BUT_NOT_COMPLETING\")",
+    ),
+    (
+        # The 2026-10-01 incident, re-entered through the one-line door. A reconciler
+        # outrun by its own queue cannot deliver a confirmation inside the window
+        # this gate demands, so counting it as running demands a freshness nothing
+        # is dispatching — measured at 22 of 37 purchasable listings refused while
+        # every supplier fact was healthy. Spelled as a literal, not as the
+        # `DRAIN_BEHIND` name: that constant is defined *below* `RUNNING_STATES`, so
+        # naming it here would NameError at import and be "caught" by a crash rather
+        # than by an assertion about behaviour.
+        "a reconciler outrun by its own queue is counted as keeping up",
+        GATE,
+        "RUNNING_STATES = (\"DRAINING\",)",
+        "RUNNING_STATES = (\"DRAINING\", \"DRAIN_BEHIND\")",
     ),
     (
         "freshness is demanded of a reconciler that was never deployed",
@@ -320,6 +346,17 @@ FAIL_OPEN_MUTATIONS: list[tuple[str, str, str, str]] = [
         "        \"confirmation\": decision.get(\"confirmation\") or \"\",\n",
         "",
     ),
+    (
+        # The backlog read is the only input that can *widen* what this gate allows,
+        # so it is the only one whose failure mode has to point the strict way. A
+        # deployment without the supplier subsystem has no jobs table; returning a
+        # large number there would hand unlimited leniency to the deployments that
+        # can prove least about themselves.
+        "a missing job queue is read as an infinite backlog",
+        GATE,
+        "    except Exception:\n        return 0.0",
+        "    except Exception:\n        return float(\"inf\")",
+    ),
 ]
 
 #: Mutations to the modules the gate *derives* its numbers from. These prove the
@@ -333,6 +370,18 @@ DERIVATION_MUTATIONS: list[tuple[str, str, str, str]] = [
         WORKER,
         "\"inventory\": 900",
         "\"inventory\": 300",
+    ),
+    (
+        # Behaviourally identical today — 2700 *is* the constant's value — which is
+        # exactly why it needs a mutation rather than a comment. The arrears
+        # threshold and the freshness tolerance have to be one number: a second,
+        # independently tunable copy would drift until the gate again demanded a
+        # freshness its own queue was never going to dispatch inside, which is the
+        # 2026-10-01 incident reintroduced as a tuning mistake.
+        "the arrears threshold becomes a second copy of the freshness window",
+        GATE,
+        "    elif _queue_overdue_by(cur, now=now) > CONFIRMATION_MAX_AGE_SECONDS:",
+        "    elif _queue_overdue_by(cur, now=now) > 2700:",
     ),
 ]
 

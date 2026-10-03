@@ -664,6 +664,185 @@ def test_the_latch_columns_this_gate_reads_are_the_ones_fulfillment_writes(cur):
 
 
 # ---------------------------------------------------------------------------
+# A reconciler that is running and still losing
+# ---------------------------------------------------------------------------
+
+#: The job queue exactly as `worker.ensure_schema` declares it, copied for the
+#: same reason `DRAIN_TICKS_DDL` is: that function opens its own `db.connect()`.
+#: `test_the_queue_columns_this_gate_reads_are_the_ones_worker_writes` keeps the
+#: copy honest.
+SYNC_JOBS_DDL = ("CREATE TABLE business_os_supplier_sync_jobs ("
+                 "id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, "
+                 "business_id TEXT NOT NULL, store_id TEXT NOT NULL, "
+                 "kind TEXT NOT NULL, resource_id TEXT NOT NULL, "
+                 "available_at DOUBLE PRECISION NOT NULL, "
+                 "lease_until DOUBLE PRECISION NOT NULL DEFAULT 0, "
+                 "lease_token TEXT, failures INTEGER NOT NULL DEFAULT 0, "
+                 "last_verified_at DOUBLE PRECISION, evidence_hash TEXT, "
+                 "last_error TEXT, UNIQUE(connection_id,kind,resource_id))")
+
+
+def queue(cur, *, overdue_by, kind="inventory", resource_id="10001"):
+    """Put one job at the front of the reconciler's queue, `overdue_by` seconds late.
+
+    ``available_at`` is epoch seconds, matching ``worker.schedule``; a positive
+    ``overdue_by`` therefore backdates it. One row is enough because the gate reads
+    ``MIN(available_at)`` — the front of the queue is the whole measurement.
+    """
+    cur.execute(SYNC_JOBS_DDL.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"))
+    moment = NOW.replace(tzinfo=timezone.utc).timestamp()
+    cur.execute("INSERT INTO business_os_supplier_sync_jobs (id, connection_id, "
+                "business_id, store_id, kind, resource_id, available_at) "
+                "VALUES(?, 'conn', 'biz', 'store', ?, ?, ?)",
+                (f"job-{kind}-{resource_id}", kind, resource_id, moment - overdue_by))
+
+
+def test_a_reconciler_outrun_by_its_own_queue_does_not_demand_freshness(cur):
+    """The production incident of 2026-10-01, as a test.
+
+    The latch said DRAINING — a worker was ticking and completing. Every source
+    was ``SYNCED``, every variant ``IN_STOCK``, no job had ever failed, and
+    snapshots were 45 seconds old. And 18 of the 37 purchasable listings were
+    refused with ``SUPPLIER_UNCONFIRMED``, because ``worker.run_once`` reads 20
+    jobs a tick on a 300s tick and 196 products queue 392 recurring jobs, so a full
+    sweep took 5925s against a 2700s tolerance. The worst confirmation age (6146s)
+    and the worst inventory revisit lag (6145s) were the same number: the staleness
+    belonged to the queue, not to any supplier.
+
+    A worker losing to its own backlog is not refreshing this listing inside the
+    window, which is the same situation as one that stalled or was never deployed —
+    so it takes the same allow-and-mark path, and says which it was.
+    """
+    latch_draining = NOW.replace(tzinfo=timezone.utc).timestamp()
+    latch(cur, started=latch_draining - 30, completed=latch_draining - 10)
+    queue(cur, overdue_by=gate.CONFIRMATION_MAX_AGE_SECONDS + 60)
+
+    evidence = gate.reconciliation_evidence(cur, now=NOW)
+    assert evidence["state"] == gate.DRAIN_BEHIND
+    assert evidence["running"] is False
+
+    bind(cur)
+    add_variant(cur)
+    # Staler than the tolerance: the exact row that was refusing in production.
+    confirm(cur, age_seconds=gate.CONFIRMATION_MAX_AGE_SECONDS + 600)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=evidence, now=NOW)
+    assert decision["decision"] == gate.DECISION_ALLOW
+    assert decision["unverified"] is True
+    assert decision["evidence_state"] == gate.DRAIN_BEHIND
+    assert decision["message"] == ""
+    # And the sale is queryable afterwards as one we could not vouch for.
+    assert gate.audit(decision)["supplier_unverified"]["reconciliation"] == gate.DRAIN_BEHIND
+
+
+def test_a_queue_inside_the_window_still_demands_freshness(cur):
+    """The other half, and the one that stops this being a disabled gate.
+
+    A reconciler keeping up is exactly the situation tier 2 was written for: it
+    reached other listings and not this one, so this one's silence means something.
+    If the backlog branch above swallowed this case too, the fix would have removed
+    the gate rather than corrected it.
+    """
+    moment = NOW.replace(tzinfo=timezone.utc).timestamp()
+    latch(cur, started=moment - 30, completed=moment - 10)
+    queue(cur, overdue_by=gate.CONFIRMATION_MAX_AGE_SECONDS - 60)
+
+    evidence = gate.reconciliation_evidence(cur, now=NOW)
+    assert evidence["state"] == "DRAINING"
+    assert evidence["running"] is True
+
+    bind(cur)
+    add_variant(cur)
+    confirm(cur, age_seconds=gate.CONFIRMATION_MAX_AGE_SECONDS + 600)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=evidence, now=NOW)
+    assert decision["decision"] == gate.DECISION_REFUSE
+    assert decision["reason"] == gate.REASON_STALE_CONFIRMATION
+
+
+def test_a_sold_out_listing_still_refuses_while_the_queue_is_behind(cur):
+    """Tier 1 is not traded away to get tier 2 unstuck.
+
+    Widening the absent-evidence case is only defensible while affirmative bad
+    evidence still refuses through it. A backlog is an absence of reassurance; a
+    supplier saying "none left" is a statement, and it does not become less true
+    because the queue is late.
+    """
+    moment = NOW.replace(tzinfo=timezone.utc).timestamp()
+    latch(cur, started=moment - 30, completed=moment - 10)
+    queue(cur, overdue_by=gate.CONFIRMATION_MAX_AGE_SECONDS + 60)
+    evidence = gate.reconciliation_evidence(cur, now=NOW)
+    assert evidence["state"] == gate.DRAIN_BEHIND
+
+    bind(cur)
+    add_variant(cur, stock_state=schema.STOCK_OUT_OF_STOCK)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=evidence, now=NOW)
+    assert decision["decision"] == gate.DECISION_REFUSE
+    assert decision["reason"] == gate.REASON_SOLD_OUT
+
+    # And so does a source whose last read affirmatively failed.
+    bind(cur, listing_id=DROPSHIP_B, sync_state=schema.SYNC_DISCONNECTED)
+    add_variant(cur, listing_id=DROPSHIP_B)
+    failed = gate.evaluate(cur, listing_id=DROPSHIP_B, evidence=evidence, now=NOW)
+    assert failed["decision"] == gate.DECISION_REFUSE
+    assert failed["reason"] == gate.REASON_STALE_CONFIRMATION
+
+
+def test_absence_of_queue_evidence_never_grants_leniency(cur):
+    """Three ways to learn nothing about the backlog; none of them relaxes the gate.
+
+    The asymmetry is the safety property of the backlog branch: it widens what this
+    gate allows only on a positive, measured arrears. A missing table, an empty
+    queue and a queue whose front is still in the future all leave the gate exactly
+    as strict as it was before that branch existed — otherwise a renamed table
+    would silently stop this gate demanding freshness, which is the failure mode
+    ``test_the_latch_columns...`` exists to prevent on the other read.
+    """
+    moment = NOW.replace(tzinfo=timezone.utc).timestamp()
+    latch(cur, started=moment - 30, completed=moment - 10)
+
+    # 1. The jobs table does not exist on this deployment at all.
+    assert gate.reconciliation_evidence(cur, now=NOW)["state"] == "DRAINING"
+
+    # 2. It exists and is empty — no work queued, so none of it is late.
+    cur.execute(SYNC_JOBS_DDL)
+    assert gate.reconciliation_evidence(cur, now=NOW)["state"] == "DRAINING"
+
+    # 3. The front of the queue is not due yet.
+    queue(cur, overdue_by=-3600)
+    assert gate.reconciliation_evidence(cur, now=NOW)["state"] == "DRAINING"
+    assert gate._queue_overdue_by(cur, now=NOW) == 0.0
+
+
+def test_the_backlog_threshold_is_the_confirmation_tolerance_itself(cur):
+    """One constant, both halves. §21.
+
+    The gate refuses a confirmation older than ``CONFIRMATION_MAX_AGE_SECONDS``, so
+    the only coherent question to ask of the reconciler is whether it is dispatching
+    inside that same window. A second, independent arrears constant could drift
+    until the gate again demanded a freshness its queue was never going to deliver
+    — which is precisely the defect being fixed, reintroduced as a tuning mistake.
+    """
+    source = inspect.getsource(gate.reconciliation_evidence)
+    assert "CONFIRMATION_MAX_AGE_SECONDS" in source
+    assert gate.DRAIN_BEHIND not in gate.RUNNING_STATES
+
+
+def test_the_queue_columns_this_gate_reads_are_the_ones_worker_writes(cur):
+    """Structural, because this read fails open silently too.
+
+    ``_queue_overdue_by`` returns 0.0 on any exception, so a renamed table or
+    column reads as "no backlog" — which keeps the gate strict rather than
+    relaxing it, but would mean the backlog branch had quietly stopped working and
+    nothing would report it. Same reasoning as the latch's structural test, same
+    remedy.
+    """
+    written = inspect.getsource(worker.ensure_schema)
+    read = inspect.getsource(gate._queue_overdue_by)
+    for name in ("business_os_supplier_sync_jobs", "available_at"):
+        assert name in written, f"{name} is no longer written by worker"
+        assert name in read, f"{name} is no longer read by the checkout gate"
+
+
+# ---------------------------------------------------------------------------
 # Reading the evidence the reconciler actually writes
 # ---------------------------------------------------------------------------
 
