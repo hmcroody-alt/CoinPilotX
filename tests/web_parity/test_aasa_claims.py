@@ -110,6 +110,52 @@ def test_no_family_is_undecided(families):
     )
 
 
+def test_a_helper_below_the_config_object_declares_no_paths(families):
+    """The parser reads the `config:` object, not the rest of the file.
+
+    The region was once "everything after the `config:` key", which is the same
+    region exactly until `linking.ts` grows a function underneath the object.
+    The first one did, and the scan returned four families nobody wrote:
+    `url.protocol === "https:"` yields the key `https:` and the value
+    `" || url.protocol === "`, and `owner: "none"` is textually identical to a
+    real one-segment path.
+
+    `test_no_family_is_undecided` catches that, which is how it was found. What
+    it cannot catch is the quiet half — a stray string that lands on a family
+    already in `DECISIONS`, which then gets checked against the AASA and
+    passes, leaving this file reporting on a path the app never declared. So
+    the bound is asserted here directly rather than left to be rediscovered.
+    """
+    source = health.LINKING_TS.read_text()
+    appended = source + (
+        "\n\nexport function somethingLater(raw: URL) {\n"
+        '  if (raw.protocol === "https:" || raw.protocol === "http:") {\n'
+        '    return { owner: "none", path: "explore", kind: "watch/:id" };\n'
+        "  }\n"
+        '  return { owner: "replay", path: "saved/:id" };\n'
+        "}\n"
+    )
+    assert health.declared_native_paths(appended) == dict(families), (
+        "a function below the config object changed the declared path table, so "
+        "the parser is still reading past the object it is meant to read"
+    )
+
+
+def test_an_unparseable_config_object_finds_nothing_rather_than_everything(families):
+    """Fail closed: a broken parse must not fall back to scanning the whole file.
+
+    `settings/:id` survives, because it is added by a separate substring check
+    rather than by the object scan — so the floor is one path, not zero. The
+    point is that it is nowhere near the real table, and that
+    `test_the_native_route_table_was_actually_found` is what goes red.
+    """
+    source = health.LINKING_TS.read_text()
+    assert health.config_object_source(source.replace("config:", "configX:")) == ""
+    truncated = health.declared_native_paths(source.replace("config:", "configX:"))
+    assert len(truncated) < len(families)
+    assert "pulse" not in truncated
+
+
 def test_the_bare_home_path_is_claimed(components):
     """`/pulse/*` does not match `/pulse`.
 
