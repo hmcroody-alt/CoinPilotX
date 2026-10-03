@@ -2,7 +2,7 @@
 
 ## Findings log (published as found, not held for the final report)
 
-Status: **OPEN — 10 findings (1 low, 1 escalated out of Search OS), 6 attacks passed, 1 fleet blocker, 1 gate landed (red)**
+Status: **OPEN — 10 findings (1 low, 1 escalated out of Search OS), 8 attacks passed, 1 fleet blocker, 1 gate landed (red)**
 Branch: `search-os/agent-12-quality-sentinel`
 Measured against: `origin/main` @ `5bdf4e431`
 Method: Flask test client over `app.url_map`, against a scratch copy of the dev DB
@@ -331,6 +331,58 @@ highest-severity SEO attack there is and it is properly closed.
 
 **Double-slash reachability: PASS.** 0 host-relative double-slash URLs emitted
 across four sitemaps, `robots.txt`, and five rendered pages.
+
+**Facet and pagination explosion: PASS, and this one nearly became a wrong
+finding.** `.attack/probe_canonical_page_and_category.py` and
+`.attack/probe_facet_value_mitigation.py`.
+
+`_CONTENT_QUERY_PARAMS = {"/pulse/marketplace": ("category",)}` whitelists a
+parameter *name* and never inspects the *value*, so `search_visibility` answers
+`sitemap_eligible=True` for **every** arbitrary `?category=` string and echoes
+each one into its own canonical — `spam-casino-viagra`, a 200-character slug,
+`../../etc/passwd`, `<script>alert(1)</script>`. That is an unbounded set of
+self-declared-eligible URLs, and I had it written up as a finding before I read
+`canonical_url`'s own docstring, which states the gap deliberately and names the
+mitigation: *an unknown slug renders `noindex,follow` and canonicalises to the
+bare hub, and the callers that submit URLs read the live taxonomy first.*
+
+So the question was never "is the policy layer value-blind" — it is, in
+writing. The question is whether those three promises hold. All three do:
+
+| promise | how settled | result |
+|---|---|---|
+| submitters derive slugs from the live taxonomy | read `marketplace_seo.category_entries` — builds from `build_taxonomy()` over the public catalogue and iterates `taxonomy`, so no arbitrary string has a path in | holds by construction |
+| an unknown slug canonicalises to the bare hub | measured, 7 hostile values | 7/7 collapse |
+| an unknown slug serves `noindex` | measured **at the wire**, 7 hostile values | 7/7 `noindex,follow` |
+
+With the control live: `?category=home` serves
+`index,follow,max-image-preview:large,…` and keeps its own canonical, so the
+probe can tell "unknown slugs are suppressed" apart from "every department is
+suppressed" — the latter would have voided the whole facet strategy and been the
+finding instead.
+
+**Pagination: PASS.** `?page=999` clamps to `?page=2` rather than minting an
+unbounded URL space; `?category=<slug>&page=2` composes both facets instead of
+dropping either; `sitemap_eligible("?page=2")` is `False`, so a paginated URL is
+never offered.
+
+**Coverage, checked rather than assumed:**
+`tests/test_marketplace_pagination_canonical.py:273` already pins the
+load-bearing promise — `render(category="not-a-real-department").indexable is
+False` — and that file is in `config/ci_test_manifest.json`'s `run` list (30
+tests). It asserts at the *renderer*; my probe asserts at the *wire*; they
+agree, so there is no renderer-to-HTTP gap hiding behind the gate. **No new gate
+needed here.** This is the one place where the mitigation for a policy-layer gap
+turned out to be both real and guarded.
+
+What this does change is the *reading* of A12-02 and of matrix rows 4 and 12.
+The policy layer's over-declaration is unbounded, not five pages. But the bound
+on its consequence is tighter than I would have guessed: even if Agent 8's
+IndexNow submitter enumerated eligibility and submitted
+`?category=spam-casino-viagra`, Google would fetch it, read `noindex`, and drop
+it. The cost is wasted crawl budget and quota, not an indexed doorway page. That
+tempers A12-02 rather than escalating it, and I would rather say so than leave a
+scarier number standing.
 
 **Every submitted URL resolves for an anonymous crawler: PASS.**
 `.attack/probe_sitemap_promises.py` walks `/sitemap.xml`, follows its children
@@ -891,6 +943,15 @@ belongs in a search-quality report at all.
   Needs a production reading to settle; 50, 52 and 77 are now measured.
 
 ## Probe hygiene (Phase 100)
+
+**`.attack/scratch.db` no longer holds the catalogue the earlier probes saw.**
+To get past `PAGE_SIZE = 24` I seeded 30 listings (ids `900001`–`900030`, cloned
+from listing 77, category `home`), so publishable went **16 → 46** and the live
+taxonomy gained a `home` department. Anything re-run against this DB and
+compared to a number published earlier in this log is comparing two different
+corpora — the Agent 1 listing table above is the 16-row reading. Recorded here
+rather than reverted, because the >1-page corpus is what makes the pagination
+measurement possible at all.
 
 `.attack/probe_robots_agreement.py` currently reports **74 false positives** —
 paths with "no directive at all" that are JSON APIs, `sitemap*.xml`, `robots.txt`,

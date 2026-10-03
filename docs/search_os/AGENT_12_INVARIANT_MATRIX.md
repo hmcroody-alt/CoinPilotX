@@ -58,14 +58,43 @@ path lists and DB rows (see row 12). It converts to live breakage the day
 Agent 8's IndexNow submitter enumerates eligibility, which its frozen contract
 says it will.
 
+Measured correction: the over-declared set is **unbounded**, not five pages —
+every arbitrary `?category=` value on `/pulse/marketplace` is declared eligible
+and indexable, because `_CONTENT_QUERY_PARAMS` whitelists the parameter *name*
+and never checks the *value*. But the consequence is bounded tighter than the
+count suggests, and I checked rather than assumed: those URLs serve `noindex`
+and collapse to the bare hub at the wire, so an IndexNow submission of one costs
+crawl budget and quota, not an indexed page. The five non-public paths of A12-02
+are the part with no such backstop, and they stay the priority.
+
 ## B. Canonical truth — is there exactly one URL per document?
 
 | # | Invariant | Owner | Predicate | Status | Coverage |
 |---|---|---|---|---|---|
 | 5 | Every indexable 200 declares a canonical | Agent 2 | `rel="canonical"` present on every indexable HTML 200 | **VIOLATED** — `/arena-preview`, 1 of 206 (A12-09b) | **NONE** — the landed gate skips absent canonicals by an explicit `continue` |
 | 6 | A canonical is self-referential unless the path is a declared alias | Agent 2 | `canonical(p) == CANONICAL_ORIGIN + p`, except `_CANONICAL_ALIASES` | **VIOLATED** — A12-04: 2 `sitemap_eligible` paths point elsewhere (`/pulse/help`, `/pulse/support`) | PROBE — the landed gate would catch these, but only for *offered* URLs, and these two are not offered |
-| 7 | All canonical builders agree for the same request | Agent 2 / 5 | every construction site yields one string per (path, query) | **NOT RE-MEASURED this round** — delegated search in flight; 30 manifest-run tests exist for the pagination case | GATE (pagination only) |
+| 7 | All canonical builders agree for the same request | Agent 2 / 5 | every construction site yields one string per (path, query) | **HOLDS where it matters** — measured: the two builders disagree on `page` *by design* and no crawler sees the conflict (see below) | **GATE** (30 manifest-run tests) |
 | 8 | A canonical is host-independent | Agent 2 | `Host:`/`X-Forwarded-Host` injection cannot change the emitted canonical | **HOLDS** — measured | **PROBE** |
+
+**Row 7 was measured this round and the disagreement is benign.** There really
+are two builders — `search_visibility.canonical_url(path)` is page-blind and
+`marketplace_storefront.render_discovery()` is page-aware — and for `?page=2`
+they emit different strings. That is correct: the live page self-canonicalises
+to `?page=2` per Google's pagination guidance, while
+`sitemap_eligible("?page=2")` is `False`, so page 2 is never *offered*. Two
+consumers, two right answers, no conflict reaching a crawler. Measuring this
+needed a corpus past `PAGE_SIZE = 24`: my first attempt ran against 16
+publishable listings, where page 2 does not exist and `canonical_page` clamps to
+1, and would have been published as "they agree." The probe now refuses to
+report below two pages.
+
+The same probe's `category` axis is a **PASS** — `?page=999` clamps rather than
+minting URLs, known departments keep their own canonical, and every hostile
+`?category=` value is suppressed at the wire with `noindex` plus a collapse to
+the bare hub. The policy layer is value-blind and says so in its own docstring;
+the mitigation is real and is gated at
+`tests/test_marketplace_pagination_canonical.py:273`. Full record in the
+findings log under the facet/pagination pass.
 
 **Row 5's defect is a comment, not a bug.** The landed gate carries
 `continue  # absent canonical is a different (weaker) finding`. It is not
@@ -141,10 +170,10 @@ honours the buyer's own number makes every such claim unfalsifiable.
 
 | | count |
 |---|---|
-| invariants that **hold** | 5 (3, 8, 9, 10, 11) |
+| invariants that **hold** | 6 (3, 7, 8, 9, 10, 11) |
 | invariants **violated** | 9 (1, 2, 4, 5, 6, 13, 14, 15 — and 12 latent-by-accident) |
-| not re-measured this round | 1 (7) |
-| covered by a **GATE CI runs** | 5 (3, 9, 10, 11, and 7 for pagination only) |
+| not re-measured this round | 0 |
+| covered by a **GATE CI runs** | 5 (3, 7, 9, 10, 11) |
 | **PROBE** only — true today, unguarded | 3 (6, 8, 12) |
 | **NONE** — nothing measures it | 5 (4, 5, 12, 14, 15) |
 
