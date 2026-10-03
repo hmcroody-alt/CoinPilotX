@@ -356,6 +356,81 @@ def test_an_unreadable_confirmation_is_an_affirmative_block(cur):
     assert name == obs.AFFIRMATIVE_NEGATIVE_BLOCK
 
 
+def unbind(cur, *, listing_id=DROPSHIP):
+    """Clear the binding on an existing source row.
+
+    Not expressible through ``bind()``: that helper substitutes a generated id
+    for a falsy one, and ``link_source`` would collapse a blank to ``NULL``
+    anyway. Both of those are right for their callers and both make an unbound
+    row unreachable from here, so this writes the column directly — which is
+    also the only shape production has, where the row was created by the
+    importer and the merchant never came back to choose.
+    """
+    cur.execute("UPDATE marketplace_product_sources SET provider_variant_id=NULL "
+                "WHERE listing_id=?", (int(listing_id),))
+
+
+def test_an_unbound_listing_is_named_for_the_missing_decision(cur):
+    """The refusal that is nobody's news but the merchant's.
+
+    Every other state here describes the supplier, our reading of the supplier,
+    or the reconciler. This one describes a choice that has not been made: no
+    ``provider_variant_id``, so there is no variant to ask about and nothing
+    below this branch is reasoning about anything real.
+
+    Set up healthy on purpose — stock in, confirmation fresh, reconciler
+    keeping up — so that the name can only be coming from the binding.
+    """
+    bind(cur)
+    add_variant(cur)
+    confirm(cur, age_seconds=60)
+    unbind(cur)
+    name, verdict = name_for(cur, draining(cur))
+    assert verdict["decision"] == gate.DECISION_REFUSE
+    assert verdict["reason"] == gate.REASON_UNBOUND
+    assert name == obs.SUPPLIER_VARIANT_UNBOUND
+    # It costs a sale, so it is a refusal; it is not exposure, because nothing
+    # is being sold unverified — nothing is being sold at all.
+    assert name in obs.REFUSING_STATES
+    assert name not in obs.UNVERIFIED_STATES
+
+
+def test_an_unbound_listing_is_not_filed_under_the_reconciler_or_the_supplier(cur):
+    """The two nearest names would both send the owner to the wrong person.
+
+    ``SUPPLIER_UNCONFIRMED`` reads as "the reconciler has not looked recently",
+    and no amount of reconciling binds a variant — that alert would be waited
+    out forever. ``AFFIRMATIVE_NEGATIVE_BLOCK`` reads as "the supplier told us
+    something is wrong", and the supplier was never asked.
+
+    Driven here with the confirmation absent *and* the siblings out of stock,
+    which is the state that would otherwise earn each of those two names, so a
+    regression that reorders ``classify`` lands on one of them and reds this.
+    """
+    bind(cur)
+    add_variant(cur, stock_state=schema.STOCK_OUT_OF_STOCK)
+    unbind(cur)
+    name, verdict = name_for(cur, draining(cur))
+    assert verdict["confirmation"] == gate.CONFIRMATION_NEVER
+    assert name == obs.SUPPLIER_VARIANT_UNBOUND
+    assert name not in (obs.SUPPLIER_UNCONFIRMED, obs.AFFIRMATIVE_NEGATIVE_BLOCK)
+
+
+def test_a_bound_listing_is_still_named_by_the_other_rules(cur):
+    """The inverse guard: binding is a refusal, not a reclassifier.
+
+    Without this, renaming or mis-reading ``provider_variant_id`` would file the
+    entire drop-ship catalogue under one new state and the dashboard would
+    report a catalogue-wide outage that does not exist.
+    """
+    bind(cur)
+    add_variant(cur)
+    confirm(cur, age_seconds=60)
+    name, verdict = name_for(cur, draining(cur))
+    assert verdict["decision"] == gate.DECISION_ALLOW
+    assert name != obs.SUPPLIER_VARIANT_UNBOUND
+
+
 # ---------------------------------------------------------------------------
 # §2 — the seventh fact, and why it is not folded into one of the six
 # ---------------------------------------------------------------------------
@@ -426,12 +501,13 @@ def test_every_branch_of_evaluate_has_a_name():
     got around to this listing. That is the worst available default to inherit a
     new failure mode, and a count is the cheapest thing that notices.
 
-    The nine, and where each is named above: two ``_not_applicable("no_supplier")``
+    The ten, and where each is named above: two ``_not_applicable("no_supplier")``
     (a rejected reference and a listing with no source row — the first is a
     programmer-error path no lane can reach), ``_not_applicable("merchant_stocked")``,
-    ``_refuse(SOLD_OUT)``, three ``_refuse(STALE_CONFIRMATION)`` (failed sync,
-    unreadable stamp, overdue age — the first two are affirmative blocks here and
-    only the third is ``SUPPLIER_UNCONFIRMED``), ``_allow(unverified=True)`` and
+    ``_refuse(UNBOUND)``, ``_refuse(SOLD_OUT)``, three
+    ``_refuse(STALE_CONFIRMATION)`` (failed sync, unreadable stamp, overdue age —
+    the first two are affirmative blocks here and only the third is
+    ``SUPPLIER_UNCONFIRMED``), ``_allow(unverified=True)`` and
     ``_allow(unverified=False)``. The one unverified allow is what fans out into
     four reported states, by ``evidence_state``.
     """
@@ -439,8 +515,8 @@ def test_every_branch_of_evaluate_has_a_name():
     evaluate = next(n for n in ast.parse(src).body
                     if isinstance(n, ast.FunctionDef) and n.name == "evaluate")
     returns = [n for n in ast.walk(evaluate) if isinstance(n, ast.Return) and n.value]
-    assert len(returns) == 9, (
-        "`evaluate` now has %d return statements, not the 9 this module was "
+    assert len(returns) == 10, (
+        "`evaluate` now has %d return statements, not the 10 this module was "
         "written against. A new outcome falls through `classify` into "
         "UNVERIFIED_NOT_YET_REACHED and is reported as a healthy reconciler. "
         "Name it in `classify` and add its test above." % len(returns))
