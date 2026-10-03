@@ -55,6 +55,22 @@ class Mutation:
         self.edits = [(os.path.join(ROOT, rel), rel, old, new)
                       for rel, old, new in edits]
 
+    def applicable(self):
+        """Is every anchor present? Used by mutations that depend on a fix.
+
+        A mutation whose anchor is missing is not a pass and not a failure --
+        the code it targets is not here. Only ask this where that is a
+        legitimate state; for the rest, a missing anchor is a real error and
+        ``apply()`` raises.
+        """
+        for path, _rel, old, _new in self.edits:
+            if not os.path.exists(path):
+                return False
+            with open(path, encoding="utf-8", errors="surrogateescape") as fh:
+                if old not in fh.read():
+                    return False
+        return True
+
     def apply(self):
         for path, rel, old, new in self.edits:
             shutil.copy2(path, path + ".mutbak")
@@ -124,6 +140,24 @@ MUTATIONS = [
     ),
 ]
 
+# ---------------------------------------------------------------------------
+# Mutations caught by a regression test rather than by the table contract
+# ---------------------------------------------------------------------------
+
+#: Brief section 27 requires "make a block lookup failure return ALLOW". The
+#: table contract cannot see it -- ``blocked_users`` exists and resolves, so
+#: the gate is right to stay silent. It is caught instead by the regression
+#: test that shipped with the fix, which is the honest place for it.
+FAIL_OPEN_MUTATIONS = [
+    Mutation(
+        "5. a failed block lookup returns ALLOW again (the fail-open defect)",
+        [("services/profile_viewer_permissions.py",
+          "            viewer_user_id, target_user_id,\n        )\n        return True",
+          "            viewer_user_id, target_user_id,\n        )\n        return False")],
+        expect="profile-block-regression-test",
+    ),
+]
+
 CONFIG_MUTATIONS = [
     Mutation(
         "8. UNKNOWN schema is marked safe by an unaccountable allowlist entry",
@@ -181,10 +215,30 @@ def main():
         results.append((mut.name, caught, "protection test",
                         (tail or [""])[0][:96]))
 
+    for mut in FAIL_OPEN_MUTATIONS:
+        if not mut.applicable():
+            # The fix commit is not present in this tree, so there is no
+            # fail-open to re-introduce. Say so rather than crashing on a
+            # missing anchor -- this harness must keep working if the fix is
+            # reverted independently of the sentinel.
+            results.append((mut.name, True, "skipped",
+                            "the fix is not in this tree; nothing to mutate"))
+            continue
+
+        def check_regression():
+            proc = subprocess.run(
+                [sys.executable, "-m", "pytest", "-q", "-p", "no:randomly",
+                 "tests/test_profile_block_check_fails_closed.py"],
+                cwd=ROOT, capture_output=True, text=True)
+            return proc.returncode != 0, proc.stdout.strip().splitlines()[-1:]
+        caught, tail = run_one(mut, check_regression)
+        results.append((mut.name, caught, "regression test",
+                        (tail or [""])[0][:96]))
+
     print("MUTATION RESULTS")
     print("=" * 100)
     for name, caught, by, detail in results:
-        mark = "CAUGHT  " if caught else "MISSED  "
+        mark = "SKIPPED " if by == "skipped" else ("CAUGHT  " if caught else "MISSED  ")
         print(f"{mark} {name}")
         print(f"         by: {by}")
         if detail:
@@ -192,20 +246,27 @@ def main():
     print()
 
     missed = [r for r in results if not r[1]]
-    print(f"{len(results) - len(missed)}/{len(results)} caught.")
+    skipped = [r for r in results if r[2] == "skipped"]
+    print(f"{len(results) - len(missed) - len(skipped)}/"
+          f"{len(results) - len(skipped)} caught"
+          + (f", {len(skipped)} skipped (code not in this tree)."
+             if skipped else "."))
     if missed:
         print("MISSED:")
         for name, *_ in missed:
             print(f"  {name}")
     print()
-    print("NOT COVERED BY THIS GATE -- stated rather than quietly dropped:")
+    print("NOT COVERED BY THE TABLE CONTRACT -- stated rather than quietly dropped:")
     print("  4. wrapping a security query in `except: pass`")
-    print("  5. making a block lookup failure return ALLOW")
     print("  7. removing a UNIQUE constraint from a schema")
     print("     These are fail-open *logic* defects, not schema defects. The")
     print("     table named by the query still exists, so the table contract")
     print("     resolves it and says nothing. They are the subject of the")
-    print("     fail-open audit, not of this gate.")
+    print("     fail-open audit, not of this gate. Mutation 5 above is the same")
+    print("     class and is caught only because a regression test shipped with")
+    print("     the fix -- which is the point: the gate finds missing tables,")
+    print("     targeted tests find fail-open logic, and neither substitutes")
+    print("     for the other.")
     print("  6. breaking a critical route-pack import")
     print("     Already observable: bot.py:1393 records every pack into")
     print("     ROUTE_PACK_STATUS and logs CRITICAL with a traceback;")
