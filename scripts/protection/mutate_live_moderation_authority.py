@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Ten ways to break the live-ban authority. Every one must turn the suite red.
+
+A green suite proves nothing on its own. This table shipped with six
+authorization readers, zero rows, and a passing test suite for its entire
+life — the tests asserted the source text of the checks, which stayed true
+while the authority behind them did not exist. So before trusting the new
+tests, break the authority on purpose and confirm each break is caught.
+
+Each mutation below is a plausible refactor or a plausible mistake, not a
+syntactic scribble: delegating to the wrong helper, inverting a fail-closed
+return, dropping a self-ban guard, narrowing a vocabulary, unbanning one row
+instead of all. If any survives, the corresponding property is not actually
+tested and the gap is named in the output rather than glossed over.
+
+Edits a scratch copy of the repository. Nothing is written to the working
+tree. Run:  python3 scripts/protection/mutate_live_moderation_authority.py
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+
+SERVICE = "services/live_moderation.py"
+BOT = "bot.py"
+
+#: (name, file, find, replace, why this mutation is worth testing)
+MUTATIONS = [
+    (
+        "read_failure_fails_open",
+        SERVICE,
+        "            live_id, target_user_id, exc.__class__.__name__, exc,\n        )\n        return True",
+        "            live_id, target_user_id, exc.__class__.__name__, exc,\n        )\n        return False",
+        "A read error answers 'not banned'. This is the exact defect the "
+        "database contract sentinel was built to find, now on a live access gate.",
+    ),
+    (
+        "ban_is_not_idempotent",
+        SERVICE,
+        '    existing = active_ban(cur, live_id, target_user_id)\n    if existing:\n        return {"status": "already_active", "ban": existing}',
+        "    existing = active_ban(cur, live_id, target_user_id)",
+        "Every press of Ban writes another active row. Harmless until an unban "
+        "clears only one of them.",
+    ),
+    (
+        "unban_clears_only_one_row",
+        SERVICE,
+        '        "WHERE live_id=? AND target_user_id=? AND status=\'active\' "\n        f"  AND LOWER(COALESCE(action,\'\')) IN {_BAN_ACTION_SQL}",\n        (STATUS_REVERSED, _now(), live_id, target_user_id),',
+        '        "WHERE id=(SELECT id FROM pulse_live_moderation "\n        "          WHERE live_id=? AND target_user_id=? AND status=\'active\' LIMIT 1)",\n        (STATUS_REVERSED, _now(), live_id, target_user_id),',
+        "Two moderators banning concurrently leave a viewer permanently banned "
+        "that no amount of unbanning from the UI can release.",
+    ),
+    (
+        "cohost_may_ban_the_host",
+        SERVICE,
+        '    if target_user_id == host_user_id:\n        return False, "cannot_moderate_host"\n',
+        "",
+        "A co-host can evict the owner of the broadcast they were invited onto.",
+    ),
+    (
+        "a_host_can_ban_themselves",
+        SERVICE,
+        '    if target_user_id == actor_user_id:\n        return False, "cannot_moderate_self"\n',
+        "",
+        "A host locks themselves out of their own live through an ordinary button.",
+    ),
+    (
+        "anyone_may_moderate",
+        SERVICE,
+        '    if not can_moderate(actor_role):\n        return False, "not_a_moderator"\n',
+        "",
+        "Any viewer can ban any other viewer.",
+    ),
+    (
+        "legacy_ban_spellings_stop_counting",
+        SERVICE,
+        "_BAN_ACTION_SQL = \"('block', 'blocked', 'ban', 'banned')\"",
+        "_BAN_ACTION_SQL = \"('ban')\"",
+        "Narrowing the reader to the spelling we write silently un-bans every "
+        "row written by hand or by any other caller.",
+    ),
+    (
+        "the_moderator_note_is_unbounded",
+        SERVICE,
+        '    text = text.replace("\\r", " ").replace("\\n", " ")\n    return text[:REASON_MAX]',
+        "    return text",
+        "An unbounded, newline-carrying note reaches a security table and every "
+        "log line that renders it.",
+    ),
+    (
+        "the_enforcement_reader_stops_delegating",
+        BOT,
+        "    return live_moderation.is_banned(cur, live_id, user_id)",
+        "    return False",
+        "All six enforcement sites answer 'not banned' forever. This is the "
+        "original production state, reintroduced.",
+    ),
+    (
+        "the_route_skips_authorization",
+        BOT,
+        '        if not allowed:\n            logging.warning(\n                "LIVE_MODERATION_DENIED',
+        '        if False:\n            logging.warning(\n                "LIVE_MODERATION_DENIED',
+        "The authority writes without consulting its own authorization. The "
+        "route still 200s and the UI still looks correct.",
+    ),
+]
+
+TESTS = [
+    "tests/test_live_moderation_authority_behavior.py",
+    "tests/protection/test_live_moderation_authority.py",
+]
+
+
+def _run_tests(workdir: Path) -> tuple[bool, str]:
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", *TESTS, "-x", "-q", "-p", "no:warnings"],
+        cwd=workdir,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    return proc.returncode == 0, (proc.stdout + proc.stderr).strip().splitlines()[-1:]
+
+
+def main() -> int:
+    scratch = Path(tempfile.mkdtemp(prefix="live_moderation_mutants_"))
+    workdir = scratch / "repo"
+    print(f"copying the repository to {workdir} (nothing is written to the working tree)")
+    shutil.copytree(
+        ROOT, workdir,
+        ignore=shutil.ignore_patterns(
+            ".git", "node_modules", "*.db", "__pycache__", ".venv",
+            "ios", "android", ".fuse_hidden*",
+        ),
+    )
+
+    baseline_green, baseline_tail = _run_tests(workdir)
+    if not baseline_green:
+        print(f"BASELINE IS RED -- mutation results would be meaningless: {baseline_tail}")
+        shutil.rmtree(scratch, ignore_errors=True)
+        return 2
+    print(f"baseline: GREEN {baseline_tail}\n")
+
+    survivors = []
+    for name, rel, find, replace, why in MUTATIONS:
+        target = workdir / rel
+        original = target.read_text(encoding="utf-8")
+        occurrences = original.count(find)
+        if occurrences == 0:
+            print(f"SKIP  {name}: the text this mutation edits no longer exists in {rel}")
+            survivors.append((name, "mutation is stale", why))
+            continue
+        if occurrences > 1:
+            # A non-unique anchor is the worst possible failure here: the edit
+            # lands somewhere else in the file, the suite stays green for an
+            # honest reason, and the report calls a tested property untested.
+            # This cost one false "SURVIVED" before it was caught.
+            print(f"SKIP  {name}: anchor matches {occurrences} places in {rel}")
+            survivors.append((name, f"anchor is not unique ({occurrences} matches)", why))
+            continue
+        target.write_text(original.replace(find, replace, 1), encoding="utf-8")
+        try:
+            green, tail = _run_tests(workdir)
+        finally:
+            target.write_text(original, encoding="utf-8")
+        if green:
+            print(f"SURVIVED  {name}")
+            survivors.append((name, "suite stayed green", why))
+        else:
+            print(f"caught    {name}")
+
+    print()
+    if survivors:
+        print(f"{len(survivors)} of {len(MUTATIONS)} mutations were not caught:")
+        for name, how, why in survivors:
+            print(f"  - {name} ({how})\n      {why}")
+        shutil.rmtree(scratch, ignore_errors=True)
+        return 1
+    print(f"all {len(MUTATIONS)} mutations turned the suite red")
+    shutil.rmtree(scratch, ignore_errors=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
