@@ -116,10 +116,30 @@ MUTATIONS = [
     ),
     dict(
         name="deletion-completes-on-a-timeline",
-        control="Deletion is recorded and reviewed by hand; no worker completes it and no date is promised.",
+        control="Deletion runs during the request, so no future date may be promised for it.",
         path=PRIVACY,
-        old="<strong>it is not completed automatically</strong>, and we do not promise a completion date.",
+        old="the deletion runs immediately — it is not queued and there is no waiting period.",
         new="your account will be deleted within 30 days.",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
+        name="deletion-reverts-to-a-manual-review-queue",
+        control=(
+            "The pessimistic lie. /account/delete completes synchronously, so describing "
+            "it as a request awaiting review understates what the member can do -- which "
+            "an earlier draft of this Policy actually did."
+        ),
+        path=PRIVACY,
+        old="You can delete your account yourself at <a href=\"/account/delete\">Account → Delete Account</a>. It asks for your password, and when you confirm, the deletion runs immediately — it is not queued and there is no waiting period.",
+        new="You can request deletion of your account. A deletion request is recorded and reviewed by us, and we do not promise a completion date.",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
+        name="self-service-export-is-advertised",
+        control="No export route exists in the url_map; nothing emails a member their data.",
+        path=PRIVACY,
+        old="There is <strong>no self-service data download on PulseSoc today</strong>.",
+        new="You can download a copy of your data from your settings, and your export will be emailed to you within 7 days.",
         suites=[CLAIM_MATRIX],
     ),
     dict(

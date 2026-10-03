@@ -343,6 +343,40 @@ def test_the_privacy_policy_is_explicit_that_messages_are_not_end_to_end_encrypt
     )
 
 
+def test_the_policy_describes_self_service_deletion_while_the_route_offers_it(pages):
+    """Pessimistic fiction is still fiction.
+
+    An earlier draft of this Policy said deletion was recorded for manual review
+    and promised no completion date. That was written from the Privacy Center's
+    unfinished control, and it was false: `/account/delete` takes a password and
+    runs `permanently_delete_account` synchronously. Understating what a member
+    can do is the same defect as overstating it, so this reads the url_map rather
+    than trusting either document.
+    """
+
+    paths = {rule.rule for rule in bot.webhook_app.url_map.iter_rules()}
+    visible = pages[PRIVACY]["visible"]
+
+    if "/account/delete" not in paths:
+        assert "/account/delete" not in pages[PRIVACY]["raw"], (
+            "the Privacy Policy sends members to /account/delete, which no longer exists"
+        )
+        return
+
+    assert "/account/delete" in pages[PRIVACY]["raw"], (
+        "/account/delete deletes an account on the spot, but the Privacy Policy "
+        "does not tell the member where it is"
+    )
+    stalling = _unnegated(visible, r"deletion\s+(?:request|is\s+recorded|is\s+reviewed)")
+    assert not stalling, (
+        "the Privacy Policy describes deletion as a request awaiting review, but "
+        f"/account/delete completes it during the request: {stalling}"
+    )
+    assert re.search(r"\b(?:immediately|runs immediately|straight away)\b", visible, re.I), (
+        "deletion happens during the request and the Policy should say so plainly"
+    )
+
+
 def test_both_documents_publish_the_version_they_are_accepted_under(pages):
     """Guards the pin in tests/test_legal_acceptance.py from the other side.
 
