@@ -1318,7 +1318,14 @@ def test_a_failed_session_restores_the_form_and_never_reports_a_failed_payment()
     removed from the cart, and everything they typed is still on screen.
     """
     source = CART_JS.read_text(encoding="utf-8")
-    handler = source[source.index("  function checkout(sellerId)"):]
+    # The window starts at `handoffFailureMessage`, not at `checkout`, because
+    # that is where the rejected-request sentence is now composed. Slicing from
+    # `checkout` alone would read a handler whose only failure copy is a call to
+    # a helper, and would then conclude the copy had been deleted -- which is
+    # what it did conclude. The two refusal paths are the resolved-but-unusable
+    # one (inline, below) and the rejected one (the helper), and this window has
+    # to span both or it is testing half the behaviour.
+    handler = source[source.index("  function handoffFailureMessage(err)"):]
     handler = handler[:handler.index("\n  // ---")]
     said = _emitted(handler)
 
@@ -1329,6 +1336,12 @@ def test_a_failed_session_restores_the_form_and_never_reports_a_failed_payment()
         "attempt leaves 'Opening secure payment…' on a button that is not")
     assert handler.count("restore();") >= 2, (
         "only one of the two failure paths restores the form")
+    # Without this the helper could sit in the window unreferenced while the
+    # catch path emitted a bare `err.message`, and every assertion below would
+    # pass by reading copy that never reaches a buyer.
+    assert "groupError(sellerId, handoffFailureMessage(err))" in handler, (
+        "the rejected-request path no longer routes through "
+        "handoffFailureMessage, so the sentences asserted below are dead copy")
 
     # And it never says the payment failed, because no payment was attempted.
     for claim in ("payment failed", "payment was declined", "your card was",
@@ -1336,8 +1349,15 @@ def test_a_failed_session_restores_the_form_and_never_reports_a_failed_payment()
         assert claim not in said.lower(), (
             f"the failure copy claims {claim!r}; the session was never created, "
             "so there was no payment to fail")
-    # Both messages state the absence rather than leaving it to be inferred.
+    # Both refusal paths state the absence rather than leaving it to be
+    # inferred. A rejected request reaches the buyer as the server's own
+    # sentence plus an appended clause, so "charged" has to survive in the
+    # helper as well as in the inline message.
     assert said.lower().count("charged") >= 2
+    assert "charged" in _emitted(
+        handler[:handler.index("  function findGroup(sellerId)")]).lower(), (
+        "handoffFailureMessage no longer answers the only question a refused "
+        "buyer has, which is whether their money moved")
 
 
 def test_the_cart_draws_no_step_it_has_no_authority_over():
@@ -1524,3 +1544,88 @@ def test_mutation_the_double_submit_ordering_is_actually_checked():
 
     moved = handler.replace("ui.busy = true;", "", 1)
     assert "ui.busy = true;" not in moved
+
+
+def test_a_refusal_message_survives_the_redraw_that_immediately_follows_it():
+    """Both refusal paths call `load()` on the line after they write the message.
+
+    `load()` refetches and redraws the group, and the redraw re-emits
+    `[data-group-error]` from `checkoutFormHtml`. A message written only into the
+    DOM element is therefore erased in the same tick it was written -- which is
+    what a browser measured on the rejected-session path: the form came back with
+    all nine fields still filled, the button restored, the cart intact, and no
+    sentence anywhere saying what had happened. Silence is what made the original
+    customer tap the button six times.
+
+    So the message has to live in `ui`, next to `ui.typed`, which is module-scoped
+    for the same reason, and the renderer has to read it back.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+
+    # The store exists and is keyed per seller: two groups can refuse
+    # independently and one must not overwrite the other's explanation.
+    # Not `[^}]*`: the literal's earlier members are themselves `{}`, so a
+    # no-closing-brace class stops inside `lane: {}` and reports the store
+    # missing when it is three members further along.
+    assert re.search(r"var ui = \{.*?\berror: \{\}", source), (
+        "`ui` has no per-seller error store, so a refusal has nowhere to live "
+        "across the redraw that follows it")
+
+    writer = source[source.index("  function groupError(sellerId, message)"):]
+    writer = writer[:writer.index("\n  function ")]
+    assert "ui.error[sellerId] = message" in writer, (
+        "groupError paints the element without recording the message, so the "
+        "load() on the next line erases it")
+    # Recorded BEFORE it is painted: the painting is the half that does not
+    # survive, so an ordering where the store is a trailing afterthought is one
+    # early return away from being skipped.
+    assert writer.index("ui.error[sellerId] = message") < writer.index("querySelector"), (
+        "the message is stored after the element is looked up, so the "
+        "no-element branch returns without recording it")
+
+    # And the renderer reads it back, un-hidden, rather than always emitting an
+    # empty hidden slot.
+    renderer = source[source.index("  function checkoutFormHtml("):]
+    renderer = renderer[:renderer.index("\n  function ")]
+    assert "ui.error[sellerId]" in renderer, (
+        "checkoutFormHtml ignores the held message, so storing it changes "
+        "nothing that reaches the buyer")
+    slot = renderer[renderer.index("data-group-error"):]
+    slot = slot[:slot.index("</div>") + 6]
+    assert "hidden" in slot and "held" in slot, (
+        "the redrawn error slot is unconditionally empty and hidden, which is "
+        "the defect this test exists to catch")
+
+    # A new attempt clears the last verdict, so a stale refusal is not left on
+    # screen next to a button that says it is working.
+    handler = source[source.index("  function checkout(sellerId)"):]
+    handler = handler[:handler.index("\n  // ---")]
+    assert 'ui.error[sellerId] = "";' in handler, (
+        "a retry leaves the previous refusal on screen while the new attempt "
+        "is in flight")
+    assert handler.index('ui.error[sellerId] = "";') < handler.index("ui.busy = true;"), (
+        "the clear runs after the busy claim rather than before it")
+
+
+def test_mutation_the_held_refusal_message_is_actually_checked():
+    """The assertions above fail when the behaviour they describe is removed.
+
+    Written against the two edits that reintroduce the measured defect: dropping
+    the store from `groupError`, and emitting the slot unconditionally empty.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+
+    no_store = source.replace("ui.error[sellerId] = message || \"\";", "", 1)
+    writer = no_store[no_store.index("  function groupError(sellerId, message)"):]
+    writer = writer[:writer.index("\n  function ")]
+    assert "ui.error[sellerId] = message" not in writer
+
+    renderer = source[source.index("  function checkoutFormHtml("):]
+    renderer = renderer[:renderer.index("\n  function ")]
+    slot = renderer[renderer.index("data-group-error"):]
+    slot = slot[:slot.index("</div>") + 6]
+    blanked = slot.replace("(held ? \"\" : \" hidden\")", "\" hidden\"")
+    blanked = blanked.replace("(held ? groupErrorHtml(held) : \"\")", "\"\"")
+    assert "held" not in blanked, (
+        "the mutation did not actually remove the held-message read, so the "
+        "assertion it is meant to break was never exercised")

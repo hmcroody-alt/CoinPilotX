@@ -66,7 +66,7 @@
   // been typed into it. Held here because every mutation re-reads (rule 3), and
   // a re-render that dropped a half-typed address would make the cart unusable
   // the moment an unrelated quantity changed.
-  var ui = { open: 0, lane: {}, typed: {}, busy: false };
+  var ui = { open: 0, lane: {}, typed: {}, error: {}, busy: false };
 
   // The one place panel visibility is decided, so two of them cannot be shown
   // at once by a later edit that only remembered to turn one on.
@@ -348,6 +348,7 @@
     var fields = (form && form.fields) || [];
     var pending = group.lane_question && group.lane_question.kind && !form;
     var copy = detailCopy(form);
+    var held = ui.error[sellerId] || "";
 
     var body =
       laneHtml(sellerId, group.lane_question, ui.lane[sellerId]) +
@@ -362,7 +363,10 @@
       "<h4>" + esc(copy.title) + "</h4>" +
       (pending ? "" : "<p class='step-lede'>" + esc(copy.lede) + "</p>") +
       body +
-      "<div data-group-error='" + esc(sellerId) + "' hidden></div>" +
+      // Re-emitted with whatever the last refusal said, because the redraw that
+      // produces this element is the same redraw that would otherwise erase it.
+      "<div data-group-error='" + esc(sellerId) + "'" + (held ? "" : " hidden") + ">" +
+        (held ? groupErrorHtml(held) : "") + "</div>" +
       // Above the button, because it is what the button does and a buyer reading
       // downwards must meet it before the click rather than after it.
       "<p class='next'>Next: secure payment</p>" +
@@ -602,11 +606,57 @@
             "-" + fingerprint(JSON.stringify(body))).slice(0, 120);
   }
 
+  function groupErrorHtml(message) {
+    return "<div class='fail'><p>" + esc(message) + "</p></div>";
+  }
+
+  // Remembered in `ui`, not only painted into the DOM.
+  //
+  // Both of the paths that refuse an attempt call `load()` on the line after
+  // this one, to show the buyer the cart state that changed rather than only a
+  // sentence about it -- and `load()` redraws the lines, which re-emits
+  // `[data-group-error]` empty and hidden. So a message written straight to the
+  // element was erased within the same tick it was written.
+  //
+  // Measured in a browser rather than reasoned about: after a refused session
+  // the form came back with everything still typed in it, the button restored,
+  // the cart intact -- and no sentence anywhere saying what had happened. That
+  // is the shape of the incident this whole change exists to answer, where a
+  // buyer tapped a button six times because nothing on screen told them why it
+  // was not working.
+  //
+  // `ui.typed` is module-scoped for the same reason; this joins it.
   function groupError(sellerId, message) {
+    ui.error[sellerId] = message || "";
     var slot = els.lines.querySelector("[data-group-error='" + sellerId + "']");
     if (!slot) { toast(message); return; }
-    slot.innerHTML = "<div class='fail'><p>" + esc(message) + "</p></div>";
+    slot.innerHTML = groupErrorHtml(message);
     slot.hidden = false;
+  }
+
+  // The buyer has exactly one question when an attempt is refused -- did my
+  // money move -- and the raw error is often incapable of answering it.
+  // `pulseApi` surfaces its own read-deadline as "Request timed out", which is
+  // accurate and tells a buyer nothing; the customer in the original incident
+  // read silence as "it did not work, tap it again".
+  //
+  // The answer is the same for every refusal on this path, and it is safe to
+  // state unconditionally: this request creates a Stripe Checkout session, and
+  // a session is not a charge. Even the ambiguous case -- a timeout where the
+  // session may well have been created server-side -- has not charged anybody,
+  // and the idempotency key means the retry this invites resolves to that same
+  // session instead of minting a second one.
+  //
+  // Appended, never substituted: a server message that already explains itself
+  // ("Payments are temporarily unavailable") is the more useful half and is not
+  // thrown away for a generic one.
+  function handoffFailureMessage(err) {
+    var message = String((err && err.message) || "").trim();
+    if (!message) return "We could not start checkout. Nothing has been charged.";
+    if (!/[.!?]$/.test(message)) message += ".";
+    if (!/charg/i.test(message)) message += " Nothing has been charged.";
+    if (!/try again|again later|retry/i.test(message)) message += " You can try again.";
+    return message;
   }
 
   function findGroup(sellerId) {
@@ -647,6 +697,10 @@
     // tap that lands between the click and the paint cannot reach the POST. The
     // `disabled` below is the visible half of the same statement, not the
     // enforcement; a disabled attribute alone is lost to the next re-render.
+    // This attempt's own verdict replaces the last one; leaving a stale
+    // refusal on screen while a new attempt is in flight states something
+    // that is no longer being claimed.
+    ui.error[sellerId] = "";
     ui.busy = true;
     var button = els.lines.querySelector("[data-checkout='" + sellerId + "'] button[type='submit']");
     var label = button ? button.innerHTML : "";
@@ -687,8 +741,7 @@
         // Never "payment failed": no payment was attempted. The session could
         // not be created, which is a different sentence with a different remedy,
         // and the cart is not cleared either way.
-        groupError(sellerId, (err && err.message) ||
-          "We could not start checkout. Nothing has been charged.");
+        groupError(sellerId, handoffFailureMessage(err));
         // The refusals are all about cart state -- a line went sold, a price
         // moved -- so the list is refetched to show the buyer the thing that
         // changed rather than only the sentence about it.
