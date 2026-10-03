@@ -122,21 +122,41 @@ escaping lives in one place" was only true of three of eleven emitters.
 
 ### The emitter inventory, now closed
 
-Eleven places put a string inside an `application/ld+json` element. Every one is
-now one of three things:
+Closed by enumerating the **sink** — every `application/ld+json` occurrence in
+the repo — rather than by following emitters outward. That matters: three
+successive passes of the outward kind each missed a site, and the last one it
+missed (`templates/index.html`) is recorded below. Enumerating the sink
+terminates; enumerating from the source does not tell you when you are done.
+
+Nine non-test elements carry an `ld+json` block. Eleven emitters produce the
+strings that go into them, because `templates/index.html` builds one block from
+three. Every emitter is now one of three things:
 
 | Count | Kind | Where |
 |---|---|---|
-| 8 | `seo.schema.serialise_graph` | the 6 graph builders, `marketplace_seo`'s 2 |
-| 2 | `serialise_graph(..., indent=2)` | `bot.organization_ld`, `bot.mobile_app_ld` |
+| 8 | `serialise_graph(...)` | `seo/schema.py:187`, `:215`, `:251`, `:415`; `services/marketplace_seo.py:581`, `:697`; `bot.py:1808`, `:32862` |
+| 2 | `serialise_graph(..., indent=2)` | `bot.py:2149` `organization_ld`, `bot.py:2160` `mobile_app_ld` |
 | 1 | `marketplace_storefront`'s own escaper | `services/marketplace_storefront.py:2029` |
 
-Plus one hand-written literal with no interpolation at all (`bot.py:34045`, the
-crypto-predictions page) — safe by construction, but see the entity note below.
+Plus **two** hand-written literals with no interpolation at all, safe by
+construction: `bot.py:34045` (the crypto-predictions `WebPage`) and
+`templates/index.html:56` (a `WebApplication` node sitting in the same `@graph`
+array as `organization_ld` and `mobile_app_ld`). An earlier draft of this table
+said "one"; the second was found by the sink enumeration above, which is the
+argument for having done it.
 
 All eleven were verified byte-identical before and after, by rendering each
 affected page on both revisions and diffing the extracted blocks. Of the four
-commits, only `fdb337296` changes any output.
+code commits, only `fdb337296` changes any output.
+
+One thing the sink enumeration ruled out that is worth stating, because the
+failure mode is silent: `templates/index.html`, `privacy.html` and `terms.html`
+interpolate `{{ organization_ld | safe }}` followed by a **comma** inside a
+`@graph` array. If that variable were ever not passed, Jinja would render the
+empty string and the block would become invalid JSON — a page that still
+returns 200 with structured data that no parser accepts. Checked live: all
+three parse, yielding `[Organization, MobileApplication, WebApplication]` on
+`/` and `[Organization, WebPage, BreadcrumbList]` on both legal pages.
 
 ---
 
@@ -197,6 +217,24 @@ this layer because the data does not exist.
 
 ## Open, not addressed on this branch
 
+- **`mobile_app_schema`'s `price: "0"` is not visible on `/`.** Found by turning
+  the policy I had just cited against my own remaining nodes, which is the test
+  that section should have to pass. The `MobileApplication` node carries an
+  `Offer` of `price "0"`, and it renders on two pages: `/app`, whose visible
+  copy says "PulseSoc is a free iPhone app", and `/`, where the word *free*
+  does not appear in the rendered text at all.
+
+  Deliberately **not** treated as a second P0, and the reasoning is the part
+  worth keeping. The `$14.99` node was invisible *and* wrong *and* contradicted
+  by the checkout *and* pointed nowhere. This is invisible and otherwise true:
+  the app is genuinely free to download, which is checkable against Apple's
+  listing, and nothing anywhere contradicts it. The policy exists to stop
+  markup from telling crawlers things the product does not do; a free app
+  described as free is not that. Worth a sentence of visible copy on the
+  homepage, not a node deletion — and that is a copy decision, not this
+  layer's.
+
+  Flagged rather than fixed because the fix is on the page, not in the schema.
 - **`bot.py:34045`** hand-writes a `WebPage` node with no `@id`, bypassing
   `seo/schema.py` entirely. It joins nothing in the entity graph. Low value to
   fix; recorded so it is not mistaken for a `seo.schema` output.
