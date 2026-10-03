@@ -282,6 +282,70 @@ def test_canonical_url_is_absolute_on_one_host():
     assert sv.canonical_url("/") == "https://pulsesoc.com/"
 
 
+def test_canonical_url_keeps_a_parameter_that_selects_which_content_is_shown():
+    """``?category=`` is part of the page's identity, not noise on top of it.
+
+    ``/pulse/marketplace?category=mens-clothing`` has its own ``<h1>``, its own
+    ``<title>``, its own product set, and it already declares *itself* canonical
+    in its own ``<head>``. This helper used to strip the query and hand back the
+    bare hub, so it disagreed with the page it describes -- silently, until
+    something tried to submit a department URL. ``seo_engine.sitemap_xml``
+    dedupes on the path it was *given* and emits
+    ``canonical_url`` of it, so twelve departments became the same ``<loc>``
+    twelve times, each carrying a different ``lastmod``.
+    """
+
+    assert (sv.canonical_url("/pulse/marketplace?category=mens-clothing")
+            == "https://pulsesoc.com/pulse/marketplace?category=mens-clothing")
+
+
+def test_keeping_the_category_parameter_did_not_become_keep_the_query_string():
+    """The narrowness is the whole safety property of that exception.
+
+    A general "preserve the query" rule would undo the tracking behaviour above
+    and mint a canonical duplicate of every page for every campaign tag -- so
+    the parameter is allowlisted by name *and* by the path it is content-bearing
+    on, and both halves are asserted here.
+    """
+
+    # Allowlisted by name: another parameter on the same path still goes.
+    assert (sv.canonical_url("/pulse/marketplace?utm_source=x")
+            == "https://pulsesoc.com/pulse/marketplace")
+    assert (sv.canonical_url("/pulse/marketplace?sort=price_asc")
+            == "https://pulsesoc.com/pulse/marketplace")
+    assert (sv.canonical_url("/pulse/marketplace?page=3")
+            == "https://pulsesoc.com/pulse/marketplace")
+    # Allowlisted by path: the same name elsewhere is not content-bearing.
+    assert (sv.canonical_url("/pulse/reels?category=mens-clothing")
+            == "https://pulsesoc.com/pulse/reels")
+    # A product page is its own canonical truth and takes no facets.
+    assert (sv.canonical_url("/pulse/marketplace/126?category=mens-clothing")
+            == "https://pulsesoc.com/pulse/marketplace/126")
+    # Mixed: the content parameter survives, the campaign tag does not.
+    assert (sv.canonical_url("/pulse/marketplace?category=toys&utm_source=x")
+            == "https://pulsesoc.com/pulse/marketplace?category=toys")
+    # An empty value selects nothing, so it is not part of any identity.
+    assert (sv.canonical_url("/pulse/marketplace?category=")
+            == "https://pulsesoc.com/pulse/marketplace")
+
+
+def test_the_canonical_of_a_category_url_is_byte_identical_to_the_page_s_own():
+    """Two functions build this URL and Google compares them as strings.
+
+    The grid emits its ``rel=canonical`` from
+    ``marketplace_web.build_query_string``; this builds the sitemap's ``<loc>``.
+    A slash encoded one way here and the other way there is a submitted URL
+    pointing at a canonical it does not match, which spends the crawl and ranks
+    neither.
+    """
+
+    from services import marketplace_web as mw
+
+    for slug in ("mens-clothing", "phones-accessories/mobile-phone-accessories"):
+        built = "/pulse/marketplace" + mw.build_query_string({"category": slug})
+        assert sv.canonical_url(built) == sv.CANONICAL_ORIGIN + built, slug
+
+
 # ---------------------------------------------------------------------------
 # Content eligibility
 # ---------------------------------------------------------------------------

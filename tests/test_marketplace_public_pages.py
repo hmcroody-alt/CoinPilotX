@@ -164,7 +164,8 @@ class PublicMarketplaceFixture(unittest.TestCase):
     def make_listing(self, *, status="published", approval_status="approved",
                      description=DESCRIPTION, price_label="$465.74", currency="USD",
                      cover="https://cdn.example/bed.jpg", quantity=12,
-                     product_type="physical", title="Linen Duvet Cover Set"):
+                     product_type="physical", title="Linen Duvet Cover Set",
+                     category="Home", updated_at=NOW):
         conn = sqlite3.connect(self.db_path)
         cur = conn.cursor()
         cur.execute(
@@ -173,9 +174,9 @@ class PublicMarketplaceFixture(unittest.TestCase):
             " quantity, product_type, listing_type, status, approval_status, cover_image_url,"
             " safety_score, created_at, updated_at) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (SELLER, title, description, "Washed linen duvet set", "Home",
+            (SELLER, title, description, "Washed linen duvet set", category,
              price_label, currency, quantity, product_type, product_type, status, approval_status,
-             cover, 7, NOW, NOW),
+             cover, 7, NOW, updated_at),
         )
         listing_id = int(cur.lastrowid)
         conn.commit()
@@ -1342,6 +1343,221 @@ class MarketplaceProductsSitemapTestCase(PublicMarketplaceFixture):
         finally:
             bot.db = real_db
         self.assertEqual(listings, [])
+
+
+class MarketplaceCategorySitemapTestCase(PublicMarketplaceFixture):
+    """``GET /sitemap-categories.xml`` -- the departments we ask to rank.
+
+    Here rather than in ``tests/test_sitemap_integrity.py`` for the same reason
+    the products case is: every assertion below is about which *departments*
+    survive the policy, and a department only exists because rows exist. That
+    file owns the invariants this child owes whatever it lists.
+
+    These URLs were already indexable and already linked before this sitemap
+    existed, so none of these tests is about making a page rankable. They are
+    about which of the twelve the live catalogue produces are substantial enough
+    to submit, and -- the subtler half -- about the submitted URL being spelled
+    the way the grid spells its own canonical.
+    """
+
+    def locs(self):
+        response = self.client.get("/sitemap-categories.xml")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("<urlset", body)
+        return re.findall(r"<loc>([^<]+)</loc>", body), body
+
+    def seed(self, n, category, **kwargs):
+        return [self.make_listing(category=category, **kwargs) for _ in range(n)]
+
+    # -- the threshold --------------------------------------------------------
+
+    def test_a_department_below_the_threshold_is_not_submitted(self):
+        """Asserted at the boundary, both sides, in one place.
+
+        A one- or two-product department is a page whose title, image and text
+        are substantially its single product's, and that product already has a
+        page of its own. Submitting both asks Google to choose between two
+        descriptions of one thing.
+
+        Seeded with a literal 2, not ``CATEGORY_MIN_INDEXABLE_LISTINGS - 1``.
+        Deriving the fixture from the constant moves the fixture whenever the
+        constant moves, so this pair of boundary tests would pass for *any*
+        value and assert only that the code reads its own setting -- mutations
+        dropping the threshold to 1 and raising it to 99 both survived them.
+        Spelling the number here means changing the policy requires changing the
+        test that states it, which is the right friction for a number that has
+        to be explainable at a review.
+        """
+        self.seed(2, "Mens Clothing")
+        locs, _body = self.locs()
+        self.assertEqual(locs, [])
+
+    def test_a_department_at_the_threshold_is_submitted(self):
+        self.seed(3, "Mens Clothing")
+        locs, _body = self.locs()
+        self.assertEqual(
+            locs, ["https://pulsesoc.com/pulse/marketplace?category=mens-clothing"])
+
+    def test_the_threshold_counts_indexable_products_not_public_ones(self):
+        """A department of thin products is a collection of ``noindex`` pages.
+
+        The rows are public -- published, approved, in stock, so the grid shows
+        them and the taxonomy counts them -- and every one of their product
+        pages sends ``noindex,follow``. Submitting the department would ask
+        Google to rank a collection of pages we have asked it to ignore, so the
+        count that matters is the eligible one.
+        """
+        thin = self.seed(5, "Mens Clothing", description="Nice.")
+        locs, _body = self.locs()
+        self.assertEqual(locs, [])
+        self.assertIn('content="noindex,follow"', self.get(thin[0]).get_data(as_text=True))
+        # ...and the department page itself is unaffected: it is still a real
+        # department and still linked. Withholding it from the sitemap is not
+        # the same as asking for it not to be indexed.
+        self.assertIn(
+            "mens-clothing",
+            self.client.get("/pulse/marketplace").get_data(as_text=True))
+
+    def test_only_departments_are_submitted_never_their_sections(self):
+        """Depth-2 sections stay crawlable through the department's sub-nav.
+
+        At this catalogue size a section is a near-duplicate of its department,
+        and the answer to "index this deeply" is fewer, stronger URLs rather
+        than one per level of a supplier's breadcrumb.
+        """
+        self.seed(4, "Phones & Accessories > Mobile Phone Accessories")
+        locs, _body = self.locs()
+        self.assertEqual(
+            locs, ["https://pulsesoc.com/pulse/marketplace?category=phones-accessories"])
+
+    def test_nothing_is_submitted_from_an_empty_catalogue(self):
+        """No soft-404 departments. Unlike the products sitemap, which always
+        carries the grid, this child has nothing it owes when there is nothing
+        published -- the grid is submitted once, there."""
+        locs, _body = self.locs()
+        self.assertEqual(locs, [])
+
+    # -- the URL has to be the one the page claims ---------------------------
+
+    def test_every_submitted_department_answers_200_and_asks_to_be_indexed(self):
+        """End to end, which is the only version that catches a disagreement.
+
+        A department URL the grid considers unknown renders ``noindex,follow``
+        and canonicalises to the bare hub, so submitting it would spend a crawl
+        on a page that forwards the crawler straight back to where it came
+        from. Nothing about that is visible in the XML.
+        """
+        self.seed(3, "Mens Clothing")
+        self.seed(4, "Womens Clothing")
+        locs, _body = self.locs()
+        self.assertEqual(len(locs), 2, "nothing was submitted; this proves nothing")
+        for loc in locs:
+            path = loc.replace("https://pulsesoc.com", "")
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200, path)
+            body = response.get_data(as_text=True)
+            self.assertIn('content="index,follow', body, path)
+            self.assertIn(f'rel="canonical" href="{loc}"', body, path)
+
+    def test_the_submitted_slug_is_the_spelling_the_grid_answers_on(self):
+        """The trap this sitemap is shaped around.
+
+        ``build_taxonomy`` picks a department's slug by majority spelling -- the
+        live catalogue carries both "Mens Clothing" and "Men's Clothing" -- and
+        the grid tests a requested slug against the taxonomy *it* builds, from
+        every public row, with an exact ``==``. So the taxonomy here is built
+        from the whole public catalogue and only the *count* looks at
+        eligibility. Build both from the eligible subset and the majority can
+        flip, at which point the URL we submit is one the grid calls unknown.
+
+        Seeded so the two populations disagree on purpose: the majority spelling
+        belongs to four thin rows, the three eligible ones carry the minority.
+
+        The pair is "Bags & Shoes" / "Bag & Shoes" rather than the apostrophe
+        pair, and that choice is the whole test. ``slugify`` *drops*
+        apostrophes, so "Mens Clothing" and "Men's Clothing" produce one
+        identical slug -- they cannot disagree, and a version of this test
+        seeded with them survived the mutation that builds the taxonomy from the
+        eligible subset. These two fold to one department (``_fold_slug`` strips
+        the trailing "s", so both key on ``bag-shoe``) while slugifying
+        *differently*, which is exactly the shape where the majority vote
+        decides the URL. Both spellings are live in the catalogue.
+
+        Correct: the vote runs over all seven rows and ``bags-shoes`` wins.
+        Mutated: it runs over the three eligible rows, ``bag-shoes`` wins, and
+        we would submit a URL the grid resolves against its own all-rows
+        taxonomy, fails to match with its exact ``==``, and serves
+        ``noindex,follow`` with a canonical back to the bare hub.
+        """
+        self.seed(4, "Bags & Shoes", description="Nice.")
+        self.seed(3, "Bag & Shoes")
+        locs, _body = self.locs()
+        self.assertEqual(
+            locs, ["https://pulsesoc.com/pulse/marketplace?category=bags-shoes"])
+        body = self.client.get("/pulse/marketplace?category=bags-shoes").get_data(as_text=True)
+        self.assertIn('content="index,follow', body)
+        # The minority spelling is not a second department and not a second URL.
+        self.assertNotIn("category=bag-shoes", _body)
+
+    def test_a_department_is_submitted_by_exactly_one_child_sitemap(self):
+        """Two children naming one URL is two ``lastmod`` claims about it, and
+        Search Console then reports its coverage twice."""
+        self.seed(3, "Mens Clothing")
+        category_locs, _body = self.locs()
+        product_locs = re.findall(
+            r"<loc>([^<]+)</loc>",
+            self.client.get("/sitemap-products.xml").get_data(as_text=True))
+        self.assertTrue(category_locs)
+        self.assertTrue(product_locs)
+        self.assertEqual(set(category_locs) & set(product_locs), set())
+
+    # -- lastmod --------------------------------------------------------------
+
+    def test_lastmod_is_the_newest_eligible_product_in_the_department(self):
+        """What changes about a department page is the products on it.
+
+        Stamping the crawl date instead is the behaviour that teaches a crawler
+        to stop reading the field, and it is what the old sitemap did to all 354
+        of its URLs every morning.
+        """
+        self.seed(3, "Mens Clothing", updated_at="2026-04-01T00:00:00")
+        self.make_listing(category="Mens Clothing", updated_at="2026-07-14T00:00:00")
+        _locs, body = self.locs()
+        entry = re.search(
+            r"<loc>https://pulsesoc\.com/pulse/marketplace\?category=mens-clothing</loc>"
+            r"\s*<lastmod>([^<]+)</lastmod>", body)
+        self.assertIsNotNone(entry, "the department entry carries no lastmod")
+        self.assertEqual(entry.group(1), "2026-07-14")
+
+    def test_an_ineligible_product_does_not_date_the_department(self):
+        """It is not on the list the department is asking to rank, so its edit
+        is not a change to what we submitted."""
+        self.seed(3, "Mens Clothing", updated_at="2026-04-01T00:00:00")
+        self.make_listing(category="Mens Clothing", description="Nice.",
+                          updated_at="2026-07-14T00:00:00")
+        _locs, body = self.locs()
+        self.assertIn("<lastmod>2026-04-01</lastmod>", body)
+        self.assertNotIn("2026-07-14", body)
+
+    # -- failure is logged, not disguised ------------------------------------
+
+    def test_a_failed_query_is_logged_rather_than_passed_off_as_no_departments(self):
+        """Shares the failure path with the products sitemap and the feed, and
+        an empty ``<urlset>`` is still the right answer to a crawler -- but the
+        third reader of one failure is a third chance for the handling to be
+        wrong in a way nothing notices."""
+        self.seed(3, "Mens Clothing")
+        real_db = bot.db
+        bot.db = lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError('relation "marketplace_listings" does not exist'))
+        try:
+            with self.assertLogs(level="ERROR") as captured:
+                entries = bot.marketplace_category_entries()
+        finally:
+            bot.db = real_db
+        self.assertEqual(entries, [])
+        self.assertIn("MARKETPLACE_PUBLIC_QUERY_FAILED", "\n".join(captured.output))
 
 
 if __name__ == "__main__":
