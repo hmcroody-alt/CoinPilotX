@@ -721,14 +721,21 @@ class EveryRenderableRouteDeliversTheDeclaredDirective(unittest.TestCase):
     #: paths to skip: an exempt path is still fetched, still parsed, and still
     #: has to send one of two named directives. A fourth value fails.
     #:
-    #: Written this way, rather than as "these paths may diverge", because the
-    #: two `legal/` entries are somebody else's open work. An exemption that
-    #: accepts only today's wrong answer goes red the moment that work lands,
-    #: which on a branch taking ~60 commits a day means a test that breaks main
-    #: for an agent who has never read it. Accepting both the current literal and
-    #: the declared value means the fix lands green and the exemption can then be
-    #: deleted at leisure -- while a regression to any *third* directive still
-    #: fails.
+    #: Written this way, rather than as "these paths may diverge", because an
+    #: exemption that accepts only today's wrong answer goes red the moment the
+    #: fix lands -- and on a branch taking ~60 commits a day that means breaking
+    #: main for an agent who has never read this file. Accepting both the current
+    #: literal and the declared value lets the fix land green and the exemption be
+    #: deleted at leisure, while a regression to any *third* directive still fails.
+    #:
+    #: That is not hypothetical: this dict shipped with `/terms` and `/privacy`
+    #: in it, because `templates/terms.html` and `templates/privacy.html` were
+    #: owned by an open PR rewriting their content. That PR merged without
+    #: touching their robots literals, both templates now read `policy_robots`,
+    #: and the two entries were deleted. The shape is what made that a deletion
+    #: instead of a merge conflict.
+    #:
+    #: What remains is the one divergence that is not a bug.
     ALLOWED = {
         "/pulse/marketplace": (
             "noindex,follow",
@@ -741,19 +748,6 @@ class EveryRenderableRouteDeliversTheDeclaredDirective(unittest.TestCase):
             "is why this divergence is documented rather than fixed -- the "
             "sibling class above carves the same path out by name in "
             "`NOINDEX_ALLOWED` for the same reason.",
-        ),
-        "/terms": (
-            "index, follow, max-image-preview:large",
-            "`templates/terms.html` holds the literal. The template is owned by "
-            "an open PR rewriting its content, so it is deliberately not edited "
-            "here. The directive agrees with the table's direction and drops "
-            "`max-snippet:-1` and `max-video-preview:-1`, so the page caps its "
-            "own snippet -- real, but cosmetic next to a wrong direction.",
-        ),
-        "/privacy": (
-            "index, follow, max-image-preview:large",
-            "Same literal, same open PR, same reasoning as `/terms`: "
-            "`templates/privacy.html`.",
         ),
     }
 
