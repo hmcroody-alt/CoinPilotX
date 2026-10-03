@@ -1,0 +1,304 @@
+{#
+  /about -- the page that says what PulseSoc is.
+
+  Extends `_public_shell.html`, the shell the other public brand pages use, so
+  this page inherits one design rather than carrying a second one. What was here
+  before was a hand-written HTML f-string in `bot.py` with its own inline CSS,
+  its own palette and its own button rules, which is how /about came to look
+  like a different product from /app and /features -- and, by the time it was
+  replaced, to describe one.
+
+  Every capability named below was checked against the running product rather
+  than against the marketing, in the same spirit as `seo/features.py`. The
+  "What PulseSoc does not do" section is not modesty. A visitor who assumes
+  messages are end-to-end encrypted has made a security decision on our behalf,
+  and the App Store screenshots already imply it once too often.
+
+  Link discipline: anonymous visitors are only sent to paths that answer 200
+  without a session. The browse surfaces for reels, communities and profiles
+  redirect a logged-out visitor to /login, so where this page wants to say more
+  about one it links the public `/features/<slug>` page instead of the in-product
+  tab. Checked on production, not inferred from the handlers.
+
+  The marketplace payment sentence was hedged while two authorities disagreed,
+  and is not hedged any more. It was `MARKETPLACE_CARD_PAYMENTS_ENABLED` being
+  `true` in production against /features/marketplace telling the public card
+  checkout was temporarily unavailable; the feature page was the stale one and
+  has been corrected, so this page can say the direct thing. Both now carry the
+  same rule, which is the part worth keeping. The rail being open says only
+  that it exists; `services/marketplace_card_capability.py` decides per seller
+  whether a given listing may use it; and a client decides again, because the
+  App Store build that shipped before 2026-09-19 carries its own hard-coded
+  pause and offers cash whatever the server answers. `main` has removed that
+  constant, but shipping a fix does not uninstall a binary. So cash and local
+  pickup are the only methods either page may state flatly, and neither page
+  should ever promise a card on every listing.
+#}
+{% extends "_public_shell.html" %}
+{% from "_app_link_cta.html" import app_store_badge with context %}
+
+{% block content %}
+
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="/">Home</a> › {{ page.breadcrumb }}
+  </nav>
+
+  <section>
+    <p class="kicker">Connect. Create. Discover. Shop.</p>
+    <h1>PulseSoc is a social commerce platform.</h1>
+    <p class="lede">
+      People connect, create, communicate and discover here — and the things
+      they discover can be bought here too. One network, not a social app with a
+      store bolted to the side.
+    </p>
+    <div class="actions">
+      <a class="button primary" href="/pulse/marketplace">Explore the marketplace</a>
+      {{ app_store_badge(classes="button") }}
+      <a class="button" href="/features">See what the app does</a>
+    </div>
+    <p class="meta">Free on iPhone, iOS 15.1 or later. The marketplace is open to browse without an account.</p>
+  </section>
+
+  <section class="prose">
+    <h2>What PulseSoc is</h2>
+    <p>
+      Most platforms make you leave to buy something. You find a person whose
+      taste you trust, or a video that shows you a thing working, and then the
+      trail goes cold: a different app, a different search box, a product page
+      with no idea how you got there.
+    </p>
+    <p>
+      PulseSoc is built the other way round. The feed, the reels, the live
+      video, the conversations and the marketplace are surfaces of one network,
+      so attention can travel in a straight line — from people, to content, to
+      conversation, to discovery, to commerce — without starting over at each
+      step.
+    </p>
+    <p>
+      It began as a crypto-intelligence and scam-awareness product, and that
+      inheritance is still visible in a few places on purpose: the safety
+      posture, the education habit, and a scam-report post type that turned out
+      to make more sense as something you share than as a tool you open. What
+      PulseSoc is now, though, is a social network with commerce built into it.
+    </p>
+  </section>
+
+  <section class="prose">
+    <h2>The social network</h2>
+    <p>
+      The foundation is people. You follow the accounts you want to hear from,
+      and a profile is the page someone lands on when they are deciding whether
+      to follow you — your posts, your reels and your links in one place.
+    </p>
+    <p>
+      Replies nest, so an exchange between two people stays readable to everyone
+      who finds it later instead of flattening into one long list. Posts can be
+      liked, reposted to your own followers, and saved for yourself. You choose
+      who sees each post as you publish it — public, followers only, or just you
+      — and changing your mind about one post leaves the others alone.
+    </p>
+    <p>
+      The feed is also not a single list. Following and Friends show you the
+      accounts you picked and nothing else; the topic tabs beside them change
+      what you are reading about rather than who you are reading.
+      <a href="/features/feed">More about the feed</a>.
+    </p>
+  </section>
+
+  <section class="prose">
+    <h2>Create and share</h2>
+    <p>
+      A post can be plain text, a photo, a video, a GIF, a poll other people
+      vote in, or a scam report — six kinds, from the same button. Statuses are
+      their own surface for the lighter thing you want to put up today, with
+      music, reactions and replies.
+    </p>
+    <p>
+      Beyond that there is short vertical video, long video, and going live from
+      your phone. You can shoot in the app or bring something you already made.
+    </p>
+  </section>
+
+  <section class="prose">
+    <h2>Reels, video and live</h2>
+    <p>
+      Reels are short vertical video with sound, in a full-screen feed — the
+      place where someone who does not follow you yet is most likely to meet
+      you. <a href="/features/reels">More about reels</a>.
+    </p>
+    <p>
+      Live video is the camera and microphone on your phone, and a stream is not
+      gone when you stop: it stays watchable afterwards, and you can hand part of
+      a broadcast to someone else while it is running. People watch and comment
+      in it as it happens.
+      <a href="/features/live-video">More about live video</a>.
+    </p>
+  </section>
+
+  <section class="prose">
+    <h2>Conversations and communities</h2>
+    <p>
+      Discovery is only worth something if it can turn into a conversation.
+      Direct messages are one-to-one or group, and carry photos, voice notes and
+      files as well as text. You can call anyone you can message, and an
+      incoming call rings like a phone call rather than arriving as a
+      notification you find later.
+      <a href="/features/messages">More about messages</a>.
+    </p>
+    <p>
+      For more than a handful of people there are two different shapes: topic
+      groups, which are written down and stay, and live audio rooms, which are
+      not. <a href="/features/groups-and-rooms">More about groups and rooms</a>.
+    </p>
+  </section>
+
+  <section class="prose">
+    <h2>Discovery</h2>
+    <p>
+      A following feed only ever shows you what you already chose. Search works
+      across people, posts and products, the topic tabs surface what the network
+      is reading, and reels are a discovery surface by design — which is how an
+      account with no followers yet gets found at all.
+    </p>
+    <p>
+      The same machinery suggests products, and it is the hinge this whole page
+      turns on: a recommendation can appear next to the content you were already
+      looking at, because the catalogue and the feed are part of the same system.
+      You can turn social product suggestions off in settings; the marketplace
+      itself keeps working either way.
+    </p>
+  </section>
+
+  <section class="prose">
+    <h2>Social commerce</h2>
+    <p>
+      Ordinary online shopping starts when you already know what you want: you
+      search, you land on a product, you check out. That works, and it is a
+      narrow door — it can only ever sell you the thing you could already name.
+    </p>
+    <p>
+      On PulseSoc the path can start earlier. Content leads to discovery,
+      discovery leads to a product, the product sits in the marketplace, and the
+      purchase happens there. Nobody has to go looking for a category page. The
+      point is not that commerce is nearby; it is that it is connected to the
+      reason you were here.
+    </p>
+  </section>
+
+  <section class="prose">
+    <h2>The marketplace</h2>
+    <p>
+      The marketplace is where commerce actually happens — one catalogue, one
+      product page per item, and the canonical record of what is for sale.
+      Anything shoppable anywhere else on PulseSoc points back to a listing
+      here, so a product has one price and one description rather than a
+      different answer on every surface.
+    </p>
+    <p>
+      You can browse and search it, open a product, choose its options, save it,
+      add it to a cart and check out. Browsing and the cart do not require an
+      account, so a link someone sends you opens to the product rather than to a
+      sign-up form. <a href="/pulse/marketplace">Open the marketplace</a>.
+    </p>
+    <p>
+      Sellers list and publish products into that same catalogue and reach
+      buyers through the network rather than through a separate storefront
+      nobody visits. Cash and local pickup work on any listing, a card option
+      appears once the seller has finished payment setup, and which methods a
+      listing accepts is shown at checkout before you enter any details.
+      <a href="/features/marketplace">More about the marketplace</a> covers
+      payment in detail.
+    </p>
+    <p>
+      Some of what you see in the feed is surfaced by <strong>PulseDrop</strong>,
+      a clearly-labelled automated account that highlights marketplace products
+      in PulseSoc content. It is a curator and nothing more: it does not hold
+      stock, it is not the seller, and it is not who you buy from. Every product
+      it points at is an ordinary listing by an ordinary seller.
+    </p>
+  </section>
+
+  <section class="prose">
+    <h2>Intelligence and safety</h2>
+    <p>
+      PulseSoc has an assistant and a briefings surface that summarise and
+      explain things — market context, what changed, what a term means. They are
+      a layer that supports the experience, not the product itself, and they are
+      there to help you understand something rather than to tell you what to do
+      with your money. Nothing here is financial advice.
+    </p>
+    <p>
+      On safety, the useful things are the ordinary ones: you can report content
+      and accounts, block people, choose who sees each post, and control what
+      your profile shows. Reports reach human moderation. Scam awareness is part
+      of the product rather than a promise about it — the scam-report post type
+      exists so that what one person was approached with becomes something
+      others can recognise.
+    </p>
+    <p>
+      We will not tell you that software keeps you safe, or that we detect every
+      scam. Neither is true, and a safety claim you cannot keep is worse than no
+      claim at all.
+    </p>
+  </section>
+
+  <section class="prose">
+    <h2>What PulseSoc does not do</h2>
+    <p>
+      Stating these is cheaper for everyone than letting you discover them.
+    </p>
+    <dl>
+      <dt>Messages are not end-to-end encrypted</dt>
+      <dd>
+        They are encrypted in transit — the connection between your phone and
+        our servers is protected the way a banking site's is. That is not the
+        same as us being unable to read them. Messages are stored in a form we
+        can access, which is what makes it possible to act on a report or
+        restore an account. If you need end-to-end encryption, PulseSoc is not
+        the right tool for that conversation.
+      </dd>
+      <dt>Calls are between two people</dt>
+      <dd>Group calling is not something you can use today, and there is no screen sharing on a call or in a live stream.</dd>
+      <dt>There are no hashtags or @-mentions</dt>
+      <dd>Nothing parses either one, so a # or an @ in a post stays plain text. Search and the topic tabs are how things get found.</dd>
+      <dt>Profiles have no story highlights</dt>
+      <dd>There is no highlights row to pin to the top of a profile.</dd>
+    </dl>
+  </section>
+
+  <section class="prose">
+    <h2>Our mission</h2>
+    <p>
+      To build a more connected kind of social commerce — where relationships,
+      creativity, conversation, discovery and buying are part of one experience
+      instead of five disconnected ones — while the people using it keep
+      meaningful control over their privacy, their safety and what they see.
+    </p>
+    <p>
+      That second half is the constraint, not the footnote. A network that
+      connects discovery to commerce is only worth using if the person at the
+      centre of it is still the one deciding.
+    </p>
+  </section>
+
+  <section>
+    <h2>Explore PulseSoc</h2>
+    <p>
+      Nobody should have to choose between connecting, discovering and shopping
+      across apps that do not know about each other. PulseSoc brings them
+      together: connect, create, discover, communicate, shop — one network.
+    </p>
+    <div class="actions">
+      <a class="button primary" href="/pulse/marketplace">Explore the marketplace</a>
+      {{ app_store_badge(classes="button") }}
+      <a class="button" href="/signup">Create an account</a>
+    </div>
+    <p class="meta">
+      More detail on each part of the app is on the <a href="/features">features pages</a>.
+      Our <a href="/privacy">privacy policy</a> and <a href="/terms">terms</a>
+      say what we do with your data and what you agree to; <a href="/help">help</a>
+      and <a href="/support">support</a> are where to reach us.
+    </p>
+  </section>
+
+{% endblock %}
