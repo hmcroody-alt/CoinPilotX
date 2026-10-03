@@ -63,39 +63,65 @@ THE TITLE IS THE ONE FIELD WE TRANSFORM
 that it is the string buyers search for and a rewrite makes the page disagree
 with the feed. This module truncates it anyway, at 150 characters, on a word
 boundary — because Google's limit is 150 and the alternative to truncating is
-dropping the product entirely. Measured against production on 2026-09-26 this
-affects exactly **1 of the 15** publishable listings (id 14, a 160-character bed
-title), so it is a real case and a rare one. Truncation preserves the leading
-words, which is where a supplier title puts the product; it is a different act
-from rewriting, which would change them.
+dropping the product entirely. Measured on the live feed 2026-10-03, exactly one
+of the 36 items sits at the cap (longest emitted title: 146 characters), so it is
+a real case and a rare one. Truncation preserves the leading words, which is
+where a supplier title puts the product; it is a different act from rewriting,
+which would change them.
 
 HOW BIG THIS FEED ACTUALLY IS
 -----------------------------
-Worth stating plainly, because a feed builder that returns thirteen items looks
-broken. Measured against production on 2026-09-26, counted with the *same*
-predicates this feed selects on: **15** listings are publishable, all 15 carry a
-price, all 15 carry a cover image, and **13** clear the 40-character description
-floor. So the feed publishes 13, and the two it drops (ids 50 and 52) have
-descriptions of 2 and 0 characters.
+Worth stating plainly, because a feed builder that returns a fraction of the
+catalogue looks broken. Measured against production on 2026-10-03, counted with
+the *same* predicates this feed selects on: **44** listings are publishable, all
+44 carry a parseable price, and **36** reach the feed. The 8 held back split two
+ways — 3 fail the 40-character description floor (ids 50, 52, 110) and 5 are
+refused by ``marketplace_seo.price_label_contradicts_variants`` (ids 15, 35, 36,
+89, 112).
 
-The count to be careful with is 47. That is every row in ``marketplace_listings``
-including drafts and unapproved ones, and an earlier draft of this docstring
-quoted it — along with "21 priced" and "39 described" — as though it described
-the feed. It does not: those numbers are measured before the lifecycle and
-seller-approval predicates, and they invert the finding. Among rows that actually
-reach this module nothing is missing a price; **description** is the only field
-that excludes anything. A feed whose size is explained by the wrong column is a
-feed someone will "fix" in the wrong place, so: the gap is two empty
-descriptions, and it lives in the listing composer, not here.
+Do not pin a number here and verify against it. This docstring said 13 on
+2026-09-26 and the honest figure a week later was 36; the count tracks the
+catalogue. What should stay stable is the shape: everything publishable is
+priced, and everything held back is held back for one of those two reasons.
 
-One consequence worth stating because the tests depend on it. The
-indexable-but-not-feed-eligible case — a real page with an unparseable price —
-has **zero** instances in production today: the only two excluded rows fail the
-description floor, which bars them from Search as well. The asymmetry
-``eligibility`` exists to express is therefore not currently exercised by any
-live row, which means the test suite is the only thing defending it. That is an
-argument for the tests being explicit rather than incidental, not an argument
-that the distinction is theoretical.
+The count to be careful with is the raw ``marketplace_listings`` total (47 on
+2026-09-26). That includes drafts and unapproved rows, and an earlier draft of
+this docstring quoted it — along with "21 priced" and "39 described" — as though
+it described the feed. It does not: those numbers are measured before the
+lifecycle and seller-approval predicates, and they invert the finding. Among rows
+that actually reach this module nothing is missing a price.
+
+THE ASYMMETRY IS LIVE, AND THIS DOCSTRING WAS THE LAST PLACE TO SAY OTHERWISE
+-----------------------------------------------------------------------------
+An earlier draft of this docstring said the wider-verdict-but-not-feed-eligible
+case had **zero** instances in production and that the test suite was therefore
+the only thing defending it. That was already wrong when it was written:
+``FeedPriceMatchesCheckoutTestCase`` records four such rows in the production
+feed on 2026-10-01, which is why the guard exists at all. Re-measured 2026-10-03
+the figure is five of 44 — ids 15, 35, 36, 89 and 112 — held back because
+``price_label`` disagrees with ``marketplace_listing_variants.price_cents``.
+
+Read the direction correctly, because it is the opposite of the intuitive one.
+The *page* is truthful — its JSON-LD publishes the variant-derived price, which is
+also what checkout charges. It is ``price_label`` that has gone stale, and
+``g:price`` is the one field that reads it. Id 36 carries a ``price_label`` of
+$38.00 against 95 variants all priced $2.29; id 35 says $35.00 against 42
+variants all at $14.33. Without the guard this module would have advertised a
+price 16x the one a buyer is charged, which is a misrepresentation finding rather
+than a rounding error.
+
+So the guard is load-bearing in production right now, not theoretically. Two
+things follow: the real fix is upstream (``price_label`` must not be allowed to
+drift from the variant prices, and until it stops drifting these five products
+are invisible to Shopping), and the source-level test asserting this module reads
+only the narrower verdict still earns its keep — a mutation probe showed the
+behavioural tests alone did not catch that collapse, and live data only exercises
+the distinction for as long as these five rows stay broken.
+
+A note for whoever edits this docstring next: that test greps this file's source
+with ``#`` comments stripped but docstrings intact, so writing the wider
+verdict's attribute name in prose here turns the suite red. Name it in words, as
+above.
 """
 
 from __future__ import annotations
@@ -159,8 +185,8 @@ def feed_row(listing):
 
     Returning ``None`` rather than raising for an ineligible row, because
     ineligibility is an ordinary outcome here, not an error: a seller can publish
-    a product with no description, and 2 of the 15 publishable rows have done so.
-    Raising is reserved for the two cases the
+    a product with no description, and 3 of the 44 publishable rows have done so
+    (measured 2026-10-03). Raising is reserved for the two cases the
     module cannot reason about — an availability value with no feed spelling,
     and an eligibility verdict that contradicts the price it was based on —
     where continuing would publish a wrong claim rather than skip a row.
