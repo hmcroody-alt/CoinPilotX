@@ -22,7 +22,7 @@ import {
   getMarketplacePaymentOrder,
   validateCart
 } from "../api/marketplaceCommerce";
-import { buyerErrorCopy } from "../api/marketplaceErrors";
+import { buyerCanRetry, buyerErrorCopy } from "../api/marketplaceErrors";
 import {
   CHECKOUT_OPTIONS_FALLBACK,
   fetchCheckoutOptions,
@@ -200,6 +200,10 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   // retry re-presents the same PaymentIntent rather than minting a second one.
   const [sheet, setSheet] = useState<PaymentSheetBootstrap | null>(null);
   const [message, setMessage] = useState("");
+  // The server's verdict on the last refusal: may this screen go on offering
+  // payment? Only ever set to `false` by a refusal that said so. The web cart
+  // reads the same field; this is the native half of that contract.
+  const [refusalBlocks, setRefusalBlocks] = useState(false);
   const [options, setOptions] = useState<CheckoutOptions>(CHECKOUT_OPTIONS_FALLBACK);
   const checking = useRef(false);
 
@@ -331,6 +335,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
     }
     setStage("opening");
     setMessage("");
+    setRefusalBlocks(false);
     try {
       // Courtesy, not enforcement. The card row is already disabled when the
       // rail is closed, and the three server lanes refuse a card start on their
@@ -487,6 +492,13 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
       // 500's "temporary service issue" from becoming the dominant sentence.
       const local = error instanceof Error ? error.message : "";
       setMessage(buyerErrorCopy(error, local || "Checkout could not start. No card was charged."));
+      // A refusal the server called unretryable must not leave "Pay securely ·
+      // $6.25" live beneath it. That triad — a refusal, a stated amount, and an
+      // enabled button promising to charge it — is what a real buyer sat on for
+      // nine attempts across five hours. The locally thrown errors above are not
+      // `PulseApiError`s and so read as retryable, which is correct: they name a
+      // field to fix and tapping again after fixing it works.
+      setRefusalBlocks(!buyerCanRetry(error));
     }
   }, [checkoutUrl, details, kind, lane, mustChooseLane, params.listingId, params.mode, params.sellerUserId, paymentMethod, sheet, stage, subject, tickets, transactionIds]);
 
@@ -625,7 +637,10 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
           title="Cash / in-person payment"
           detail="Pay the seller directly at pickup or in person. PulseSoc adds $0.00 platform fee to this Marketplace cash checkout."
           trailing="$0 fee"
-          onPress={() => { setPaymentMethod("cash"); setMessage(""); }}
+          // Clears a blocked refusal because it was a verdict about the *card*
+          // lane. Cash settles in person and reaches no provider, so a Stripe
+          // setup failure says nothing about it.
+          onPress={() => { setPaymentMethod("cash"); setMessage(""); setRefusalBlocks(false); }}
         />
         {/* Visible either way. A payment method that disappears when it is
             unavailable reads as a method the product does not have, and the
@@ -721,7 +736,11 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
               : "Continue to Payment"}
         icon={stage === "opening" ? null : paymentMethod === "cash" ? "cash-outline" : "lock-closed"}
         busy={stage === "opening"}
-        disabled={!settlement.ctaEnabled}
+        // `refusalBlocks` is the server's verdict on the last attempt, and it is
+        // the only one of the two conditions that can know a lane is open in
+        // general but shut for *this order*. `ctaEnabled` answers the first
+        // question; it cannot answer the second.
+        disabled={!settlement.ctaEnabled || refusalBlocks}
         onPress={() => void beginCheckout()}
       />
       {/* The cash footnote used to open by declaring the card rail paused. That
