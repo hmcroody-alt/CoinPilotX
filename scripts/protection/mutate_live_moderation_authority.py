@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Thirteen ways to break the live-ban authority. Each must turn the suite red.
+"""Fourteen ways to break the live-ban authority. Each must turn the suite red.
 
 A green suite proves nothing on its own. This table shipped with six
 authorization readers, zero rows, and a passing test suite for its entire
@@ -19,6 +19,12 @@ authority nobody can prove fired is only half built -- and one of those three
 attacks it from the other side, firing the ban event for every audience miss.
 An event that is emitted for all denials identifies none of them.
 
+The last one is not an attack on this branch's code at all. It makes the global
+abuse limiter key its buckets on the moderator instead of the request path --
+the shape a plausible "tidy the limiter keys" hardening change would take -- and
+must be caught, because it would silently take away a host's ability to clear a
+raid of more than twenty-four accounts.
+
 Edits a scratch copy of the repository. Nothing is written to the working
 tree. Run:  python3 scripts/protection/mutate_live_moderation_authority.py
 """
@@ -36,6 +42,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 SERVICE = "services/live_moderation.py"
 BOT = "bot.py"
+SECURITY = "services/pulse_security_core.py"
 
 #: (name, file, find, replace, why this mutation is worth testing)
 MUTATIONS = [
@@ -132,6 +139,15 @@ MUTATIONS = [
         "Every audience miss is logged as a moderation ban. An event that fires "
         "for all denials identifies none of them, and it invents bans that a "
         "moderator never issued.",
+    ),
+    (
+        "the_abuse_limiter_is_keyed_on_the_moderator",
+        SECURITY,
+        '        f"ip:{ip_hash}:{rule.action}:{path}",\n        f"user:{int(user_id or 0)}:{rule.action}:{path}" if user_id else "",\n        f"device:{device_hash}:{rule.action}:{path}" if device_hash else "",',
+        '        f"ip:{ip_hash}:{rule.action}",\n        f"user:{int(user_id or 0)}:{rule.action}" if user_id else "",\n        f"device:{device_hash}:{rule.action}" if device_hash else "",',
+        "Reads as a hardening change -- one bucket per actor instead of one per "
+        "URL -- and takes away a host's ability to ban more than 24 accounts in "
+        "five minutes, which is exactly the situation the button exists for.",
     ),
     (
         "the_route_skips_authorization",

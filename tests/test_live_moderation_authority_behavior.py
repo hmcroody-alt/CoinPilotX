@@ -44,7 +44,8 @@ os.close(_HANDLE)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB}"
 
 import bot  # noqa: E402
-from services import live_moderation, live_participants  # noqa: E402
+from services import cache_engine, live_moderation, live_participants  # noqa: E402
+from services import pulse_security_core  # noqa: E402
 
 HOST = 97001
 COHOST = 97002
@@ -113,6 +114,33 @@ def _clear_bans():
     conn.execute("DELETE FROM pulse_live_moderation")
     conn.commit()
     conn.close()
+
+
+def _reset_rate_limits():
+    """Forget the live-action rate limiter between tests.
+
+    ``/api/pulse/live`` carries ``RateRule(24, 300, "live_action")`` in
+    ``pulse_security_core.HIGH_RISK_RATE_RULES``, and the moderation routes sit
+    under that prefix, so they inherit it. The bucket key includes the *exact*
+    path, which means every test in this file that bans VIEWER from LIVE_A
+    shares one bucket — with a five-minute window and an in-process store that
+    nothing expires inside a single test run. Past the 24th such POST the route
+    answers 429 in ``before_request``, before reaching any code under test. A
+    later test then fails claiming the ban did not take effect, when what
+    actually happened is that the suite looked like one host pressing one
+    button twenty-five times.
+
+    Both stores have to be cleared. ``rate_limited`` prefers the
+    ``cache_engine`` mirror over the module dict, so clearing only the dict
+    leaves the verdict standing.
+
+    ``RateLimiterCase`` below asserts the limiter still guards the route, so
+    calling this from setUp does not make the suite blind to its existence.
+    """
+    pulse_security_core._RATE_BUCKETS.clear()
+    with cache_engine._LOCK:
+        for key in [k for k in cache_engine._MEMORY if str(k).startswith("pulse-security:rate:")]:
+            cache_engine._MEMORY.pop(key, None)
 
 
 def _rows(live_id=LIVE_A, target=VIEWER):
@@ -383,6 +411,7 @@ class AuthorizationMatrixCase(unittest.TestCase):
 class ModerationRouteCase(unittest.TestCase):
     def setUp(self):
         _clear_bans()
+        _reset_rate_limits()
         self.client = bot.webhook_app.test_client()
 
     def _is_blocked(self, live=LIVE_A, target=VIEWER):
@@ -529,6 +558,7 @@ class ModerationRouteCase(unittest.TestCase):
 class ModerationStateReadCase(unittest.TestCase):
     def setUp(self):
         _clear_bans()
+        _reset_rate_limits()
         self.client = bot.webhook_app.test_client()
 
     def _get(self, actor, live=LIVE_A):
@@ -589,6 +619,7 @@ class BoundaryDenialEventCase(unittest.TestCase):
     def setUp(self):
         self.client = bot.webhook_app.test_client()
         _clear_bans()
+        _reset_rate_limits()
 
     def tearDown(self):
         _clear_bans()
@@ -685,6 +716,116 @@ class BoundaryDenialEventCase(unittest.TestCase):
             "unban must restore the token mint; a 403 here means the viewer is "
             "still locked out of the stream itself",
         )
+
+
+# =========================================================================
+# 8. The abuse limiter the route inherits, and the shape of it
+# =========================================================================
+
+class RateLimiterCase(unittest.TestCase):
+    """The moderation routes sit under a rate-limited prefix. That is load
+    bearing in both directions and neither direction was obvious.
+
+    These routes are new, but they are not exempt: ``pulse_security_core``
+    matches ``/api/pulse/live`` by prefix in a global ``before_request``, so
+    they inherited ``RateRule(24, 300, "live_action", "high")`` without anybody
+    choosing it for them. ``_reset_rate_limits`` clears that between tests
+    because the shared bucket was breaking later tests in this file, and a
+    helper that silences a security control has to be paid for with a test that
+    proves the control is still there. This is that payment.
+
+    The direction that actually matters for the product is the second test. The
+    bucket key includes the exact request path, so the 24 is per
+    ``(live, target, action)`` triple, not per moderator. A host clearing a raid
+    of thirty different accounts is therefore not throttled at all, while a
+    client retry-looping on one target is. For a moderation control that is the
+    right way round, and it is worth pinning precisely because nobody chose it:
+    a future "tidy the limiter keys to be per-user" refactor would look like a
+    hardening change and would quietly take away a host's ability to deal with
+    a raid.
+
+    What this suite cannot assert is the copy. A throttled host gets
+    ``"Slow down for a moment, then try again."`` from the global guard, which
+    the native control surfaces verbatim in its failure Alert. That reads
+    correctly here, but it is the generic live-action string and no moderation
+    code owns it.
+    """
+
+    RAID = tuple(range(97100, 97130))
+
+    @classmethod
+    def setUpClass(cls):
+        conn = _conn()
+        for user_id in cls.RAID:
+            conn.execute(
+                "INSERT OR IGNORE INTO users (user_id, username, email, created_at) VALUES (?,?,?,?)",
+                (user_id, f"lm_raid_{user_id}", f"lm_raid_{user_id}@example.com", NOW),
+            )
+        conn.commit()
+        conn.close()
+
+    def setUp(self):
+        self.client = bot.webhook_app.test_client()
+        _clear_bans()
+        _reset_rate_limits()
+
+    def tearDown(self):
+        _clear_bans()
+        _reset_rate_limits()
+
+    def test_repeating_one_decision_is_eventually_refused(self):
+        rule = pulse_security_core.rate_rule_for(
+            BAN_URL.format(live=LIVE_A, target=VIEWER, action="ban"), "POST")
+        self.assertEqual(rule.action, "live_action",
+                         "the moderation route must stay under the live-action limiter")
+        statuses = [
+            _post(self.client, HOST, VIEWER, "ban").status_code
+            for _ in range(rule.limit + 1)
+        ]
+        self.assertEqual(statuses[0], 200)
+        self.assertEqual(statuses[-1], 429,
+                         f"the limiter stopped guarding the ban route: {statuses}")
+
+    def test_banning_many_different_accounts_is_not_throttled(self):
+        """A host clearing a raid must not be cut off mid-way.
+
+        Thirty targets is past the limit of 24, so if the bucket were keyed on
+        the moderator rather than the path this would start returning 429 and a
+        host would be left with a stream full of accounts they had already
+        decided to remove.
+        """
+        statuses = [
+            _post(self.client, HOST, target, "ban").status_code
+            for target in self.RAID
+        ]
+        self.assertNotIn(429, statuses,
+                         "a host was throttled while banning distinct accounts")
+        self.assertEqual(set(statuses), {200}, f"unexpected statuses: {sorted(set(statuses))}")
+        # And every one of them actually landed. A limiter test that only reads
+        # status codes would pass if the writes had silently stopped.
+        conn = _conn()
+        banned = {row["target_user_id"] for row in conn.execute(
+            "SELECT target_user_id FROM pulse_live_moderation "
+            "WHERE live_id=? AND status='active'", (LIVE_A,))}
+        conn.close()
+        self.assertEqual(banned, set(self.RAID))
+
+    def test_a_throttled_ban_writes_nothing(self):
+        """The 429 comes from ``before_request``, so the route never runs. Worth
+        asserting rather than assuming: a limiter that refused the response
+        after the write would leave the moderator's UI and the table disagreeing."""
+        _post(self.client, HOST, VIEWER, "ban")
+        _clear_bans()
+        rule = pulse_security_core.rate_rule_for(
+            BAN_URL.format(live=LIVE_A, target=VIEWER, action="ban"), "POST")
+        for _ in range(rule.limit + 2):
+            response = _post(self.client, HOST, VIEWER, "ban")
+            if response.status_code == 429:
+                break
+        self.assertEqual(response.status_code, 429)
+        _clear_bans()
+        self.assertEqual(_post(self.client, HOST, VIEWER, "ban").status_code, 429)
+        self.assertEqual(_rows(), [], "a throttled request must not reach the table")
 
 
 if __name__ == "__main__":
