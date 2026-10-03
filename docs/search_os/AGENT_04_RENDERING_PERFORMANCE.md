@@ -269,6 +269,29 @@ green test whose fixture sidesteps the mechanism under test is worse than no tes
 19 of 24 images selected `w_600/webp` for a 265 px box at DPR 2 — the correct candidate. Zero
 broken images, zero broken boxes, **CLS 0 across zero shifts**.
 
+### 6.3.1 The check that mattered most
+
+Product images on this storefront are `opacity: 0` until JavaScript stamps them:
+`pulse_marketplace.css:993` is `.mkt-media img:not([data-mkt-loaded]) { opacity: 0 }`, and the only
+writer of that attribute is `settleImage()` in `pulse_marketplace.js`. Inserting a `<picture>`
+between `.mkt-media` and the `<img>` could therefore have made **every product image on the site
+invisible** while the HTML stayed valid, the `src` stayed correct, and every wire probe returned
+200 — the failure mode that sends you hunting a CDN bug that does not exist.
+
+It does not, and the reason is structural rather than lucky. Every gating selector is a
+*descendant* selector or a `closest()` walk, never a child combinator:
+
+```
+css  :932  .mkt-media img                                  descendant — matches through <picture>
+css  :993  .mkt-media img:not([data-mkt-loaded])           descendant — matches
+css  :997  .mkt-media img[data-mkt-loaded]                 descendant — matches
+js   :54   querySelectorAll(".mkt-media img:not([data-mkt-bound])")   descendant — matches
+js   :44   img.closest(".mkt-media")                       walks up through <picture>
+```
+
+Had any one of those been `.mkt-media > img`, this change would have shipped a blank catalogue.
+Confirmed empirically too: `brokenBoxes: 0` in §6.3, with the reveal path working.
+
 Two measurement traps worth recording:
 
 - **`resize_window` did not change the viewport.** `innerWidth` stayed 1440 across 1512/900/420
