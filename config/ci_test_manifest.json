@@ -282,6 +282,7 @@
     "tests/marketplace/test_listing_rereview_reset.py",
     "tests/marketplace/test_marketplace_approval_visibility.py",
     "tests/marketplace/test_marketplace_moderation_reachability.py",
+    "tests/marketplace/test_missed_payment_cycle.py",
     "tests/marketplace/test_missed_payment_reconciliation.py",
     "tests/marketplace/test_offer_checkout_identity.py",
     "tests/marketplace/test_order_fulfillment_authority.py",
