@@ -1,0 +1,103 @@
+# The native checkout safety suites, for the CI that never ran them.
+#
+# PR #153 changed the iOS payment CTA -- the control that decides whether a
+# buyer is offered a retry that cannot work -- and shipped a new screen test
+# proving it. Fourteen checks went green and not one of them was jest. No
+# workflow in .github/workflows/ mentioned jest or `npm test` at all, so every
+# one of the 9,672 native tests was advisory. During the 2026-10-03 card-rail
+# outage the thing standing between a buyer and ten refused taps was a screen
+# assertion that CI could not see.
+#
+# WHY A FILE LIST AND NOT `npm test`
+# ----------------------------------
+# The full suite is 555 files and ~47s, and one of them (PageScreen.test.tsx)
+# fails for reasons unrelated to payments. Enabling everything at once produces
+# a gate that is red on arrival, and backend-tests.yml already records what
+# happens next: "a gate that is red on arrival gets switched off rather than
+# fixed." So the gate is the 15 checkout-critical files below -- 139 tests,
+# ~2s locally. Widening it is an edit to that list once the unrelated failure
+# is fixed.
+#
+# THE LIST GUARDS ITSELF
+# ----------------------
+# `jest --runTestsByPath` exits 1 when a listed path does not exist. Deleting or
+# renaming a gated suite therefore turns this job red instead of quietly
+# shrinking it, which is the failure mode #28 was about on the Python side: a
+# filter that silently selects nothing reads exactly like a pass.
+#
+# WHY THE LIST IS HERE AND NOT AN npm SCRIPT
+# ------------------------------------------
+# mobile-native/package.json is protected by `dependency_watch` in
+# config/realtime-audio-protected-paths.json, so adding a script to it makes a
+# payments PR demand a real-time-audio change declaration. This mission is not
+# about audio, and docs/realtime_audio_change_policy.md is explicit that such a
+# mission must not edit a protected path. The list lives here instead.
+#
+# WHY --testTimeout
+# -----------------
+# The same 139 tests take ~2s locally and ~11s on the runner. The two heaviest
+# screen suites each blew jest's 5000ms default on their FIRST test -- the cost
+# of React Native Testing Library's cold render, billed to test #1 and roughly
+# 5x worse here. A timeout, not a product failure.
+
+name: Native checkout
+
+on:
+  pull_request:
+    paths:
+      - "mobile-native/**"
+      - ".github/workflows/native-checkout.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "mobile-native/**"
+      - ".github/workflows/native-checkout.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-checkout-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checkout-suites:
+    name: Native checkout suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: mobile-native
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile-native/package-lock.json
+
+      # Matches realtime-audio.yml's native-build job. postinstall runs
+      # scripts/apply-native-patches.sh, which detects an already-applied patch
+      # and is safe to re-run.
+      - run: npm ci
+
+      - name: Checkout-critical jest suites
+        run: |
+          npx jest --runTestsByPath --testTimeout=30000 \
+            src/api/__tests__/marketplaceCheckoutIntegrity.test.ts \
+            src/api/__tests__/marketplaceCheckoutState.test.ts \
+            src/api/__tests__/marketplaceCheckoutQuantityBody.test.ts \
+            src/api/__tests__/checkoutOptions.test.ts \
+            src/api/__tests__/payments.test.ts \
+            src/api/__tests__/stripePaymentSheet.test.ts \
+            src/payments/__tests__/PaymentController.test.ts \
+            src/marketplace/__tests__/cardPaymentState.test.ts \
+            src/marketplace/__tests__/checkoutPaymentCopy.test.ts \
+            src/screens/__tests__/MarketplaceCheckoutRefusalVerdict.test.tsx \
+            src/screens/__tests__/MarketplaceCheckoutCardSelected.test.tsx \
+            src/screens/__tests__/MarketplaceCheckoutCardCopy.test.tsx \
+            src/screens/__tests__/MarketplaceCheckoutAmountRendering.test.tsx \
+            src/screens/__tests__/MarketplaceCheckoutInformationOrder.test.ts \
+            src/screens/__tests__/MarketplaceCheckoutQuantityHandoff.test.tsx
