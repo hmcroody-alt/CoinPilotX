@@ -154,10 +154,48 @@ MUTATIONS = [
         suites=[CLAIM_MATRIX],
     ),
     dict(
+        name="website-deletion-speaks-for-the-whole-product",
+        control=(
+            "The quietest §64 failure, and it was mine. Deleting on the website is "
+            "immediate; deleting in the shipped iOS app queues a row nothing ever "
+            "processes. Dropping this paragraph restores a sentence that was true "
+            "of the route it was written from and false for every app member."
+        ),
+        path=PRIVACY,
+        old="<p><strong>Deleting from the PulseSoc mobile app is not the same thing, and right now it is worse.</strong> The app's delete-account screen does not perform the deletion described above. It records a request, tells you the account is scheduled for deletion about 30 days later, and cancels that request if you sign back in before then. The cancellation works. The deletion does not: <strong>nothing currently carries out a scheduled deletion</strong>, so a request made in the app can sit indefinitely and your account is not removed. We are not going to describe that as a 30-day deletion, because it is not one. Until the app is fixed, use <a href=\"/account/delete\">Account → Delete Account</a> on this website if you want your account actually deleted, or email us and we will do it by hand.</p>",
+        new="",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
+        name="app-deletion-restated-as-a-real-30-day-deletion",
+        control=(
+            "Repeating the app's own schedule as though a job honoured it. The "
+            "cancel half is wired to sign-in and works; nothing completes a "
+            "scheduled deletion, so 30 days is a number with no process behind it."
+        ),
+        path=PRIVACY,
+        old="The cancellation works. The deletion does not: <strong>nothing currently carries out a scheduled deletion</strong>, so a request made in the app can sit indefinitely and your account is not removed. We are not going to describe that as a 30-day deletion, because it is not one.",
+        new="Your account is then deleted at the end of that 30-day period.",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
+        name="policy-repeats-the-apps-unkept-export-email",
+        control=(
+            "Reported speech drifting into the Policy's own voice. The first draft "
+            "of this sentence said 'we will email a download link', which the claim "
+            "matrix caught: a member skimming it cannot tell a quotation from a "
+            "promise, and nothing sends the email either way."
+        ),
+        path=PRIVACY,
+        old="produces a message saying a download link is on its way to you. <strong>No link is ever sent.</strong>",
+        new="means we will email a download link to you when it is ready.",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
         name="self-service-export-is-advertised",
         control="No export route exists in the url_map; nothing emails a member their data.",
         path=PRIVACY,
-        old="There is <strong>no self-service data download on PulseSoc today</strong>.",
+        old="There is <strong>no working self-service data download on PulseSoc today</strong>.",
         new="You can download a copy of your data from your settings, and your export will be emailed to you within 7 days.",
         suites=[CLAIM_MATRIX],
     ),

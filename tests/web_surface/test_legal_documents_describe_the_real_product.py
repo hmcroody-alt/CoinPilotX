@@ -30,6 +30,7 @@ Run: python3 -m pytest tests/web_surface/test_legal_documents_describe_the_real_
 from __future__ import annotations
 
 import os
+import pathlib
 import re
 import sys
 import tempfile
@@ -46,6 +47,8 @@ import bot  # noqa: E402
 from services import content_translation  # noqa: E402
 from services.business_os.marketplace import policy as marketplace_policy  # noqa: E402
 
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 TERMS = "/terms"
 PRIVACY = "/privacy"
@@ -474,6 +477,107 @@ def test_the_policy_describes_self_service_deletion_while_the_route_offers_it(pa
     )
     assert re.search(r"\b(?:immediately|runs immediately|straight away)\b", visible, re.I), (
         "deletion happens during the request and the Policy should say so plainly"
+    )
+
+
+#: The request ledger the native settings screens write into. Its only writer is
+#: the route module; a file outside that set touching the table is the processor
+#: arriving, which makes the disclosures below stale rather than wrong.
+REQUEST_LEDGER = "pulse_account_data_requests"
+REQUEST_LEDGER_OWNERS = {"services/pulse_settings_routes.py"}
+
+
+def _ledger_processors():
+    """Files that touch the request ledger and are neither the route nor a test."""
+
+    found = set()
+    for path in ROOT.rglob("*.py"):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel in REQUEST_LEDGER_OWNERS or rel.startswith("tests/") or "node_modules" in rel:
+            continue
+        try:
+            if REQUEST_LEDGER in path.read_text(errors="ignore"):
+                found.add(rel)
+        except OSError:
+            continue
+    return sorted(found)
+
+
+def test_the_policy_does_not_let_the_website_deletion_speak_for_the_app(pages):
+    """Two member-facing deletion paths, and only one of them deletes anything.
+
+    `/account/delete` on this website runs `permanently_delete_account` during the
+    request. The shipped iOS app does something else: its delete-account screen
+    POSTs `/api/pulse/mobile/settings/delete-account`, which inserts a row
+    scheduled 30 days out and tells the member the account is scheduled for
+    deletion. Signing back in cancels it -- `bot.py` calls
+    `cancel_pending_deletion` on the sign-in path, so that half is real. Nothing
+    anywhere completes it.
+
+    So an earlier draft of this Policy, which said deletion "runs immediately --
+    it is not queued and there is no waiting period", was true of the website and
+    false for every member who deletes in the app. It was not wrong about the
+    route it was written from; it was wrong to speak for the product. That is the
+    §64 failure in its quietest form.
+
+    The Policy must disclose the app path and must not restate the 30-day figure
+    as though it were a deletion. When a processor lands, this goes red and asks
+    for a rewrite rather than keeping a disclosure that has itself become false.
+    """
+
+    paths = {rule.rule for rule in bot.webhook_app.url_map.iter_rules()}
+    if "/api/pulse/mobile/settings/delete-account" not in paths:
+        pytest.skip("the app's queued deletion path is gone; this disclosure can go")
+
+    processors = _ledger_processors()
+    assert not processors, (
+        f"{', '.join(processors)} now touches {REQUEST_LEDGER}. If scheduled "
+        "deletions are actually carried out, the Policy's statement that nothing "
+        "carries them out has become the false claim. Read what the processor "
+        "does and rewrite that paragraph to match it."
+    )
+
+    visible = pages[PRIVACY]["visible"]
+    assert re.search(r"\bmobile app\b", visible, re.I), (
+        "the app offers a deletion that behaves differently from the website's, "
+        "and the Privacy Policy never mentions the app at all"
+    )
+    assert re.search(
+        r"nothing currently carries out a scheduled deletion", visible, re.I
+    ), (
+        "the app tells members their account is scheduled for deletion and no job "
+        "performs one; the Policy has to say so rather than repeat the schedule"
+    )
+
+
+def test_the_policy_does_not_repeat_the_apps_export_email_promise(pages):
+    """The app promises an email that nothing sends.
+
+    `/api/pulse/mobile/settings/data-export` records a `pending` row and answers
+    "We'll email a download link ... when it's ready." Nothing reads that row. A
+    Policy that merely stayed silent would leave the member waiting on the app's
+    promise, so silence is not neutral here -- it defers to the false claim.
+    """
+
+    paths = {rule.rule for rule in bot.webhook_app.url_map.iter_rules()}
+    if "/api/pulse/mobile/settings/data-export" not in paths:
+        pytest.skip("the unfinished export control is gone; this disclosure can go")
+
+    assert not _ledger_processors(), (
+        "something now processes the request ledger; re-read the Policy's export "
+        "paragraph before trusting it"
+    )
+
+    visible = pages[PRIVACY]["visible"]
+    assert re.search(r"No link is ever sent", visible, re.I), (
+        "the app says a download link will be emailed and nothing sends one; the "
+        "Policy must contradict that in terms a waiting member cannot misread"
+    )
+    promised = _unnegated(
+        visible, r"we (?:will|'ll) email (?:you )?(?:a|your) (?:copy|download|link)"
+    )
+    assert not promised, (
+        f"the Privacy Policy repeats the app's unkept email promise: {promised}"
     )
 
 
