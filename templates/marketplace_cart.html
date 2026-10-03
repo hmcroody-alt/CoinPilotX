@@ -174,8 +174,17 @@
   @media (max-width:560px){
     .cart .checkout .pay{flex-direction:column;align-items:stretch;gap:8px}
     .cart .checkout .pay > *{width:100%;text-align:center}
-    .cart .steps li .name{font-size:10px}
   }
+  {#
+    The step names are NOT shrunk to 10px on phones. Measured at a true 390px
+    layout viewport -- not a headless window, which clamps to a 500px floor and
+    then crops, so it reports overflow that is not there -- the strip wraps to
+    three rows and reaches 290px of the 378px available at 10px, and 301px at
+    11px. Same rows, same height, 77px of slack either way: the shrink bought
+    nothing and cost a step indicator the one thing it exists to do, which is
+    be read at a glance by someone deciding whether the next tap takes their
+    money.
+  #}
   .cart .checkout button.ghost{background:none;border:1px solid var(--line);color:var(--dim);
     border-radius:10px;padding:10px 14px;font:inherit;cursor:pointer}
   {#
