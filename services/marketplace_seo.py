@@ -64,7 +64,6 @@ Guessing zero would publish "free" for a product that charges.
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -566,14 +565,21 @@ def product_page_graph(listing):
     writes it into the ``ld+json`` block, and no template ever serialises JSON
     itself.
 
-    ``ensure_ascii=False`` matches the existing graphs. Seller titles in
-    production contain non-ASCII punctuation, and escaping it would leave the
-    structured title subtly different from the visible one.
+    Through ``seo_schema.serialise_graph`` rather than ``json.dumps`` for the
+    last part of that contract: these are the only graphs on the domain carrying
+    text a seller wrote, and that serialiser is where ``<`` is escaped so nothing
+    in a title can close the ``script`` element it is written into. The write
+    path's ``clean_html`` strips matched ``<...>`` pairs only, so a title holding
+    no ``>`` arrives here intact.
+
+    This function has no caller in the app today -- its one caller,
+    ``bot._marketplace_public_product_response``, is the retained rollback for
+    the public-marketplace unification. The escaping is here anyway, because a
+    rollback is exactly when nobody re-reads the renderer being restored.
     """
 
-    return json.dumps(
+    return seo_schema.serialise_graph(
         {"@context": "https://schema.org", "@graph": product_schema_graph(listing)},
-        ensure_ascii=False,
     )
 
 
@@ -688,9 +694,8 @@ def index_schema_graph(listings):
 def index_page_graph(listings):
     """``index_schema_graph`` serialised for the template, like its product twin."""
 
-    return json.dumps(
+    return seo_schema.serialise_graph(
         {"@context": "https://schema.org", "@graph": index_schema_graph(listings)},
-        ensure_ascii=False,
     )
 
 

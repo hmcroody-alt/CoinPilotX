@@ -384,5 +384,65 @@ class ProductGraphTestCase(unittest.TestCase):
         self.assertIn("Café Table — 2 seats", payload)
 
 
+class SerialisationEscapesScriptBreakouts(unittest.TestCase):
+    """A seller's title cannot close the ``script`` element this string is
+    written into.
+
+    Scope first, because it decides how alarming this is. ``product_page_graph``
+    has **no caller in the app**: ``bot._marketplace_public_product_response``
+    is the only one and it was orphaned by the public-marketplace unification,
+    retained deliberately as that change's rollback. The live page is rendered by
+    ``marketplace_storefront``, which already escapes. So this is not a reachable
+    hole -- it is an unescaped serialiser sitting in the renderer the repo has
+    nominated to go back to, where re-wiring one line is all it takes.
+
+    The mechanism, since it is the reason the rule is about a character rather
+    than about a payload: the destination is ``{{ schema_json|safe }}`` in a
+    raw-text ``script`` element, where ``<`` is the sole terminator and
+    ``</script`` plus any whitespace closes the block -- the ``>`` that completes
+    an injected tag can come from the markup that follows. ``bot.clean_html`` on
+    the write path only deletes matched ``<...>`` pairs, so a stored title holding
+    no ``>`` arrives intact and never has to look like a tag. Hence: no literal
+    ``<`` leaves the serialiser. ``\\u003c`` is valid JSON decoding to the
+    identical string, so escaping it costs the structured data nothing.
+    """
+
+    HOSTILE = [
+        "</script><script>alert(1)</script>",
+        "</script <img src=x onerror=alert(1)",
+        "Nice Lamp </script\n<svg onload=alert(1)",
+        "<!--<script>",
+    ]
+
+    def test_no_literal_angle_bracket_survives_a_hostile_title(self):
+        for title in self.HOSTILE:
+            with self.subTest(title=title):
+                payload = marketplace_seo.product_page_graph(listing(title=title))
+                self.assertNotIn("<", payload)
+
+    def test_no_literal_angle_bracket_survives_a_hostile_description(self):
+        payload = marketplace_seo.product_page_graph(
+            listing(description="</script><script>alert(1)</script>", short_description=""),
+        )
+        self.assertNotIn("<", payload)
+
+    def test_the_escaped_title_still_decodes_to_the_sellers_exact_string(self):
+        """Escaping must not change what the structured title *is*. A title that
+        decodes differently from the visible one is the mismatch the non-ASCII
+        test above exists to prevent, reintroduced by the fix for this one."""
+        title = "</script><script>alert(1)</script>"
+        parsed = json.loads(marketplace_seo.product_page_graph(listing(title=title)))
+        product = {node["@type"]: node for node in parsed["@graph"]}["Product"]
+        self.assertEqual(product["name"], title)
+
+    def test_the_index_graph_is_escaped_by_the_same_serialiser(self):
+        """The ``ItemList`` carries URLs only today, so nothing seller-written
+        reaches it. Pinning it anyway keeps the property structural: both public
+        shells are fed by one serialiser, so a later node that does carry a title
+        cannot land unescaped."""
+        payload = marketplace_seo.index_page_graph([listing(title="</script>")])
+        self.assertNotIn("<", payload)
+
+
 if __name__ == "__main__":
     unittest.main()

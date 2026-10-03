@@ -1560,5 +1560,62 @@ class MarketplaceCategorySitemapTestCase(PublicMarketplaceFixture):
         self.assertIn("MARKETPLACE_PUBLIC_QUERY_FAILED", "\n".join(captured.output))
 
 
+class ProductPageScriptBreakoutTestCase(PublicMarketplaceFixture):
+    """A seller's title cannot close the ``ld+json`` block on the page as served.
+
+    These pass before the escaping they describe was added anywhere, and that is
+    the point of having them here: the renderer this route actually uses is
+    ``marketplace_storefront``, which escapes ``<`` already. Nothing asserted it
+    end-to-end, so the property held by inspection of one module rather than by a
+    test of the response. ``tests/test_marketplace_seo.py`` covers the serialiser
+    in the orphaned rollback renderer; this covers whatever renderer the route is
+    wired to, which is the thing that can be swapped.
+
+    Why a title is the field to attack rather than a hypothetical one: the write
+    path runs ``bot.clean_html``, which deletes matched ``<...>`` pairs. A payload
+    with no ``>`` in it never matches that regex and is stored verbatim. And a
+    bare ``</script`` followed by whitespace closes a raw-text element on its
+    own -- the ``>`` that completes the injected tag comes from the page's own
+    markup further down. So the stored value never has to look like a tag.
+    """
+
+    BREAKOUT = "Nice Lamp </script <svg onload=alert(1)"
+
+    def test_the_rendered_page_holds_exactly_one_script_element(self):
+        """Counting the closing tags is the assertion that would have caught this.
+        A breakout does not corrupt the JSON -- it ends the element early and the
+        remainder becomes markup, so the parsed block can still look valid.
+
+        The second payload is the textbook one. It is the weaker of the two here
+        because ``clean_html`` would strip its matched pairs before storage; it
+        is pinned anyway so the test names the case the fix was asked for.
+        """
+        for title in (self.BREAKOUT, "</script><script>alert(1)</script>"):
+            with self.subTest(title=title):
+                listing_id = self.make_listing(title=title)
+                body = self.get(listing_id).get_data(as_text=True)
+                self.assertEqual(body.count('<script type="application/ld+json">'), 1)
+                block = re.search(
+                    r'<script type="application/ld\+json">(.*?)</script>', body, re.S)
+                self.assertNotIn("<", block.group(1))
+
+    def test_the_title_still_reaches_a_consumer_as_the_seller_wrote_it(self):
+        """Escaping that changed the name would trade one defect for a quieter
+        one: a structured title that disagrees with the visible ``h1``."""
+        listing_id = self.make_listing(title=self.BREAKOUT)
+        response = self.get(listing_id)
+        product = [node for node in self.ld_nodes(response)
+                   if node.get("@type") == "Product"][0]
+        self.assertEqual(product["name"], self.BREAKOUT)
+
+    def test_the_grid_survives_the_same_title(self):
+        """The grid renders its own graph from the same rows."""
+        self.make_listing(title=self.BREAKOUT)
+        body = self.client.get("/pulse/marketplace").get_data(as_text=True)
+        block = re.search(r'<script type="application/ld\+json">(.*?)</script>', body, re.S)
+        self.assertIsNotNone(block, "the grid carries no ld+json block")
+        self.assertNotIn("<", block.group(1))
+
+
 if __name__ == "__main__":
     unittest.main()

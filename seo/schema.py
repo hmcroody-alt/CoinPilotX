@@ -23,6 +23,27 @@ APP_FIRST_RELEASED = "2026-07-01"
 APP_CONTENT_RATING = "4+"
 
 
+def serialise_graph(payload):
+    """The one place a graph becomes the string a template writes out.
+
+    Every caller's output lands in a raw-text ``script`` element through
+    ``|safe``, and inside one of those ``<`` is the only character that can end
+    the block early: ``</script`` plus any whitespace closes it, and the ``>``
+    needed to finish an injected tag can come from the markup that follows. So
+    ``<`` is escaped here rather than at each call site, which makes the property
+    structural -- a graph that later carries a value someone else supplies cannot
+    be the one serialiser that forgot.
+
+    ``\\u003c`` is ordinary JSON decoding to the same character, so a consumer
+    reads the identical string. ``ensure_ascii=False`` is kept: these graphs
+    restate text that is also visible on the page, and escaping its typographic
+    punctuation would leave the structured copy subtly different from the visible
+    one.
+    """
+
+    return json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c")
+
+
 def organization_schema():
     """The one Organization node this domain publishes.
 
@@ -158,7 +179,7 @@ def app_page_graph(page, trail=()):
     ]
     if page.get("faqs"):
         graph.append(faq_schema(page["faqs"]))
-    return json.dumps({"@context": "https://schema.org", "@graph": graph}, ensure_ascii=False)
+    return serialise_graph({"@context": "https://schema.org", "@graph": graph})
 
 
 def commerce_policy_graph(page):
@@ -186,7 +207,7 @@ def commerce_policy_graph(page):
     webpage = webpage_schema(page)
     if page.get("page_type"):
         webpage["@type"] = page["page_type"]
-    return json.dumps({
+    return serialise_graph({
         "@context": "https://schema.org",
         "@graph": [
             organization_schema(),
@@ -197,7 +218,7 @@ def commerce_policy_graph(page):
                 (page["breadcrumb"], page["canonical"]),
             ]),
         ],
-    }, ensure_ascii=False)
+    })
 
 
 def about_page_graph(page):
@@ -222,7 +243,7 @@ def about_page_graph(page):
 
     webpage = webpage_schema(page)
     webpage["@type"] = "AboutPage"
-    return json.dumps({
+    return serialise_graph({
         "@context": "https://schema.org",
         "@graph": [
             organization_schema(),
@@ -233,7 +254,7 @@ def about_page_graph(page):
                 (page["breadcrumb"], page["canonical"]),
             ]),
         ],
-    }, ensure_ascii=False)
+    })
 
 
 def service_schema(page):
@@ -379,4 +400,4 @@ def schema_graph(page, include_product=False, include_article=False):
     related = related_item_list_schema(page)
     if related:
         graph.append(related)
-    return json.dumps({"@context": "https://schema.org", "@graph": graph}, ensure_ascii=False)
+    return serialise_graph({"@context": "https://schema.org", "@graph": graph})
