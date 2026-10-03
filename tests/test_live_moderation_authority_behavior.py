@@ -919,5 +919,180 @@ class ModerationAuditCase(unittest.TestCase):
         self.assertEqual(_rows(), [])
 
 
+# =========================================================================
+# 10. The promotion boundaries (§14)
+# =========================================================================
+
+class RoleTransitionCase(unittest.TestCase):
+    """A banned account must not reach the stage by being promoted.
+
+    Three of the five enforcement boundaries are on the co-host path: the
+    request to join, the invite, and the answer to an invite. Until this class
+    existed the suite drove only two boundaries end to end — the token mint and
+    ``/join`` — and these three were covered transitively, by a mutation that
+    stubs the shared reader out. That proves they call *a* reader. It does not
+    prove any of them refuses anybody.
+
+    The distinction matters more here than anywhere else in this file. The
+    co-host paths decide whether somebody may *publish* — camera and microphone
+    in front of the host's audience. A ban that stopped a viewer watching but
+    let them accept a promotion would be worse than no ban at all: the host
+    would have pressed a button that appeared to work, and put the person they
+    removed on stage.
+
+    Every denial test here has a control, and the controls are the point. All
+    three routes refuse for several unrelated reasons before they ever consult
+    the ban — ``MULTI_GUEST_DISABLED``, ``COHOST_DISABLED``, ``LIVE_NOT_ACTIVE``,
+    ``STAGE_FULL``, ``ALREADY_ON_STAGE``. A test that only asserted "not 200"
+    would pass with the ban check deleted. So each assertion names
+    ``BLOCKED_BY_HOST`` specifically, and each control asserts that the *same*
+    request without a ban is refused for some other reason, or not at all.
+
+    The feature flag is the other half of the story, and it is a production
+    finding rather than a test detail — see
+    ``test_the_promotion_boundaries_are_unreachable_while_multi_guest_is_off``.
+    """
+
+    #: ``multi_guest_enabled()`` defaults off, so these three boundaries do not
+    #: execute at all unless a deployment opts in. The tests that assert the ban
+    #: is honoured have to turn it on; the last test asserts what happens when
+    #: it is off, so the suite states both halves rather than only the one that
+    #: suits it.
+    STAGE_ENV = {"MULTI_GUEST_LIVE_ENABLED": "true", "LIVE_GUEST_REQUESTS_ENABLED": "true"}
+
+    def setUp(self):
+        self.client = bot.webhook_app.test_client()
+        _clear_bans()
+        _reset_rate_limits()
+        self._clear_requests()
+        patcher = mock.patch.dict(os.environ, self.STAGE_ENV)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        _clear_bans()
+        self._clear_requests()
+
+    @staticmethod
+    def _clear_requests():
+        """Invites and requests are per-test state.
+
+        A leftover ``invited`` row makes the next invite return
+        ``invite_already_sent`` and a leftover accepted one makes it
+        ``ALREADY_ON_STAGE`` — both of which would hide a missing ban check
+        behind a green-looking refusal.
+        """
+        conn = _conn()
+        conn.execute("DELETE FROM pulse_live_guest_requests WHERE live_id IN (?,?)", (LIVE_A, LIVE_B))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def _code(response):
+        return (response.get_json() or {}).get("error_code") or ""
+
+    def _request_stage(self, actor=VIEWER):
+        with _as(actor), _no_admin():
+            return self.client.post(f"/api/pulse/live/{LIVE_A}/cohost/request", json={})
+
+    def _invite(self, target=VIEWER, actor=HOST):
+        with _as(actor), _no_admin():
+            return self.client.post(
+                f"/api/pulse/live/{LIVE_A}/invites", json={"target_user_id": target})
+
+    def _accept(self, invite_id, actor=VIEWER):
+        with _as(actor), _no_admin():
+            return self.client.post(
+                f"/api/pulse/live/{LIVE_A}/invites/{invite_id}/accept", json={})
+
+    # -- the request to join -------------------------------------------------
+
+    def test_a_banned_viewer_cannot_request_the_stage(self):
+        _post(self.client, HOST, VIEWER, "ban")
+        response = self._request_stage()
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self._code(response), "BLOCKED_BY_HOST")
+
+    def test_an_unbanned_viewer_is_not_refused_as_blocked(self):
+        """The control. Without a ban this request may succeed or fail for
+        stage reasons, but it must not be refused as a moderation decision."""
+        response = self._request_stage()
+        self.assertNotEqual(self._code(response), "BLOCKED_BY_HOST")
+
+    def test_unban_restores_the_promotion_path(self):
+        """§27. Restoring access has to restore all of it, not just viewing."""
+        _post(self.client, HOST, VIEWER, "ban")
+        self.assertEqual(self._code(self._request_stage()), "BLOCKED_BY_HOST")
+        _post(self.client, HOST, VIEWER, "unban")
+        self.assertNotEqual(self._code(self._request_stage()), "BLOCKED_BY_HOST")
+
+    # -- the invite ----------------------------------------------------------
+
+    def test_a_host_cannot_invite_an_account_they_have_banned(self):
+        _post(self.client, HOST, VIEWER, "ban")
+        response = self._invite()
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self._code(response), "BLOCKED_BY_HOST")
+
+    def test_a_cohost_cannot_invite_an_account_the_host_banned(self):
+        """The co-host is the interesting actor here: they may invite, and they
+        did not make this decision, so an invite is the obvious way to undo
+        somebody else's ban without ever touching the moderation table."""
+        _post(self.client, HOST, VIEWER, "ban")
+        response = self._invite(actor=COHOST)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self._code(response), "BLOCKED_BY_HOST")
+
+    def test_an_unbanned_account_is_not_refused_as_blocked_on_invite(self):
+        response = self._invite()
+        self.assertNotEqual(self._code(response), "BLOCKED_BY_HOST")
+
+    # -- answering an invite issued before the ban ---------------------------
+
+    def test_a_banned_account_cannot_accept_an_invite_it_already_holds(self):
+        """The ordering §14 is actually about.
+
+        The invite is issued while the account is in good standing, so the
+        permission to publish already exists and is sitting on the viewer's
+        device. Then the host bans them. Nothing revokes the outstanding
+        invite — there is no such sweep in this deployment — so the only thing
+        between a banned account and the stage is this route re-reading the ban
+        at the moment the invite is answered.
+        """
+        created = self._invite()
+        self.assertEqual(created.status_code, 200, created.get_data(as_text=True))
+        invite_id = ((created.get_json() or {}).get("invite") or {}).get("invite_id")
+        self.assertTrue(invite_id, "the invite fixture did not produce an invite id")
+
+        _post(self.client, HOST, VIEWER, "ban")
+
+        response = self._accept(invite_id)
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self._code(response), "BLOCKED_BY_HOST")
+
+    # -- what production actually does today ---------------------------------
+
+    def test_the_promotion_boundaries_are_unreachable_while_multi_guest_is_off(self):
+        """``MULTI_GUEST_LIVE_ENABLED`` defaults off, and nothing in this branch
+        changes that.
+
+        With the flag off these three routes refuse everybody before they reach
+        the ban check, so a ban's real enforcement surface is the audience gate:
+        the token mint, ``/join``, ``/state`` and the replay read. That is still
+        a working ban — a banned viewer cannot watch, and someone who cannot
+        watch cannot ask to join from a client they cannot load.
+
+        This is recorded as a test rather than a comment because the two states
+        are one environment variable apart and need no deploy. The day somebody
+        turns multi-guest on, these boundaries start executing, and the rest of
+        this class is what says they will refuse correctly when they do.
+        """
+        with mock.patch.dict(os.environ, {"MULTI_GUEST_LIVE_ENABLED": "false"}):
+            self.assertFalse(live_participants.multi_guest_enabled())
+            _post(self.client, HOST, VIEWER, "ban")
+            self.assertNotEqual(self._code(self._request_stage()), "BLOCKED_BY_HOST")
+            self.assertEqual(self._code(self._invite()), "MULTI_GUEST_DISABLED")
+
+
 if __name__ == "__main__":
     unittest.main()

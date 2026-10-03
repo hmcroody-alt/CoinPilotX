@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seventeen ways to break the live-ban authority. Each must turn the suite red.
+"""Twenty ways to break the live-ban authority. Each must turn the suite red.
 
 A green suite proves nothing on its own. This table shipped with six
 authorization readers, zero rows, and a passing test suite for its entire
@@ -13,6 +13,12 @@ return, dropping a self-ban guard, narrowing a vocabulary, unbanning one row
 instead of all, renaming a denial event to something that means a different
 thing. If any survives, the corresponding property is not actually tested and
 the gap is named in the output rather than glossed over.
+
+Three delete the ban check at one boundary each, on the three co-host paths.
+Stubbing the shared reader is not enough on its own: with four boundaries still
+honouring the ban, a suite that only drives the audience gate stays green while
+a banned account walks onto the stage. These three fail unless each promotion
+path is actually driven end to end.
 
 Three of them attack the observability rather than the decision, because an
 authority nobody can prove fired is only half built -- and one of those three
@@ -122,6 +128,42 @@ MUTATIONS = [
         "    return False",
         "All six enforcement sites answer 'not banned' forever. This is the "
         "original production state, reintroduced.",
+    ),
+    (
+        "the_stage_request_stops_checking_the_ban",
+        BOT,
+        '        if pulse_live_user_is_blocked(cur, live_id, user["user_id"]):',
+        "        if False:",
+        "A banned viewer asks to join the stage and is allowed to. Deleting one "
+        "boundary's check is the mutation the shared-reader one above cannot "
+        "catch, because the other four still delegate and the suite stays green "
+        "on all of them.",
+    ),
+    (
+        "the_invite_stops_checking_the_ban",
+        BOT,
+        "        if pulse_live_user_is_blocked(cur, live_id, target_user_id):\n"
+        "            conn.close()\n"
+        '            return pulse_live_cohost_error("BLOCKED_BY_HOST", status=403, step="invite_target_validation",',
+        "        if False:\n"
+        "            conn.close()\n"
+        '            return pulse_live_cohost_error("BLOCKED_BY_HOST", status=403, step="invite_target_validation",',
+        "A co-host invites the account the host just removed, and the stage "
+        "accepts them. The ban is still in the table and every other boundary "
+        "still honours it, so the moderation UI reports success throughout.",
+    ),
+    (
+        "the_invite_answer_stops_checking_the_ban",
+        BOT,
+        "        if pulse_live_user_is_blocked(cur, live_id, target_user_id):\n"
+        "            conn.close()\n"
+        '            return pulse_live_cohost_error("BLOCKED_BY_HOST", status=403, trace_id=trace_id,',
+        "        if False:\n"
+        "            conn.close()\n"
+        '            return pulse_live_cohost_error("BLOCKED_BY_HOST", status=403, trace_id=trace_id,',
+        "An invite issued before the ban is answered after it. Nothing sweeps "
+        "outstanding invites when a ban lands, so this re-read is the only "
+        "thing standing between a removed account and a microphone.",
     ),
     (
         "the_join_boundary_stops_naming_the_ban",
