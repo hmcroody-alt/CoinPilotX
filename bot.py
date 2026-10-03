@@ -4,6 +4,7 @@
 
 import os
 import re
+import glob
 import json
 import math
 import csv
@@ -6580,6 +6581,7 @@ def render_account_page(page, title, **context):
     # taken away. Both are empty lists when nothing is configured, which is what
     # keeps the buttons from appearing before the secrets exist.
     context.setdefault("federated_providers", federated_sign_in_options())
+    context.setdefault("login_hero_art", login_hero_art())
     context.setdefault("federated_connections", federated_connections(context.get("current_user")))
     # So no template has to branch on a password hash to find out whether asking
     # for a password makes sense. A federated-only account answers False here,
@@ -9500,6 +9502,44 @@ def federated_sign_in_options():
             "label": external_identity.PROVIDER_LABELS.get(provider, provider.title()),
         })
     return options
+
+
+LOGIN_HERO_PREFIX = "login-hero"
+# Best first. AVIF is roughly half the bytes of the JPEG at this size and this
+# image is the LCP element on the sign-in page, so the order is the point rather
+# than a preference.
+LOGIN_HERO_VARIANTS = (("avif", "image/avif"), ("webp", "image/webp"), ("jpg", "image/jpeg"))
+
+
+def login_hero_art():
+    """The cinematic sign-in background, but only once the asset really exists.
+
+    Returns `[]` until the artwork ships, and the template then emits no
+    preload and no `background-image` at all. That is deliberate: a CSS rule
+    pointing at a missing file costs a 404 on every sign-in render and still
+    shows nothing, so the absent state has to be "no rule" rather than "a rule
+    that fails". The gradient underneath is the design's own fallback, not an
+    error state.
+
+    Resolved by glob rather than a fixed name so the file can carry the date
+    token every other asset in `static/brand/` carries. That is not cosmetic:
+    `static/` is served with a long immutable cache keyed on the path, so
+    replacing the artwork under a name that never changes leaves every
+    returning member on the old one indefinitely. Newest name wins, which with
+    a `login-hero-YYYYMMDD` token is also the newest file.
+
+    Dropping the files in is the whole activation step -- no code change, no
+    template edit to forget.
+    """
+
+    static_root = webhook_app.static_folder or "static"
+    found = []
+    for extension, mime in LOGIN_HERO_VARIANTS:
+        matches = sorted(glob.glob(os.path.join(static_root, "brand", f"{LOGIN_HERO_PREFIX}*.{extension}")))
+        if matches:
+            name = os.path.basename(matches[-1])
+            found.append({"url": url_for("static", filename=f"brand/{name}"), "mime": mime})
+    return found
 
 
 def federated_account_has_password(user):

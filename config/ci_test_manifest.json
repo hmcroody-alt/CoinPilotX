@@ -503,6 +503,7 @@
     "tests/test_live_replay_worker.py",
     "tests/test_live_unlock_threshold.py",
     "tests/test_local_database_guard.py",
+    "tests/test_login_hero_art.py",
     "tests/test_market_intelligence.py",
     "tests/test_market_observations.py",
     "tests/test_marketplace_buy_now_checkout_contract.py",

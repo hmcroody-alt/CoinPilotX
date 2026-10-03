@@ -123,6 +123,34 @@
         radial-gradient(circle at 52% 32%, rgba(110, 223, 246, .14), transparent 18rem),
         linear-gradient(180deg, #020710 0%, #061321 64%, #081d2b 100%);
     }
+    {%- if login_hero_art %}
+    /* The sign-in artwork, as a background and nothing else.
+       Deliberately placed AFTER the gradient rule above, which uses the
+       `background` shorthand and therefore resets `background-image`. Declared
+       any earlier in this stylesheet the photograph is silently discarded, and
+       the page looks exactly like the one without the asset -- a failure with
+       no error attached to it.
+
+       Two scrims sit between the photograph and the content, because the card
+       and the hero copy are white text over a night sky and the bright patches
+       are the ones the picture is good because of. The scrims are the layout's
+       job; the image itself is used unmodified and is never redrawn in CSS. */
+    .premium-auth-body {
+      background-image:
+        linear-gradient(to right, rgba(3, 6, 12, .40), rgba(3, 6, 12, .74)),
+        linear-gradient(to bottom, rgba(3, 6, 12, .55), rgba(3, 6, 12, .30) 38%, rgba(3, 6, 12, .80)),
+        image-set({% for variant in login_hero_art %}url("{{ variant.url }}") type("{{ variant.mime }}"){{ "," if not loop.last }}{% endfor %});
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+    }
+    @media (max-width: 860px) {
+      /* `fixed` is the expensive one and iOS ignores it outright, so the cost
+         buys nothing on the viewport that can least afford it. */
+      .premium-auth-body { background-attachment: scroll; }
+    }
+    {%- endif %}
     .premium-auth-main { min-height: 100vh; min-height: 100dvh; padding: max(28px, env(safe-area-inset-top)) 0 max(24px, env(safe-area-inset-bottom)); display: grid; align-items: center; }
     .auth-container { width: min(100% - 28px, 1180px); }
     .panel.auth-shell {
@@ -326,16 +354,30 @@
        buttons carry correct text and no logo, and they are hidden anyway:
        `federated_sign_in_options()` returns nothing until a client ID exists. */
     .auth-federated { margin-top: 18px; display: grid; gap: 10px; }
+    /* A rule either side of the words rather than text alone. The divider is
+       separating two different ways to sign in, not labelling the thing below
+       it, and centred text with no rule reads as a caption for the buttons. */
     .auth-divider {
-      margin: 0; text-align: center; color: var(--muted); font-size: 13px;
-      text-transform: lowercase; letter-spacing: .02em;
+      margin: 0; display: grid; grid-template-columns: 1fr auto 1fr;
+      align-items: center; gap: 12px;
+      color: var(--muted); font-size: 12px; font-weight: 800;
+      text-transform: uppercase; letter-spacing: .08em;
+    }
+    .auth-divider::before, .auth-divider::after {
+      content: ""; height: 1px; background: rgba(255, 255, 255, .12);
     }
     .federated-button {
       width: 100%; min-height: 44px; display: inline-flex; align-items: center;
       justify-content: center; gap: 10px; border-radius: 12px; font-weight: 800;
       font-size: 15px; border: 1px solid transparent;
     }
-    .federated-apple { background: #000; color: #fff; border-color: #000; }
+    /* White rather than black. Apple's guidelines permit black, white, or
+       white-with-outline, so this is a choice rather than a requirement, and
+       the choice is that the two providers must not be ranked. A black Apple
+       button beside a white Google one reads as a primary and a secondary
+       option, which is a claim about the member's identity that PulseSoc has
+       no business making. */
+    .federated-apple { background: #fff; color: #1f1f1f; border-color: #e3e3e3; }
     .federated-google { background: #fff; color: #1f1f1f; border-color: #dadce0; }
     .federated-mark { display: none; width: 18px; height: 18px; }
     /* Progressive disclosure with no JavaScript in the path: the verification
@@ -427,6 +469,15 @@
       * { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
     }
   </style>
+  {%- if login_hero_art and page in ['signup', 'login'] %}
+  {#- The artwork is the LCP element and it is referenced from a CSS
+      background, so the browser cannot find it until the stylesheet is parsed
+      and the body is matched. Preloading the single best variant moves that
+      discovery to the first bytes of the document. Only the first is
+      preloaded: fetching all three would spend the saving three times over on
+      two files that will never be displayed. #}
+  <link rel="preload" as="image" href="{{ login_hero_art[0].url }}" type="{{ login_hero_art[0].mime }}" fetchpriority="high">
+  {%- endif %}
 </head>
 <body class="{% if page in ['signup', 'login'] %}premium-auth-body{% endif %}{% if is_ios_native %} ios-native-account{% endif %}">
   <header>
