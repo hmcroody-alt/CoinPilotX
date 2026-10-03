@@ -96,26 +96,18 @@ MUTATIONS = [
         defect="Treating a follow as acceptance opens a private profile to "
                "anyone who presses Follow.",
         path="services/profile_viewer_permissions.py",
-        # The returned *state* has to move too. Opening only the flag dict is a
-        # half-defect: the page keeps refusing the follower off the still-closed
-        # state, so the only test that notices is the closed-state invariant --
-        # which is already its own mutation below.
-        anchor='''        permissions["can_view_public_profile"] = bool(friends)
-        if friends:
-            permissions["can_view_friend_content"] = True
-            permissions["can_view_follower_content"] = True
-            for flag in PUBLIC_CONTENT_FLAGS:
-                permissions[flag] = True
-        permissions["can_message"] = bool(friends)
-        return (ACCESS_OK if friends else ACCESS_PRIVATE), permissions''',
-        replacement='''        permissions["can_view_public_profile"] = bool(friends or follows)
-        if friends or follows:
-            permissions["can_view_friend_content"] = True
-            permissions["can_view_follower_content"] = True
-            for flag in PUBLIC_CONTENT_FLAGS:
-                permissions[flag] = True
-        permissions["can_message"] = bool(friends or follows)
-        return (ACCESS_OK if (friends or follows) else ACCESS_PRIVATE), permissions''',
+        # Injected at the head of the branch rather than over its body. The
+        # returned *state* has to move with the flags -- opening only the dict
+        # is a half-defect, because the page keeps refusing the follower off
+        # the still-closed state and the only test that notices is the
+        # closed-state invariant, which is already its own mutation below.
+        # Rebinding the name is also the one form of this defect that cannot
+        # go stale: the branch is shared with the DM-privacy work, and an
+        # anchor quoting its body stopped matching the first time main edited
+        # a line this mutation did not care about.
+        anchor='''    if visibility == "private":''',
+        replacement='''    if visibility == "private":
+        friends = friends or follows''',
         expect=["a_follower_is_still_refused"],
     ),
     Mutation(
