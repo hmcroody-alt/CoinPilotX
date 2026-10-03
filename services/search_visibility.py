@@ -274,6 +274,28 @@ _RULES = (
     ("/simulator", NOINDEX_NOFOLLOW, "authenticated surface behind a redirect"),
     ("/scam-shield", NOINDEX_FOLLOW, "authenticated surface behind a redirect"),
 
+    # Two more of the fallthrough, found by sweeping every static GET route
+    # through the Flask test client rather than only the URLs Search Console
+    # already knows. Neither is a document: `/offline` is the service worker's
+    # offline fallback and `/reset-pwa` is a button that unregisters the worker
+    # and clears its caches. Both answer an anonymous 200, and both were
+    # declared `index,follow` *and sitemap-eligible* because no rule named them.
+    #
+    # Their own templates already say `noindex` -- `offline.html` says
+    # `noindex, nofollow` and `/reset-pwa` says `noindex,follow` -- so neither
+    # is in the index today. That is the template saving the table, which is the
+    # wrong way round and is the reason both are written down here.
+    #
+    # `nofollow` for both, and the inbound-link check is the whole argument.
+    # `/offline` is referenced only from `static/sw.js`, which is JavaScript
+    # rather than an anchor Googlebot follows. `/reset-pwa` is linked only from
+    # `offline.html` itself, which is `noindex`. So there is no public crawl
+    # path into either, nothing is stranded by the `Disallow` that `nofollow`
+    # makes them eligible for, and two more URLs stop being crawl budget spent
+    # on a PWA utility shell.
+    ("/offline", NOINDEX_NOFOLLOW, "service worker offline fallback"),
+    ("/reset-pwa", NOINDEX_NOFOLLOW, "PWA cache reset utility"),
+
     # `/pulse/marketplace` and `/pulse/marketplace/<id>` are deliberately absent,
     # for the same reason `/app` is: they branch on authentication and serve a
     # public page to anonymous readers, so they fall through to `index,follow`
