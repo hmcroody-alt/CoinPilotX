@@ -420,9 +420,21 @@ def backfill_missing_deadlines(cur, *, now=None, limit: int | None = None,
             out["failed"] = 1
 
     if out["backfilled"] or out["would_backfill"]:
+        # Both counters, always, because they answer different questions:
+        # ``would_backfill`` is how many rows qualify and ``backfilled`` is how
+        # many writes landed. This line used to emit
+        # ``out["backfilled"] or out["would_backfill"]`` under the single label
+        # ``backfilled=``, which in dry run reported ``backfilled=4`` for a
+        # cycle that wrote nothing -- observed in production on 2026-10-03,
+        # where the four stranded holds were still deadline-less in Postgres
+        # while this line claimed they had been repaired. It is logged at
+        # WARNING, so it is also the line most likely to be alerted on, and the
+        # correct structured ``summary=`` dict is emitted by a different module.
+        # Naming each counter makes the label unable to disagree with the fact.
         LOGGER.warning(
-            "RESERVATION_DEADLINE_BACKFILL scanned=%s backfilled=%s dry_run=%s",
-            out["scanned"], out["backfilled"] or out["would_backfill"], dry_run)
+            "RESERVATION_DEADLINE_BACKFILL scanned=%s backfilled=%s "
+            "would_backfill=%s dry_run=%s",
+            out["scanned"], out["backfilled"], out["would_backfill"], dry_run)
     return out
 
 
