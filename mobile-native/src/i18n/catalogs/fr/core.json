@@ -510,6 +510,17 @@
       "wrongEmail": "Mauvaise adresse ?",
       "waitingForConfirmation": "En attente de confirmation…"
     },
+    "legalAcceptance": {
+      "title": "Acceptez pour continuer",
+      "body": "Avant de continuer, veuillez lire et accepter les documents ci-dessous.",
+      "bodyNamed": "Bonjour {{name}}. Avant de continuer, veuillez lire et accepter les documents ci-dessous.",
+      "read": "Lire",
+      "readDocument": "Lire {{document}}",
+      "opensInBrowser": "S’ouvre dans votre navigateur",
+      "accept": "J’accepte",
+      "disclosure": "En acceptant, les versions indiquées ci-dessus sont enregistrées sur votre compte.",
+      "documentsChanged": "Ces documents ont changé pendant votre lecture. Consultez les nouvelles versions et acceptez à nouveau."
+    },
     "recover": {
       "title": "Réinitialisez votre mot de passe",
       "subtitle": "Nous vous enverrons un lien pour vous reconnecter.",

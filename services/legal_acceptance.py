@@ -64,7 +64,32 @@ UNVERSIONED_DOCUMENTS = {
 #: Where an acceptance came from. Closed set because "which surface asked" is the
 #: part of this record a reviewer will question, and a free-text column fills up
 #: with three spellings of the same answer.
-SOURCES = ("web_signup", "web_login", "mobile_register")
+SOURCES = ("web_signup", "web_login", "mobile_register", "mobile_login")
+
+#: Where a member reads each document. Site-relative so one deployment's host is
+#: not baked into a record or a mobile build; callers that need an absolute URL
+#: join it against their own canonical origin.
+#:
+#: The native app carries its own copy of this text under
+#: `mobile-native/src/screens/settings/legalContent.ts`, and that copy is dated
+#: "1 March 2026" while the documents in force here say "May 2026". So an
+#: acceptance step must send the member to these paths and not to the bundled
+#: copy: accepting version X while reading version X-1 is precisely the defect a
+#: version column exists to prevent.
+DOCUMENT_PATHS = {
+    "terms": "/terms",
+    "privacy": "/privacy",
+}
+
+#: Fallback display name per document. A client that knows the key is expected to
+#: use its own localized title -- these are English and this module has no locale
+#: -- but a client meeting a key added after it shipped needs *something* to show
+#: rather than a raw identifier.
+DOCUMENT_TITLES = {
+    "terms": "Terms of Service",
+    "privacy": "Privacy Policy",
+}
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
@@ -173,3 +198,41 @@ def outstanding(user_id, conn=None) -> list[str]:
     return sorted(
         document for document, version in DOCUMENTS.items() if version not in on_file
     )
+
+
+def pending(user_id, conn=None) -> list[dict]:
+    """What a client has to show this member, and nothing else about them.
+
+    The wire form of `outstanding()`. A client is told which document, which
+    version is in force, and where to read it -- enough to present the step and
+    to prove afterwards which text was accepted. It is deliberately not told
+    when the member last accepted anything, from which surface, or what else is
+    on file: an acceptance history is account data, and the only question the
+    acceptance screen asks is "what is outstanding now".
+
+    The version travels so the server can refuse an acceptance that answers a
+    document revised while the member was reading it. It is not an input: a
+    client that sends one back is not believed, and no client is asked to decide
+    whether acceptance is required.
+    """
+
+    return [
+        {
+            "document": document,
+            "version": DOCUMENTS[document],
+            "title": DOCUMENT_TITLES.get(document, document.replace("_", " ").title()),
+            "path": DOCUMENT_PATHS.get(document, ""),
+        }
+        for document in outstanding(user_id, conn)
+    ]
+
+
+def versions_in_force(documents=None) -> dict:
+    """The version of each named document a member would accept right now.
+
+    Exists so a caller can pin what it showed and compare it later without
+    reaching into `DOCUMENTS` and without assuming the whole set.
+    """
+
+    names = sorted(DOCUMENTS) if documents is None else sorted(set(documents))
+    return {name: DOCUMENTS[name] for name in names if name in DOCUMENTS}

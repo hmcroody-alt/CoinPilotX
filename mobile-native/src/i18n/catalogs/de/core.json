@@ -510,6 +510,17 @@
       "wrongEmail": "Falsche E-Mail?",
       "waitingForConfirmation": "Warten auf Bestätigung…"
     },
+    "legalAcceptance": {
+      "title": "Zum Fortfahren bitte zustimmen",
+      "body": "Bitte lies die folgenden Dokumente und stimme ihnen zu, bevor du fortfährst.",
+      "bodyNamed": "Hallo {{name}}. Bitte lies die folgenden Dokumente und stimme ihnen zu, bevor du fortfährst.",
+      "read": "Lesen",
+      "readDocument": "{{document}} lesen",
+      "opensInBrowser": "Wird im Browser geöffnet",
+      "accept": "Ich stimme zu",
+      "disclosure": "Mit der Zustimmung werden die oben genannten Versionen in deinem Konto gespeichert.",
+      "documentsChanged": "Diese Dokumente wurden beim Lesen geändert. Bitte prüfe die neuen Versionen und stimme erneut zu."
+    },
     "recover": {
       "title": "Passwort zurücksetzen",
       "subtitle": "Wir schicken dir einen Link, mit dem du wieder reinkommst.",

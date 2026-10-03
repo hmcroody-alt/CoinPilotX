@@ -510,6 +510,17 @@
       "wrongEmail": "Wrong email?",
       "waitingForConfirmation": "Waiting for confirmation…"
     },
+    "legalAcceptance": {
+      "title": "Review and agree to continue",
+      "body": "Before you continue, please read and agree to the documents below.",
+      "bodyNamed": "Hi {{name}}. Before you continue, please read and agree to the documents below.",
+      "read": "Read",
+      "readDocument": "Read the {{document}}",
+      "opensInBrowser": "Opens in your browser",
+      "accept": "I agree",
+      "disclosure": "Agreeing records the versions listed above on your account.",
+      "documentsChanged": "These documents changed while you were reading. Please review the new versions and agree again."
+    },
     "recover": {
       "title": "Reset your password",
       "subtitle": "We'll send you a link to get back in.",

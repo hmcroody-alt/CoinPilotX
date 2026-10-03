@@ -553,6 +553,7 @@
     "tests/test_messenger_voice_message_contract.py",
     "tests/test_messenger_wallpaper_default_contract.py",
     "tests/test_mobile_auth_login_error_codes.py",
+    "tests/test_mobile_legal_acceptance.py",
     "tests/test_money_path_price_authority.py",
     "tests/test_music_catalog_connection_release.py",
     "tests/test_mux_primary_video_delivery.py",

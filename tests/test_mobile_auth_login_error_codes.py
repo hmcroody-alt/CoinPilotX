@@ -36,7 +36,7 @@ os.close(_HANDLE)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
 
 import bot  # noqa: E402
-from services import cache_engine, pulse_security_core  # noqa: E402
+from services import cache_engine, legal_acceptance, pulse_security_core  # noqa: E402
 from services import db as db_service  # noqa: E402
 
 PASSWORD = "MobileLoginCodes!123"
@@ -89,7 +89,15 @@ def _reset_failed_login_velocity():
     cache_engine._MEMORY.clear()
 
 
-def _make_user(*, confirmed=True, login_enabled=1):
+def _make_user(*, confirmed=True, login_enabled=1, accepted_legal=True):
+    """An account in the state a real signup leaves one in.
+
+    `accepted_legal` is on by default because the codes under test here are the
+    *credential* ones, and an account with nothing on file now answers every
+    one of them with `legal_acceptance_required` instead -- which would make
+    this file assert the consent gate rather than the thing it is about. The
+    gate's own file is `tests/test_mobile_legal_acceptance.py`.
+    """
     email = f"login-codes-{secrets.token_hex(6)}@example.com"
     now = bot.datetime.now().isoformat()
     conn = db_service.connect()
@@ -114,6 +122,8 @@ def _make_user(*, confirmed=True, login_enabled=1):
             now,
         ),
     )
+    if accepted_legal:
+        legal_acceptance.record(cur, cur.lastrowid, source="mobile_register")
     conn.commit()
     conn.close()
     return email

@@ -510,6 +510,17 @@
       "wrongEmail": "Se pa bon imèl la?",
       "waitingForConfirmation": "N ap tann konfimasyon…"
     },
+    "legalAcceptance": {
+      "title": "Dakò pou w kontinye",
+      "body": "Anvan ou kontinye, tanpri li dokiman anba yo epi aksepte yo.",
+      "bodyNamed": "Bonjou {{name}}. Anvan ou kontinye, tanpri li dokiman anba yo epi aksepte yo.",
+      "read": "Li",
+      "readDocument": "Li {{document}}",
+      "opensInBrowser": "Li ouvri nan navigatè w",
+      "accept": "Mwen dakò",
+      "disclosure": "Lè w dakò, vèsyon ki nan lis anwo a ap anrejistre nan kont ou.",
+      "documentsChanged": "Dokiman sa yo chanje pandan w t ap li yo. Tanpri gade nouvo vèsyon yo epi dakò ankò."
+    },
     "recover": {
       "title": "Chanje modpas ou",
       "subtitle": "N ap voye yon lyen ba ou pou w ka antre ankò.",
