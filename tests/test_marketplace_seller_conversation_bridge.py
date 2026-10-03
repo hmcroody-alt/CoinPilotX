@@ -71,6 +71,16 @@ SELLER = 60202          # stands in for the M&W Store owner
 THIRD_PARTY = 60303     # party to neither side of the conversation
 BLOCKED_BUYER = 60404
 
+# A pair whose numeric and lexical orderings disagree: numerically 9 < 15, but as
+# strings "15" < "9". Every other id here is the same width, so without this pair
+# the suite cannot tell a numeric sort from a lexical one -- a mutation that sorted
+# lexically passed all sixteen other tests. Production is exactly where it would
+# bite: user ids there include single digits (the M&W Store seller is user 1)
+# alongside two-digit ids, so a lexical key would mint a second thread for pairs
+# that already have one.
+NARROW_ID = 9
+WIDE_ID = 15
+
 # Production's marketplace catalogue is entirely seller_user_id=1, and the legacy
 # direct ids there run 70-378 while v2 ids run 1-34. 112 is inside the legacy
 # band and outside the v2 band, which is what made the 404 deterministic.
@@ -96,6 +106,8 @@ class SellerConversationBridgeTest(unittest.TestCase):
             (SELLER, "mw_store_owner"),
             (THIRD_PARTY, "unrelated_mara"),
             (BLOCKED_BUYER, "blocked_rhea"),
+            (NARROW_ID, "single_digit_sol"),
+            (WIDE_ID, "double_digit_wren"),
         ):
             self.cur.execute(
                 "INSERT INTO users (user_id, username, display_name) VALUES (?, ?, ?)",
@@ -185,6 +197,25 @@ class SellerConversationBridgeTest(unittest.TestCase):
         buyer_side = self._open(BUYER, SELLER)
         seller_side = self._open(SELLER, BUYER)
         self.assertEqual(buyer_side, seller_side)
+        self.assertEqual(1, len(self._direct_rows()))
+
+    def test_the_pair_key_is_sorted_numerically_not_as_text(self):
+        """``service.create_conversation`` builds this key too; they must agree.
+
+        If the two disagree for any pair, that pair gets two threads -- one per
+        entry point -- and the buyer's history splits in half. Asserting the
+        literal key is the point: ``sorted([a, b])`` and
+        ``sorted([str(a), str(b)])`` are indistinguishable for same-width ids.
+        """
+        conversation_id = pulse_chat_bridge.direct_thread(self.cur, self.conn, WIDE_ID, NARROW_ID)
+        self.cur.execute("SELECT direct_key FROM comm_v2_conversations WHERE id=?", (conversation_id,))
+        self.assertEqual(f"{NARROW_ID}:{WIDE_ID}", self.cur.fetchone()["direct_key"])
+
+        # And the key is genuinely order-free, whichever way round the tap came.
+        self.assertEqual(
+            conversation_id,
+            pulse_chat_bridge.direct_thread(self.cur, self.conn, NARROW_ID, WIDE_ID),
+        )
         self.assertEqual(1, len(self._direct_rows()))
 
     def test_a_simultaneous_duplicate_insert_cannot_fork_the_thread(self):
