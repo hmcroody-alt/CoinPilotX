@@ -4665,3 +4665,138 @@ Rolling this back reopens Finding 1 in full. If it is reverted because the
 agreement assertion produced a false red, the narrower repair is to exempt the
 offending key in the manifest and keep `background_modes_must_contain` — the rule
 that closes the live exposure — in force.
+
+## Live viewer-moderation addendum (2026-10-03)
+
+This addendum declares the protected-file change in branch
+`claude/pulse-live-authority` (PULSE LIVE AUTHORITY: build the writer that
+makes six existing live authorization checks mean something).
+
+### Why the change is required
+
+`pulse_live_moderation` shipped with real DDL, six authorization read sites and
+an API `viewer_banned` field — and no writer, no mutation route and zero rows
+in production. Every check was true and none of them could ever fire. The
+mission builds the missing authority, and an authority a host cannot reach is
+not finished: it needs one control on one host surface.
+
+The control is strictly required and the file is not substitutable. Every
+guest-list and viewer-list surface in the app is rendered inline inside
+`LiveHostSessionScreen.tsx`, and every file that could plausibly host it
+instead — `LiveScreen.tsx`, `ReelLiveViewerSurface.tsx`, `liveSession.ts` — is
+also protected, under the same `livestream_audio_adapter` category. There is no
+unprotected host surface in this app to put a moderation control on.
+
+The protected surface was deliberately reduced before writing this. The first
+draft also added the API binding to `mobile-native/src/api/live.ts`
+(`backend_token_and_room_policy`). That was avoidable and has been backed out:
+`live.ts` is now byte-identical with `origin/main`, and the binding lives in a
+new unprotected `mobile-native/src/api/liveModeration.ts`.
+
+### Which feature required it
+
+Live viewer moderation (ban / unban), scoped to a single broadcast. No
+audio-quality, AVAudioSession, microphone-publication, token-policy, ownership
+or livestream-transport change was made or authorized.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/screens/LiveHostSessionScreen.tsx` | `livestream_audio_adapter` | One import, one `banGuest` callback, and a third button on the existing "Remove guest?" confirmation. The callback calls `removeGuest` (already imported and already called by the adjacent Remove action) and the new `banViewer`, then drops the guest from local state. |
+
+Supporting non-protected file: `mobile-native/src/api/liveModeration.ts` (new,
+the ban/unban/list bindings).
+
+### Expected behavior change
+
+A host or co-host gains a "Remove & ban" path in the guest sheet. Pressing it
+removes the guest exactly as the existing Remove does, then writes a ban row
+the server's six entry checks consult.
+
+No audio behavior changes. The diff contains no AVAudioSession call, no
+`Audio.setAudioModeAsync`, no new microphone track, no second Agora publication
+path, no new audio singleton, no change to ownership arbitration, no change to
+any lease, and no change to the engine's mount, unmount or interruption
+handling. It adds no import from any protected module. The one existing
+behaviour it reuses, `removeGuest`, is unchanged and is already reachable from
+the button immediately above the new one.
+
+### Regression risk
+
+Low, and the shape of the risk is worth naming rather than asserting away.
+
+The realistic failure is not audio at all: it is that `banViewer` rejects after
+`removeGuest` has already succeeded, leaving the guest removed but not banned.
+That is handled the same way the existing remove path handles it — an Alert and
+a restored busy state — and it fails in the safe direction, because a removed
+guest is strictly less privileged than a banned-and-removed one.
+
+The audio-specific risk is that a new render or a new state update in this
+screen perturbs the broadcast hook's lifecycle. The change adds one `useCallback`
+and one extra `Alert` branch; it introduces no new effect, no new subscription
+and no new dependency on the broadcast room. `setActiveGuests` is the same state
+setter the existing remove path already calls.
+
+### Tests run
+
+All against this branch, at commit `88bd50b31`.
+
+- critical audio tests — `npm run test:realtime-audio-critical`: 11 suites, 191 tests, all passed
+- full audio suite — `npm run test:realtime-audio`: 21 suites, 377 tests, all passed
+- architecture (native) — `npm run test:realtime-audio-architecture`: 22 tests, passed
+- architecture (backend) — `python -m unittest tests.protection.test_realtime_audio_architecture`: 19 tests, OK
+- backend token tests — `pytest tests/protection/test_agora_token_generation.py tests/protection/test_agora_rtc_provider_contract.py` plus `test_realtime_audio_gate_coverage.py`: 27 passed, 27 subtests passed
+- TypeScript compilation — `tsc --noEmit`: 0 errors
+- i18n catalogue — `npm run i18n:validate`: OK, 11 locales
+- full protection suite — `scripts/protection/run_protection_suite.py`: 799 checks across 57 suites, passed
+- the mission's own suites: 50 behavioural tests, 28 protection tests, and a
+  mutation harness in which 13 of 13 deliberate breaks turn the suite red
+
+Two caveats stated rather than buried. The full `npx jest` run in this worktree
+reports 35 suite-level failures, all of the form "Jest encountered an unexpected
+token" in RNTL component suites; they are an artifact of running jest against a
+`node_modules` symlinked from the main checkout, which puts it outside the
+worktree and so outside `transformIgnorePatterns`. None of them involve live,
+audio or moderation code, and the audio suites above pass through the same
+symlink. The remaining single test failure is in
+`src/screens/__tests__/MusicScreen.deepLink.test.tsx` and is unrelated.
+
+`npx expo prebuild --platform ios --no-install` was **not** run. This change adds
+no native module, no dependency, no `app.json` or `Podfile` change and no
+`dependency_watch.files` change, so there is no native configuration for a
+prebuild to validate. Recorded as not run rather than quietly skipped.
+
+### Physical validation required
+
+**Owed, not discharged.** Nobody has heard a phone as part of this change.
+
+What must be done on a device, on both an iPhone 16 Pro and P3r7or, before this
+is trusted in production:
+
+1. Start a live as host. Confirm audio is audible to a second device.
+2. Invite a co-host, accept, confirm two-way audio.
+3. Open the guest sheet and use **Remove & ban** on the co-host. Confirm the
+   host's own audio never drops, the remaining audience still hears the host,
+   and the broadcast does not reconnect or re-mint a token.
+4. From the banned device, attempt to rejoin. Confirm it is refused, and confirm
+   the host's audio is still uninterrupted while that happens.
+5. Background the host app and return. Confirm audio continues, per the
+   background-audio validation owed by the earlier addenda.
+
+Steps 3 and 4 are the ones this change adds; 1, 2 and 5 are the regression
+baseline it must not disturb.
+
+### Rollback procedure
+
+`git revert` the client commits. `LiveHostSessionScreen.tsx` returns to its
+`origin/main` content and `src/api/liveModeration.ts` is removed; no other
+protected file is touched by this branch, so the audio surface returns to
+baseline exactly.
+
+Reverting the client alone is safe and leaves the server authority intact and
+inert — the routes stay available to a future surface, the six checks keep
+reading the table, and the table simply stops gaining rows. That is the correct
+partial rollback if the concern is this screen specifically. Reverting the
+server commits as well is only necessary if the authority itself is wrong, and
+is independent of anything in this file.
