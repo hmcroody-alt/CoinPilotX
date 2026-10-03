@@ -62159,7 +62159,8 @@ MARKETPLACE_RECONCILE_GRACE_MINUTES = 30
 
 
 def pulse_reconcile_missed_marketplace_payments(limit=100, grace_minutes=None, dry_run=True,
-                                               fetch_payment_intent=None):
+                                               fetch_payment_intent=None,
+                                               skip_transaction_ids=None):
     """Find Marketplace payments Stripe took that this server never recorded.
 
     Why this exists at all: every write in the settlement path hangs off a
@@ -62193,6 +62194,16 @@ def pulse_reconcile_missed_marketplace_payments(limit=100, grace_minutes=None, d
 
     ``fetch_payment_intent`` is injected so the suite can drive the whole table
     without a network, following ``marketplace_reservation_reconciler``.
+
+    ``skip_transaction_ids`` is excluded in SQL rather than filtered afterwards,
+    and that distinction is the whole point of the parameter. Candidates are
+    taken oldest-first under a ``LIMIT``, so a handful of long-abandoned
+    checkouts at the head of the queue would otherwise occupy every slot in
+    every batch forever and a payment genuinely lost today would never be
+    examined at all. Filtering after the ``LIMIT`` would preserve that
+    starvation while appearing to fix it. What may be skipped, and for how long,
+    is decided by :mod:`services.marketplace_missed_payment_cycle`; this
+    function only needs to honour the exclusion, not to know the reason.
     """
     grace = MARKETPLACE_RECONCILE_GRACE_MINUTES if grace_minutes is None else int(grace_minutes)
     cutoff = (datetime.utcnow() - timedelta(minutes=max(0, grace))).isoformat(timespec="seconds")
@@ -62200,15 +62211,23 @@ def pulse_reconcile_missed_marketplace_payments(limit=100, grace_minutes=None, d
         def fetch_payment_intent(intent_id):
             return stripe.PaymentIntent.retrieve(intent_id)
     result = {"examined": 0, "repaired": [], "already_settled": [], "unpaid": [],
-              "unreachable": [], "needs_attention": [], "dry_run": bool(dry_run)}
+              "unreachable": [], "needs_attention": [], "dry_run": bool(dry_run),
+              # `unpaid` stays a list of bare ids because callers and tests read
+              # it that way. This carries what the provider actually said, which
+              # is what lets a control plane tell a payment still in flight from
+              # one that can never succeed.
+              "unpaid_detail": []}
+    skip = sorted({int(v) for v in (skip_transaction_ids or []) if str(v).strip()})
+    skip_clause = f" AND id NOT IN ({','.join(['?'] * len(skip))})" if skip else ""
     conn = db(); conn.row_factory = sqlite3.Row
     try:
         rows = [dict(row) for row in conn.execute(
-            """SELECT id, status, stripe_payment_intent_id FROM seller_transactions
+            f"""SELECT id, status, stripe_payment_intent_id FROM seller_transactions
                WHERE item_type='marketplace_product' AND status NOT IN ('paid','refunded')
                  AND COALESCE(stripe_payment_intent_id,'') != '' AND COALESCE(created_at,'') < ?
+                 {skip_clause}
                ORDER BY created_at ASC LIMIT ?""",
-            (cutoff, max(1, int(limit)))).fetchall()]
+            (cutoff, *skip, max(1, int(limit)))).fetchall()]
     finally:
         conn.close()
 
@@ -62223,8 +62242,20 @@ def pulse_reconcile_missed_marketplace_payments(limit=100, grace_minutes=None, d
             logging.exception("MARKETPLACE_RECONCILE_PROVIDER_UNREACHABLE tx=%s intent=%s", tx_id, intent_id)
             result["unreachable"].append(tx_id)
             continue
-        if str(intent.get("status") or "") != "succeeded":
+        provider_status = str(intent.get("status") or "")
+        if provider_status != "succeeded":
             result["unpaid"].append(tx_id)
+            # `canceled` is the only non-succeeded status a PaymentIntent never
+            # leaves; Stripe will not revive one. Everything else -
+            # `processing`, `requires_payment_method`, `requires_action` - can
+            # still become `succeeded`, so the two must not be treated alike:
+            # polling a dead intent forever is what starves the queue, and
+            # giving up on a live one is how a payment gets lost.
+            result["unpaid_detail"].append({
+                "transaction_id": tx_id, "payment_intent_id": intent_id,
+                "provider_status": provider_status,
+                "terminal": provider_status == "canceled",
+            })
             continue
         metadata = dict(intent.get("metadata") or {})
         if not str(metadata.get("seller_transaction_ids") or "").strip():
