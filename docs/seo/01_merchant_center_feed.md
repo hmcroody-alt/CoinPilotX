@@ -331,6 +331,17 @@ dodge this: Google assigns a category itself when the feed does not supply one, 
 the requirement keys on the category Google assigned — which it may assign wrongly,
 and which we would then have no way to see.
 
+That 27 is the *inclusive* reading, and a re-measurement on 2026-10-03 showed the
+count is mapping-dependent: 24 items are apparel on a strict lead-segment reading,
+and the remaining 3 are listing 111 (children's clothing) plus 91 and 113
+(sportswear filed under `Sports & Outdoors`). There is no CJ → Google taxonomy
+mapping in this codebase, so the size of the affected population is itself
+unresolved — and since Google auto-assigns the category, Google's reading governs
+rather than ours. Treat the population as **24–27 of 36**.
+`docs/search-os/agent-07/A_APPAREL_ATTRIBUTE_SOURCE_AUDIT.md` §6 carries the
+breakdown and the worked example of why the mapping is not trivial (listing 111's
+category contains a U+FF0C fullwidth comma, which silently drops it).
+
 On severity, Google's own documentation is genuinely ambiguous and it should not be
 reported as settled either way. The attribute-specific help page says both "Missing
 required attributes lower your product's data quality. This can reduce your offer's
@@ -349,6 +360,30 @@ catalogue-wide and found the counterexample that ends the argument: listing 209'
 values are not clean — listing 90's position 1 is `"Gray Flat Feet"` and listing
 17's is `"Navy Blue Sparkling Style"`. Emitting those as `g:color` asserts colours
 that are not colours, on the exact attribute Google cross-checks against the page.
+
+A follow-up audit on 2026-10-03 found the counterexample **inside the live feed**,
+which is stronger than listing 209 because 209 is not apparel. Two women's-clothing
+items currently published have their axes in opposite order:
+
+| id | category | `option1` | `option2` |
+|---|---|---|---|
+| 42 | Women's Clothing > Outerwear & Jackets > Basic Jacket | `Snowflake Blue` | `S` |
+| **97** | Women's Clothing > Tops & Sets > Rompers | **`S`** | **`White`** |
+
+A global `option1 → color` rule publishes `color="S"` and `size="White"` for listing
+97 — both wrong, on an item Google can already fetch. Nothing separates it from 42:
+same seller, same supplier connection, same department, same two-axis shape. And 10 of
+the 36 feed items (42, 44, 45, 46, 51, 90, 96, 98, 106, 108) are inconsistent about
+slot 1 *within a single listing*, so the rule cannot be rescued by deciding per
+listing either.
+
+The deeper reason is that the names are not a degraded upstream signal at all. CJ
+sends one opaque string per variant (`"Silver 50CM"`) and
+`services/business_os/suppliers/normalize.py` mints the names locally with
+`f"option{index + 1}"`. There is no supplier assertion to recover — only one to
+invent. Full evidence, including a positive-control-verified scan proving all 47
+apparel-concept keys are absent from every one of the 69,775 supplier snapshots, is
+in `docs/search-os/agent-07/A_APPAREL_ATTRIBUTE_SOURCE_AUDIT.md`.
 
 The other three are no better:
 
@@ -372,6 +407,17 @@ data. So this cannot be closed honestly by a feed change alone. Closing it requi
 real option semantics upstream — either CJ supplying named axes, or a deliberate
 PulseSoc-authored mapping that someone owns and can defend. That is a data decision,
 not a feed decision, and it is why this section recommends no code change.
+
+**The withholding policy is written but not switched on.**
+`docs/search-os/agent-07/C_MERCHANT_READINESS_POLICY.md` defines a third eligibility
+verdict, narrower than `feed_eligible`, that withholds an incomplete apparel offer
+from Google without unpublishing the listing from PulseSoc. It is deliberately not
+wired: activating it today would cut this feed from 36 items to 9–12 while no
+Merchant Center account exists to be protected, so it buys no reduction in real
+exposure. Agent 0 decides when it activates — the cheap moment is immediately before
+first ingestion. `tests/test_merchant_apparel_and_identity_contract.py` pins the 15
+mutations both this section and that policy must refuse, and each was verified to
+turn the suite red before being relied on.
 
 ## Turning it on
 

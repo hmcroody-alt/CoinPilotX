@@ -5,12 +5,21 @@ Written 2026-10-03. Branch `search-os/agent-07-google-commerce`.
 Scope owned: the Merchant feed, Merchant account infrastructure, and the invariant
 that what Google is told about a product matches what the page and checkout say.
 
-The substance is in two documents and this file does not repeat them:
+The substance is in five documents and this file does not repeat them:
 
 - `docs/seo/01_merchant_center_feed.md` — what the feed carries and why, the
   eligibility funnel, current Google policy with dated sources.
 - `docs/seo/02_google_commerce_owner_actions.md` — the owner boundary: what only a
   person signed in to a Google account can do.
+- `A_APPAREL_ATTRIBUTE_SOURCE_AUDIT.md` — whether apparel semantics can be sourced
+  without guessing. **They cannot.** Evidence from all 69,775 raw supplier snapshots.
+- `B_MERCHANT_IDENTITY_CONTRACT.md` — what `g:id` commits us to, answered from the
+  schema. Recommends a spelling for Agent 0 to freeze **before first ingestion**.
+- `C_MERCHANT_READINESS_POLICY.md` — the third eligibility verdict that separates
+  "public on PulseSoc" from "ready for Google". Policy frozen, gate **not activated**.
+
+`tests/test_merchant_apparel_and_identity_contract.py` pins the 15 mutations those
+documents must refuse. Each was verified to turn the suite red before being relied on.
 
 ## 1. State: the feed is live and certified; the account does not exist
 
@@ -40,9 +49,18 @@ fulfilment path has never run end to end. Sending Shopping traffic to a checkout
 whose success path is undemonstrated risks taking money without producing an order.
 
 **2c. Apparel attributes are an open data question, not a task.** See §3a. It is the
-largest correctness gap in the feed, it affects 27 of 36 live items, and it cannot
-be closed by any change to this repository. It needs a decision about where option
-semantics come from.
+largest correctness gap in the feed, it affects **24–27 of the 36 live items** (the
+range, not a single number, is itself a finding — there is no CJ→Google taxonomy
+mapping and Google auto-assigns the category, so which items Google governs as
+apparel is not something this repository can know; `A_APPAREL_ATTRIBUTE_SOURCE_AUDIT.md`
+§6 shows all three readings), and it cannot be closed by any change to this
+repository. It needs a decision about where option semantics come from.
+
+The collection surface is designed but not built — `A_…AUDIT.md` §8. The withholding
+policy that would keep unknown-attribute offers out of Google without unpublishing
+them from PulseSoc is frozen but **not activated** — `C_MERCHANT_READINESS_POLICY.md`.
+Activating it today takes the feed from 36 items to 9–12. That is Agent 0's call, not
+mine, and it should not be made before the collection surface exists.
 
 ## 3. Adjudicating Agent 1's findings assigned to Agent 7
 
@@ -54,8 +72,9 @@ than either alone.
 ### 3a. A1-08 (apparel + grouping fields) — **ACCEPTED, and escalated**
 
 Agent 1 is right and I had missed it. Correcting one detail of the framing: the
-catalogue is not "much" apparel, it is **27 of the 36 live items** (23 clothing,
-2 shoes, 2 jewelry), measured 2026-10-03 by supplier breadcrumb.
+catalogue is not "much" apparel, it is **24–27 of the 36 live items** — 27 on the
+inclusive reading (23 clothing, 2 shoes, 2 jewelry), 24 on a strict lead-segment
+classifier, measured 2026-10-03 by supplier breadcrumb.
 
 I accept the finding and **refuse the implied fix**. Adding `g:color` and `g:size`
 from the variant axes would publish false data: the axes are positional on all 516
@@ -63,6 +82,18 @@ apparel variant rows sampled, position 1 reads `"Gray Flat Feet"` on listing 90 
 `"Picture Color"` on listing 209. `age_group` cannot be defaulted to adult because
 id 111 is Boys Clothing. There is no backing column for any of the four anywhere in
 production. Reasoning in full in `01_merchant_center_feed.md`.
+
+The continuation mission took this further than "refuse the fix", and the result is
+stronger than a judgement call: **the data does not exist upstream either.** All
+69,775 raw supplier snapshots contain zero occurrences of any of 47 apparel-concept
+JSON keys (positive-controlled against keys that do appear), `variants[].options` is
+a bare string in 394,256 of 394,256 cases, and the positional reading has a
+counterexample *inside the live feed* — id 42 is `option1='Snowflake Blue'
+option2='S'` while id 97 is `option1='S' option2='White'`, both women's clothing.
+Supplier prose cannot resolve it even in principle: 312 of 397 `Size:` labels hold
+the whole range rather than one value. Full evidence and the per-attribute verdict
+table in `A_APPAREL_ATTRIBUTE_SOURCE_AUDIT.md`; the withhold-don't-guess policy in
+`C_MERCHANT_READINESS_POLICY.md`.
 
 Re-prioritising: Agent 1 filed this P2. For the apparel share of the catalogue I
 read it as the **highest-impact open item in my scope**, above everything except the
@@ -85,6 +116,19 @@ whatever Shopping history has accrued against the old id. **The cheapest moment 
 reconcile the two id spaces is right now, while no Merchant account exists and the
 feed has never been ingested.** After step 5 of the owner actions, this gets
 expensive. If Agent 5 wants one identity, decide before the account is created.
+
+`B_MERCHANT_IDENTITY_CONTRACT.md` now answers this from the schema rather than from
+preference, and two lifecycle hazards came out of it that were not visible from the
+feed alone. `marketplace_listings.id` has `attidentity = ''`, so an explicit-id
+INSERT is accepted — **id recycling is prevented by convention, not by the database.**
+It has never happened (ids 8..209, 202 rows, zero gaps), so the hazard is latent. And
+re-import idempotency is real but keyed on `(seller_user_id, provider,
+supplier_connection_id, provider_product_id)`: because `supplier_connection_id` is in
+the key and production has exactly one connection, **reconnecting the supplier would
+permit a second listing for the same supplier product**, and therefore a second
+Merchant offer for one product. That is the likeliest practical way the identity
+contract gets violated. Recommended spelling and two design-only schema hardenings
+are in §4 of that document.
 
 ### 3c. Image host disagreement — **REJECTED, with evidence**
 
@@ -123,6 +167,15 @@ Product identity. See §3b: `g:id` = `163`, `sku` = `pulsesoc-listing-163`. Harm
 today, permanent once ingested. You own schema; I own the feed; the window closes at
 owner action 5.
 
+My recommendation, for you to accept or reject: **adopt your spelling, not mine** —
+`g:id` becomes `pulsesoc-listing-{id}` and the two id spaces collapse into one. The
+numeric form exposes a bare database primary key as a permanent external identifier,
+which is the thing we would regret; your prefixed form is already the one on the page.
+I have not changed it, per the brief. Reasoning in `B_MERCHANT_IDENTITY_CONTRACT.md`
+§4, which also proposes `pulsesoc-variant-{provider_variant_id}` for the eventual
+variant offers — `provider_variant_id` is total and unique across all 3,797 variant
+rows, which `variant_key` is not.
+
 ## 6. What no agent should rebuild
 
 The Merchant feed. It is live, mature, test-covered, and price-guarded by
@@ -140,6 +193,13 @@ no data fix reaches them. The answer is per-variant items sharing an
 authority the PDP and checkout already use. That also happens to be what Google
 requires for apparel variants (§3a), so it and the apparel question are one piece of
 work, not two.
+
+One blocker found this mission that should stop anyone from scoping that work as
+small: **there is no per-variant image column anywhere in production.** Variant offers
+need variant media, and four of the nine prerequisites for emitting them are
+unmet (table in `B_MERCHANT_IDENTITY_CONTRACT.md` §5, one more unverified). Until
+those are closed the current fail-closed exclusion of the five ranged-price items is
+the correct behaviour, not a bug to route around.
 
 ## 8. Sources
 

@@ -539,6 +539,7 @@
     "tests/test_media_upload_sessions.py",
     "tests/test_media_worker_availability_reconcile.py",
     "tests/test_media_worker_playback_backlog.py",
+    "tests/test_merchant_apparel_and_identity_contract.py",
     "tests/test_merchant_center_feed.py",
     "tests/test_message_notification_reconciliation.py",
     "tests/test_message_notification_single_delivery.py",
