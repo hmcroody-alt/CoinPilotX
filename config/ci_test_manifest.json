@@ -569,6 +569,7 @@
     "tests/test_privacy_center_controls.py",
     "tests/test_privacy_p1_exposure.py",
     "tests/test_profile_audience_matrix.py",
+    "tests/test_profile_block_check_fails_closed.py",
     "tests/test_profile_image_upload_validation.py",
     "tests/test_pulse_ads_analytics.py",
     "tests/test_pulse_ads_os.py",

@@ -18,6 +18,8 @@ friendship. Anything richer belongs to the subsystem that owns it.
 
 from __future__ import annotations
 
+import logging
+
 from services import message_privacy
 
 # Deny-by-default. Every consumer starts here and opens flags explicitly, so a
@@ -219,14 +221,34 @@ def _fetch_account(cur, target_user_id):
 
 
 def _blocked_either_way(cur, target_user_id, viewer_user_id):
+    """Is either party blocking the other? Fails CLOSED.
+
+    This is the one existence check here whose permissive direction is False.
+    ``_follows`` and ``_friends`` returning False on a database error withholds
+    access; this returning False *grants* it -- the caller falls straight
+    through to ``can_view_public_profile`` and every public content flag.
+
+    That is exactly the shape of the defect this module's sibling gate exists
+    to prevent: a block lookup that cannot run reads as "not blocked", the
+    profile opens, and nothing anywhere records that the check did not happen.
+    A database error is not evidence of consent, so an unreadable block table
+    closes the profile instead of opening it.
+    """
     if not viewer_user_id:
         return False
-    return _exists(
-        cur,
-        "SELECT 1 FROM blocked_users WHERE (blocker_user_id=? AND blocked_user_id=?) "
-        "OR (blocker_user_id=? AND blocked_user_id=?) LIMIT 1",
-        (target_user_id, viewer_user_id, viewer_user_id, target_user_id),
-    )
+    try:
+        cur.execute(
+            "SELECT 1 FROM blocked_users WHERE (blocker_user_id=? AND blocked_user_id=?) "
+            "OR (blocker_user_id=? AND blocked_user_id=?) LIMIT 1",
+            (target_user_id, viewer_user_id, viewer_user_id, target_user_id),
+        )
+        return bool(cur.fetchone())
+    except Exception:
+        logging.exception(
+            "PROFILE_BLOCK_CHECK_FAILED viewer=%s target=%s -- failing closed",
+            viewer_user_id, target_user_id,
+        )
+        return True
 
 
 def _follows(cur, viewer_user_id, target_user_id):
@@ -263,11 +285,17 @@ def _friends(cur, viewer_user_id, target_user_id):
 
 
 def _exists(cur, sql, params):
-    """Run an existence check, treating a missing table as "no".
+    """Run a RELATIONSHIP existence check, treating a missing table as "no".
 
     Optional subsystems create their tables lazily here, so a relationship table
     that has not been provisioned yet must read as absent-relationship rather
     than take down the profile payload.
+
+    Only safe where False is the restrictive answer -- i.e. ``_follows`` and
+    ``_friends``, where "no relationship" withholds access. Do NOT use it for a
+    block, ban, restriction or entitlement check: there False is the permissive
+    answer, and a database error would quietly grant what it cannot verify.
+    ``_blocked_either_way`` has its own handler for that reason.
     """
     try:
         cur.execute(sql, params)
