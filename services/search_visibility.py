@@ -147,6 +147,22 @@ _RULES = (
     # it in one Jinja file where neither can see it.
     ("/verify-email", NOINDEX_NOFOLLOW, "one-time verification URL"),
     ("/oauth", NOINDEX_NOFOLLOW, "OAuth callback"),
+    # The two account-recovery forms, siblings of `/reset-password` above and
+    # declared for the same reason. Both answer an anonymous `200` with a real
+    # form, so unlike the redirect cases further down they are URLs Googlebot
+    # can and does fetch -- and before this entry the table called them
+    # `index,follow` *and sitemap-eligible*, because no rule named them and the
+    # fallthrough is "public content". Their own templates say
+    # `noindex, nofollow`, which is the only reason they are not in the index.
+    #
+    # `nofollow` rather than the `follow` that `/login` and `/signup` carry:
+    # that pair is reachable from the public site and carries the footer back
+    # into it, so blocking them would cost a real crawl path. These two are
+    # reached only from the login form itself -- nothing public links to
+    # either -- so there is no crawl path to preserve and no reason to keep
+    # fetching a dead-end form.
+    ("/forgot-password", NOINDEX_NOFOLLOW, "account recovery form"),
+    ("/forgot-username", NOINDEX_NOFOLLOW, "account recovery form"),
 
     # --- App hand-off -----------------------------------------------------
     # The /open/ interstitial exists to bounce a visitor into the native app.
@@ -227,6 +243,36 @@ _RULES = (
     # the `/dashboard` rule above.)
     ("/command-center", NOINDEX_NOFOLLOW, "authenticated surface behind a redirect"),
     ("/intelligence", NOINDEX_NOFOLLOW, "authenticated surface behind a redirect"),
+
+    # Three more of the same, found by re-probing production anonymously after
+    # the `/arena` entry above shipped. `/alerts`, `/simulator` and
+    # `/scam-shield` all answer `302 -> /login`, and all three fell through to
+    # "public content" -- declared `index,follow` *and sitemap-eligible*. None
+    # of them is in a sitemap today, but that is luck rather than policy: the
+    # generators gate on `sitemap_eligible`, so anything that reads this table
+    # was free to publish a login redirect. That is precisely how six arena
+    # URLs got into `sitemap-live.xml`.
+    #
+    # `nofollow` for the first two. Nothing public links to `/simulator` at
+    # all, and `/alerts` is linked only from `templates/app.html`, the
+    # authenticated shell -- so there is no inbound crawl path to strand.
+    #
+    # `follow` for `/scam-shield`, and the distinction is load-bearing rather
+    # than stylistic. `nofollow` is what makes a prefix eligible for the
+    # robots.txt Disallow list, and `/scam-shield/scan` is linked from the home
+    # page (`templates/index.html`) and from an SEO page's `related` list. A
+    # Disallow would leave Google holding two real inbound links to a URL it
+    # has been given no instruction about -- the failure mode
+    # `robots_disallow_patterns` is written to avoid.
+    #
+    # Worth a product decision separately: `/scam-shield/scan` answers an
+    # anonymous `200`, the home page promotes it, and a live Google Ads
+    # campaign spends on it (`utm_campaign=crypto-scam-scanner`), yet its own
+    # template serves `noindex,nofollow`. This entry records what production
+    # does; it does not settle whether a public anti-scam tool should rank.
+    ("/alerts", NOINDEX_NOFOLLOW, "authenticated surface behind a redirect"),
+    ("/simulator", NOINDEX_NOFOLLOW, "authenticated surface behind a redirect"),
+    ("/scam-shield", NOINDEX_FOLLOW, "authenticated surface behind a redirect"),
 
     # `/pulse/marketplace` and `/pulse/marketplace/<id>` are deliberately absent,
     # for the same reason `/app` is: they branch on authentication and serve a
