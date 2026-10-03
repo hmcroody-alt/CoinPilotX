@@ -135,6 +135,25 @@ export function federatedSignIn(payload: {
 }
 
 /**
+ * Which federated providers this server can actually honour from a phone.
+ *
+ * Asked because the device cannot answer it. `AppleAuthentication.
+ * isAvailableAsync()` reports whether *this iPhone* can present the Apple
+ * sheet -- true on every one since iOS 13 -- and says nothing about whether
+ * the server holds the Apple credentials needed to verify what comes back.
+ * Only the server knows that, and only the server knows it *now*: this screen
+ * shipped inside a binary, while the configuration it depends on can be set or
+ * revoked long afterwards without an App Store release.
+ *
+ * Resolves to the providers the server will honour. The caller treats a
+ * failure as "offer nothing", so a server that cannot answer costs the
+ * provider buttons and leaves email/password untouched.
+ */
+export function getFederatedProviders() {
+  return pulseApi<{ ok?: boolean; available?: string[] }>("/api/mobile/auth/providers");
+}
+
+/**
  * Finish a federated signup with the answers only the member can give.
  *
  * The ticket carries the verified identity; age and agreement travel in this

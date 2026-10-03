@@ -358,6 +358,51 @@ class TheRouteRefusesAReplayedCredential(unittest.TestCase):
         self.assertNotIn(token, body)
         self.assertNotIn(federated_replay.digest(token), body)
 
+    def test_a_credential_that_failed_verification_is_not_spent(self):
+        """A rejected token must stay unspent, or the ledger becomes a DoS.
+
+        The ordering in the route makes this true -- `consume` runs after
+        signature, issuer, audience and expiry have all passed -- but ordering
+        is exactly the kind of property a later refactor reorders without
+        noticing, and the failure mode is silent and bad: if a failed
+        verification spent the credential, anyone who could make the server
+        *attempt* a verification could burn a member's token and the member's
+        own retry would come back as a replay.
+
+        Asserted by replaying the same bytes rather than by reading the table,
+        so it holds whatever the ledger's internals look like: the second
+        presentation must be judged on its merits, not refused as already seen.
+        """
+
+        token = "token-the-verifier-rejects"
+
+        real = google_identity.verify_assertion
+        try:
+            def refuse(credential, *, nonce=""):
+                raise google_identity.GoogleIdentityError("google_bad_signature")
+
+            google_identity.verify_assertion = refuse
+            refused = self.client.post("/api/mobile/auth/federated", json={
+                "provider": "google", "id_token": token, "nonce": "client-invented",
+            })
+        finally:
+            google_identity.verify_assertion = real
+
+        self.assertEqual(refused.status_code, 401, refused.get_data(as_text=True))
+        # No row, so nothing to purge and nothing to collide with.
+        self.assertNotIn(federated_replay.digest(token), [row[0] for row in _rows()])
+
+        # The same bytes, now verifying. This is the member retrying after a
+        # transient verification failure, and it has to work.
+        retried = self._post(token)
+        self.assertEqual(retried.status_code, 403, retried.get_data(as_text=True))
+        self.assertEqual((retried.get_json() or {}).get("error_code"),
+                         "federated_signup_required")
+
+        # And it is spent now, which proves the retry went down the real path
+        # rather than some branch that skips the ledger.
+        self.assertEqual(self._post(token).status_code, 401)
+
 
 class ALedgerThatCannotAnswerAdmitsNobody(unittest.TestCase):
     """The `except` around `consume` catches `ReplayError` and nothing else.
