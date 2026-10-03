@@ -80,6 +80,23 @@ PUBLIC_CONTENT_FLAGS = (
 )
 
 
+# Why a viewer did or did not get access, for callers that have to say
+# something. The flag dict above is deliberately lossy — a block, a moderation
+# restriction and a private profile all close every content flag — and a page
+# that cannot tell them apart cannot write true copy for any of them.
+ACCESS_OK = "ok"
+ACCESS_UNKNOWN = "unknown"
+ACCESS_UNAVAILABLE = "unavailable"
+ACCESS_RESTRICTED = "restricted"
+ACCESS_BLOCKED = "blocked"
+ACCESS_PRIVATE = "private"
+
+#: States in which no content flag is open, so no caller may render a profile.
+CLOSED_STATES = frozenset(
+    {ACCESS_UNKNOWN, ACCESS_UNAVAILABLE, ACCESS_RESTRICTED, ACCESS_BLOCKED, ACCESS_PRIVATE}
+)
+
+
 def viewer_permissions(cur, target_user_id, viewer_user_id, account=None):
     """Resolve what ``viewer_user_id`` may see about ``target_user_id``.
 
@@ -90,22 +107,38 @@ def viewer_permissions(cur, target_user_id, viewer_user_id, account=None):
     payload. Never raises for a missing account — an unknown profile is simply
     one nobody may see.
     """
+    return profile_access(cur, target_user_id, viewer_user_id, account=account)[1]
+
+
+def profile_access(cur, target_user_id, viewer_user_id, account=None):
+    """``(state, permissions)`` — why the answer is what it is, plus the flags.
+
+    ``permissions`` is exactly what :func:`viewer_permissions` returns, because
+    that function is now a projection of this one. Keeping a single precedence
+    chain is the point: a surface that re-derived "is this viewer blocked"
+    beside the flag dict would be free to disagree with it, and the disagreement
+    would be invisible until it was a leak.
+
+    ``state`` is for copy and status codes only. Mapping it is the caller's job,
+    and ``account_status`` must reach a viewer as an availability *outcome*
+    rather than a reason string (privacy architecture §F1).
+    """
     target_user_id = _int(target_user_id)
     viewer_user_id = _int(viewer_user_id)
     if not target_user_id:
-        return dict(DENY_ALL)
+        return ACCESS_UNKNOWN, dict(DENY_ALL)
 
     if target_user_id == viewer_user_id:
-        return dict(OWNER_PERMISSIONS)
+        return ACCESS_OK, dict(OWNER_PERMISSIONS)
 
     if account is None:
         account = _fetch_account(cur, target_user_id)
     if not account:
-        return dict(DENY_ALL)
+        return ACCESS_UNKNOWN, dict(DENY_ALL)
 
     status = str(account.get("account_status") or account.get("status") or "active").strip().lower()
     if status in UNAVAILABLE_STATUSES:
-        return dict(DENY_ALL)
+        return ACCESS_UNAVAILABLE, dict(DENY_ALL)
 
     # A block in *either* direction closes the profile. Checking only "did the
     # owner block me" would let a viewer keep reading someone they themselves
@@ -113,10 +146,10 @@ def viewer_permissions(cur, target_user_id, viewer_user_id, account=None):
     if _blocked_either_way(cur, target_user_id, viewer_user_id):
         # Still blockable/reportable: the viewer needs a route to manage or
         # escalate the relationship even when the content is closed.
-        return dict(DENY_ALL, can_report=True, can_block=True)
+        return ACCESS_BLOCKED, dict(DENY_ALL, can_report=True, can_block=True)
 
     if status in RESTRICTED_STATUSES:
-        return dict(DENY_ALL, can_report=True, can_block=True)
+        return ACCESS_RESTRICTED, dict(DENY_ALL, can_report=True, can_block=True)
 
     permissions = dict(DENY_ALL, can_report=True, can_block=True)
 
@@ -135,7 +168,7 @@ def viewer_permissions(cur, target_user_id, viewer_user_id, account=None):
             for flag in PUBLIC_CONTENT_FLAGS:
                 permissions[flag] = True
         permissions["can_message"] = bool(friends)
-        return permissions
+        return (ACCESS_OK if friends else ACCESS_PRIVATE), permissions
 
     permissions["can_view_public_profile"] = True
     permissions["can_view_follower_content"] = bool(follows or friends)
@@ -144,7 +177,7 @@ def viewer_permissions(cur, target_user_id, viewer_user_id, account=None):
         permissions[flag] = True
 
     permissions["can_message"] = _can_message(account, follows, friends)
-    return permissions
+    return ACCESS_OK, permissions
 
 
 def _can_message(account, follows, friends):

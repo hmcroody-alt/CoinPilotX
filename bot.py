@@ -403,6 +403,7 @@ from services import (
     pulse_id_service,
     pro_access as pro_access_service,
     pulse_commerce_card,
+    profile_viewer_permissions,
     pulse_feed_engine,
     pulse_feed_ranking_engine,
     pulse_reactions,
@@ -50535,6 +50536,94 @@ def pulse_profile_not_found_page(profile_key=""):
     return pulse_social_shell("PulseSoc User Not Found", "This PulseSoc identity could not be found.", main, ""), 404
 
 
+def pulse_profile_closed_page(state, ident=None, permissions=None):
+    """The page for a profile the viewer is not allowed to read.
+
+    Three of the four closed states deliberately render the same thing. A
+    viewer who has been blocked and a viewer looking at a suspended account
+    both learn only that the profile is unavailable: `account_status` reaches
+    another user as an availability outcome, never as the reason (privacy
+    architecture §F1), and "you have been blocked" is itself a disclosure the
+    owner did not ask us to make.
+
+    A private profile is the exception. Its *effect* is public even though the
+    setting's value is not, so saying so is both true and useful, and the owner
+    chose it. Name and avatar still render there so the viewer knows whose door
+    they are at -- that is the shell
+    `services/profile_viewer_permissions` describes, and nothing below it opens.
+    """
+    permissions = permissions or {}
+    identity_html = ""
+    if state == profile_viewer_permissions.ACCESS_PRIVATE and ident:
+        avatar = (
+            f"<img src='{html_escape(clean_html(ident.get('avatar_url')))}' alt=''>"
+            if ident.get("avatar_url")
+            else html_escape(clean_html(str(ident.get("name") or "?")[:1]))
+        )
+        identity_html = (
+            "<div class='pulse-profile-closed-identity'>"
+            f"<span class='pulse-profile-closed-avatar' aria-hidden='true'>{avatar}</span>"
+            f"<strong>{html_escape(clean_html(ident.get('name') or 'PulseSoc member'))}</strong>"
+            "</div>"
+        )
+        heading = "This profile is private"
+        body = "Only people this member has accepted can see their posts, media, and activity."
+        title = "Private PulseSoc profile"
+        status = 403
+    elif state == profile_viewer_permissions.ACCESS_UNAVAILABLE:
+        heading = "This account is no longer available"
+        body = "The PulseSoc account you are looking for has been closed."
+        title = "PulseSoc account unavailable"
+        status = 410
+    else:
+        heading = "This profile is not available"
+        body = "You cannot view this PulseSoc profile right now."
+        title = "PulseSoc profile unavailable"
+        status = 403
+
+    safety_html = ""
+    if permissions.get("can_report"):
+        # The relationship still needs somewhere to go. A closed profile that
+        # also removes Report leaves a viewer who needs to escalate with no
+        # route at all, which is why this flag survives every deny branch.
+        safety_html = "<div class='actions'><a class='button' href='/pulse/safety'>Report a problem</a></div>"
+
+    main = f"""
+    <style>
+    .pulse-profile-closed{{display:grid;gap:14px;justify-items:start}}
+    .pulse-profile-closed-identity{{display:flex;align-items:center;gap:10px}}
+    .pulse-profile-closed-avatar{{width:48px;height:48px;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:rgba(110,223,246,.14);font-weight:700}}
+    .pulse-profile-closed-avatar img{{width:100%;height:100%;object-fit:cover}}
+    </style>
+    <section class='card pulse-profile-closed'>
+      {identity_html}
+      <h2>{heading}</h2>
+      <p class='muted'>{body}</p>
+      <div class='actions'><a class='button primary' href='/pulse'>Back to PulseSoc</a></div>
+      {safety_html}
+    </section>
+    """
+    return pulse_social_shell(title, body, main, "", "", show_intro=False), status
+
+
+def pulse_profile_closed_api_error(state):
+    """The JSON twin of :func:`pulse_profile_closed_page`.
+
+    The native endpoints each carried their own copy of this decision, and both
+    copies had drifted: neither denied on a block, and both refused an accepted
+    friend reading a private profile that the resolver allows. Mapping the one
+    resolver state here keeps the web page and the API saying the same thing.
+    """
+    if state == profile_viewer_permissions.ACCESS_UNAVAILABLE:
+        return api_error("This PulseSoc account is no longer available.", 410)
+    if state == profile_viewer_permissions.ACCESS_PRIVATE:
+        return api_error("This PulseSoc profile is private.", 403)
+    if state == profile_viewer_permissions.ACCESS_UNKNOWN:
+        return api_error("Profile not found.", 404)
+    # Restricted and blocked share one answer on purpose: see the page above.
+    return api_error("This PulseSoc profile is not available.", 403)
+
+
 def pulse_friend_graph(cur, user_id, limit=30):
     user_id = int(user_id or 0)
     graph = {"incoming": [], "friends": [], "following": [], "followers": [], "suggested": []}
@@ -92846,13 +92935,38 @@ def pulse_profile_page_for_user(target_user_id):
     if not target_user_id:
         return pulse_profile_not_found_page("")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    cur.execute("SELECT user_id FROM users WHERE user_id=? LIMIT 1", (target_user_id,))
-    if not cur.fetchone():
+    # The existence check this replaced was the page's only gate, so every
+    # logged-in account could read a private profile, or one that had blocked
+    # them, while `/api/pulse/profile/<key>` refused the identical request. The
+    # row is read once and handed to the resolver, which owns the precedence
+    # between status, block and visibility -- re-deriving any of it here is how
+    # the two surfaces came to disagree in the first place.
+    cur.execute("SELECT * FROM users WHERE user_id=? LIMIT 1", (target_user_id,))
+    account = dict(cur.fetchone() or {})
+    if not account:
         conn.close()
         return pulse_profile_not_found_page(str(target_user_id))
+    access_state, permissions = profile_viewer_permissions.profile_access(
+        cur, target_user_id, viewer["user_id"], account=account
+    )
+    if access_state in profile_viewer_permissions.CLOSED_STATES:
+        if access_state == profile_viewer_permissions.ACCESS_UNKNOWN:
+            conn.close()
+            return pulse_profile_not_found_page(str(target_user_id))
+        # Only the private shell names anyone, so only it needs an identity.
+        closed_ident = (
+            pulse_identity_for_user(cur, target_user_id)
+            if access_state == profile_viewer_permissions.ACCESS_PRIVATE
+            else None
+        )
+        conn.close()
+        return pulse_profile_closed_page(access_state, closed_ident, permissions)
     ident = pulse_identity_for_user(cur, target_user_id)
-    cur.execute("SELECT COUNT(*) AS total FROM pulse_posts WHERE user_id=? AND deleted_at IS NULL", (target_user_id,))
-    post_count = int(dict(cur.fetchone() or {}).get("total") or 0)
+    # Counting every non-deleted row told a visitor how many posts the Posts tab
+    # was withholding from them. `count_user_posts` counts exactly what
+    # `list_user_posts` would return for *this* viewer, which is the contract the
+    # native profile already uses.
+    post_count = pulse_feed_engine.count_user_posts(target_user_id, viewer_user_id=viewer["user_id"])
     cur.execute("SELECT COUNT(*) AS total FROM pulse_follows WHERE followed_user_id=?", (target_user_id,))
     follower_count = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute("SELECT COUNT(*) AS total FROM pulse_follows WHERE follower_user_id=?", (target_user_id,))
@@ -115055,7 +115169,6 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
     account = dict(cur.fetchone() or {})
     if not account:
         return None
-    from services import profile_viewer_permissions
     ident = pulse_identity_for_user(cur, target_user_id)
     post_count = pulse_feed_engine.count_user_posts(target_user_id, viewer_user_id=viewer_user_id)
     media_count = pulse_feed_engine.count_user_posts(target_user_id, viewer_user_id=viewer_user_id, media_only=True)
@@ -115190,17 +115303,13 @@ def api_pulse_public_profile_posts(profile_key):
     if target_user_id is None:
         conn.close()
         return api_error("Profile not found.", 404)
-    cur.execute("SELECT user_id, COALESCE(account_status, 'active') AS account_status, COALESCE(profile_visibility, 'public') AS profile_visibility FROM users WHERE user_id=? LIMIT 1", (target_user_id,))
-    account_state = dict(cur.fetchone() or {})
-    conn.close()
-    normalized_status = str(account_state.get("account_status") or "active").lower()
-    if normalized_status in {"deleted", "deactivated", "disabled", "closed"}:
-        return api_error("This PulseSoc account is no longer available.", 410)
-    if normalized_status in {"suspended", "restricted", "banned"}:
-        return api_error("This PulseSoc profile is restricted.", 403)
     viewer_user_id = int(user["user_id"])
-    if str(account_state.get("profile_visibility") or "public").lower() == "private" and int(target_user_id) != viewer_user_id:
-        return api_error("This PulseSoc profile is private.", 403)
+    access_state, _permissions = profile_viewer_permissions.profile_access(
+        cur, target_user_id, viewer_user_id
+    )
+    conn.close()
+    if access_state in profile_viewer_permissions.CLOSED_STATES:
+        return pulse_profile_closed_api_error(access_state)
     result = pulse_feed_engine.list_user_posts(
         int(target_user_id),
         viewer_user_id=viewer_user_id,
@@ -115233,18 +115342,12 @@ def api_pulse_public_profile(profile_key):
     if target_user_id is None:
         conn.close()
         return api_error("Profile not found.", 404)
-    cur.execute("SELECT user_id, COALESCE(account_status, 'active') AS account_status, COALESCE(profile_visibility, 'public') AS profile_visibility FROM users WHERE user_id=? LIMIT 1", (target_user_id,))
-    account_state = dict(cur.fetchone() or {})
-    normalized_status = str(account_state.get("account_status") or "active").lower()
-    if normalized_status in {"deleted", "deactivated", "disabled", "closed"}:
+    access_state, _permissions = profile_viewer_permissions.profile_access(
+        cur, target_user_id, int(user["user_id"])
+    )
+    if access_state in profile_viewer_permissions.CLOSED_STATES:
         conn.close()
-        return api_error("This PulseSoc account is no longer available.", 410)
-    if normalized_status in {"suspended", "restricted", "banned"}:
-        conn.close()
-        return api_error("This PulseSoc profile is restricted.", 403)
-    if str(account_state.get("profile_visibility") or "public").lower() == "private" and int(target_user_id) != int(user["user_id"]):
-        conn.close()
-        return api_error("This PulseSoc profile is private.", 403)
+        return pulse_profile_closed_api_error(access_state)
     payload = pulse_native_profile_payload(cur, target_user_id, user["user_id"])
     conn.close()
     if not payload:

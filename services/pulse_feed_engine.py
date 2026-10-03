@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import db, embed_service, media_service, music_authority, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulse_mutation_audit, pulse_reactions, pulsesoc_notification_system, user_context
+from . import db, embed_service, media_service, music_authority, premium_identity_engine, profile_viewer_permissions, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulse_mutation_audit, pulse_reactions, pulsesoc_notification_system, user_context
 from .discovery_visibility import REQUIRED_USER_COLUMNS, discovery_visible_sql
 from .pulse_ai.content_policy import AUTOMATED_ACCOUNT_TYPE, sanitize_automated_text
 from .schema_guard import run_once_per_process
@@ -1622,6 +1622,26 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         profile_lookup = str(profile_public_player_id or "").strip().lstrip("@")[:160]
         profile_user_id = _resolve_profile_lookup_user_id(cur, profile_lookup)
         if profile_user_id:
+            # A profile-scoped feed is a read of one person, so it answers to the
+            # same authority their profile page does. The per-post predicates
+            # above enforce post visibility and blocks, but they know nothing
+            # about `users.profile_visibility`, so a private account's
+            # public-visibility posts used to render to any stranger who asked
+            # for `?profile=<handle>`. One resolver call, one author.
+            access_state, _permissions = profile_viewer_permissions.profile_access(
+                cur, profile_user_id, viewer_user_id
+            )
+            if access_state in profile_viewer_permissions.CLOSED_STATES:
+                conn.close()
+                return {
+                    "ok": True,
+                    "feed": feed,
+                    "topic": topic,
+                    "posts": [],
+                    "next_offset": offset,
+                    "has_more": False,
+                    "intelligence": safe_intelligence_panel(topic),
+                }
             where.append("p.user_id=?")
             params.append(int(profile_user_id))
         else:
