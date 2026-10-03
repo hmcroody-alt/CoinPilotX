@@ -1,0 +1,128 @@
+{
+  "_doc": [
+    "Database Contract Sentinel configuration.",
+    "",
+    "Three sections, three different meanings. They are deliberately NOT one list,",
+    "because 'static analysis cannot prove this' and 'this is broken and we know it'",
+    "are different claims with different lifetimes.",
+    "",
+    "  tables         -- permanent exceptions. The reference is CORRECT but cannot be",
+    "                    proven correct by static analysis. Every entry must say what",
+    "                    it is, who owns it, and why it is unprovable. An anonymous",
+    "                    permanent exception is how a gate stops meaning anything.",
+    "",
+    "  known_defects  -- the reference is WRONG and the fix is a separate commit.",
+    "                    This exists so the sentinel can land green on a repo that",
+    "                    already has defects, without pretending they are acceptable.",
+    "                    Entries carry the evidence that they are real. This list is",
+    "                    expected to shrink to empty and never grow.",
+    "",
+    "  retired_objects-- objects that were REMOVED and must never come back. Any",
+    "                    runtime reference to one is a hard failure regardless of",
+    "                    whether something later re-declares it."
+  ],
+
+  "tables": [],
+
+  "known_defects": [
+    {
+      "table": "product_health_events",
+      "sites": ["bot.py:111135", "bot.py:111200", "bot.py:111207"],
+      "enclosing": "department_control_panels",
+      "classification": "observability-only",
+      "evidence": "Absent from production (checked read-only against information_schema.tables). No CREATE TABLE in any recognised schema authority. Reads are swallowed by the local scalar()/rows() helpers, which return 0 / [] with no logging.",
+      "impact": "Admin department tile renders 0 instead of 'unavailable'. Not a security or money decision.",
+      "owner": "platform-admin",
+      "fix_commit": "pending"
+    },
+    {
+      "table": "conversion_events",
+      "sites": ["bot.py:111052", "bot.py:111159"],
+      "enclosing": "department_counts, department_control_panels",
+      "classification": "observability-only",
+      "evidence": "Absent from production. A live source exists: services/dashboard_ads_command_center.py:673 derives conversions from pulse_ad_events, which does exist.",
+      "impact": "Conversion tile silently reads 0. department_counts does log and sets degraded=True; department_control_panels does not.",
+      "owner": "platform-admin",
+      "fix_commit": "pending"
+    },
+    {
+      "table": "product_events",
+      "sites": ["bot.py:111160", "bot.py:111199"],
+      "enclosing": "department_control_panels",
+      "classification": "observability-only",
+      "evidence": "Absent from production. No schema authority.",
+      "impact": "Admin tile renders 0 instead of 'unavailable'.",
+      "owner": "platform-admin",
+      "fix_commit": "pending"
+    },
+    {
+      "table": "media_reports",
+      "sites": ["bot.py:111118"],
+      "enclosing": "department_control_panels",
+      "classification": "observability-only",
+      "evidence": "Absent from production. No schema authority.",
+      "impact": "Moderation tile renders 0. Reads as 'no outstanding media reports', which is the permissive direction, but this tile drives no automated decision.",
+      "owner": "platform-admin",
+      "fix_commit": "pending"
+    },
+    {
+      "table": "message_requests",
+      "sites": ["bot.py:111126"],
+      "enclosing": "department_control_panels",
+      "classification": "observability-only",
+      "evidence": "Absent from production. Flagged CRITICAL by the domain heuristic because the name contains 'message'; manual review shows it backs an admin 'Fan messages' counter tile, not a messaging access decision.",
+      "impact": "Admin tile renders 0. The domain heuristic is intentionally broad on the table-name side; this is a heuristic over-match, not a privacy defect.",
+      "owner": "platform-admin",
+      "fix_commit": "pending"
+    },
+    {
+      "table": "arena_games",
+      "sites": ["bot.py:111134"],
+      "enclosing": "department_control_panels",
+      "classification": "observability-only",
+      "evidence": "Absent from production. No schema authority.",
+      "impact": "Admin tile renders 0 instead of 'unavailable'.",
+      "owner": "platform-admin",
+      "fix_commit": "pending"
+    }
+  ],
+
+  "retired_objects": {
+    "_doc": [
+      "The message-privacy defect is CLOSED. These names were the defect.",
+      "",
+      "private_chat_blocks never existed: no CREATE TABLE, no migration, no writer,",
+      "no production row. A SELECT against it inside a bare except made a block",
+      "check a permanent no-op that still read correctly in source review.",
+      "",
+      "users.message_privacy and users.dm_privacy are columns that were never added",
+      "to the users table. Enforcement lives in blocked_users plus the comm_v2",
+      "block stores.",
+      "",
+      "IMPORTANT -- this is matched structurally, against resolved table references",
+      "from an AST walk, NOT against file text. bot.py contains the string",
+      "'private_chat_blocks' today inside an explanatory comment about the fix. A",
+      "text-matching guard would report a closed defect as open."
+    ],
+    "tables": [
+      {
+        "name": "private_chat_blocks",
+        "retired_in": "the message-privacy fix",
+        "replacement": "blocked_users, plus comm_v2 block enforcement",
+        "why_fatal": "It never existed. Any runtime read of it is a security check that cannot fire."
+      }
+    ],
+    "columns": [
+      {
+        "name": "users.message_privacy",
+        "replacement": "the message-privacy settings store read by services/message_privacy.py",
+        "why_fatal": "The column does not exist on users; a read returns nothing and the caller defaults permissive."
+      },
+      {
+        "name": "users.dm_privacy",
+        "replacement": "the message-privacy settings store read by services/message_privacy.py",
+        "why_fatal": "The column does not exist on users; a read returns nothing and the caller defaults permissive."
+      }
+    ]
+  }
+}
