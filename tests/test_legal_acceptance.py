@@ -219,4 +219,13 @@ def test_the_stored_source_says_which_surface_asked():
     user_id = _new_member(source="mobile_register")
     sources = {entry["acceptance_source"] for entry in legal_acceptance.accepted(user_id)}
     assert sources == {"mobile_register"}
-    assert set(legal_acceptance.SOURCES) == {"web_signup", "web_login", "mobile_register"}
+    assert set(legal_acceptance.SOURCES) == {
+        "web_signup",
+        "web_login",
+        "mobile_register",
+        "mobile_login",
+    }, (
+        "A surface was added to or removed from SOURCES. That is reviewable, not "
+        "forbidden -- but the column only answers 'what was this member shown' "
+        "while every value in it names a real screen somebody can go and read."
+    )

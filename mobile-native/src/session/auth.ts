@@ -1,6 +1,17 @@
 import { cancelMessageReconciliation } from "../core/messageNotificationReconciliation";
 import { createContext, useContext } from "react";
-import { getSession, login, logout, logoutAll, PulseUser, RegisterResponse, SessionResponse, signup } from "../api/auth";
+import {
+  acceptLegalDocuments,
+  getSession,
+  LegalAcceptanceChallenge,
+  login,
+  logout,
+  logoutAll,
+  PulseUser,
+  RegisterResponse,
+  SessionResponse,
+  signup
+} from "../api/auth";
 import { unregisterPushDevice } from "../api/push";
 import { revokeVoipPushRegistration } from "../calls/callKitBridge";
 import { PulseApiError, recoverNativeSession } from "../api/pulseApi";
@@ -32,6 +43,10 @@ import { loadCanonicalTier, resetCanonicalTier } from "../entitlements/useCanoni
  * - AUTHENTICATED     valid server session + user
  * - UNAUTHENTICATED   definitively signed out, no credentials to recover from
  * - SESSION_EXPIRED   had stored credentials but the server rejected/expired them
+ * - LEGAL_ACCEPTANCE_REQUIRED
+ *                     credentials are good and the account is in good standing,
+ *                     but the server has not recorded this account's acceptance
+ *                     of the document versions now in force
  * - RECOVERABLE_ERROR transient failure during bootstrap (offline / 5xx); retryable
  * - FATAL_ERROR       unexpected, non-recoverable bootstrap failure
  */
@@ -40,6 +55,7 @@ export type SessionPhase =
   | "AUTHENTICATED"
   | "UNAUTHENTICATED"
   | "SESSION_EXPIRED"
+  | "LEGAL_ACCEPTANCE_REQUIRED"
   | "RECOVERABLE_ERROR"
   | "FATAL_ERROR";
 
@@ -54,6 +70,8 @@ export type AuthState = {
   phase: SessionPhase;
   status: AuthStatus;
   user: PulseUser | null;
+  /** Set only on LEGAL_ACCEPTANCE_REQUIRED; what the acceptance step must show. */
+  legalAcceptance?: LegalAcceptanceChallenge | null;
 };
 
 function statusForPhase(phase: SessionPhase): AuthStatus {
@@ -76,18 +94,40 @@ function statusForPhase(phase: SessionPhase): AuthStatus {
  * queue carried across an account switch would not merely expose stale data, it
  * would send the previous user's unsent words from the new user's account.
  */
-export function stateFor(phase: SessionPhase, user: PulseUser | null = null): AuthState {
+export function stateFor(
+  phase: SessionPhase,
+  user: PulseUser | null = null,
+  legalAcceptance: LegalAcceptanceChallenge | null = null
+): AuthState {
   const userId = Number((user as { user_id?: number; id?: number } | null)?.user_id ?? (user as { id?: number } | null)?.id ?? 0);
   const scopeId = phase === "AUTHENTICATED" && userId > 0 ? userId : null;
   setMediaCacheScope(scopeId);
   setOutboxScope(scopeId);
   cancelMessageReconciliation();
-  return { phase, status: statusForPhase(phase), user };
+  return { phase, status: statusForPhase(phase), user, legalAcceptance };
 }
 
 export const authenticatedState = (user: PulseUser): AuthState => stateFor("AUTHENTICATED", user);
 export const unauthenticatedState = (): AuthState => stateFor("UNAUTHENTICATED", null);
 export const expiredState = (): AuthState => stateFor("SESSION_EXPIRED", null);
+
+/**
+ * Credentials accepted, admission withheld until the account's acceptance of
+ * the current document versions is on file.
+ *
+ * `status` resolves to "signedOut" through `statusForPhase`'s default branch,
+ * and that is the design rather than a side effect: the shell renders
+ * `AuthNavigator` for every non-AUTHENTICATED phase, so the application is
+ * structurally unreachable here instead of merely unrouted. `scopeId` stays
+ * null for the same reason — a member held at this step gets no cache scope and
+ * no outbox, so nothing of theirs can be written before they are admitted.
+ *
+ * `user` is carried for display only. On the restored-session path the device
+ * still holds a valid bearer token, which is what the acceptance call
+ * authenticates with; on the login path it holds only the server's ticket.
+ */
+export const legalAcceptanceState = (challenge: LegalAcceptanceChallenge, user: PulseUser | null = null): AuthState =>
+  stateFor("LEGAL_ACCEPTANCE_REQUIRED", user, challenge);
 export const recoverableErrorState = (): AuthState => stateFor("RECOVERABLE_ERROR", null);
 export const fatalErrorState = (): AuthState => stateFor("FATAL_ERROR", null);
 
@@ -150,6 +190,31 @@ function signedOutPhase(hadCredentials: boolean): AuthState {
   return hadCredentials ? expiredState() : unauthenticatedState();
 }
 
+/**
+ * Turn a valid server session into the phase it actually earns.
+ *
+ * A session can be entirely valid and still not admitted: `/session` reports
+ * `legal_acceptance_required` when the documents in force have moved past what
+ * this account has on file, which is how a member who was signed in before a
+ * revision finds out. The server informs here rather than revoking, so this is
+ * the one place that decides what the app does about it — and it holds the
+ * member at the acceptance step rather than signing them out, because their
+ * credentials are fine and a sign-out would make them retype a password to
+ * answer a question that has nothing to do with their password.
+ *
+ * A session reporting the flag without any documents is treated as admitted.
+ * The flag alone is not actionable: there would be nothing to show and no way
+ * to proceed, so refusing on it would strand the member with no exit.
+ */
+async function admitLiveSession(session: SessionResponse, user: PulseUser): Promise<AuthState> {
+  await setCachedSessionUser(user);
+  const challenge = session.legal_acceptance;
+  if (session.legal_acceptance_required === true && challenge?.documents?.length) {
+    return legalAcceptanceState(challenge, user);
+  }
+  return authenticatedState(user);
+}
+
 export async function restoreSession(): Promise<AuthState> {
   const hadCredentials = await hasStoredCredentials();
   try {
@@ -157,8 +222,7 @@ export async function restoreSession(): Promise<AuthState> {
     const liveUser = sessionUser(session);
     if (liveUser) {
       if (shouldRejectTemporaryQaUser(liveUser)) return clearTemporaryQaSession();
-      await setCachedSessionUser(liveUser);
-      return authenticatedState(liveUser);
+      return admitLiveSession(session, liveUser);
     }
     const recovery = await recoverNativeSession();
     if (recovery === "refreshed") {
@@ -166,8 +230,7 @@ export async function restoreSession(): Promise<AuthState> {
       const restoredUser = sessionUser(restored);
       if (restoredUser) {
         if (shouldRejectTemporaryQaUser(restoredUser)) return clearTemporaryQaSession();
-        await setCachedSessionUser(restoredUser);
-        return authenticatedState(restoredUser);
+        return admitLiveSession(restored, restoredUser);
       }
       return signedOutPhase(hadCredentials);
     }
@@ -198,10 +261,37 @@ function isTransientBootstrapError(error: unknown): boolean {
   return error.code === "request_unreachable" || error.status === 503 || error.status >= 500;
 }
 
+/**
+ * The acceptance refusal, read off a rejected request.
+ *
+ * Lives here rather than in LoginScreen so it covers every way this app reaches
+ * `signIn` — the password form, the Face ID path, and the post-confirmation
+ * finalize — instead of the one call site somebody remembered. A gate that each
+ * caller has to opt into is a gate that a fourth caller silently skips.
+ *
+ * Returns null unless the server both named this rejection and described what is
+ * outstanding. A 403 we cannot render has to stay an error the user sees, not a
+ * blank acceptance screen with no documents and no way forward.
+ */
+function legalAcceptanceRefusal(error: unknown): LegalAcceptanceChallenge | null {
+  if (!(error instanceof PulseApiError)) return null;
+  if (error.code !== "legal_acceptance_required") return null;
+  const challenge = error.details?.legal_acceptance as LegalAcceptanceChallenge | undefined;
+  if (!challenge?.ticket || !Array.isArray(challenge.documents) || challenge.documents.length === 0) return null;
+  return challenge;
+}
+
 export async function signIn(identifier: string, password: string): Promise<AuthState> {
   // A cached tier from the previous account must not survive into this one.
   resetCanonicalTier();
-  const session = await login(identifier, password);
+  let session: SessionResponse;
+  try {
+    session = await login(identifier, password);
+  } catch (error) {
+    const challenge = legalAcceptanceRefusal(error);
+    if (challenge) return legalAcceptanceState(challenge);
+    throw error;
+  }
   const user = sessionUser(session);
   if (!user) return unauthenticatedState();
   if (shouldRejectTemporaryQaUser(user)) return clearTemporaryQaSession();
@@ -213,6 +303,33 @@ export async function signIn(identifier: string, password: string): Promise<Auth
   // shared answer at "unavailable" until some surface happens to mount and ask,
   // and a premium member's first seconds after signing in are spent looking at
   // a product that cannot confirm they paid for it.
+  void refreshEntitlementAfterSignIn();
+  return authenticatedState(user);
+}
+
+/**
+ * Record acceptance and finish admission in one server round trip.
+ *
+ * The server does both: it writes the ledger row and, on the login path, issues
+ * the session the gate withheld. That ordering is the point — there is no moment
+ * where this app is admitted and the record is not yet written, because the app
+ * learns it is admitted from the same response that wrote it.
+ *
+ * Throws on refusal, including the one refusal worth distinguishing: if the
+ * documents were revised while the member was reading them, the server rejects
+ * the stale ticket and sends a fresh challenge. The caller re-enters the step
+ * against the new versions rather than recording agreement to superseded text.
+ */
+export async function completeLegalAcceptance(challenge: LegalAcceptanceChallenge): Promise<AuthState> {
+  const session = await acceptLegalDocuments(challenge.ticket);
+  const user = sessionUser(session);
+  if (!user) return unauthenticatedState();
+  if (shouldRejectTemporaryQaUser(user)) return clearTemporaryQaSession();
+  // Present on the login path and absent on the restored-session path, where the
+  // device already holds a live envelope that this call did not replace.
+  await persistSessionEnvelope({ ...session, user });
+  await setCachedSessionUser(user);
+  await rememberAccount(user).catch(() => undefined);
   void refreshEntitlementAfterSignIn();
   return authenticatedState(user);
 }

@@ -183,6 +183,7 @@ COINPILOTX_MOBILE_ACCESS_KEY = _signing_keys.derive(COINPILOTX_SECRET_KEY, _sign
 COINPILOTX_MESSENGER_MEDIA_KEY = _signing_keys.derive(COINPILOTX_SECRET_KEY, _signing_keys.MESSENGER_MEDIA)
 COINPILOTX_PASSWORD_RESET_KEY = _signing_keys.derive(COINPILOTX_SECRET_KEY, _signing_keys.PASSWORD_RESET)
 COINPILOTX_CAPTCHA_KEY = _signing_keys.derive(COINPILOTX_SECRET_KEY, _signing_keys.CAPTCHA)
+COINPILOTX_LEGAL_ACCEPTANCE_KEY = _signing_keys.derive(COINPILOTX_SECRET_KEY, _signing_keys.LEGAL_ACCEPTANCE)
 
 COINPILOTX_SESSION_COOKIE_SECURE = _env_bool("SESSION_COOKIE_SECURE", _deployment_environment_enabled())
 PERSISTENT_SESSION_COOKIE = os.getenv("PULSESOC_REFRESH_COOKIE_NAME", "pulse_refresh_session")
@@ -6832,7 +6833,19 @@ AUTH_EVENT_CLASS = {
     # a spike here is the signal that a new Terms version is costing people
     # their way in, which is exactly what the friction level is for.
     "login_legal_acceptance_required": "friction",
+    # The native half of the same event, classified the same way and for the
+    # same reason. A member being asked about a rewritten document is the system
+    # working; counting it as security would make every Terms revision look like
+    # an attack on the whole install base.
+    "mobile_login_legal_acceptance_required": "friction",
+    "mobile_legal_acceptance_stale": "friction",
+    # This one *is* security. Reaching the acceptance endpoint with neither a
+    # valid ticket nor a valid bearer is not something a working client does.
+    "mobile_legal_acceptance_unauthorised": "security",
+    "mobile_legal_acceptance_restricted": "security",
     # Progress, not a problem.
+    "mobile_legal_acceptance_recorded": "neutral",
+    "mobile_legal_acceptance_noop": "neutral",
     "login_success": "neutral",
     "mobile_login_success": "neutral",
     "signup_started": "neutral",
@@ -8434,7 +8447,30 @@ def api_mobile_auth_session():
     user = api_account_user()
     if not user:
         return jsonify({"ok": True, "authenticated": False, "user": None})
-    return jsonify({"ok": True, "authenticated": True, "user": pulse_mobile_user_payload(load_account_by_id(user["user_id"]) or user)})
+    fresh_user = load_account_by_id(user["user_id"]) or user
+    # A member can already be holding a valid session when a document is
+    # rewritten, and checking only at the password would never reach them --
+    # a refresh token lives about ten years. So the answer travels here too.
+    #
+    # Here and on /refresh, and nowhere else. These are the two moments a native
+    # client asks "am I still signed in", which is once per cold start and once
+    # per fifteen-minute access token; putting the question on every request
+    # would make a legal query the cost of reading the feed. The ceiling on
+    # *detection* is therefore one access-token lifetime, which is also what
+    # lets a new required version reach every live client without an App Store
+    # build -- the version lives in `DOCUMENTS`, not in the app.
+    #
+    # It informs rather than severs: this is a report, not a 401. A build that
+    # predates the acceptance screen cannot present one, and answering a live
+    # session with "signed out" would log out every mobile-only member the
+    # moment a document is revised, which is a worse failure than a short delay
+    # for the clients that can act on it.
+    return jsonify({
+        "ok": True,
+        "authenticated": True,
+        "user": pulse_mobile_user_payload(fresh_user),
+        **mobile_legal_acceptance_report(user["user_id"]),
+    })
 
 
 @webhook_app.route("/api/mobile/auth/refresh", methods=["POST"])
@@ -8462,7 +8498,13 @@ def api_mobile_auth_refresh():
     fresh_user = load_account_by_id(user["user_id"]) or user
     if not token_payload:
         token_payload = issue_mobile_security_tokens(fresh_user, {**payload, "source": payload.get("source") or "mobile_refresh"}, rotate_from=refresh_token)
-    response = jsonify({"ok": True, "authenticated": True, "user": pulse_mobile_user_payload(fresh_user), **token_payload})
+    response = jsonify({
+        "ok": True,
+        "authenticated": True,
+        "user": pulse_mobile_user_payload(fresh_user),
+        **mobile_legal_acceptance_report(user["user_id"]),
+        **token_payload,
+    })
     return set_persistent_session_cookie(response, token_payload.get("refresh_token") or "")
 
 
@@ -8491,44 +8533,167 @@ def mobile_login_gate_error(gate):
     )
 
 
-@webhook_app.route("/api/mobile/auth/login", methods=["POST"])
-@webhook_app.route("/api/pulse/mobile/auth/login", methods=["POST"])
-def api_mobile_auth_login():
-    init_db()
-    payload = request.get_json(silent=True) or {}
-    identifier = clean_html(payload.get("identifier") or payload.get("email") or payload.get("username") or "")
-    email = normalize_email(identifier) if "@" in identifier else identifier.strip().lstrip("@")
-    password = payload.get("password") or ""
-    preferred_language = normalize_preferred_language(payload.get("preferred_language") or payload.get("language") or "", default="")
-    security_gate = login_security_preflight(email, enforce_challenge=False)
-    if not security_gate.get("allowed"):
-        return mobile_login_gate_error(security_gate)
-    user = load_account_by_email_or_username(email)
-    if not user:
-        challenge_gate = login_security_preflight(email, enforce_challenge=True)
-        if not challenge_gate.get("allowed"):
-            return mobile_login_gate_error(challenge_gate)
-        register_failed_login(email, 0, "mobile_unknown_account")
-        return api_error("Email or password is incorrect.", 401, error=MOBILE_LOGIN_INVALID_CREDENTIALS, error_code=MOBILE_LOGIN_INVALID_CREDENTIALS)
-    restriction_message = account_login_restriction_message(user)
-    if restriction_message:
-        log_auth_event("mobile_login_restricted", email, user["user_id"], status="blocked", details={"account_status": user.get("account_status") or "", "login_enabled": safe_int(user.get("login_enabled"), 1), "access_enabled": safe_int(user.get("access_enabled"), 1), "db_engine": db_service.ENGINE_NAME})
-        return api_error(restriction_message, 403, error="account_restricted", error_code="account_restricted")
-    if not user.get("password_hash") or not check_password_hash(user["password_hash"], password):
-        challenge_gate = login_security_preflight(email, enforce_challenge=True)
-        if not challenge_gate.get("allowed"):
-            return mobile_login_gate_error(challenge_gate)
-        register_failed_login(email, user.get("user_id") if user else 0, "mobile_invalid_password")
-        return api_error("Email or password is incorrect.", 401, error=MOBILE_LOGIN_INVALID_CREDENTIALS, error_code=MOBILE_LOGIN_INVALID_CREDENTIALS)
-    # Password first, then confirmation state. `email_not_confirmed` names a real
-    # account, so answering it before the password is checked turns this endpoint
-    # into an oracle: anyone could submit an address with an empty password and
-    # learn whether it is registered -- exactly the distinction the 401 above
-    # refuses to make. Behind a correct password it discloses nothing the account
-    # holder does not already know, which is what makes the clear message safe.
-    if user.get("email") and not int(user.get("email_verified") or 0):
-        log_auth_event("mobile_login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
-        return api_error("Please confirm your email before logging in.", 403, error="email_not_confirmed", error_code="email_not_confirmed")
+MOBILE_LEGAL_ACCEPTANCE_REQUIRED = "legal_acceptance_required"
+
+#: Marks a ticket as answering the acceptance step and nothing else. Belt and
+#: braces over the key separation: the ticket is signed with
+#: `COINPILOTX_LEGAL_ACCEPTANCE_KEY`, so an access token cannot verify here at
+#: all, and the reverse is impossible because a bearer token only authenticates
+#: against a matching `mobile_security_sessions` row and a ticket creates none.
+#: The purpose field is what keeps that true if the two keys ever converge.
+MOBILE_LEGAL_TICKET_PURPOSE = "legal_acceptance"
+
+#: Same ceiling the web pending marker uses, for the same reason: the password
+#: was checked before the ticket was minted, so what it is allowed to do has to
+#: stop being allowed rather than wait in a client's storage forever.
+MOBILE_LEGAL_TICKET_TTL_SECONDS = PENDING_LEGAL_TTL_SECONDS
+
+
+def mobile_legal_acceptance_ticket(user_id, versions, issued_at=None):
+    """Mint the proof that this account just passed a password check.
+
+    Carries the account *and* the versions it was shown, so neither is a client
+    input at the moment of recording. A client that edits either breaks the
+    signature; a client that replays an older ticket is caught by the version
+    comparison in the acceptance route, because the ticket says which text the
+    member was actually looking at.
+    """
+
+    issued_at = int(issued_at or time.time())
+    expires_at = issued_at + MOBILE_LEGAL_TICKET_TTL_SECONDS
+    payload = {
+        "uid": int(user_id or 0),
+        "p": MOBILE_LEGAL_TICKET_PURPOSE,
+        "v": {str(name): str(version) for name, version in sorted((versions or {}).items())},
+        "iat": issued_at,
+        "exp": expires_at,
+    }
+    body = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")).decode("ascii").rstrip("=")
+    sig = hmac.new(COINPILOTX_LEGAL_ACCEPTANCE_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{body}.{sig}", expires_at
+
+
+def read_mobile_legal_acceptance_ticket(raw):
+    """The claims inside a ticket, or `{}` for anything that is not one.
+
+    One return value for every failure on purpose. A caller cannot tell a
+    forged signature from an expired ticket from a well-formed token of another
+    kind, because the only safe response to all three is the same: ask for the
+    password again.
+    """
+
+    ticket = str(raw or "").strip()
+    if not ticket:
+        return {}
+    try:
+        body, signature = ticket.rsplit(".", 1)
+    except ValueError:
+        return {}
+    expected = hmac.new(COINPILOTX_LEGAL_ACCEPTANCE_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return {}
+    try:
+        padded = body + ("=" * (-len(body) % 4))
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, dict) or payload.get("p") != MOBILE_LEGAL_TICKET_PURPOSE:
+        return {}
+    user_id = safe_int(payload.get("uid"), 0)
+    versions = payload.get("v")
+    if user_id <= 0 or not isinstance(versions, dict) or not versions:
+        return {}
+    if safe_int(payload.get("exp"), 0) <= int(time.time()):
+        return {}
+    return {
+        "user_id": user_id,
+        "versions": {str(name): str(version) for name, version in versions.items()},
+    }
+
+
+def mobile_legal_acceptance_challenge(user_id):
+    """What an authenticated client needs to present the acceptance step.
+
+    Empty when nothing is outstanding, so `if challenge:` is the whole question
+    a caller has to ask. The documents come from `legal_acceptance.pending()`,
+    which deliberately carries no acceptance history -- the screen asks what is
+    outstanding now, and an account's past agreements are not part of that.
+    """
+
+    documents = legal_acceptance.pending(user_id)
+    if not documents:
+        return {}
+    versions = {entry["document"]: entry["version"] for entry in documents}
+    ticket, expires_at = mobile_legal_acceptance_ticket(user_id, versions)
+    return {
+        "ticket": ticket,
+        "ttl_seconds": MOBILE_LEGAL_TICKET_TTL_SECONDS,
+        "expires_at": expires_at,
+        "documents": documents,
+        "accept_url": f"{CANONICAL_HTTPS_ORIGIN}/login",
+    }
+
+
+def mobile_legal_acceptance_report(user_id):
+    """Acceptance state for a client that is already authenticated.
+
+    `legal_acceptance_required` is always present, including when it is False.
+    A client cannot tell an absent key from an old server, so the negative has
+    to be said out loud for the positive to mean anything.
+
+    No ticket. A ticket exists to stand in for a password that was already
+    checked; a caller holding a live bearer token has no use for one, and
+    minting capability nobody needs is how it ends up somewhere it shouldn't.
+    """
+
+    documents = legal_acceptance.pending(user_id)
+    if not documents:
+        return {"legal_acceptance_required": False}
+    return {
+        "legal_acceptance_required": True,
+        "legal_acceptance": {
+            "documents": documents,
+            "accept_url": f"{CANONICAL_HTTPS_ORIGIN}/login",
+        },
+    }
+
+
+def mobile_legal_acceptance_error(challenge):
+    """Refuse a sign-in that has not answered the documents in force.
+
+    403 with a coded body, and the message is written to be the whole
+    instruction on its own. Builds that shipped before this endpoint existed
+    render the server's sentence verbatim for a 401/403 carrying a code they do
+    not recognise, so for those members this *is* the acceptance screen -- it
+    has to name somewhere they can actually agree. Accepting on the web puts
+    them on file at the current version, after which this sign-in succeeds,
+    which is the one behaviour that makes an old client recoverable without
+    granting it a bypass.
+    """
+
+    return api_error(
+        "PulseSoc's Terms of Service and Privacy Policy have been updated. "
+        f"Review and accept them at {CANONICAL_HTTPS_ORIGIN}/login, then sign in again.",
+        403,
+        error=MOBILE_LEGAL_ACCEPTANCE_REQUIRED,
+        error_code=MOBILE_LEGAL_ACCEPTANCE_REQUIRED,
+        authenticated=False,
+        legal_acceptance=challenge,
+    )
+
+
+def complete_mobile_login(user, payload=None, preferred_language="", identifier=""):
+    """Everything that happens once a native sign-in is fully authorised.
+
+    Shared with the acceptance route below for the same reason `complete_web_login`
+    is shared: a member who had to agree to a rewritten document must come out
+    with the same session, the same login notifications and the same tokens as
+    one who did not. Two copies of this is how one of those silently stops
+    firing for exactly the members who took the long way round.
+    """
+
+    payload = payload or {}
+    email = identifier or user.get("email") or ""
     session.permanent = True
     session["account_user_id"] = user["user_id"]
     session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
@@ -8570,6 +8735,143 @@ def api_mobile_auth_login():
     token_payload = issue_mobile_security_tokens(fresh_user, {**payload, "source": "mobile_login"})
     response = jsonify({"ok": True, "authenticated": True, "user": pulse_mobile_user_payload(fresh_user), **token_payload})
     return set_persistent_session_cookie(response, token_payload.get("refresh_token") or "")
+
+
+@webhook_app.route("/api/mobile/auth/login", methods=["POST"])
+@webhook_app.route("/api/pulse/mobile/auth/login", methods=["POST"])
+def api_mobile_auth_login():
+    init_db()
+    payload = request.get_json(silent=True) or {}
+    identifier = clean_html(payload.get("identifier") or payload.get("email") or payload.get("username") or "")
+    email = normalize_email(identifier) if "@" in identifier else identifier.strip().lstrip("@")
+    password = payload.get("password") or ""
+    preferred_language = normalize_preferred_language(payload.get("preferred_language") or payload.get("language") or "", default="")
+    security_gate = login_security_preflight(email, enforce_challenge=False)
+    if not security_gate.get("allowed"):
+        return mobile_login_gate_error(security_gate)
+    user = load_account_by_email_or_username(email)
+    if not user:
+        challenge_gate = login_security_preflight(email, enforce_challenge=True)
+        if not challenge_gate.get("allowed"):
+            return mobile_login_gate_error(challenge_gate)
+        register_failed_login(email, 0, "mobile_unknown_account")
+        return api_error("Email or password is incorrect.", 401, error=MOBILE_LOGIN_INVALID_CREDENTIALS, error_code=MOBILE_LOGIN_INVALID_CREDENTIALS)
+    restriction_message = account_login_restriction_message(user)
+    if restriction_message:
+        log_auth_event("mobile_login_restricted", email, user["user_id"], status="blocked", details={"account_status": user.get("account_status") or "", "login_enabled": safe_int(user.get("login_enabled"), 1), "access_enabled": safe_int(user.get("access_enabled"), 1), "db_engine": db_service.ENGINE_NAME})
+        return api_error(restriction_message, 403, error="account_restricted", error_code="account_restricted")
+    if not user.get("password_hash") or not check_password_hash(user["password_hash"], password):
+        challenge_gate = login_security_preflight(email, enforce_challenge=True)
+        if not challenge_gate.get("allowed"):
+            return mobile_login_gate_error(challenge_gate)
+        register_failed_login(email, user.get("user_id") if user else 0, "mobile_invalid_password")
+        return api_error("Email or password is incorrect.", 401, error=MOBILE_LOGIN_INVALID_CREDENTIALS, error_code=MOBILE_LOGIN_INVALID_CREDENTIALS)
+    # Password first, then confirmation state. `email_not_confirmed` names a real
+    # account, so answering it before the password is checked turns this endpoint
+    # into an oracle: anyone could submit an address with an empty password and
+    # learn whether it is registered -- exactly the distinction the 401 above
+    # refuses to make. Behind a correct password it discloses nothing the account
+    # holder does not already know, which is what makes the clear message safe.
+    if user.get("email") and not int(user.get("email_verified") or 0):
+        log_auth_event("mobile_login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
+        return api_error("Please confirm your email before logging in.", 403, error="email_not_confirmed", error_code="email_not_confirmed")
+    # The same question the web form asks, asked of the same ledger, in the same
+    # position: after the password and after the confirmation check, so it never
+    # confirms to a stranger that an identifier has an account. Before anything
+    # below it, because everything below it is admission -- this endpoint also
+    # writes `session["account_user_id"]`, so refusing any later would hand a
+    # gated client a working web cookie as a consolation prize.
+    #
+    # The client is not asked whether acceptance is required and is not believed
+    # if it answers. This is the only place that decides.
+    legal_challenge = mobile_legal_acceptance_challenge(user["user_id"])
+    if legal_challenge:
+        log_auth_event("mobile_login_legal_acceptance_required", email, user["user_id"], status="pending", details={"db_engine": db_service.ENGINE_NAME})
+        return mobile_legal_acceptance_error(legal_challenge)
+    return complete_mobile_login(user, payload, preferred_language, identifier=email)
+
+
+@webhook_app.route("/api/mobile/auth/legal-acceptance", methods=["POST"])
+@webhook_app.route("/api/pulse/mobile/auth/legal-acceptance", methods=["POST"])
+@auth_required
+def api_mobile_auth_legal_acceptance():
+    """Record that this member agreed to the documents now in force.
+
+    Two ways in, and deliberately not a third. A **ticket** answers a sign-in
+    that stopped at the gate: it carries no credentials, because the password
+    was checked before it was minted, and it expires. A **bearer token**
+    answers a member who was already signed in when a document was rewritten.
+
+    A cookie session is *not* accepted, which is the CSRF answer: a cross-site
+    request can carry the member's cookie but not their bearer token, and an
+    acceptance a member never made is a corrupted legal record even though it
+    grants an attacker nothing. The native client always sends the bearer, so
+    refusing cookies costs it nothing.
+
+    Which shape comes back depends on which way in was used, because the two
+    callers need different things. A ticket holder has no session yet and gets
+    one -- the same session, notifications and tokens an ungated sign-in
+    produces, because `complete_mobile_login` is shared with it. A bearer
+    holder already has a working session and keeps it; minting a second token
+    family for someone who is already admitted would orphan the first.
+    """
+
+    init_db()
+    payload = request.get_json(silent=True) or {}
+    preferred_language = normalize_preferred_language(payload.get("preferred_language") or payload.get("language") or "", default="")
+    claims = read_mobile_legal_acceptance_ticket(payload.get("ticket"))
+    admitting = bool(claims)
+    user_id = claims.get("user_id") if admitting else account_user_id_from_mobile_access_token()
+    if not user_id:
+        log_auth_event("mobile_legal_acceptance_unauthorised", "", 0, status="blocked", details={"ticket_present": bool(payload.get("ticket")), "db_engine": db_service.ENGINE_NAME})
+        return api_error("Please sign in again to continue.", 401, error="session_expired", error_code="session_expired")
+    # Re-read the account rather than trusting anything the ticket said about
+    # it. These two refusals are the ones that land *after* a password, and
+    # either can start being true while the member is reading the Terms -- so
+    # agreeing must not be a way to walk past a restriction or an unconfirmed
+    # address that would have stopped the sign-in a minute later.
+    user = load_account_by_id(user_id)
+    if not user:
+        return api_error("Please sign in again to continue.", 401, error="session_expired", error_code="session_expired")
+    email = user.get("email") or ""
+    restriction_message = account_login_restriction_message(user)
+    if restriction_message:
+        log_auth_event("mobile_legal_acceptance_restricted", email, user_id, status="blocked", details={"account_status": user.get("account_status") or "", "db_engine": db_service.ENGINE_NAME})
+        return api_error(restriction_message, 403, error="account_restricted", error_code="account_restricted")
+    if user.get("email") and not int(user.get("email_verified") or 0):
+        return api_error("Please confirm your email before logging in.", 403, error="email_not_confirmed", error_code="email_not_confirmed")
+    outstanding = legal_acceptance.outstanding(user_id)
+    # Nothing left to agree to. Not an error and not a second record: the member
+    # may have accepted on the web in another window, or tapped twice, and both
+    # of those are one logical acceptance. A ticket holder is still admitted,
+    # because the only thing standing between them and their account is gone.
+    if not outstanding:
+        log_auth_event("mobile_legal_acceptance_noop", email, user_id, status="success", details={"db_engine": db_service.ENGINE_NAME})
+        if admitting:
+            return complete_mobile_login(user, payload, preferred_language, identifier=email)
+        return jsonify({"ok": True, "authenticated": True, "legal_acceptance_required": False, "user": pulse_mobile_user_payload(user)})
+    # The documents moved while this member was reading them, so what they are
+    # about to agree to is not what they were shown. Refuse with a fresh
+    # challenge rather than record an agreement to text they never saw -- a
+    # version column that can be filled in from the wrong page records nothing.
+    in_force = legal_acceptance.versions_in_force(outstanding)
+    if admitting and {name: claims["versions"].get(name) for name in in_force} != in_force:
+        log_auth_event("mobile_legal_acceptance_stale", email, user_id, status="pending", details={"db_engine": db_service.ENGINE_NAME})
+        return mobile_legal_acceptance_error(mobile_legal_acceptance_challenge(user_id))
+    conn = db()
+    cur = conn.cursor()
+    try:
+        # The server decides the version, not the request. `record()` reads
+        # `DOCUMENTS` directly, so there is no field on this endpoint through
+        # which a client could name an older one and be believed.
+        legal_acceptance.record(cur, user_id, source="mobile_login")
+        conn.commit()
+    finally:
+        conn.close()
+    log_auth_event("mobile_legal_acceptance_recorded", email, user_id, status="success", details={"documents": len(outstanding), "db_engine": db_service.ENGINE_NAME})
+    if admitting:
+        return complete_mobile_login(user, payload, preferred_language, identifier=email)
+    return jsonify({"ok": True, "authenticated": True, "legal_acceptance_required": False, "user": pulse_mobile_user_payload(user)})
 
 
 @webhook_app.route("/api/mobile/auth/register", methods=["POST"])

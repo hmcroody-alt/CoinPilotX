@@ -12,6 +12,7 @@ import { TimeZoneProvider } from "./src/core/TimeZoneContext";
 import { I18nProvider, useI18n, useTranslation } from "./src/i18n";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { AuthNavigator } from "./src/navigation/AuthNavigator";
+import { LegalAcceptanceScreen } from "./src/screens/LegalAcceptanceScreen";
 import { linking } from "./src/navigation/linking";
 import { navigationRef, routeNotificationTarget, setupNotificationResponseRouting } from "./src/navigation/notificationRouting";
 import { RootStackParamList } from "./src/navigation/types";
@@ -311,6 +312,21 @@ function AppRoot() {
           <Text style={{ color: colors.background, fontWeight: "700" }}>{t("common:actions.retry")}</Text>
         </Pressable>
       </View>
+    );
+  }
+
+  // Admission is withheld until this account's acceptance of the document
+  // versions in force is on file. Rendered here, above `NavigationContainer`,
+  // rather than as a route: neither navigator mounts, so there is no screen to
+  // reach and no deep link to arrive on. Server authorization is what actually
+  // refuses the member's requests; this is just the step that lets them answer.
+  if (authState.phase === "LEGAL_ACCEPTANCE_REQUIRED" && authState.legalAcceptance) {
+    return (
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <AuthContext.Provider value={auth}>
+          <LegalAcceptanceScreen challenge={authState.legalAcceptance} user={authState.user} />
+        </AuthContext.Provider>
+      </SafeAreaProvider>
     );
   }
 

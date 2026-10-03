@@ -1,4 +1,4 @@
-"""One root secret, five independent signing keys.
+"""One root secret, six independent signing keys.
 
 ``COINPILOTX_SECRET_KEY`` signed five unrelated credential families: the Flask
 session cookie, the mobile bearer access token, messenger media URLs, password
@@ -19,6 +19,13 @@ comparable. Measured, by reading what each family actually does on a key change:
     password reset      <= 1 hour of pending       request another reset
                         links
     captcha             one request                retry
+    legal acceptance    <= 15 minutes of in-flight  sign in again and re-agree
+                        tickets
+
+A sixth family was added later: the ticket that carries a correct-password
+sign-in through the legal acceptance step. It is listed above with the others
+because the same reasoning applies -- it is cheap to rotate and so must not be
+coupled to the session cookie.
 
 The asymmetry is the finding, and it runs the opposite way to intuition. The
 bearer key is nearly free to rotate on its own -- the refresh token is a random
@@ -80,7 +87,15 @@ PASSWORD_RESET = "password-reset"
 #: one retry to whoever was mid-form.
 CAPTCHA = "captcha"
 
-PURPOSES = (SESSION, MOBILE_ACCESS, MESSENGER_MEDIA, PASSWORD_RESET, CAPTCHA)
+#: The ticket that lets a correct-password sign-in answer the legal documents in
+#: force before any session exists. Its own key because it is the one credential
+#: here that is *not* a session: it authorises exactly one write, on one account,
+#: and a key shared with `MOBILE_ACCESS` would mean a bearer and a pre-session
+#: ticket verify under the same signature. 900s TTL, and rotation costs whoever
+#: is mid-flow one retry.
+LEGAL_ACCEPTANCE = "legal-acceptance"
+
+PURPOSES = (SESSION, MOBILE_ACCESS, MESSENGER_MEDIA, PASSWORD_RESET, CAPTCHA, LEGAL_ACCEPTANCE)
 
 #: Per-purpose override variables. Named here so `.env.example`, the tests and
 #: the runtime cannot disagree about the spelling.
@@ -90,6 +105,7 @@ OVERRIDE_ENV = {
     MESSENGER_MEDIA: "PULSESOC_MESSENGER_MEDIA_SECRET",
     PASSWORD_RESET: "PULSESOC_PASSWORD_RESET_SECRET",
     CAPTCHA: "PULSESOC_CAPTCHA_SECRET",
+    LEGAL_ACCEPTANCE: "PULSESOC_LEGAL_ACCEPTANCE_SECRET",
 }
 
 

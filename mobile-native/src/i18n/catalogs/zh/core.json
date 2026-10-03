@@ -510,6 +510,17 @@
       "wrongEmail": "邮箱填错了？",
       "waitingForConfirmation": "等待确认中…"
     },
+    "legalAcceptance": {
+      "title": "请同意后继续",
+      "body": "继续之前，请阅读并同意以下文件。",
+      "bodyNamed": "{{name}}，继续之前请阅读并同意以下文件。",
+      "read": "阅读",
+      "readDocument": "阅读{{document}}",
+      "opensInBrowser": "将在浏览器中打开",
+      "accept": "我同意",
+      "disclosure": "同意后，上述版本将记录在你的账户中。",
+      "documentsChanged": "你阅读期间文件已更新。请查看新版本并再次同意。"
+    },
     "recover": {
       "title": "重置密码",
       "subtitle": "我们会发送一个链接帮你重新登录。",
