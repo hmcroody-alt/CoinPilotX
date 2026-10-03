@@ -10088,6 +10088,414 @@ def api_mobile_auth_login():
     return complete_mobile_login(user, payload, preferred_language, identifier=email)
 
 
+#: How long a verified-but-unregistered provider identity may wait for the age
+#: and agreement answers. Short, because it is admission-shaped: it stands in
+#: for a provider token that has already been spent.
+FEDERATED_SIGNUP_TICKET_TTL_SECONDS = 900
+FEDERATED_SIGNUP_TICKET_PURPOSE = "federated_signup"
+
+#: The coded refusals this endpoint can answer with. Named rather than written
+#: inline at each site so the native client can branch on a closed set, and so
+#: adding a new refusal is a decision about the taxonomy rather than a string
+#: somebody typed. `user_cancelled` and `network_error` are deliberately absent:
+#: both happen before the request leaves the phone, and a server constant for
+#: something the server cannot observe would be a lie the client has to maintain.
+FEDERATED_NATIVE_ERRORS = {
+    "provider_config_error": "Sign-in with this provider is not available right now.",
+    "invalid_provider_response": "That sign-in could not be verified. Please try again.",
+    "account_link_required": "An account already uses this email address.",
+    "provider_email_missing": "No email address was shared, so an account cannot be created.",
+    "federated_signup_required": "One more step to finish creating your account.",
+}
+
+
+def federated_signup_ticket(provider, profile, issued_at=None):
+    """Mint the proof that a provider token was verified a moment ago.
+
+    The native equivalent of the row `/auth/finish` parks a web profile in, and
+    it exists for the same reason: neither Apple nor Google can answer the age
+    question or agree to the Terms, so account creation has to pause, and the
+    thing it pauses on must not be re-verifiable by the client.
+
+    A ticket rather than a database row because nothing here needs to be
+    *consumed* -- the identity uniqueness constraint is what makes a replayed
+    ticket harmless, since the second one to arrive cannot create a second link
+    for the same subject. The provider's own token is not kept: it has been
+    verified once, and storing it so it can be verified again is how a
+    single-use assertion turns into a reusable credential.
+    """
+
+    issued_at = int(issued_at or time.time())
+    expires_at = issued_at + FEDERATED_SIGNUP_TICKET_TTL_SECONDS
+    payload = {
+        "p": FEDERATED_SIGNUP_TICKET_PURPOSE,
+        "pr": str(provider or ""),
+        "sub": str(profile.get("subject") or ""),
+        "em": str(profile.get("email") or "").strip().lower(),
+        "ev": 1 if profile.get("email_verified") else 0,
+        "dn": str(profile.get("display_name") or "").strip()[:160],
+        "iat": issued_at,
+        "exp": expires_at,
+    }
+    body = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    sig = hmac.new(
+        COINPILOTX_LEGAL_ACCEPTANCE_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    return f"{body}.{sig}", expires_at
+
+
+def read_federated_signup_ticket(raw):
+    """The verified profile inside a signup ticket, or `{}` for anything else.
+
+    One return value for every failure, like the legal ticket reader: a caller
+    cannot tell a forged signature from an expired ticket from a legal ticket
+    being presented here, and the purpose field is checked precisely so the two
+    ticket types cannot be swapped for one another.
+    """
+
+    try:
+        body, _, sig = str(raw or "").partition(".")
+        if not body or not sig:
+            return {}
+        expected = hmac.new(
+            COINPILOTX_LEGAL_ACCEPTANCE_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            return {}
+        padded = body + "=" * (-len(body) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        if claims.get("p") != FEDERATED_SIGNUP_TICKET_PURPOSE:
+            return {}
+        if int(claims.get("exp") or 0) < int(time.time()):
+            return {}
+        if claims.get("pr") not in external_identity.PROVIDERS or not claims.get("sub"):
+            return {}
+        return claims
+    except Exception:
+        return {}
+
+
+def federated_native_error(code, status=400, **extra):
+    return api_error(
+        FEDERATED_NATIVE_ERRORS.get(code, "That sign-in could not be completed."),
+        status, error=code, error_code=code, **extra,
+    )
+
+
+def federated_native_profile(provider, payload):
+    """Verify what the phone brought back, or say which way it failed.
+
+    Returns `(profile, error_response)`. The verification is the *same*
+    function the web callback uses -- `verify_id_token` for Apple,
+    `verify_assertion` for Google -- rather than a native copy, so a weakness
+    fixed in one is fixed in both.
+
+    What differs is only the audience, and it is already handled: `audiences()`
+    in each adapter is the web client plus `*_SIGNIN_NATIVE_CLIENT_IDS`, which
+    is why a token minted for the iOS client verifies here. When that variable
+    is unset the native audience set is empty and every native assertion is
+    refused -- fail-closed, and the reason enabling this on the phone is a
+    configuration step rather than a deploy.
+
+    The assertion is the only thing trusted. The client also sends a nonce, and
+    it is passed through to be compared against the one inside the signed token;
+    a client that omits it gets a token whose nonce cannot match anything.
+    """
+
+    adapter = federated_adapter(provider)
+    if adapter is None:
+        return None, federated_native_error("invalid_provider_response", 404)
+    try:
+        if not adapter.configured() or not adapter.native_client_ids():
+            # No native client ID means no audience a phone's token could carry.
+            # Answered as configuration rather than as a bad token, because that
+            # is what it is -- and because telling a client "try again" for
+            # something retrying cannot fix is how a support queue fills up.
+            return None, federated_native_error("provider_config_error", 503)
+    except Exception:
+        return None, federated_native_error("provider_config_error", 503)
+
+    assertion = str(payload.get("id_token") or payload.get("identity_token") or "")
+    nonce = str(payload.get("nonce") or "")
+    if not assertion:
+        return None, federated_native_error("invalid_provider_response", 400)
+
+    try:
+        if provider == "apple":
+            claims = apple_identity.verify_id_token(assertion, nonce=nonce)
+            # Apple discloses the member's name once, in the native sheet, and
+            # never again -- so unlike the email it cannot be recovered from a
+            # later token, and the client is its only source. Carried in the
+            # same unsigned shape the web callback accepts it in, and used for
+            # the profile name alone: nothing that decides identity or access.
+            profile = apple_identity.profile_from_response(
+                claims, str(payload.get("user") or "")
+            )
+        else:
+            claims = google_identity.verify_assertion(assertion, nonce=nonce)
+            profile = google_identity.profile_from_claims(claims)
+    except Exception as exc:
+        # Never the provider's message and never the token. `exc.reason` on our
+        # own error types is a short enum; anything else collapses to its class.
+        logging.warning(
+            "FEDERATED_NATIVE_VERIFY_FAILED provider=%s reason=%s",
+            provider, getattr(exc, "reason", None) or exc.__class__.__name__,
+        )
+        log_auth_event(
+            FEDERATED_REFUSED_EVENT, "", 0, status="blocked",
+            details={"provider": provider, "surface": "ios",
+                     "reason": str(getattr(exc, "reason", None) or "native_verify_failed"),
+                     "db_engine": db_service.ENGINE_NAME},
+        )
+        return None, federated_native_error("invalid_provider_response", 401)
+
+    if not str(profile.get("subject") or "").strip():
+        # Nothing identifies the member. Refused rather than carried forward,
+        # for the reason the web handoff refuses it: a blank subject would
+        # become one shared identity row that every later tokenless sign-in
+        # resolves onto.
+        return None, federated_native_error("invalid_provider_response", 401)
+    return profile, None
+
+
+def federated_native_admit(provider, user, payload, preferred_language):
+    """The gates every sign-in passes, then the canonical native session.
+
+    The same three, in the same order, as `federated_establish_session` on the
+    web and `api_mobile_auth_login` on the phone: restriction, then acceptance,
+    then admission. A provider token proves who holds the credential and
+    answers none of these questions.
+    """
+
+    user_id = int(user["user_id"])
+    email = user.get("email") or ""
+
+    restriction = account_login_restriction_message(user)
+    if restriction:
+        log_auth_event(
+            "federated_login_restricted", email, user_id, status="blocked",
+            details={"provider": provider, "surface": "ios",
+                     "account_status": user.get("account_status") or "",
+                     "db_engine": db_service.ENGINE_NAME},
+        )
+        return api_error(restriction, 403, error="account_restricted", error_code="account_restricted")
+
+    challenge = mobile_legal_acceptance_challenge(user_id)
+    if challenge:
+        log_auth_event(
+            "federated_legal_acceptance_required", email, user_id, status="pending",
+            details={"provider": provider, "surface": "ios", "db_engine": db_service.ENGINE_NAME},
+        )
+        return mobile_legal_acceptance_error(challenge)
+
+    external_identity.touch_login(provider, str((payload.get("_profile") or {}).get("subject") or ""))
+    log_auth_event(
+        "federated_login", email, user_id, status="success",
+        details={"provider": provider, "surface": "ios", "db_engine": db_service.ENGINE_NAME},
+    )
+    return complete_mobile_login(user, payload, preferred_language, identifier=email)
+
+
+@webhook_app.route("/api/mobile/auth/federated", methods=["POST"])
+@webhook_app.route("/api/pulse/mobile/auth/federated", methods=["POST"])
+@public_route(reason="Native Apple/Google sign-in. The caller has no PulseSoc session yet by construction; the provider assertion is verified server-side and is the only thing trusted.")
+def api_mobile_auth_federated():
+    """Sign in or resolve a native Apple/Google identity.
+
+    The phone runs the provider's own sheet and brings back a signed assertion.
+    Everything after that is this server's decision, taken by the *same*
+    `external_identity.resolve` ladder the website uses -- which is what makes
+    "created with Apple on the web, opened the app, same account" true rather
+    than aspirational. A second resolution path would be a second product.
+
+    Four answers, because there are four situations and collapsing them is how
+    an account gets taken over:
+
+      sign_in       the subject is already linked -> gates, then a session
+      create        a subject nobody has seen -> a ticket, not an account
+      link_required the email belongs to somebody -> refused, by design
+      refused       the provider gave us nothing usable
+    """
+
+    init_db()
+    payload = request.get_json(silent=True) or {}
+    provider = str(payload.get("provider") or "").strip().lower()
+    preferred_language = normalize_preferred_language(
+        payload.get("preferred_language") or payload.get("language") or "", default=""
+    )
+
+    profile, error = federated_native_profile(provider, payload)
+    if error:
+        return error
+
+    log_auth_event(
+        "federated_start", "", 0, status="started",
+        details={"provider": provider, "surface": "ios", "db_engine": db_service.ENGINE_NAME},
+    )
+
+    decision = external_identity.resolve(provider, profile)
+    outcome = decision.get("decision")
+
+    if outcome == "sign_in":
+        user = load_account_by_id(decision.get("user_id") or 0)
+        if not user:
+            return federated_native_error("invalid_provider_response", 401)
+        payload = dict(payload)
+        payload["_profile"] = profile
+        return federated_native_admit(provider, user, payload, preferred_language)
+
+    if outcome == "link_required":
+        # THE account-takeover branch, refused on the phone exactly as it is on
+        # the web. A verified provider email matching an account proves the
+        # member holds that address today; it does not prove they are the person
+        # who registered it, and the two are different people often enough that
+        # treating them as one is the whole vulnerability.
+        label = external_identity.PROVIDER_LABELS.get(provider, provider.title())
+        log_auth_event(
+            "federated_link_required", "", 0, status="blocked",
+            details={"provider": provider, "surface": "ios",
+                     "candidates": decision.get("candidate_count") or 0,
+                     "db_engine": db_service.ENGINE_NAME},
+        )
+        return api_error(
+            f"A PulseSoc account already uses that email address. Sign in with your "
+            f"email and password, then connect {label} in Account Settings.",
+            409, error="account_link_required", error_code="account_link_required",
+            provider=provider,
+        )
+
+    if outcome == "create":
+        # Not created here, for the reason the web flow does not create one
+        # either: nobody has answered the age question or agreed to anything,
+        # and recording either on the strength of a provider token would be
+        # inventing a consent that was never given.
+        if not profile.get("email"):
+            return federated_native_error("provider_email_missing", 422)
+        ticket, expires_at = federated_signup_ticket(provider, profile)
+        return api_error(
+            FEDERATED_NATIVE_ERRORS["federated_signup_required"], 403,
+            error="federated_signup_required", error_code="federated_signup_required",
+            provider=provider,
+            signup_ticket=ticket,
+            expires_at=expires_at,
+            ttl_seconds=FEDERATED_SIGNUP_TICKET_TTL_SECONDS,
+            email=profile.get("email") or "",
+            display_name=profile.get("display_name") or "",
+        )
+
+    reason = decision.get("reason") or "refused"
+    if reason == "provider_email_missing":
+        return federated_native_error("provider_email_missing", 422)
+    log_auth_event(
+        FEDERATED_REFUSED_EVENT, "", 0, status="blocked",
+        details={"provider": provider, "surface": "ios", "reason": reason,
+                 "db_engine": db_service.ENGINE_NAME},
+    )
+    return federated_native_error("invalid_provider_response", 400)
+
+
+@webhook_app.route("/api/mobile/auth/federated/signup", methods=["POST"])
+@webhook_app.route("/api/pulse/mobile/auth/federated/signup", methods=["POST"])
+@public_route(reason="Finishes a native federated signup. The member has no account yet by definition; the signed signup ticket minted by the verified assertion is what gates it.")
+def api_mobile_auth_federated_signup():
+    """Create the account the ticket's identity has consented to.
+
+    Age and agreement arrive here and nowhere else. They are read from this
+    request rather than from the ticket because the ticket is minted *before*
+    anybody is asked -- a consent that travelled inside the thing issued before
+    the question was put would be a consent nobody gave.
+    """
+
+    init_db()
+    payload = request.get_json(silent=True) or {}
+    claims = read_federated_signup_ticket(payload.get("signup_ticket") or payload.get("ticket"))
+    if not claims:
+        return api_error("Please sign in again to continue.", 401,
+                         error="session_expired", error_code="session_expired")
+
+    if not payload.get("age_confirmed") or not payload.get("terms_accepted"):
+        return api_error(
+            "Confirm your age and agree to the Terms to create your account.",
+            400, error="consent_required", error_code="consent_required",
+        )
+
+    provider = str(claims.get("pr") or "")
+    profile = {
+        "subject": claims.get("sub") or "",
+        "email": claims.get("em") or "",
+        "email_verified": bool(claims.get("ev")),
+        "display_name": claims.get("dn") or "",
+    }
+    preferred_language = normalize_preferred_language(
+        payload.get("preferred_language") or payload.get("language") or "", default=""
+    )
+
+    # Re-resolved rather than trusting the ticket's "this subject is new".
+    # Between minting and here the same person may have completed this on
+    # another device, or the email may have gained an account. Both change the
+    # answer, and the second one is the takeover branch.
+    decision = external_identity.resolve(provider, profile)
+    outcome = decision.get("decision")
+    if outcome == "sign_in":
+        user = load_account_by_id(decision.get("user_id") or 0)
+        if user:
+            payload = dict(payload)
+            payload["_profile"] = profile
+            return federated_native_admit(provider, user, payload, preferred_language)
+        return federated_native_error("invalid_provider_response", 401)
+    if outcome == "link_required":
+        label = external_identity.PROVIDER_LABELS.get(provider, provider.title())
+        return api_error(
+            f"A PulseSoc account already uses that email address. Sign in with your "
+            f"email and password, then connect {label} in Account Settings.",
+            409, error="account_link_required", error_code="account_link_required",
+        )
+    if outcome != "create":
+        return federated_native_error("invalid_provider_response", 400)
+
+    user, error = federated_create_account(
+        provider, profile,
+        country=clean_html(str(payload.get("country") or ""))[:80],
+        email_opt_in=bool(payload.get("email_opt_in")),
+    )
+    if error or not user:
+        return api_error(error or "Your account could not be created.", 400,
+                         error="server_error", error_code="server_error")
+
+    user_id = int(user["user_id"])
+    conn = db()
+    try:
+        cur = conn.cursor()
+        # `provider` is already narrowed to apple/google upstream, and both
+        # `mobile_apple` and `mobile_google` are declared in
+        # legal_acceptance.SOURCES, so this cannot mint a name the ledger
+        # rejects. A third provider would have to be added there first.
+        legal_acceptance.record(cur, user_id, source=f"mobile_{provider}")
+        conn.commit()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    try:
+        send_signup_welcome_emails(user)
+    except Exception as exc:
+        logging.warning("FEDERATED_NATIVE_WELCOME_EMAIL_FAILED user_id=%s error=%s",
+                        user_id, exc.__class__.__name__)
+    log_product_event(user_id, "signup_completed", {"source": f"ios_federated_{provider}"})
+    log_auth_event(
+        "federated_signup_completed", user.get("email") or "", user_id, status="success",
+        details={"provider": provider, "surface": "ios", "db_engine": db_service.ENGINE_NAME},
+    )
+    payload = dict(payload)
+    payload["_profile"] = profile
+    return federated_native_admit(provider, load_account_by_id(user_id) or user,
+                                  payload, preferred_language)
+
+
 @webhook_app.route("/api/mobile/auth/legal-acceptance", methods=["POST"])
 @webhook_app.route("/api/pulse/mobile/auth/legal-acceptance", methods=["POST"])
 @auth_required
