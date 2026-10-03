@@ -560,7 +560,12 @@ Invariant: price truth must be *observable*, not merely enforced.
 
 ---
 
-## A12-09 — Agent 2's sitemap verifier is pointed at 3 of 6 sitemaps; widening the scope alone takes its own fault count from 0 to 13
+## A12-09 — Agent 2's sitemap verifier is pointed at 3 of 6 sitemaps and reports 61 entries for a 206-entry property
+
+> **Read the CORRECTION at the end of this finding before acting on it.** The
+> headline `0 → 13` was measured correctly and framed wrongly; the honest number
+> is `0 → 1`, and the coverage I implied was missing turned out to already exist
+> and already run on every PR. Left in place with the correction appended.
 
 `scripts/search_os/verify_sitemap_vs_live.py` (Agent 2, `80c057163`) reports
 *"all 61 sitemap entries resolve 200, index,follow and self-canonical"* and
@@ -625,17 +630,89 @@ upgrades part of A12-05 from latent to **actively submitted**.
 So the finding is not "Agent 2 missed defects." It is narrower and worse:
 
 1. **The script reports `TOTAL FAULTY: 0` while thirteen submitted URLs trip its
-   own fault classes.** This is the artifact most likely to become the shared CI
-   gate. Pointed as shipped, it will certify the property clean and the twelve
-   known-broken URLs will keep a green check over them. Phase 100: a gate whose
-   default scope excludes the defects its author documented is not a gate. The
-   fix is discovery, not a longer default — read `/sitemap.xml` and walk whatever
-   it advertises, so a sitemap added next quarter is covered the day it ships.
+   own fault classes.** Phase 100: a gate whose default scope excludes the
+   defects its author documented is not a gate. The fix is discovery, not a
+   longer default — read `/sitemap.xml` and walk whatever it advertises, so a
+   sitemap added next quarter is covered the day it ships.
 2. **`/sitemap-live.xml` and `/sitemap-replays.xml` are empty today**, so their
    exclusion costs nothing right now. They are also the two sitemaps for the
    content type most likely to grow, and they would be born unchecked.
 3. **`/arena-preview` is new.** It is not one of the twelve, nobody has recorded
    it, and it is a different and more actionable fault.
+
+### CORRECTION (same session, before this was acted on) — I overstated this, twice
+
+Published above, then checked. Both corrections cut **against** my own finding
+and are recorded in place rather than quietly edited, for the same reason A12-09b
+records its predecessor.
+
+**Correction 1 — the coverage I implied was missing already exists, and runs.**
+I wrote that Agent 2's script "is the artifact most likely to become the shared
+CI gate" and that the twelve "will keep a green check over them." That was
+asserted, not measured. In fact `tests/protection/test_sitemap_entries_are_indexable.py`
+is **already landed** (`cef8f50f3`, PR #151) and already does end-to-end what
+Agent 2's script does — and does it better:
+
+- its corpus is **all six** children via `bot.SITEMAP_CHILDREN`, measured at
+  **206 entries**, the same number I found independently;
+- `test_the_sitemap_index_lists_every_child_and_each_one_renders` derives the
+  expected child list from **`url_map`, not from the constant**, with a docstring
+  recording that comparing against `SITEMAP_CHILDREN` was circular and survived a
+  mutation. That is exactly the discovery discipline I was about to recommend —
+  already implemented, one directory over;
+- it asserts 200, not-`noindex`, canonical-agreement and not-robots-blocked;
+- `scripts/protection/run_protection_suite.py` **globs** `tests/protection/test_*.py`,
+  so it is picked up by existing, and it runs from the `backend` job of
+  `.github/workflows/realtime-audio.yml` — which has **no `needs: detect` and no
+  path filter**, so it runs on every PR to every branch. I checked this
+  specifically because a suite that only runs when audio files change would have
+  made the coverage nominal. It isn't.
+
+So the real consequence of A12-09 is **"a redundant artifact publishing a
+misleading number" (61 vs 206), not "13 faults reach production unchecked."**
+Still worth fixing — two numbers in two places for one property is how a team
+learns to trust the wrong one — but materially less severe than I wrote.
+*(Aside: CLAUDE.md names `.github/workflows/protection.yml`, which does not
+exist. The suite lives in `realtime-audio.yml`. Doc drift, not a defect.)*
+
+**Correction 2 — 12 of my 13 "faults" are not sitemap faults at all.** I let
+`0 → 13` stand as the headline. But `NO_ROBOTS_DIRECTIVE` means *absence* of a
+robots meta, and absence reads as `index,follow` — which is precisely what a
+submitted URL should be. For a sitemap corpus that classification is wrong, and
+the landed gate is right not to carry it. My own A12-03/A12-05 case for those
+pages is about **dropped preview directives**, which costs rich-result
+eligibility — a real but much smaller harm than "submitted and unindexable." The
+honest headline is **0 → 1**.
+
+**What survives, and it is the sharper finding:** that one is `/arena-preview`,
+and it is uncovered by *both* scripts. The landed gate skips it **deliberately**:
+
+```python
+match = RE_CANONICAL.search(resp.get_data(as_text=True))
+if not match:
+    continue  # absent canonical is a different (weaker) finding
+```
+
+Mutation-proved rather than argued — in a throwaway copy, replacing that
+`continue` with an `offenders.append` turns the landed gate red with **exactly
+one** offender:
+
+```
+AssertionError: Lists differ: [] != ['/sitemap-pages.xml: /arena-preview has NO canonical at all']
+```
+
+One of 206, found independently by the gate's own regex (which, unlike my first
+attempt, handles both attribute orderings). **The `continue` is the whole
+defect, and its comment is the thing to disagree with:** an absent canonical is
+not weaker than a mismatched one. A mismatched canonical folds a page onto one
+wrong URL — bounded, one duplicate. An absent canonical on an indexable page
+folds nothing, so every tracking-parameter variant is a separate document
+(A12-09b) — unbounded.
+
+**Fix is two lines, and they must land together:** give `/arena-preview` a
+self-canonical, *and* delete that `continue` so the next page born without one
+cannot pass. Either alone is unstable — the tag without the gate rots on the next
+page added, and the gate without the tag reddens CI on main.
 
 ### A12-09b — `/arena-preview` is a submitted, indexable page with no canonical, and it mints unbounded duplicates
 
@@ -666,6 +743,13 @@ correctly measured and too narrowly scoped; the honest version is *"tracking
 parameters are handled correctly wherever a canonical exists."* Recorded rather
 than quietly amended, because a pass with the wrong corpus is the same failure
 mode as a gate with the wrong scope — which is the finding above.
+
+**Why nothing caught this:** the landed gate skips absent canonicals by an
+explicit `continue  # absent canonical is a different (weaker) finding`, and
+Agent 2's script never looks at `/sitemap-pages.xml`. Both are shown, with the
+mutation proof, in the CORRECTION under A12-09. Two independent scopes, one
+shared blind spot — which is a better argument for the two-line fix than either
+finding on its own.
 
 **Owner: Agent 2** (the verifier's scope, and `/arena-preview`'s canonical).
 Notify **Agent 6** (sitemaps), **Agent 8** (IndexNow — it would submit all 206).
