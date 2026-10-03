@@ -139,8 +139,17 @@ class _RecordingSweep:
             "scanned": 0, "candidates": 0, "released": 0, "captured": 0,
             "deferred": 0, "skipped": 0, "reconciled": 0, "failed": 0,
             "would_release": 0, "would_defer": 0, "would_skip": 0,
-            "provider_calls": 0, "needs_attention": 0,
-            "dry_run": bool(kwargs.get("dry_run")), "limit": kwargs.get("limit"),
+            "provider_calls": 0, "needs_attention": 0, "unevaluated": 0,
+            # Mirrors the real sweeper: the authority is what decides, and the
+            # bare ``dry_run`` kwarg is the legacy spelling. A stub that only
+            # understood the legacy spelling would report ``dry_run=False`` for
+            # an observing sweep — which is how this stub first failed when the
+            # worker moved to passing an authority, and exactly the kind of
+            # reassuring-but-wrong answer §14 is about.
+            "dry_run": (kwargs["authority"].dry_run
+                        if kwargs.get("authority") is not None
+                        else bool(kwargs.get("dry_run"))),
+            "limit": kwargs.get("limit"),
             "batch_exhausted": False, "duration_ms": 1,
         }
 
@@ -217,7 +226,17 @@ def test_02_enabled_dry_run_calls_the_sweeper_in_dry_run(patched, monkeypatch):
     outcome = pulse_worker.run_reservation_sweep_if_due({})
 
     assert len(recorder.calls) == 1
-    assert recorder.calls[0]["dry_run"] is True
+    # The worker hands over an authority, not a boolean, and that authority
+    # must withhold both writing planes. Asserted plane by plane rather than
+    # through ``dry_run``, because ``dry_run`` is precisely the summary that
+    # could not tell these apart: a legacy dry run already permitted live-key
+    # Stripe reads, so ``read_provider`` being True here is the *preserved*
+    # behaviour and not an oversight.
+    authority = recorder.calls[0]["authority"]
+    assert authority.mutate_reservations is False
+    assert authority.backfill_writes is False
+    assert authority.read_provider is True
+    assert authority.dry_run is True
     assert outcome["status"] == "ok"
     assert outcome["dry_run"] is True
     assert conns[0].committed and conns[0].closed
@@ -231,7 +250,10 @@ def test_03_enabled_mutating_calls_the_sweeper_in_mutate_mode(patched, monkeypat
 
     pulse_worker.run_reservation_sweep_if_due({})
 
-    assert recorder.calls[0]["dry_run"] is False
+    authority = recorder.calls[0]["authority"]
+    assert authority.mutate_reservations is True
+    assert authority.read_provider is True
+    assert authority.dry_run is False
 
 
 # --------------------------------------------------------------------------
@@ -570,6 +592,14 @@ def test_16_the_worker_calls_only_the_sweep_entry_point():
 #: for here.
 HOSTED_MARKETPLACE_SEAMS = {
     "services.marketplace_reservation_sweeper",
+    # A configuration reader, not a settlement surface: it parses two
+    # environment variables into the four planes a sweep may touch, imports
+    # nothing from the marketplace, and performs no write. The worker is where
+    # it belongs because the worker is where the environment is read — the
+    # sweeper takes the resolved authority as an argument precisely so that it
+    # never reads the environment for itself, which is what lets a test drive
+    # all four planes without touching ``os.environ``.
+    "services.marketplace_reservation_authority",
     "services.marketplace_release_cycle",
     "services.marketplace_payout_worker",
     "services.payments_reconciliation_cycle",

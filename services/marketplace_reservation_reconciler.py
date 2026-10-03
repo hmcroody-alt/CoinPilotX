@@ -59,6 +59,7 @@ from __future__ import annotations
 import logging
 import os
 
+from services import marketplace_payment_errors as payment_errors
 from services import marketplace_reservation_policy as reservation_policy
 
 LOGGER = logging.getLogger(__name__)
@@ -81,6 +82,12 @@ DECISION_RELEASE = "release"
 STATUS_SUCCEEDED = "succeeded"
 STATUS_PROCESSING = "processing"
 STATUS_CANCELED = "canceled"
+
+#: Not a Stripe status. Returned when an intent was retrieved but its status
+#: could not be read, so the decision table sees something it does not
+#: recognise and defers rather than treating silence as "nothing to settle".
+#: Deliberately absent from every recognised set below.
+STATUS_UNREADABLE = "provider_status_unreadable"
 
 #: Terminal-failure statuses. Stripe will not move money for these.
 CONCLUSIVE_FAILURE_STATUSES = frozenset({STATUS_CANCELED})
@@ -222,8 +229,29 @@ def decide_for_reservation(row, *, fetch_status=None, deferrals: int = 0) -> dic
 def _fetch_payment_intent_status(payment_intent_id: str) -> str | None:
     """Read one PaymentIntent's status. Imported lazily and never at module
     scope, so importing this module — which the sweeper and the tests both do —
-    does not require the Stripe SDK or a configured API key."""
+    does not require the Stripe SDK or a configured API key.
+
+    The field is read through ``stripe_response_value`` rather than ``.get``.
+    On the pinned SDK (stripe==15.1.0) ``PaymentIntent`` is a resource object,
+    not a Mapping: it has no ``get`` method, and ``StripeObject.__getattr__``
+    turns the lookup into ``AttributeError: get``. So ``(intent or {}).get(...)``
+    raised on *every* intent that retrieved successfully. The raise was then
+    caught one frame up and reported as ``provider_unreachable``, which is how a
+    working Stripe call came to look like a Stripe outage. ``stripe_response_value``
+    is the same boundary checkout already adopted after hitting this on live
+    PaymentIntent creation; see ``marketplace_payment_errors``.
+    """
     import stripe  # noqa: PLC0415 — deliberate: keep the import off the hot path
 
     intent = stripe.PaymentIntent.retrieve(payment_intent_id)
-    return (intent or {}).get("status")
+    status = payment_errors.stripe_response_value(intent, "status", "")
+    status = str(status or "").strip()
+    if not status:
+        # The intent came back but carried no readable status. That is *not* the
+        # same as "no intent exists", which is the one empty-status case the
+        # decision table is allowed to release on. Returning "" here would turn
+        # an unreadable provider answer into `no_payment_intent` and release
+        # stock that may well be paid for. Hand back a status the table does not
+        # recognise instead, so it defers and asks for an operator.
+        return STATUS_UNREADABLE
+    return status

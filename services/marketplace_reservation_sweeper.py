@@ -58,6 +58,7 @@ import time
 from datetime import timedelta
 
 from services import marketplace_cart_routes as cart
+from services import marketplace_reservation_authority as reservation_authority
 from services import marketplace_reservation_policy as reservation_policy
 from services import marketplace_reservation_reconciler as reconciler
 from services import marketplace_reservation_schema as reservation_schema
@@ -288,8 +289,9 @@ STATUS_OK = "ok"
 STATUS_DEGRADED = "degraded"
 
 
-def _empty_result(*, dry_run: bool, limit: int) -> dict:
-    return {
+def _empty_result(*, dry_run: bool, limit: int,
+                  authority=None) -> dict:
+    result = {
         "status": STATUS_OK, "reason": None,
         "scanned": 0, "candidates": 0,
         "released": 0, "captured": 0, "deferred": 0, "skipped": 0,
@@ -297,9 +299,17 @@ def _empty_result(*, dry_run: bool, limit: int) -> dict:
         "would_release": 0, "would_defer": 0, "would_skip": 0,
         "provider_calls": 0, "needs_attention": 0,
         "backfilled": 0, "would_backfill": 0, "deadline_gap": 0,
+        # Candidates that were selected but deliberately not evaluated,
+        # because the authority withheld plane C. Reported separately from
+        # ``skipped`` so "we chose not to look" never reads as "we looked and
+        # there was nothing to do" (§14: unknown must not render as zero).
+        "unevaluated": 0,
         "dry_run": bool(dry_run), "limit": int(limit),
         "batch_exhausted": False, "duration_ms": 0,
     }
+    if authority is not None:
+        result.update(authority.summary())
+    return result
 
 
 #: Holds with no deadline at all. The candidate query requires
@@ -352,7 +362,8 @@ def count_deadline_gap(cur) -> int:
 
 
 def backfill_missing_deadlines(cur, *, now=None, limit: int | None = None,
-                               dry_run: bool = False) -> dict:
+                               dry_run: bool = False,
+                               authority=None) -> dict:
     """Give every deadline-less held row a deadline, so a sweep can see it.
 
     Each row's deadline is derived from its own ``created_at`` via
@@ -375,6 +386,18 @@ def backfill_missing_deadlines(cur, *, now=None, limit: int | None = None,
     rows_limit = int(limit) if limit else batch_limit()
     out = {"scanned": 0, "backfilled": 0, "would_backfill": 0, "failed": 0}
 
+    # Plane A's own control (§17). ``authority`` wins when supplied; the bare
+    # ``dry_run`` argument is the legacy spelling and is mapped through the same
+    # table, so a caller passing either gets one consistent answer.
+    if authority is None:
+        authority = reservation_authority.from_dry_run(dry_run)
+    if not authority.backfill_evaluates:
+        # Authority withheld. Return the zeroed shape rather than an empty dict
+        # so the caller's counters stay well-defined, and say nothing in the
+        # log: a backfill that was never authorized has no finding to report.
+        return out
+    writes_allowed = authority.backfill_writes
+
     try:
         cur.execute(
             "SELECT id, created_at FROM "
@@ -393,7 +416,7 @@ def backfill_missing_deadlines(cur, *, now=None, limit: int | None = None,
     for row in rows:
         deadline = reservation_policy.legacy_backfill_expiry(
             row.get("created_at"), now=stamp)
-        if dry_run:
+        if not writes_allowed:
             out["would_backfill"] += 1
             continue
         try:
@@ -433,8 +456,9 @@ def backfill_missing_deadlines(cur, *, now=None, limit: int | None = None,
         # Naming each counter makes the label unable to disagree with the fact.
         LOGGER.warning(
             "RESERVATION_DEADLINE_BACKFILL scanned=%s backfilled=%s "
-            "would_backfill=%s dry_run=%s",
-            out["scanned"], out["backfilled"], out["would_backfill"], dry_run)
+            "would_backfill=%s backfill_mode=%s dry_run=%s",
+            out["scanned"], out["backfilled"], out["would_backfill"],
+            authority.backfill_mode, not writes_allowed)
     return out
 
 
@@ -461,7 +485,8 @@ def _degraded(result: dict, *, reason: str, started: float,
 def run_reservation_expiry_sweep(cur, *, now=None, limit: int | None = None,
                                  dry_run: bool = False,
                                  fetch_status=None,
-                                 recheck_seconds: int | None = None) -> dict:
+                                 recheck_seconds: int | None = None,
+                                 authority=None) -> dict:
     """Run one bounded sweep. Returns counts; raises only on catastrophe.
 
     ``cur`` is a cursor, matching every other function in this subsystem — the
@@ -483,6 +508,17 @@ def run_reservation_expiry_sweep(cur, *, now=None, limit: int | None = None,
     stamp_iso = stamp.isoformat(timespec="seconds")
     rows_limit = int(limit) if limit else batch_limit()
 
+    # §17: the four planes, resolved once for the whole sweep. An explicit
+    # ``authority`` wins; otherwise the bare ``dry_run`` argument is mapped
+    # through the same legacy table the worker uses, so an un-migrated caller
+    # and a legacy-configured worker get identical behaviour.
+    if authority is None:
+        authority = reservation_authority.from_dry_run(dry_run)
+    # Re-derive from the authority rather than trusting the argument: if both
+    # were passed and disagreed, the authority is the one the planes below
+    # consult, so it must also be the one the summary reports.
+    dry_run = authority.dry_run
+
     provider_calls = {"count": 0}
     base_fetch = fetch_status
 
@@ -500,7 +536,8 @@ def run_reservation_expiry_sweep(cur, *, now=None, limit: int | None = None,
             return base_fetch(intent_id)
         return reconciler._fetch_payment_intent_status(intent_id)
 
-    result = _empty_result(dry_run=dry_run, limit=rows_limit)
+    result = _empty_result(dry_run=dry_run, limit=rows_limit,
+                           authority=authority)
 
     # The worker is a separate process from the web app and may never serve an
     # HTTP request, so it cannot inherit the lazy migration that cart routes
@@ -536,7 +573,7 @@ def run_reservation_expiry_sweep(cur, *, now=None, limit: int | None = None,
         LOGGER.exception("RESERVATION_DEADLINE_GAP_COUNT_FAILED")
     if result["deadline_gap"]:
         backfill = backfill_missing_deadlines(
-            cur, now=stamp, limit=rows_limit, dry_run=dry_run)
+            cur, now=stamp, limit=rows_limit, authority=authority)
         result["backfilled"] = backfill["backfilled"]
         result["would_backfill"] = backfill["would_backfill"]
         # A backfill failure degrades the counter, not the sweep: the rows the
@@ -576,7 +613,8 @@ def run_reservation_expiry_sweep(cur, *, now=None, limit: int | None = None,
             continue
         try:
             _process_candidate(cur, row, tx_id, result, stamp_iso=stamp_iso,
-                               dry_run=dry_run, fetch=_counting_fetch)
+                               dry_run=dry_run, fetch=_counting_fetch,
+                               authority=authority)
         except Exception:
             # One bad row must not cost the other forty-nine their sweep. The
             # caller gets a partial-success summary and the row is retried on
@@ -593,24 +631,43 @@ def run_reservation_expiry_sweep(cur, *, now=None, limit: int | None = None,
         result["status"] = STATUS_DEGRADED
     LOGGER.info(
         "RESERVATION_SWEEP_COMPLETED candidates=%s released=%s captured=%s "
-        "deferred=%s skipped=%s failed=%s provider_calls=%s attention=%s "
-        "dry_run=%s duration_ms=%s",
+        "deferred=%s skipped=%s unevaluated=%s failed=%s provider_calls=%s "
+        "attention=%s authority=%s dry_run=%s duration_ms=%s",
         result["candidates"], result["released"], result["captured"],
-        result["deferred"], result["skipped"], result["failed"],
-        result["provider_calls"], result["needs_attention"],
-        dry_run, result["duration_ms"],
+        result["deferred"], result["skipped"], result["unevaluated"],
+        result["failed"], result["provider_calls"], result["needs_attention"],
+        authority.describe(), dry_run, result["duration_ms"],
     )
     return result
 
 
 def _process_candidate(cur, row: dict, tx_id: int, result: dict, *,
-                       stamp_iso: str, dry_run: bool, fetch) -> None:
+                       stamp_iso: str, dry_run: bool, fetch,
+                       authority=None) -> None:
     """Decide and act on exactly one reservation.
 
     Split out so the failure boundary in the caller wraps a whole candidate:
     every path through here either completes or raises, and a raise leaves the
     row untouched and eligible for the next sweep.
     """
+    if authority is None:
+        authority = reservation_authority.from_dry_run(dry_run)
+
+    if not authority.read_provider:
+        # Plane C withheld (§17). Return *before* ``decide_for_reservation``,
+        # which is the only placement that actually prevents the call: the
+        # reconciler takes no ``dry_run`` argument and the first ``if dry_run``
+        # below it used to sit after the provider read, so a "dry" sweep spent
+        # live-key Stripe calls on every candidate. Counted as ``unevaluated``
+        # rather than ``skipped`` or ``deferred`` because nothing was decided
+        # and nothing was written — the row's disposition is genuinely unknown,
+        # and reporting it as a quiet success is the §14 failure.
+        result["unevaluated"] += 1
+        LOGGER.info(
+            "RESERVATION_UNEVALUATED tx_id=%s reason=provider_read_withheld "
+            "sweep_mode=%s", tx_id, authority.sweep_mode)
+        return
+
     deferrals = int(row.get("reconcile_deferrals") or 0)
     decision = reconciler.decide_for_reservation(
         row, fetch_status=fetch, deferrals=deferrals)
@@ -637,10 +694,11 @@ def _process_candidate(cur, row: dict, tx_id: int, result: dict, *,
         result["would_release"] += 1
         reason = decision.get("release_reason") or reservation_policy.REASON_EXPIRED
         terminal_status = terminal_status_for(reason)
-        if dry_run:
+        if not authority.mutate_reservations:
             LOGGER.info(
-                "RESERVATION_RELEASED tx_id=%s dry_run=1 reason=%s terminal=%s detail=%s",
-                tx_id, reason, terminal_status, detail)
+                "RESERVATION_RELEASED tx_id=%s dry_run=1 sweep_mode=%s reason=%s "
+                "terminal=%s detail=%s",
+                tx_id, authority.sweep_mode, reason, terminal_status, detail)
             return
         outcomes = cart.settle_failed_transactions(
             cur, [tx_id], reason=reason, terminal_status=terminal_status,
@@ -676,9 +734,10 @@ def _process_candidate(cur, row: dict, tx_id: int, result: dict, *,
         # rather than the sweeper silently inventing one.
         result["would_skip"] += 1
         result["needs_attention"] += 1
-        if dry_run:
-            LOGGER.info("RESERVATION_CANDIDATE tx_id=%s dry_run=1 decision=capture detail=%s",
-                        tx_id, detail)
+        if not authority.mutate_reservations:
+            LOGGER.info("RESERVATION_CANDIDATE tx_id=%s dry_run=1 sweep_mode=%s "
+                        "decision=capture detail=%s",
+                        tx_id, authority.sweep_mode, detail)
             return
         outcome = cart.capture_inventory_reservation(cur, tx_id, now=stamp_iso)
         if outcome.get("changed"):
@@ -696,8 +755,9 @@ def _process_candidate(cur, row: dict, tx_id: int, result: dict, *,
     # settling, and a buyer still authenticating — four different situations
     # that share one correct response.
     result["would_defer"] += 1
-    if dry_run:
-        LOGGER.info("RESERVATION_DEFERRED tx_id=%s dry_run=1 detail=%s", tx_id, detail)
+    if not authority.mutate_reservations:
+        LOGGER.info("RESERVATION_DEFERRED tx_id=%s dry_run=1 sweep_mode=%s detail=%s",
+                    tx_id, authority.sweep_mode, detail)
         return
     note = cart.note_reservation_deferral(cur, tx_id, now=stamp_iso)
     if note.get("changed"):
