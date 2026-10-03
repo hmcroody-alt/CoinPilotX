@@ -441,6 +441,7 @@ from services import (
     seller_lifecycle,
     seo_engine,
     search_visibility,
+    open_web_distribution,
     sms_service,
     social_energy_engine,
     social_loop_engine,
@@ -34700,11 +34701,46 @@ def indexnow_key_txt():
     return send_from_directory(webhook_app.static_folder, "indexnow-key.txt", mimetype="text/plain")
 
 
+def open_web_candidate_sources(page_limit=200, catalogue_limit=500):
+    """The per-class entry lists the open-web payload is built from.
+
+    Every one of these is the *same call the corresponding sitemap child makes*,
+    and that is the whole point of the function existing. The two surfaces are
+    answers to the same question on different schedules -- a sitemap is what we
+    publish for a crawler to come and find, IndexNow is what we push when it
+    changes -- so a URL eligible for one and not the other is a contradiction,
+    not a configuration. Sharing the read makes the contradiction unrepresentable
+    instead of merely unlikely.
+
+    The pages set unions the same three lists `/sitemap-pages.xml` unions.
+    Before this, `/api/indexnow` read `all_public_paths()` alone and so missed
+    the seven `/learn/` pages and four ads landing pages that the sitemap
+    carries -- two lists, drifting, with neither one wrong on purpose.
+
+    Three database reads, which is what the corresponding sitemaps cost between
+    them: posts do their own, and products and categories share one through
+    `marketplace_public_listings`.
+    """
+
+    return {
+        open_web_distribution.CLASS_PAGES: sorted(
+            set(all_public_paths()) | set(seo_engine.PUBLIC_LEARN_PATHS) | set(seo_engine.ADS_LANDING_PATHS)
+        ),
+        open_web_distribution.CLASS_POSTS: pulse_public_entries(page_limit),
+        open_web_distribution.CLASS_CATEGORIES: marketplace_category_entries(catalogue_limit),
+        open_web_distribution.CLASS_PRODUCTS: marketplace_public_entries(catalogue_limit),
+    }
+
+
 @webhook_app.route("/api/indexnow", methods=["GET"])
 def indexnow_metadata_api():
     """The IndexNow payload we would submit. This endpoint does not submit it.
 
-    Two things were wrong with the payload and both made it unusable:
+    There is no outbound request anywhere in this path. Nothing here reaches a
+    search provider, and `diagnostics.outboundImplemented` says so in the
+    response rather than leaving a reader to infer it from an absence.
+
+    Three things were wrong with the payload and all three are historical:
 
     `host` said `coinpilotx.app` while every URL in `urlList` and the key file
     itself are on `pulsesoc.com`. IndexNow requires the host to own the URLs
@@ -34715,19 +34751,28 @@ def indexnow_metadata_api():
     the old sitemap used and carried `/signup`, `/support` and the templated
     market pages. Submitting a URL we have marked `noindex` asks Bing to hurry
     and crawl something we have asked it not to index.
+
+    `urlList` then came from `all_public_paths()` *filtered*, which fixed the
+    noindex leak and left a quieter inversion in place: the list is a
+    hand-maintained set of marketing pages, so the one channel whose entire
+    purpose is speed covered 76 URLs that essentially never change and zero of
+    the 61 that change daily -- every product, every department, every member
+    post. It also shipped `/sports-edge` twice, because `all_public_paths()`
+    returns it twice and a list comprehension does not dedupe where the
+    sitemap's `set()` did.
+
+    What it submits now is the eligible universe, deduplicated, from the same
+    reads the sitemaps use. `payloadKind` names it: this is every eligible URL
+    at this instant, *not* the subset that materially changed. Submitting a
+    universe on a schedule as though it were a change batch is how an IndexNow
+    integration becomes outbound noise, and the batch form needs a
+    material-change producer PulseSoc does not have.
+    See `docs/seo/02_open_web_distribution_contract.md`.
     """
 
-    return jsonify({
-        "host": search_visibility.CANONICAL_HOST,
-        "key": "4d4dc0c2c0f94b7bb8184fd91b7f0b1e",
-        "keyLocation": f"{search_visibility.CANONICAL_ORIGIN}/indexnow-key.txt",
-        "urlList": [
-            search_visibility.canonical_url(path)
-            for path in all_public_paths()
-            if search_visibility.sitemap_eligible(path)
-        ],
-        "submitEndpoint": "https://api.indexnow.org/indexnow",
-    })
+    return jsonify(
+        open_web_distribution.payload(open_web_candidate_sources(), COINPILOTX_ENV_MODE)
+    )
 
 
 @webhook_app.route("/api/intelligence-feed", methods=["GET"])

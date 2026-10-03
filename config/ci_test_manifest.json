@@ -576,6 +576,7 @@
     "tests/test_notification_system_links.py",
     "tests/test_oidc_token_verification.py",
     "tests/test_open_destination_interstitial.py",
+    "tests/test_open_web_distribution.py",
     "tests/test_pg_lock_health.py",
     "tests/test_premium_blue_check_gate.py",
     "tests/test_premium_portfolio.py",
