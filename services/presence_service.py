@@ -682,6 +682,37 @@ def _status_from_sessions(sessions: list[dict], now: datetime) -> str:
 
 
 def _privacy_settings(cur, user_ids: list[int]) -> dict[int, dict]:
+    """Each user's presence-visibility preferences. Fails CLOSED, and says so.
+
+    Both reads used to end in ``except Exception: pass``, leaving the
+    permissive defaults in place. That inverts the control: a user who set
+    "nobody" or enabled invisible mode became visible to everyone for exactly
+    as long as the settings read was failing, with nothing logged.
+
+    Failing closed here is unusually cheap, which is why it is the right call.
+    ``_hidden_presence`` is byte-for-byte identical to the payload of a
+    genuinely offline user, so the degraded state is "these accounts look
+    offline" -- an outcome the product already produces constantly -- rather
+    than an error or an empty screen. ``presence_for`` also exempts ``is_self``
+    before consulting any of this, so a user never loses sight of their own
+    presence.
+
+    The two stores are not treated identically, because they are not in the
+    same position:
+
+    * ``presence_privacy_settings`` is created by this module's own
+      ``ensure_schema``, which ``presence_for`` calls before reaching here. It
+      is therefore always provisioned on this path and *any* failure is a real
+      fault.
+    * ``comm_v2_user_settings`` belongs to the messenger and may legitimately
+      not exist in a given deployment -- that is the whole reason this is a
+      second, separate read. "No such table" there means the preference was
+      never available to express, not that it failed to apply.
+
+    That distinction follows the idiom ``_blocked_pairs`` already uses in this
+    file: a missing table is a deployment shape, any other exception is a
+    privacy regression.
+    """
     ids = sorted({int(uid) for uid in user_ids if int(uid or 0) > 0})
     if not ids:
         return {}
@@ -698,8 +729,23 @@ def _privacy_settings(cur, user_ids: list[int]) -> dict[int, dict]:
             if uid in settings:
                 settings[uid]["hide_last_seen"] = bool(int(item.get("hide_last_seen") or 0))
                 settings[uid]["invisible_mode"] = bool(int(item.get("invisible_mode") or 0))
-    except Exception:
-        pass
+    except Exception as exc:
+        if "no such table" in str(exc).lower():
+            # Not provisioned yet: nobody can have expressed a preference, so
+            # there is none to drop. Hiding everyone would disable presence
+            # rather than protect anyone.
+            _warn_once(
+                "presence_privacy_no_table",
+                "PRESENCE_PRIVACY_NO_SETTINGS_TABLE -- presence_privacy_settings "
+                "does not exist in this deployment",
+            )
+        else:
+            LOGGER.warning(
+                "PRESENCE_PRIVACY_READ_FAILED users=%d error=%s detail=%s -- hiding presence",
+                len(ids), exc.__class__.__name__, exc,
+            )
+            return {uid: {"hide_last_seen": True, "invisible_mode": True,
+                          "presence_privacy": "nobody"} for uid in ids}
     # Reuse the messenger's existing presence_privacy preference so the two
     # systems can never disagree about who may see a user.
     try:
@@ -712,8 +758,20 @@ def _privacy_settings(cur, user_ids: list[int]) -> dict[int, dict]:
             uid = int(item.get("user_id") or 0)
             if uid in settings:
                 settings[uid]["presence_privacy"] = str(item.get("presence_privacy") or "everyone").lower()
-    except Exception:
-        pass
+    except Exception as exc:
+        if "no such table" in str(exc).lower():
+            _warn_once(
+                "presence_privacy_no_comm_v2",
+                "PRESENCE_PRIVACY_NO_COMM_V2_SETTINGS -- messenger visibility "
+                "preference unavailable in this deployment",
+            )
+        else:
+            LOGGER.warning(
+                "PRESENCE_PRIVACY_COMM_V2_READ_FAILED users=%d error=%s detail=%s "
+                "-- hiding presence", len(ids), exc.__class__.__name__, exc,
+            )
+            for uid in ids:
+                settings[uid]["presence_privacy"] = "nobody"
     return settings
 
 
@@ -740,6 +798,7 @@ def _blocked_pairs(cur, viewer_id: int, target_ids: list[int]) -> set[int]:
         return set()
     blocked: set[int] = set()
     found_table = False
+    hard_failure = False
     placeholders = ",".join(["?"] * len(ids))
     for table, active_clause in (("comm_v2_blocks", " AND status='active'"), ("blocked_users", "")):
         try:
@@ -765,13 +824,37 @@ def _blocked_pairs(cur, viewer_id: int, target_ids: list[int]) -> set[int]:
             # silently stopped applying -- a privacy regression that must not
             # pass unnoticed simply because the surrounding read still returns.
             if "no such table" not in str(exc).lower():
+                hard_failure = True
                 logging.warning(
                     "PRESENCE_BLOCK_LOOKUP_FAILED table=%s error=%s detail=%s",
                     table, exc.__class__.__name__, exc,
                 )
             continue
+    if hard_failure:
+        # A store exists and could not be read. This function therefore has no
+        # evidence either way and must not answer "nobody is blocked" -- that
+        # is the permissive value, and returning it shows a blocked viewer
+        # exactly the presence the block exists to withhold.
+        #
+        # Hiding every target is affordable here in a way it would not be in
+        # most subsystems: the caller renders a hidden target as
+        # ``_hidden_presence``, which is byte-for-byte the payload of a
+        # genuinely offline user, so the degraded state is "nobody appears
+        # online" rather than an error. ``presence_for`` also exempts
+        # ``is_self`` first, so a user never loses sight of their own state.
+        return set(ids)
     if not found_table:
-        _warn_once("block_no_source", "PRESENCE_BLOCK_LOOKUP_NO_SOURCE blocks_not_enforced=1 -- neither comm_v2_blocks nor blocked_users is readable")
+        # Neither store *exists*. That is a different claim from "the read
+        # failed", and it must not be treated as one: a deployment with no
+        # block table has no way to express a block, so there are none to
+        # enforce and hiding all presence would disable the feature outright
+        # rather than protect anyone. Returning empty here is what keeps this
+        # fix from becoming a site-wide denial.
+        _warn_once(
+            "block_no_source",
+            "PRESENCE_BLOCK_LOOKUP_NO_SOURCE blocks_not_enforced=1 -- neither "
+            "comm_v2_blocks nor blocked_users exists in this deployment",
+        )
     return blocked
 
 

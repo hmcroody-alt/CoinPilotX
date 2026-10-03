@@ -44,6 +44,7 @@ access to live conversation history.
 from __future__ import annotations
 
 import json
+import logging
 
 # Canonical vocabulary. Both UIs are three-valued; the aliases cover the
 # spellings each one uses plus the ones the old dead code accepted, so a value
@@ -161,7 +162,22 @@ def _native_preference(blob):
 
 
 def _settings_rows(cur, user_id):
-    """Both settings keys in one read, as a plain dict."""
+    """Both settings keys in one read, as a plain dict.
+
+    A read failure returns ``{}``, which resolves to ``everyone`` -- the same
+    answer as a user who has no row. That direction is deliberate and is
+    argued in the module docstring: this gate governs a *preference*, not a
+    safety boundary, and the hard boundaries (blocks, account status, profile
+    visibility) are owned by the caller and fail closed on their own. Making an
+    unreadable ``user_settings`` deny every new conversation would turn a
+    storage hiccup into a platform-wide messaging outage.
+
+    What is not acceptable is doing it quietly. "No row" and "the read failed"
+    produce the same permission here, and they must not also produce the same
+    silence -- only one of them is a decision a user made. Logging it means a
+    window of unenforced DM preferences can be seen after the fact instead of
+    being indistinguishable from a window in which nobody had set one.
+    """
     try:
         cur.execute(
             "SELECT setting_key, setting_value FROM user_settings "
@@ -170,6 +186,10 @@ def _settings_rows(cur, user_id):
         )
         rows = cur.fetchall() or []
     except Exception:
+        logging.exception(
+            "DM_PRIVACY_SETTINGS_READ_FAILED user=%s -- preference not applied, "
+            "resolving to 'everyone'", user_id,
+        )
         return {}
     out = {}
     for row in rows:
