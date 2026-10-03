@@ -4,8 +4,10 @@ This file exists because of how the old /about went wrong. Nothing broke. No
 test failed. The page simply kept describing an educational crypto simulation
 platform with Arena battles and a Scam Shield scanner for about a year after the
 product became a social network with a marketplace in it, and the only thing
-that would have caught it was somebody reading the page. One of its three
-buttons pointed at `/scam-shield/scan`, which answers 404 in production.
+that would have caught it was somebody reading the page. Two of its three
+buttons -- "Preview Arena" and "Open Scam Shield" -- were live, working links
+into the old product, which is the harder version of the problem: a dead link
+gets reported, and a working one just quietly answers a question nobody asked.
 
 So the assertions below are not about rendering. They are about three things a
 future edit could quietly undo:
@@ -28,7 +30,9 @@ future edit could quietly undo:
    fetched anonymously and must not 404 and must not redirect to /login. Most of
    this site's social surfaces are behind `pulse_social_shell`, so a reasonable-
    looking link to a reels or profile tab is a dead end for exactly the reader
-   this page is for. That is how `/scam-shield/scan` shipped.
+   this page is for. Checked by fetching, not by reading the handler: route
+   packs here register inside `except` blocks, so a path can 404 in a test
+   process and answer 200 in production. `/scam-shield/scan` does exactly that.
 
 Run: python3 -m pytest tests/test_about_page.py
 
