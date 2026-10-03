@@ -344,5 +344,50 @@ def test_the_page_does_not_send_a_visitor_to_a_login_wall_it_called_the_web_app(
         assert status == 200, f"{href} answers {status} to an anonymous visitor"
 
 
+BREAKOUT = "</script <svg onload=alert(1)"
+
+
+def _ld_blocks(body):
+    return re.findall(r'type="application/ld\+json">(.*?)</script>', body, re.S)
+
+
+@pytest.mark.parametrize(
+    "path, patch",
+    [
+        ("/learn/crypto-scams", ("page_meta", "description")),
+        ("/alpha-arena", ("ads_page", "description")),
+    ],
+)
+def test_a_hostile_value_cannot_close_the_block_it_is_written_into(client, path, patch, monkeypatch):
+    """Both of these graphs are assembled from literals today, so no reachable
+    request can reach these assertions -- the point is that the two emitters
+    reached the one serialiser rather than each keeping their own `json.dumps`.
+    Injecting the value upstream is the only way to make that falsifiable: this
+    fails on the revision before the change, because `<` arrived literal.
+
+    `</script` plus any whitespace ends a raw-text script element, so the space
+    in the payload is doing the work a `>` would -- and the `>` that finishes
+    the injected tag is already in the markup that follows.
+    """
+
+    if patch[0] == "page_meta":
+        real = bot.seo_engine.page_meta
+        monkeypatch.setattr(
+            bot.seo_engine,
+            "page_meta",
+            lambda p="/": {**real(p), patch[1]: BREAKOUT},
+        )
+    else:
+        monkeypatch.setitem(bot.ADS_LANDING_PAGES[path.lstrip("/")], patch[1], BREAKOUT)
+
+    body = client.get(path).get_data(as_text=True)
+    blocks = _ld_blocks(body)
+    assert len(blocks) == 1, f"{path} emits {len(blocks)} ld+json blocks"
+    assert "<" not in blocks[0], f"{path} let a literal < into its ld+json block"
+    assert BREAKOUT in json.dumps(json.loads(blocks[0])), (
+        f"{path} escaped the value into something other than what it was given"
+    )
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__]))
