@@ -123,9 +123,10 @@ def mobile_app_schema():
     * No `downloadUrl`. `installUrl` is the field for "where a person installs
       this"; `downloadUrl` invites a direct binary, which we do not offer.
 
-    The $14.99 in `product_schema` is a different claim about a different
-    thing: the app is free, PulseSoc Premium is the paid subscription
-    (`bot.PRO_PRICE_MONTHLY`). Both can be true at once, and were not before.
+    The `price: "0"` is a claim about the download and is checkable against
+    Apple's listing. It says nothing about what a subscription costs, and no node
+    in this module says that any more -- see the note where `product_schema` used
+    to be for why the site publishes no subscription price at all.
     """
 
     return {
@@ -319,22 +320,31 @@ def webpage_schema(page):
     return schema
 
 
-def product_schema():
-    return {
-        "@type": "Product",
-        "@id": f"{SITE_URL}/#product",
-        "name": "PulseSoc Premium",
-        "brand": {"@id": f"{SITE_URL}/#organization"},
-        "description": "PulseSoc Premium adds prestige identity, creator enhancements, advanced safety and intelligence features, and premium community tools.",
-        "image": SHARE_IMAGE_URL,
-        "offers": {
-            "@type": "Offer",
-            "price": "14.99",
-            "priceCurrency": "USD",
-            "url": f"{SITE_URL}/#pricing",
-            "availability": "https://schema.org/InStock",
-        },
-    }
+# There is no `product_schema()` here any more, and the gap is the point.
+#
+# It published one `Product` -- "PulseSoc Premium", `$14.99`, `InStock`, with
+# `offers.url` pointing at `/#pricing` -- onto `/portfolio-intelligence`,
+# `/ai-market-analysis` and `/telegram-crypto-bot`. Three facts about that node,
+# each of which is enough on its own:
+#
+# * None of those three pages, nor `/pricing`, prints a price or that product's
+#   name anywhere a reader can see it. The number went to Google and nowhere
+#   else, so no page view could ever have contradicted it.
+# * `$14.99` is not Premium's price. It is `crypto_intelligence_pro`'s monthly
+#   plan (1499) in `services/business_os/entitlements/schema.py`; Premium's plan
+#   there is 999, and the charge the Premium checkout takes is
+#   `PULSE_PREMIUM_PRICE_CENTS`, defaulting to 1900. The node carried the social
+#   product's name and benefits over the crypto product's price, on pages whose
+#   subject is the crypto product.
+# * `/#pricing` is an anchor no page on this domain defines.
+#
+# Which of 999, 1499 and 1900 is the public price is a question for whoever sets
+# prices, and a structured-data layer that picks one is inventing a fact rather
+# than projecting one. So the node is removed rather than corrected. Nothing is
+# lost from the graph: `service_schema` already describes what each of these
+# pages offers, named from the page's own `h1`, and `tests/test_app_schema.py`
+# holds the floor for putting a price back -- a reader of the page has to be able
+# to see the same number.
 
 
 def article_schema(page):
@@ -379,7 +389,7 @@ def related_item_list_schema(page):
     }
 
 
-def schema_graph(page, include_product=False, include_article=False):
+def schema_graph(page, include_article=False):
     graph = [
         organization_schema(),
         website_schema(),
@@ -393,8 +403,6 @@ def schema_graph(page, include_product=False, include_article=False):
     ]
     if page.get("faqs"):
         graph.append(faq_schema(page["faqs"]))
-    if include_product:
-        graph.append(product_schema())
     if include_article or page.get("og_type") == "article":
         graph.append(article_schema(page))
     related = related_item_list_schema(page)

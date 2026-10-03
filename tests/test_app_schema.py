@@ -132,11 +132,43 @@ def test_the_app_is_advertised_at_the_price_apple_charges_for_it(graph):
     assert offer["priceCurrency"] == "USD"
 
 
-def test_the_subscription_price_still_matches_the_one_the_site_quotes():
-    """The two live in different modules and must not drift."""
+SUBSCRIPTION_PRODUCT_PAGES = ("/portfolio-intelligence", "/ai-market-analysis",
+                              "/telegram-crypto-bot", "/pricing")
 
-    assert seo_schema.product_schema()["offers"]["price"] == "14.99"
-    assert "14.99" in bot.PRO_PRICE_MONTHLY
+
+@pytest.mark.parametrize("path", SUBSCRIPTION_PRODUCT_PAGES)
+def test_no_page_publishes_a_subscription_price_it_does_not_show_a_reader(client, path):
+    """A price that exists only in the markup is the one kind of claim nothing
+    can check.
+
+    The first three paths used to carry a ``Product`` node -- "PulseSoc Premium",
+    ``$14.99``, ``availability: InStock`` -- and not one of them, nor ``/pricing``,
+    prints a price or that product's name anywhere a person can read it. So the
+    number was published to Google and to no one else, which means no page view
+    and no support ticket could ever have contradicted it.
+
+    What it was is worse than stale. ``$14.99`` is ``crypto_intelligence_pro``'s
+    monthly plan in the canonical catalogue (1499 in
+    ``services/business_os/entitlements/schema.py``); PulseSoc Premium's plan
+    there is 999, and the charge the Premium checkout actually takes is
+    ``PULSE_PREMIUM_PRICE_CENTS``, defaulting to 1900. One node welded the social
+    product's name and benefits onto the crypto product's price, on three pages
+    whose subject is the crypto product. Its ``offers.url`` pointed at
+    ``/#pricing``, an anchor that exists on no page on the domain.
+
+    Which of 999, 1499 and 1900 is the public price is not a question structured
+    data gets to answer, so the node is gone rather than corrected. The pages
+    still describe what they show through their ``Service`` node, named from the
+    page's own ``h1``. This test is the floor: a price may come back here when a
+    reader of the page can see the same number.
+    """
+
+    body = client.get(path).get_data(as_text=True)
+    for blob in re.findall(r'type="application/ld\+json">(.*?)</script>', body, re.S):
+        for node in json.loads(blob).get("@graph", []):
+            assert node["@type"] != "Product", \
+                f"{path} publishes a Product node; no price on this page is visible to a reader"
+        assert "14.99" not in blob, f"{path} still asserts 14.99 to a crawler"
 
 
 def test_no_rating_review_or_download_count_is_asserted_anywhere(landing):

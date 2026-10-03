@@ -2284,7 +2284,6 @@ def render_seo_landing(page, include_article=False):
 
     schema_json = seo_schema.schema_graph(
         page,
-        include_product=page.get("slug") in {"portfolio-intelligence", "ai-market-analysis", "telegram-crypto-bot"},
         include_article=include_article or page.get("og_type") == "article",
     )
     share_url = quote(page["canonical"], safe="")
@@ -108844,9 +108843,11 @@ def pro_page():
     cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(name))}</h2><ul>{''.join(f'<li>{html_escape(clean_html(item))}</li>' for item in items)}</ul><a class='button primary' href='/pulse/premium'>Explore PulseSoc Premium</a></article>" for name, items in packages)
     trust = "<article class='card'><h2>Growth-First Access</h2><p>The core PulseSoc ecosystem is free for authenticated users. Premium is aspirational: identity, prestige, creator enhancement, cosmetics, and deeper creator intelligence.</p></article>"
     body = f"<section class='grid'>{cards}{trust}</section>"
-    # "PulseSoc Premium" is what the page's own three cards call it and what
-    # `seo.schema.product_schema` offers Google at $14.99. The heading was the
-    # only place on the domain that named it after the company.
+    # "PulseSoc Premium" is what the page's own three cards call it. The heading
+    # was the only place on the domain that named it after the company. (This
+    # used to cite `seo.schema.product_schema` as the second witness; that node
+    # is gone, because the $14.99 it quoted was another product's price and no
+    # page showed it.)
     return trust_public_page("PulseSoc Premium", "Free core ecosystem with PulseSoc Premium prestige and creator enhancements.", body, "/pulse/premium")
 
 
