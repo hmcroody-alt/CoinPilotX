@@ -29,6 +29,7 @@ os.close(_HANDLE)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
 
 import bot  # noqa: E402
+from services import legal_acceptance  # noqa: E402
 from werkzeug.security import generate_password_hash  # noqa: E402
 
 SWALLOW_LOG = "FAILED_LOGIN_ALERT_TASK_SKIPPED"
@@ -70,6 +71,10 @@ def _seed_victim():
             """,
             (VICTIM_EMAIL, "burst_target", generate_password_hash(VICTIM_PASSWORD)),
         )
+        # The control test here is that a *correct* password raises no alert, and
+        # a correct password against an account with no acceptance on file is
+        # refused by the consent gate before it ever reaches the alert logic.
+        legal_acceptance.record(cur, cur.lastrowid, source="mobile_register")
         conn.commit()
     finally:
         conn.close()

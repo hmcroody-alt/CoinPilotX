@@ -510,6 +510,17 @@
       "wrongEmail": "メールアドレスが違いますか？",
       "waitingForConfirmation": "確認をお待ちしています…"
     },
+    "legalAcceptance": {
+      "title": "続けるには同意が必要です",
+      "body": "続ける前に、以下の文書をお読みのうえ同意してください。",
+      "bodyNamed": "{{name}}さん、続ける前に以下の文書をお読みのうえ同意してください。",
+      "read": "読む",
+      "readDocument": "{{document}}を読む",
+      "opensInBrowser": "ブラウザで開きます",
+      "accept": "同意します",
+      "disclosure": "同意すると、上記のバージョンがアカウントに記録されます。",
+      "documentsChanged": "読んでいる間に文書が更新されました。新しいバージョンを確認して、もう一度同意してください。"
+    },
     "recover": {
       "title": "パスワードをリセット",
       "subtitle": "再開用のリンクをお送りします。",

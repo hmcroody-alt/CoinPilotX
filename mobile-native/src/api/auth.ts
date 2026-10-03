@@ -11,6 +11,38 @@ export type PulseUser = {
   account_status?: string;
 };
 
+/**
+ * One outstanding document, exactly as the server describes it. Every field is
+ * the server's answer: `version` is what this account would be recorded as
+ * accepting, and `path` is where the canonical text lives. The app does not
+ * carry a copy of either — `src/screens/settings/legalContent.ts` is a bundled
+ * snapshot dated months behind the documents in force, and accepting version X
+ * while reading version X-1 is the defect a version ledger exists to prevent.
+ */
+export type LegalAcceptanceDocument = {
+  document: string;
+  version: string;
+  title: string;
+  path: string;
+};
+
+/**
+ * What the server says is outstanding, and the only credential that answers it.
+ *
+ * `ticket` is present on the login-refused path and absent on a restored
+ * session: a refused login holds no session, so the server signs the account id
+ * and the shown versions into a short-lived ticket; a restored session already
+ * carries a bearer token and needs no second credential. Both are server-issued
+ * — there is no shape of this object the client can author to admit itself.
+ */
+export type LegalAcceptanceChallenge = {
+  documents: LegalAcceptanceDocument[];
+  accept_url?: string;
+  ticket?: string;
+  ttl_seconds?: number;
+  expires_at?: number;
+};
+
 export type SessionResponse = {
   ok: boolean;
   authenticated: boolean;
@@ -19,6 +51,14 @@ export type SessionResponse = {
   refresh_token_expires_in?: number;
   access_token?: string;
   access_token_expires_in?: number;
+  /**
+   * Reported on `/session` and `/refresh` so a session restored across a
+   * document revision finds out. True with a live `user` is not a
+   * contradiction: the server deliberately informs rather than revoking, so
+   * builds that predate the acceptance screen keep working.
+   */
+  legal_acceptance_required?: boolean;
+  legal_acceptance?: LegalAcceptanceChallenge;
 };
 
 /**
@@ -120,6 +160,26 @@ export function requestPasswordRecovery(email: string) {
   return pulseApi<{ ok: boolean; message?: string }>("/api/mobile/auth/recover", {
     method: "POST",
     body: JSON.stringify({ email })
+  });
+}
+
+/**
+ * Record this account's acceptance of every document the server says is
+ * outstanding.
+ *
+ * The body carries the ticket and nothing else. No account id, no document
+ * list, no version, no timestamp: the server reads the account from the ticket
+ * signature or from the bearer token, and reads the versions from its own
+ * config. A client that could name any of those could record a consent nobody
+ * gave, or record agreement to text the member never saw.
+ *
+ * Safe to retry. The ledger is unique on (account, document, version), so a
+ * double tap or a replay after a lost response is the same single row.
+ */
+export function acceptLegalDocuments(ticket?: string) {
+  return pulseApi<SessionResponse>("/api/mobile/auth/legal-acceptance", {
+    method: "POST",
+    body: JSON.stringify(ticket ? { ticket } : {})
   });
 }
 

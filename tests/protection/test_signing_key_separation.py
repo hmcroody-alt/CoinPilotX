@@ -109,8 +109,8 @@ def _clear_overrides():
 def test_every_purpose_gets_a_different_key():
     _clear_overrides()
     keys = {p: signing_keys.derive(ROOT, p) for p in signing_keys.PURPOSES}
-    assert len(signing_keys.PURPOSES) == 5, "a purpose was added or removed"
-    assert len(set(keys.values())) == 5, (
+    assert len(signing_keys.PURPOSES) == 6, "a purpose was added or removed"
+    assert len(set(keys.values())) == 6, (
         f"two purposes derive to the same key, which re-couples their rotation: "
         f"{keys}"
     )
@@ -432,6 +432,26 @@ def test_mobile_tokens_are_minted_and_verified_with_the_same_derived_key():
     """Minting with one key and verifying with another is a total auth outage."""
     assert BOT.count("hmac.new(COINPILOTX_MOBILE_ACCESS_KEY.encode") == 2, (
         "expected exactly two mobile-access signing sites (mint and verify)."
+    )
+
+
+def test_the_legal_acceptance_ticket_has_its_own_key_at_both_sites():
+    """A pre-session ticket must not verify under the bearer key, or vice versa.
+
+    The ticket authorises one write on one account before any session exists;
+    the bearer authorises everything a member can do. Counted rather than merely
+    asserted present because the failure that matters is a *third* site added
+    later under the wrong constant -- a mint and a verify that disagree is a
+    silent refusal of every acceptance, and a ticket signed with the bearer key
+    is a credential-confusion surface that the purpose field then has to carry
+    alone.
+    """
+    assert BOT.count("hmac.new(COINPILOTX_LEGAL_ACCEPTANCE_KEY.encode") == 2, (
+        "expected exactly two legal-acceptance signing sites (mint and verify)."
+    )
+    assert "COINPILOTX_LEGAL_ACCEPTANCE_KEY = _signing_keys.derive(" in BOT, (
+        "the acceptance key must be derived through services/signing_keys, not "
+        "read from the environment or reused from another family."
     )
 
 

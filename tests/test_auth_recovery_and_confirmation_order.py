@@ -36,7 +36,7 @@ os.close(_HANDLE)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
 
 import bot  # noqa: E402
-from services import cache_engine, pulse_security_core  # noqa: E402
+from services import cache_engine, legal_acceptance, pulse_security_core  # noqa: E402
 from services import db as db_service  # noqa: E402
 
 PASSWORD = "RecoveryOrder!123"
@@ -73,6 +73,11 @@ def _reset_limiters():
 
 
 def _make_user(*, confirmed=True):
+    # Acceptance of the documents in force is recorded here because a signup
+    # records it, and because the ordering under test sits *behind* the consent
+    # gate: an account with nothing on file answers `legal_acceptance_required`
+    # to a correct password, which would make the control test below assert the
+    # wrong refusal.
     email = f"recovery-{secrets.token_hex(6)}@example.com"
     now = bot.datetime.now().isoformat()
     conn = db_service.connect()
@@ -96,6 +101,7 @@ def _make_user(*, confirmed=True):
             now,
         ),
     )
+    legal_acceptance.record(cur, cur.lastrowid, source="mobile_register")
     conn.commit()
     conn.close()
     return email

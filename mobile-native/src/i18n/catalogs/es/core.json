@@ -510,6 +510,17 @@
       "wrongEmail": "¿Correo incorrecto?",
       "waitingForConfirmation": "Esperando la confirmación…"
     },
+    "legalAcceptance": {
+      "title": "Acepta para continuar",
+      "body": "Antes de continuar, lee y acepta los documentos que aparecen abajo.",
+      "bodyNamed": "Hola {{name}}. Antes de continuar, lee y acepta los documentos que aparecen abajo.",
+      "read": "Leer",
+      "readDocument": "Leer {{document}}",
+      "opensInBrowser": "Se abre en tu navegador",
+      "accept": "Acepto",
+      "disclosure": "Al aceptar, se registran en tu cuenta las versiones indicadas arriba.",
+      "documentsChanged": "Estos documentos cambiaron mientras los leías. Revisa las versiones nuevas y acepta de nuevo."
+    },
     "recover": {
       "title": "Restablece tu contraseña",
       "subtitle": "Te enviaremos un enlace para volver a entrar.",

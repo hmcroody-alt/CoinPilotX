@@ -510,6 +510,17 @@
       "wrongEmail": "E-mail errado?",
       "waitingForConfirmation": "Aguardando confirmação…"
     },
+    "legalAcceptance": {
+      "title": "Aceite para continuar",
+      "body": "Antes de continuar, leia e aceite os documentos abaixo.",
+      "bodyNamed": "Olá {{name}}. Antes de continuar, leia e aceite os documentos abaixo.",
+      "read": "Ler",
+      "readDocument": "Ler {{document}}",
+      "opensInBrowser": "Abre no seu navegador",
+      "accept": "Concordo",
+      "disclosure": "Ao concordar, as versões indicadas acima ficam registadas na sua conta.",
+      "documentsChanged": "Estes documentos mudaram enquanto os lia. Veja as novas versões e aceite novamente."
+    },
     "recover": {
       "title": "Redefinir sua senha",
       "subtitle": "Vamos enviar um link para você voltar.",
