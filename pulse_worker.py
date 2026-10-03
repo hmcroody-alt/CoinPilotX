@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 import bot
 from services import pulse_ai, pulse_feed_engine
+from services import marketplace_reservation_authority as reservation_authority
 from services import marketplace_reservation_sweeper as reservation_sweeper
 from services import marketplace_release_cycle as release_cycle
 from services import marketplace_payout_worker as payout_worker
@@ -82,8 +83,24 @@ def sweep_dry_run() -> bool:
 
     This is the flag that stands between a scheduling bug and released
     inventory, so it fails closed in every ambiguous case.
+
+    Retained as the legacy reading. ``sweep_authority()`` is what the sweep
+    actually consults, and it reports the same answer for this flag's two
+    values — but it also distinguishes the planes this boolean cannot (§17).
     """
     return _env_flag(SWEEP_DRY_RUN_ENV_VAR, default=True)
+
+
+def sweep_authority():
+    """The four planes the next sweep is permitted to touch (§17).
+
+    Resolved from the environment on every cycle, not cached at import, so an
+    operator revoking release authority in Railway has it revoked on the next
+    sweep rather than at the next redeploy. That direction matters more than
+    the reverse: granting late is an inconvenience, revoking late is an
+    incident.
+    """
+    return reservation_authority.resolve()
 
 
 def sweep_interval_seconds() -> int:
@@ -121,7 +138,8 @@ def run_reservation_sweep_if_due(state: dict) -> dict | None:
     if due_at is not None and now < due_at:
         return None
 
-    dry_run = sweep_dry_run()
+    authority = sweep_authority()
+    dry_run = authority.dry_run
     summary = None
     committed = False
     try:
@@ -132,7 +150,7 @@ def run_reservation_sweep_if_due(state: dict) -> dict | None:
             cur = conn.cursor()
             summary = reservation_sweeper.run_reservation_expiry_sweep(
                 cur,
-                dry_run=dry_run,
+                authority=authority,
                 limit=reservation_sweeper.batch_limit(),
             )
             conn.commit()
@@ -166,8 +184,8 @@ def run_reservation_sweep_if_due(state: dict) -> dict | None:
         state["reservation_sweep_due_at"] = time.monotonic() + interval
 
     logging.info(
-        "RESERVATION_SWEEP_CYCLE dry_run=%s interval=%s summary=%s",
-        dry_run, interval, summary,
+        "RESERVATION_SWEEP_CYCLE authority=%s dry_run=%s interval=%s summary=%s",
+        authority.describe(), dry_run, interval, summary,
     )
     outcome = {"status": "ok", **summary}
     state["reservation_sweep_last"] = _sweep_metrics(outcome)
@@ -245,11 +263,20 @@ def main():
     # Announce the sweep's configuration once at boot so a deployment's
     # behaviour is readable from the first ten lines of its logs, rather than
     # inferred from whether releases start appearing.
+    # Each plane is named separately, because the whole point of §17 is that
+    # "dry_run=True" was four claims wearing one label — and the one it was
+    # least true about was Stripe traffic.
+    _boot_authority = sweep_authority()
     logging.info(
-        "RESERVATION_SWEEP_CONFIG enabled=%s dry_run=%s interval=%s batch=%s "
-        "stripe_key_present=%s",
+        "RESERVATION_SWEEP_CONFIG enabled=%s authority=%s source=%s "
+        "may_backfill=%s may_read_provider=%s may_mutate=%s interval=%s "
+        "batch=%s stripe_key_present=%s",
         sweep_enabled(),
-        sweep_dry_run(),
+        _boot_authority.describe(),
+        _boot_authority.source,
+        _boot_authority.backfill_writes,
+        _boot_authority.read_provider,
+        _boot_authority.mutate_reservations,
         sweep_interval_seconds(),
         reservation_sweeper.batch_limit(),
         bool(os.getenv("STRIPE_SECRET_KEY")),
