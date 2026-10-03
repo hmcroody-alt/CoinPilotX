@@ -221,15 +221,18 @@ def test_no_indexable_page_presents_the_legal_entity_as_the_site_name(pages):
     assert not wrong, f"og:site_name must be the brand: {wrong}"
 
 
-# The eleven titles below still name the company. Renaming them is not the fix
+# The ten titles below still name the company. Renaming them is not the fix
 # and would make the problem worse: they describe the crypto and sports product
 # this domain used to be, and relabelling them "PulseSoc" would attach the brand
 # to pages about a different product rather than detach the company from pages
 # about this one. Whether those pages stay indexed at all is a product decision,
 # not an engineering one, so they are listed here as a known set instead of
-# silently tolerated -- adding a twelfth fails.
+# silently tolerated -- adding an eleventh fails.
+#
+# `/about` left this set because it stopped describing the old product. It is
+# the one page here where renaming *was* the fix: a page whose job is to say
+# what PulseSoc is cannot be about something else.
 TITLES_NAMING_THE_COMPANY = {
-    "/about",
     "/arena-preview",
     "/crypto-scam-scanner",
     "/crypto-training-simulator",

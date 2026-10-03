@@ -2202,31 +2202,40 @@ def legal_guidelines_canonical_page():
     return redirect("/community-rules", code=301)
 
 
+ABOUT_DESCRIPTION = (
+    "PulseSoc is a social commerce platform: posts, reels, live video, messages "
+    "and communities, with a marketplace connected to what you discover."
+)
+
+
 @webhook_app.route("/about", methods=["GET"])
+@public_route(reason="The page that says what PulseSoc is. Anonymous by definition -- a visitor deciding whether this is for them has no account yet, and search engines have none either.")
 def about_page():
-    # The canonical node, not a local copy of one. What was here named the
-    # company where every other page names the brand, carried no `@id` so it
-    # joined nothing, gave `url` as /about rather than the site root, and listed
-    # a page on this same domain under `sameAs` -- a field for profiles that
-    # identify this entity somewhere else.
+    # Renders `about.html` through `_public_shell.html` rather than returning its
+    # own document. The f-string that used to live here carried a second design
+    # system -- its own palette, its own button rules, its own two-column hero --
+    # which is the mechanical reason /about looked like a different product from
+    # /app and /features, and the reason its copy could drift this far from the
+    # one shipped here without anything noticing.
     #
-    # Its `description` is the reason to take the whole node rather than patch
-    # the name: it described an educational crypto simulation platform. Under
-    # the canonical `@id` that description would not sit beside the WebSite's,
-    # it would merge with it, and Google would resolve the contradiction by
-    # crawl order.
-    schema = dict(seo_schema.organization_schema(), **{"@context": "https://schema.org"})
-    sections = [
-        ("Mission", "CoinPlotXAI helps people train discipline, understand risk, practice decision-making, improve market awareness, and protect themselves from crypto scams in a simulation-first environment."),
-        ("AI + Human Psychology", "The platform combines live/cached market context, AI tactical summaries, psychology checks, and risk education so users can slow down, recognize pressure, and make clearer educational decisions."),
-        ("Arena Training Ecosystem", "CoinPlotXAI Arena is a Pro training world with virtual portfolio battles, live rooms, AI commentary, Scam Hunter drills, boss challenges, leaderboards, and cinematic match rooms. It uses virtual dollars only and rewards discipline, scam defense, and learning."),
-        ("Scam Protection", "Scam Shield teaches users to recognize phishing, fake support, wallet drainers, impersonation, malicious approvals, urgency manipulation, and suspicious links. CoinPlotXAI never asks for seed phrases or private keys."),
-        ("Privacy + Security", "Arena uses public player identities instead of exposing email addresses, payment details, real names, or internal account IDs. Security logging, admin audit trails, rate-aware APIs, and browser protections help keep the platform accountable."),
-        ("Continuous Innovation", "CoinPlotXAI is evolving into a realtime intelligence operating system: live market context, social Arena presence, push-ready alerts, education paths, and AI coaching continue to improve without promising profits."),
-        ("Educational Disclaimer", "CoinPlotXAI Inc. provides educational AI intelligence and simulations only. It is not financial, investment, legal, betting, or tax advice. No real-money trading execution occurs inside Arena."),
-    ]
-    cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(title))}</h2><p>{html_escape(clean_html(text))}</p></article>" for title, text in sections)
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About CoinPlotXAI | AI Crypto Intelligence, Scam Protection and Arena Training</title><meta name="description" content="CoinPlotXAI is an educational AI crypto intelligence platform with Scam Shield, live market context, Pro Arena simulations, virtual portfolio battles, psychology training, and privacy-safe social learning."><link rel="canonical" href="https://pulsesoc.com/about"><meta property="og:title" content="About CoinPlotXAI"><meta property="og:description" content="AI crypto intelligence, Scam Shield, risk psychology education, and Pro Arena virtual-dollar training."><meta property="og:url" content="https://pulsesoc.com/about"><meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-og-20260913.png"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{json.dumps(schema)}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 30px,1120px);margin:auto;padding:28px 0 90px}}a{{color:#6edff6}}.hero{{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin:30px 0}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.28);padding:20px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}h1{{font-size:clamp(42px,7vw,78px);line-height:.96;margin:0 0 14px}}p{{color:#9fb5c0}}.kicker{{color:#36e58f;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}.button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(110,223,246,.24);padding:10px 14px;font-weight:900;text-decoration:none;color:#f2fbff}}.primary{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><section class="hero"><article class="card"><div class="kicker">About CoinPlotXAI</div><h1>A safer AI command center for crypto learning, risk awareness, and simulation.</h1><p>CoinPlotXAI is built for people who want sharper market awareness without hype, gambling language, or fake profit promises.</p><div class="actions"><a class="button primary" href="/signup">Start Free</a><a class="button" href="/arena-preview">Preview Arena</a><a class="button" href="/scam-shield/scan">Open Scam Shield</a></div></article><article class="card"><h2>What We Optimize For</h2><p>Clarity, emotional control, scam defense, privacy-safe social learning, and educational practice before real-world risk.</p></article></section><section class="grid">{cards}</section></main></body></html>""")
+    # The schema is `about_page_graph`, not `schema_graph`: the latter attaches a
+    # `Service` node whose `serviceType` defaults to "AI intelligence", which is
+    # the single claim this rewrite exists to stop making.
+    page = {
+        "canonical": search_visibility.canonical_url("/about"),
+        "breadcrumb": "About",
+        "title": "About PulseSoc | Social commerce, creators, reels and marketplace",
+        "description": ABOUT_DESCRIPTION,
+        "image": seo_schema.SHARE_IMAGE_URL,
+    }
+    response = webhook_app.make_response(render_template(
+        "about.html",
+        page=page,
+        robots=search_visibility.robots_meta("/about"),
+        schema_json=seo_schema.about_page_graph(page),
+    ))
+    response.headers["Cache-Control"] = "public, max-age=600"
+    return response
 
 
 @webhook_app.route("/search", methods=["GET"])
