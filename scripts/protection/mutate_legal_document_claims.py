@@ -216,6 +216,35 @@ MUTATIONS = [
         suites=[CLAIM_MATRIX],
     ),
     dict(
+        name="marketing-opt-out-points-at-an-unsubscribe-link",
+        control=(
+            "The consent rows at signup say 'I can unsubscribe anytime', and an "
+            "earlier draft repeated that as the mechanism. No route serves an email "
+            "unsubscribe, nothing here sends a marketing campaign, and no inbound-SMS "
+            "handler reads STOP. The working control is the opt-in tick-box."
+        ),
+        path=PRIVACY,
+        old="<p><strong>Marketing email and SMS are opt-in.</strong>",
+        new=(
+            "<p>You can unsubscribe from marketing email using the link in the "
+            "message, and stop marketing SMS by replying STOP where supported. "
+            "<strong>Marketing email and SMS are opt-in.</strong>"
+        ),
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
+        name="marketing-control-left-unnamed",
+        control=(
+            "Renaming the heading away from the opt-in wording leaves the Policy with "
+            "no plain statement of the one marketing control that works, which is the "
+            "pessimistic half of the same fiction."
+        ),
+        path=PRIVACY,
+        old="<strong>Marketing email and SMS are opt-in.</strong>",
+        new="<strong>Marketing preferences.</strong>",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
         name="self-service-export-is-advertised",
         control="No export route exists in the url_map; nothing emails a member their data.",
         path=PRIVACY,

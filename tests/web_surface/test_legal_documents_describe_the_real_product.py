@@ -661,6 +661,90 @@ def test_the_policy_does_not_endorse_the_privacy_center_boxes_that_do_nothing(pa
     )
 
 
+BREVO_CAMPAIGN_MARKERS = ("emailCampaigns", "/v3/emailCampaigns", "smsCampaigns")
+
+
+def _marketing_campaign_senders():
+    """Files that ask Brevo to send a campaign.
+
+    A transactional send goes to ``/v3/smtp/email``; a campaign goes to a
+    ``Campaigns`` endpoint. Nothing in this repository calls one.
+    """
+
+    found = set()
+    for path in ROOT.rglob("*.py"):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel.startswith(("tests/", "scripts/")) or "node_modules" in rel:
+            continue
+        try:
+            body = path.read_text(errors="ignore")
+        except OSError:
+            continue
+        if any(marker in body for marker in BREVO_CAMPAIGN_MARKERS):
+            found.add(rel)
+    return sorted(found)
+
+
+def test_the_policy_does_not_promise_an_unsubscribe_link_or_a_stop_reply(client, pages):
+    """Two mechanisms PulseSoc does not generate.
+
+    The signup and settings consent rows say "I can unsubscribe anytime" and
+    "Reply STOP to unsubscribe", and an earlier draft of this Policy repeated both
+    as the way to stop marketing. Neither exists in this product:
+
+    * No route serves an email unsubscribe. The only ``unsubscribe`` rules in
+      ``url_map`` are web-push ones, and the four ``unsubscribe`` hits in ``bot.py``
+      are all that same push path.
+    * No inbound-SMS handler reads a STOP keyword.
+    * No code here sends a marketing campaign at all, so there is no message whose
+      footer PulseSoc could put a link in.
+
+    What does work is the pair of opt-in columns. ``email_opt_in`` and
+    ``sms_opt_in`` gate marketing-list membership in
+    ``services/brevo_contacts.py::target_list_names``, so unticking a box really
+    does remove the member from a list.
+
+    This is the Privacy-Center defect in a third costume: a document borrowing a
+    mechanism's authority without checking the mechanism is there. Pointing a member
+    at a link that no message carries is worse than silence -- they wait, and
+    nothing happens.
+    """
+
+    senders = _marketing_campaign_senders()
+    assert not senders, (
+        f"{senders} now sends Brevo campaigns. If PulseSoc sends marketing mail, "
+        "Brevo adds its own unsubscribe footer and this Policy's refusal to mention "
+        "an unsubscribe link may have become the false claim. Read what the sender "
+        "actually emits before rewording."
+    )
+
+    unsub_rules = sorted(
+        rule.rule
+        for rule in bot.webhook_app.url_map.iter_rules()
+        if "unsubscribe" in rule.rule and "push" not in rule.rule
+    )
+    assert not unsub_rules, (
+        f"a non-push unsubscribe route now exists ({unsub_rules}); if it serves "
+        "marketing email, the Policy should name it"
+    )
+
+    visible = pages[PRIVACY]["visible"]
+    promised_link = _unnegated(visible, r"unsubscribe link|link in the (?:message|email)")
+    assert not promised_link, (
+        "the Policy tells members to use an unsubscribe link; PulseSoc sends no "
+        f"marketing campaign and generates no such link: {promised_link}"
+    )
+    promised_stop = _unnegated(visible, r"repl(?:y|ying) STOP")
+    assert not promised_stop, (
+        "the Policy tells members to reply STOP; no inbound-SMS handler reads a "
+        f"STOP keyword: {promised_stop}"
+    )
+    assert re.search(r"Marketing email and SMS are opt-in", visible, re.I), (
+        "the control that does work -- the promotional-email and promotional-text "
+        "tick-boxes -- is the one the Policy has to name, and it does not"
+    )
+
+
 def test_both_documents_publish_the_version_they_are_accepted_under(pages):
     """Guards the pin in tests/test_legal_acceptance.py from the other side.
 
