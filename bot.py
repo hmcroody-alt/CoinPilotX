@@ -3040,7 +3040,7 @@ def add_pwa_headers(response):
         response.headers["Expires"] = "0"
     elif request.path.startswith(("/static/", "/icons/")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml", merchant_center_feed.FEED_PATH, "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
+    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml", merchant_center_feed.FEED_PATH, "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
         response.headers["Cache-Control"] = "public, max-age=300"
     if (
         response.status_code == 200
@@ -34465,7 +34465,15 @@ def marketplace_category_entries(limit=500):
 
 
 #: Child sitemaps, in the order `/sitemap.xml` lists them.
-SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml")
+#:
+#: There is no arena child here. `/sitemap-live.xml` and `/sitemap-replays.xml`
+#: drew every path from the `/arena` subtree, which `search_visibility`
+#: classifies `noindex,follow` because those surfaces redirect anonymous
+#: traffic to `/login`. The eligibility gate therefore dropped all of them and
+#: both routes rendered an empty `<urlset>` on every crawl. Re-adding an arena
+#: sitemap means changing that classification first; a sitemap cannot
+#: distribute a URL the policy table refuses.
+SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml")
 
 
 @webhook_app.route("/sitemap.xml", methods=["GET"])
@@ -34572,46 +34580,6 @@ def merchant_center_feed_xml():
         merchant_center_feed.feed_xml(marketplace_feed_listings()), mimetype="application/xml")
     response.headers["X-Robots-Tag"] = search_visibility.robots_meta(merchant_center_feed.FEED_PATH)
     return response
-
-
-@webhook_app.route("/sitemap-live.xml", methods=["GET"])
-def sitemap_live_xml():
-    # `/momentum` is gone -- the route was removed and the path answers 404 in
-    # production, while sitting in this list asking Google to crawl it. The
-    # `/arena/*` paths stay written here but no longer survive `sitemap_xml`:
-    # all four redirect anonymous traffic to `/login`, and
-    # `search_visibility` now classifies the `/arena` subtree as such, so the
-    # eligibility gate drops them.
-    #
-    # This list is the reason both of those went unnoticed for so long. A
-    # hardcoded path list cannot tell that a route started redirecting or
-    # stopped existing, and nothing re-read it. The durable half of this fix is
-    # in `tests/protection/test_sitemap_entries_are_indexable.py`, which drives
-    # every sitemap route through the test client and fails if any `<loc>` is
-    # not a self-canonical, indexable 200 -- the only check that can catch this
-    # class of rot.
-    paths = ["/arena/live", "/arena/roast-battle", "/arena/momentum", "/arena/leaderboard"]
-    return Response(seo_engine.sitemap_xml(paths, changefreq="hourly"), mimetype="application/xml")
-
-
-@webhook_app.route("/sitemap-replays.xml", methods=["GET"])
-def sitemap_replays_xml():
-    # Same situation: both static fallbacks are login redirects and are now
-    # filtered by the eligibility gate. Published replays are the real content
-    # this sitemap is for, and they are still queried below.
-    paths = ["/arena/highlights", "/arena/momentum"]
-    try:
-        conn = db()
-        cur = conn.cursor()
-        cur.execute("SELECT replay_token FROM arena_replays WHERE replay_token IS NOT NULL ORDER BY id DESC LIMIT 200")
-        for row in cur.fetchall():
-            token = (dict(row).get("replay_token") if hasattr(row, "keys") else row[0])
-            if token:
-                paths.append(f"/arena/replay/{token}")
-        conn.close()
-    except Exception:
-        logging.info("Replay sitemap fell back to static highlight paths.")
-    return Response(seo_engine.sitemap_xml(paths, changefreq="daily"), mimetype="application/xml")
 
 
 @webhook_app.route("/learn/<slug>", methods=["GET"])

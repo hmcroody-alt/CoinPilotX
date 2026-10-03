@@ -155,8 +155,8 @@ MUTATIONS = (
     Mutation(
         name="the new child sitemap is missing from the edge-cache tuple",
         path="bot.py",
-        anchor='"/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml", merchant_center_feed.FEED_PATH',
-        replacement='"/sitemap-posts.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml", merchant_center_feed.FEED_PATH',
+        anchor='"/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml", merchant_center_feed.FEED_PATH',
+        replacement='"/sitemap-posts.xml", "/sitemap-products.xml", merchant_center_feed.FEED_PATH',
         killed_by="test_every_sitemap_is_cacheable_at_the_edge",
     ),
     Mutation(

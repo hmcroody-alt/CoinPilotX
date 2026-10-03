@@ -20843,17 +20843,6 @@
         "/site.webmanifest"
       ]
     },
-    "sitemap_live_xml": {
-      "auth": "unknown",
-      "declared": false,
-      "evidence": "no-known-gate",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/sitemap-live.xml"
-      ]
-    },
     "sitemap_marketplace_xml": {
       "auth": "public",
       "declared": true,
@@ -20874,17 +20863,6 @@
       ],
       "rules": [
         "/sitemap-pages.xml"
-      ]
-    },
-    "sitemap_replays_xml": {
-      "auth": "unknown",
-      "declared": false,
-      "evidence": "no-known-gate",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/sitemap-replays.xml"
       ]
     },
     "sitemap_xml": {
@@ -21248,7 +21226,7 @@
     "by_auth": {
       "admin": 498,
       "public": 7,
-      "unknown": 171,
+      "unknown": 169,
       "user": 1445
     },
     "by_evidence": {
@@ -21256,9 +21234,9 @@
       "gates": 811,
       "identity+refusal": 858,
       "identity-without-refusal": 11,
-      "no-known-gate": 160,
+      "no-known-gate": 158,
       "via": 252
     },
-    "rules": 2121
+    "rules": 2119
   }
 }

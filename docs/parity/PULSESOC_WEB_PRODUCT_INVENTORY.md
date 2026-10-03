@@ -3,8 +3,8 @@
 
 # PulseSoc Web Product Inventory
 
-- Rules in the booted Flask `url_map`: **2083** (authoritative)
-- Rules visible to static analysis: **1833**
+- Rules in the booted Flask `url_map`: **2081** (authoritative)
+- Rules visible to static analysis: **1831**
   - the difference is blueprint route packs registered inside `except Exception`
 - Rules that render an HTML page: **425**
   - admin: **189**, user-facing: **236**
