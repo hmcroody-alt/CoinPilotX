@@ -13,6 +13,7 @@ Runs with nothing but the interpreter (no pytest, no Flask, no network):
 
 from __future__ import annotations
 
+import builtins
 import os
 import sys
 
@@ -206,6 +207,51 @@ def test_our_own_crash_is_retryable_because_the_incident_proved_it() -> None:
     _check(result["status"], 500, "bug status")
     _check(result["retryable"], True, "bug retryable")
     _check(result["cta"], "retry", "bug cta")
+
+
+# A Stripe ``PermissionError`` whose defining module is ``stripe.error``, which
+# is how the real one is distinguished from the builtin of the same name. The
+# fake above matches by name alone, so it cannot tell the two apart.
+_StripeModulePermissionError = type(
+    "PermissionError", (_StripeLike,), {"__module__": "stripe.error"})
+
+
+def test_a_builtin_permission_error_is_our_crash_not_a_payment_misconfiguration() -> None:
+    """``PermissionError`` is a key in the Stripe table *and* a Python builtin.
+
+    An OS-level denial raised by our own code inside the checkout ``try`` has
+    nothing to do with Stripe, but matching on the class *name* claimed it as a
+    key-permission failure: blocked, non-retryable, and so rendered by the web
+    cart with "Continue to secure payment" disabled. That turned a transient
+    fault into a dead end for a checkout whose next tap would have succeeded.
+    It belongs in the same branch as ``AttributeError``.
+
+    Both directions are asserted here because either alone is satisfiable by a
+    wrong implementation: dropping the ``PermissionError`` row entirely would
+    pass the builtin case and lose the real Stripe one.
+    """
+    ours = classify_provider_exception(builtins.PermissionError(13, "Permission denied"))
+    _check(ours["code"], "PAYMENT_UNAVAILABLE", "builtin perm code")
+    _check(ours["status"], 500, "builtin perm status")
+    _check(ours["retryable"], True, "builtin perm retryable")
+    _check(ours["cta"], "retry", "builtin perm cta")
+
+    # Our own subclasses of the builtin carry their own module name, so the
+    # verdict has to come from the class that matched the table, not from
+    # ``type(exc).__module__``. ``StructuredRecordDenied`` is one of these.
+    class StorageDenied(builtins.PermissionError):
+        pass
+
+    subclassed = classify_provider_exception(StorageDenied("no write access"))
+    _check(subclassed["code"], "PAYMENT_UNAVAILABLE", "perm subclass code")
+    _check(subclassed["cta"], "retry", "perm subclass cta")
+
+    theirs = classify_provider_exception(
+        _StripeModulePermissionError("The provided key does not have access"))
+    _check(theirs["code"], "PAYMENT_CONFIGURATION_ERROR", "stripe perm code")
+    _check(theirs["status"], 503, "stripe perm status")
+    _check(theirs["retryable"], False, "stripe perm retryable")
+    _check(theirs["cta"], "blocked", "stripe perm cta")
 
 
 def test_no_buyer_message_leaks_provider_or_internal_detail() -> None:
