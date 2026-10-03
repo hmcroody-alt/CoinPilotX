@@ -31,6 +31,11 @@ future edit could quietly undo:
    this page is for. That is how `/scam-shield/scan` shipped.
 
 Run: python3 -m pytest tests/test_about_page.py
+
+Alone, as CI runs it -- one process per file. Sharing a process with another
+file that sets `DATABASE_URL` at import time points this one at that file's
+empty database, and the link scan then reports `/pulse/marketplace: 503`, which
+is the harness, not a dead CTA.
 """
 
 import json
