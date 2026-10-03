@@ -16,6 +16,13 @@ can cite both a live response and the exact source line that produced it.
 modified.** No implementation is prescribed. Cross-agent alerts are in
 `FLEET_DEPENDENCY_REPORT.md`, published ahead of this report per the brief.
 
+**Before using any number below:** read `BASELINE_AND_HANDOFF.md` §1. Every count here
+is a snapshot of one SHA at one timestamp, **not a Search OS constant**. The gates are
+durable; the integers are outputs, and catalogue membership drifts within minutes.
+§2 of that document records the full measurement methodology, including the four harness
+bugs that produced confident false findings during this mission — one of which nearly
+became a P1 category defect that did not exist.
+
 ---
 
 ## 1. Executive summary
@@ -334,9 +341,12 @@ Agreement of each field across surfaces. `—` = surface does not carry the fiel
 | 4 | Search Truth Report | this file |
 | 5 | Fleet Dependency Report | `FLEET_DEPENDENCY_REPORT.md` |
 | 6 | Before Baseline | §3, §4, §7, §10 + `.forensics/sweep.tsv`, `catalog.json`, `feed.xml` |
+| — | Baseline publication, methodology, fleet handoff | `BASELINE_AND_HANDOFF.md` |
 
 **Baseline, one line, for re-measurement after the fleet ships:**
 > 2026-10-03 @ `5bdf4e431` — 148 sitemap URLs (148×200, 147 self-canonical, 0
 > `noindex`); 44 public / 41 indexable / 36 feed-eligible products; 12 departments
 > (4 in sitemap); 0 orphans; 0 price disagreements across surfaces; 0 crawlable
 > variants; 0 `VideoObject`; 0 push-side automation.
+
+**Remeasure it. Do not hard-code it.** See `BASELINE_AND_HANDOFF.md` §1.

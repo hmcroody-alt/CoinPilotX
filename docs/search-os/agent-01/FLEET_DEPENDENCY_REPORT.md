@@ -6,6 +6,17 @@
 identical to this worktree's base, so repository reads correspond 1:1 to served
 bytes. Every claim below is from a live HTTP response unless marked otherwise.
 
+**AGENT 1 STATUS: COMPLETE / PUSHED / STANDBY.** Agent 1 owns *production search reality
+and baseline evidence*; it is **not** the authority on future search architecture.
+Agent 0 owns integration — this branch is pushed, not merged, not deployed.
+
+**Read `BASELINE_AND_HANDOFF.md` alongside this file.** It carries the constraints on how
+these findings may be used: the baseline is a snapshot and not a Search OS constant (§1),
+the measurement methodology and the four harness bugs that produced false findings (§2),
+the correctly-stated variant finding (§3), the Merchant price-safety invariant (§5), the
+legacy-surface escalation rules (§6), the Agent 11/12 handoffs (§8–§9), the three
+UNKNOWNs that stay unknown (§10), and the Agent 2 reconciliation protocol (§11).
+
 ---
 
 ## 0. TO AGENT 0 — COORDINATION MECHANISM IS ABSENT
@@ -52,6 +63,14 @@ No PII, no cookies, no tokens, no secret values appear in any Agent 1 artifact.
 ---
 
 ## 2. TO AGENT 2 (CANONICAL ARCHITECTURE) — three items
+
+**Reconciliation first.** Agent 1 owns *what the internet actually showed during recon*;
+Agent 2 owns *URL/canonical/indexability contract verification*. Those are different
+questions and can disagree without either being wrong. Before either of us calls the
+other's result a defect, compare timestamp, deployed SHA, URL population, eligibility
+definition (`indexable` and `feed_eligible` are two verdicts, the second strictly
+narrower), and probe method. Protocol in `BASELINE_AND_HANDOFF.md` §11. Verify the
+contract — do not re-run my sweep and overwrite its evidence.
 
 **2a. Canonical health is already good. Do not rebuild it.**
 All 148 sitemap URLs: **148/148 HTTP 200**, **147/148 self-canonical**, zero
@@ -160,6 +179,23 @@ Despite existing, variants are invisible to search in **all three** channels:
 
 → `FINDING A1-05`, **P1**, HIGH confidence. Owner: Agent 3. Dependents: 5, 7, 2.
 
+**The finding, stated correctly — and the conclusion it does NOT license:**
+
+> **VARIANTS EXIST AND ARE ADDRESSABLE, BUT THEIR SEARCH IDENTITY, GROUPING AND
+> DISCOVERY MODEL IS INCOMPLETE.**
+
+That is the entire finding. It does **not** say "therefore every supplier variant should
+become an independently indexed URL." Agent 1 has not evaluated thin-content risk,
+crawl-budget cost, duplicate handling, or whether a variant is even the right search
+entity — minting ~500+ indexable URLs could as easily be a crawl-budget catastrophe as
+a coverage win. **That decision belongs to the fleet:** Agent 3 defines the entity model,
+Agent 0 approves scope. Agent 5 acts only after Agent 3 freezes identity, and must not
+manufacture variant URLs to win rich results.
+
+Full handoff — prevalence distribution, `opt_option` mechanics, large-variant worked
+examples (113 / 112 / 36), and the three-way identifier disagreement — in
+`BASELINE_AND_HANDOFF.md` §3–§4.
+
 **Credit where due — the honest part.** Agent 5 should know the existing JSON-LD is
 already correct and should not be rewritten wholesale:
 - `Offer` → `AggregateOffer` switches correctly on real price spread, and the
@@ -177,6 +213,16 @@ already correct and should not be rewritten wholesale:
 (`/whale-tracker`, `/sports-edge/*`, `/telegram-crypto-bot`, `/learn/crypto-scams`…).
 Google is currently being told this is a crypto company.
 → `FINDING A1-10`, P2, HIGH confidence. Owner: Agent 0 to assign.
+
+**ESCALATE, DO NOT DELETE.** A **legal entity name is not a consumer brand** —
+`CoinPlotXAI Inc.` may be the legally correct `legalName` for the company behind a
+product branded PulseSoc, and `Organization.legalName` is read by payment processors and
+merchant review, not only by search. **Do not automatically remove it.** `name` and
+`legalName` are different fields and may legitimately differ. No mass redirect, no mass
+`noindex`, no deletion merely because a page is old: some of those ~60 legacy URLs may be
+the only pages ranking for anything. Agent 5 determines truthful Organization schema;
+Agent 11 gathers traffic/indexation evidence first; **Agent 0 decides.** Constraints in
+full: `BASELINE_AND_HANDOFF.md` §6.
 
 ---
 
@@ -352,6 +398,18 @@ therefore reports mass absence. `docs/seo/00_baseline_and_gap_list.md` records a
 pass that "reported 189 pages missing rel=canonical… That was false. The corrected
 counts are 1 and 6." **All Agent 1 probes are quote-agnostic** (`['\"]`). Reuse that
 or re-derive the false finding.
+
+**TEST THE TEST HARNESS.** That quote trap is one of **five** measurement bugs this
+mission hit; four were mine, and three produced confident, plausible, wrong findings —
+including a `comm`-over-lexically-sorted-ids bug that manufactured a **"DIVERGENCE"**
+verdict against four departments that does not exist, and a `grep -c` bug that
+manufactured a 5-item Merchant feed regression that did not happen. **A broken
+measurement script does not look like a bug; it looks like a finding.** All five are
+specified with reproductions in `BASELINE_AND_HANDOFF.md` §2, and §8 of that document
+names the ten regression/mutation coverage classes Agent 12 owns — including
+measurement-harness false positives and fake IndexNow success. Assert **invariants, never
+the integers**: a test pinned to `== 148` fails on the next supplier sync and teaches the
+fleet to ignore red CI.
 
 ---
 

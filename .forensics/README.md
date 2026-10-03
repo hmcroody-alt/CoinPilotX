@@ -10,3 +10,8 @@ Read-only GETs, rate-limited, single-threaded. No credentials, cookies or PII.
 - `feed.xml`               — the live Merchant Center feed (36 items)
 - `grid.html`, `pdp113.html` — raw HTML the findings were read from
 - `product_urls.txt`, `pub_ids.txt`, `idx_n.txt` — id sets behind the funnel counts
+- `reprobe_*` — the final re-probe, same deployed SHA, taken to detect material drift
+  before publication. Feed membership and sitemap product membership are
+  **set-identical** to the originals (36 and 41; zero dropped, zero added). The apparent
+  36→31 feed drop seen during this re-probe was a `grep -c` line-counting artifact, not a
+  regression — see `docs/search-os/agent-01/BASELINE_AND_HANDOFF.md` §2.5.
