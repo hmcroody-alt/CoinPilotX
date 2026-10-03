@@ -287,21 +287,37 @@ offered to Google on pages Google is being invited to crawl. After `fdb337296`
 they are still all of those things; they just stop making a price claim. No
 sitemap change is needed for this.
 
-**Agent 7 (Merchant Center).** Do not submit a Premium offer. There is no agreed
-price (999 / 1900 / $14.99) and the offer URL does not resolve.
+**Agent 7 (Merchant Center).** An earlier draft of this handoff warned you not
+to let a feed default `availability` to in-stock. That warning was written
+without checking whether a feed existed. **It does, it is live, and it already
+does this correctly** — `01_merchant_center_feed.md` in this directory
+documents it and I had not read it. Correcting rather than deleting, because
+the thing I was wrong about is worth knowing:
 
-Marketplace listings are a separate matter and are genuinely submittable, not
-just plausibly so: the live node carries every required merchant-listing
-property, verified property-by-property in the readiness section above. Two
-cautions, both of which are ways a feed could undo that:
+`GET /feeds/merchant-center.xml` answers 200 with 36 items. All 36 say
+`in_stock`, which looks exactly like the default-to-in-stock failure and is
+not one. `merchant_center_feed` delegates to `marketplace_seo.availability`,
+which delegates in turn to the same `inventory_available` predicate that
+decides whether a row may appear at all — so a zero-quantity listing 404s
+instead of reaching the feed, and every row that arrives is genuinely in
+stock. `_FEED_AVAILABILITY` is a mapping rather than a pass-through (Merchant
+Center rejects the schema.org URL form) and **raises** on an unmapped value
+instead of shipping one. That is the fail-closed design, already built.
 
-- `availability` is omitted whenever stock is unknown, by design. It is only a
-  *recommended* property, so omitting it costs nothing — but a feed that
-  defaults the omission to `in stock` would reintroduce exactly the claim this
-  layer refused to make.
-- `image` is **required**, and every live image URL is on a third-party
-  supplier CDN rather than a PulseSoc domain (see the Agent 9 handoff). A feed
-  inherits that dependency.
+Verified across 10 listings that the feed and the page agree: same
+availability, same price. The one thing that looks like a discrepancy is not —
+the feed writes `<g:price>30.50 USD</g:price>` where the JSON-LD writes
+`price: "30.50"` plus `priceCurrency: "USD"`, which is the same claim in the
+two formats each surface requires.
+
+So the only live things left for you are:
+
+- Do not submit a Premium offer. There is no agreed price (999 / 1900 /
+  $14.99) and the offer URL does not resolve. The feed does not carry it today
+  — checked: no `14.99` and no "PulseSoc Premium" anywhere in it.
+- `image` is a **required** merchant-listing property, and all 36 feed images
+  are on `cjdropshipping.com`, none on a PulseSoc domain (see Agent 9). The
+  feed inherits that dependency and cannot detect it breaking.
 
 **Agent 9 (media).** `Product.image` is every URL that
 `gallery_items` (`services/marketplace_web.py:1231`) collected whose kind is
