@@ -17948,7 +17948,6 @@ def admin_page_html(title, body, admin=None):
             ("〰", "Feed Health", "/admin/pulse-feed-health", False),
             ("◰", "PulseSoc Analytics", "/admin/pulse-analytics", False),
             ("☷", "Education", "/admin/education", False),
-            ("☎", "Calls", "/admin/calls", False),
         ]),
         ("Commerce", [
             # The curator publishes on its own schedule, so the kill switch has
@@ -17960,6 +17959,12 @@ def admin_page_html(title, body, admin=None):
             ("▧", "Payment Emails", "/admin/emails/payment", False),
         ]),
         ("Communications", [
+            # The calls command center was already built and live, but it was
+            # filed under "Social Platform" and absent from the dashboard, so
+            # "I cannot see whether calls are happening" was a true statement
+            # about the navigation rather than about the instrumentation.
+            ("◉", "Comms Ops", "/admin/communications", False),
+            ("☎", "Calls", "/admin/calls", False),
             ("◔", "Notifications", "/admin/notifications", False),
             ("↑", "Delivery", "/admin/notification-delivery", False),
             ("✉", "Emails", "/admin/emails", False),
@@ -18671,10 +18676,874 @@ def admin_dashboard_page():
     body = (
         "<h1>Command Center</h1><p class='muted'>Live SaaS visibility across accounts, billing, emails, Telegram, analytics, and support.</p>"
         f"{profile_prompt}{review_cta}{command_center_cta}"
-        f"{kpis}{exec_metrics}{subs}{attention}{activity}"
+        f"{kpis}{comms_dashboard_section()}{exec_metrics}{subs}{attention}{activity}"
         f"<form method='post' action='/admin/billing/recalculate' class='card' style='margin-top:18px'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Recalculate Billing Metrics</button><p class='muted'>Scans successful Stripe payment records and fixes any paid users still marked trialing.</p></form>"
     )
     return admin_page_html("Command Center", body, admin)
+
+
+# ---------------------------------------------------------------------------
+# Communications operations
+#
+# The owner's complaint was that /admin/dashboard could not answer "are calls
+# happening, are chats happening, is any of it broken". The instrumentation
+# existed -- communication_calls, comm_v2_messages and
+# notification_delivery_jobs are all written by the live code paths, and
+# /admin/calls has been a working command center the whole time -- but it was
+# filed under "Social Platform" and never appeared on the dashboard. So this is
+# a reporting surface over existing tables, not new counters: everything here
+# comes from services/pulsesoc_comms_ops.py, which reads metadata only.
+# ---------------------------------------------------------------------------
+
+COMMS_STATE_LABELS = {
+    "healthy": "HEALTHY",
+    "degraded": "DEGRADED",
+    "failed": "FAILED",
+    "critical": "CRITICAL",
+    "unknown": "UNKNOWN",
+    "error": "UNAVAILABLE",
+    "ready": "OK",
+}
+
+
+def comms_state_chip(state, extra_class=""):
+    key = str(state or "unknown").strip().lower()
+    label = COMMS_STATE_LABELS.get(key, key.upper() or "UNKNOWN")
+    classes = f"cchip is-{html_escape(key)}"
+    if extra_class:
+        classes += " " + html_escape(extra_class)
+    return f"<span class='{classes}'>{html_escape(label)}</span>"
+
+
+def comms_time_cell(stamp, empty="never"):
+    """Render a timestamp as the shell's self-refreshing relative time.
+
+    An empty stamp is "never", not "just now": a stream that has never moved and
+    a stream that moved a second ago are the two answers an operator is actually
+    choosing between when every window reads zero.
+    """
+    text = str(stamp or "").strip()
+    if not text:
+        return f"<span class='muted'>{html_escape(empty)}</span>"
+    safe = html_escape(text)
+    return f"<time class='smart-time' datetime='{safe}' data-timestamp='{safe}'>{safe}</time>"
+
+
+def comms_count_cell(value, key):
+    """A count that renders em-dash, not 0, when it was never measured.
+
+    None means the query failed. Printing 0 there would be the dashboard
+    asserting "no calls" on the strength of a database error.
+    """
+    attr = f" data-comms='{html_escape(key)}'" if key else ""
+    if value is None:
+        return f"<span class='metric'{attr} title='Unavailable — this metric could not be read'>&mdash;</span>"
+    return f"<span class='metric'{attr}>{int(value):,}</span>"
+
+
+def comms_dashboard_section():
+    """The high-visibility COMMUNICATIONS block on /admin/dashboard.
+
+    Wrapped end to end: the dashboard predates this section and must still
+    render if the comms snapshot cannot be taken. A failure shows as an explicit
+    "unavailable" card with a link to the full page, never as zeroes.
+    """
+    try:
+        from services import pulsesoc_comms_ops as comms_ops
+
+        head = comms_ops.dashboard_headline(comms_ops.cached_comms_ops_snapshot())
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "ADMIN_DASHBOARD_COMMS_SECTION_FAILED error=%s", type(exc).__name__
+        )
+        return (
+            COMMS_OPS_PAGE_STYLE
+            + "<h2>Communications</h2>"
+            "<div class='card' style='border-color:rgba(255,107,138,.5)'>"
+            "<strong>Communications metrics unavailable.</strong> "
+            "<span class='muted'>The snapshot could not be taken, so no call or message counts are "
+            "shown here. This is not a report of zero activity.</span>"
+            "<p><a class='button' href='/admin/communications'>Open Communications Center</a></p>"
+            "</div>"
+        )
+
+    state = str(head.get("state") or "unknown")
+    incidents = head.get("incidents") or []
+    incident_html = ""
+    if incidents:
+        rows = "".join(
+            f"<li>{comms_state_chip('failed' if item.get('severity') == 'critical' else 'degraded')} "
+            f"<strong>{html_escape(clean_html(str(item.get('title') or '')))}</strong> "
+            f"<span class='muted'>{html_escape(clean_html(str(item.get('detail') or '')))}</span></li>"
+            for item in incidents[:4]
+        )
+        incident_html = (
+            "<div class='card' style='border-color:rgba(255,209,102,.5);background:rgba(255,209,102,.08)'>"
+            "<strong>Live communication incidents</strong>"
+            f"<ul class='comms-incidents'>{rows}</ul></div>"
+        )
+
+    unreachable = head.get("section_errors") or {}
+    warn = ""
+    if unreachable:
+        warn = (
+            "<p class='muted' style='margin-top:-6px'>Some figures could not be read "
+            f"({html_escape(clean_html(', '.join(sorted(unreachable))))}) and show as &mdash; "
+            "rather than zero.</p>"
+        )
+
+    active_cls = "attention" if (head.get("active_calls") or 0) else ""
+    fail_cls = "attention" if (head.get("delivery_failures_24h") or 0) else ""
+    bad_calls = "attention" if (head.get("calls_unsuccessful_24h") or 0) else ""
+    return (
+        # This block uses .cchip and .comms-incidents, so it has to carry the
+        # stylesheet too. The dashboard is a different page from the operations
+        # centre and links nothing on its behalf: without this the status chips
+        # degrade to bold text and the incident list grows bullets, which is
+        # exactly the "can I see the state at a glance" property this section
+        # exists to provide.
+        COMMS_OPS_PAGE_STYLE
+        + "<h2>Communications</h2>"
+        "<p class='muted' style='margin-top:-6px'>Calls, chat and notification delivery &mdash; "
+        "operational metadata only. No message contents and no call audio are shown anywhere in "
+        "this product's admin surfaces.</p>"
+        + warn
+        + incident_html
+        + "<div class='ops-kpis'>"
+        + f"<a class='card ops-kpi ops-stat-card {active_cls}' href='/admin/communications'>"
+          "<div class='muted'>Active calls now</div>"
+        + comms_count_cell(head.get("active_calls"), "")
+        + f"<div class='muted' style='font-size:.82rem'>{html_escape(str(head.get('live_calls') if head.get('live_calls') is not None else '—'))} connected"
+          " &middot; last call "
+        + comms_time_cell(head.get("last_call_at"))
+        + "</div></a>"
+        + f"<a class='card ops-kpi ops-stat-card {bad_calls}' href='/admin/communications'>"
+          "<div class='muted'>Calls &middot; 24h</div>"
+        + comms_count_cell(head.get("calls_24h"), "")
+        + f"<div class='muted' style='font-size:.82rem'>{html_escape(str(head.get('calls_unsuccessful_24h') if head.get('calls_unsuccessful_24h') is not None else '—'))} did not complete</div></a>"
+        + "<a class='card ops-kpi ops-stat-card' href='/admin/communications'>"
+          "<div class='muted'>Messages &middot; 24h</div>"
+        + comms_count_cell(head.get("messages_24h"), "")
+        + f"<div class='muted' style='font-size:.82rem'>{html_escape(str(head.get('active_conversations_24h') if head.get('active_conversations_24h') is not None else '—'))} active conversations"
+          " &middot; last message "
+        + comms_time_cell(head.get("last_message_at"))
+        + "</div></a>"
+        + f"<a class='card ops-kpi ops-stat-card {fail_cls}' href='/admin/communications'>"
+          "<div class='muted'>Delivery failures &middot; 24h</div>"
+        + comms_count_cell(head.get("delivery_failures_24h"), "")
+        + f"<div class='muted' style='font-size:.82rem'>{html_escape(str(head.get('delivery_unroutable_24h') if head.get('delivery_unroutable_24h') is not None else '—'))} had no registered device</div></a>"
+        + "</div>"
+        + "<p><a class='button command-center-link' href='/admin/communications'>Open Communications Center</a> "
+        + comms_state_chip(state)
+        + " <span class='muted'>as of </span>"
+        + comms_time_cell(head.get("generated_at"), empty="unknown")
+        + "</p>"
+    )
+
+
+#: A linked stylesheet rather than an inline style block. The first draft
+#: inlined it, reasoning that a page-scoped block avoids bumping the shared
+#: admin stylesheet's cache token across two hundred pages -- but
+#: tests/web_parity/test_design_tokens.py caps inline blocks in bot.py and says
+#: plainly to use a stylesheet, and a separate file gets the scoping without
+#: spending the budget. (That gate counts the raw substring over the whole file,
+#: so spelling the tag out in this comment would itself have consumed a slot.)
+#:
+#: The href and its token are one string literal on one line on purpose: the
+#: cache-pin gate greps bot.py as text, so a URL split across two adjacent
+#: literals reads to it as an asset referenced with no token at all.
+COMMS_OPS_PAGE_STYLE = (
+    "<link rel='stylesheet' href='/static/css/admin_comms_ops.css?v=comms-ops-20261003c'/>"
+)
+
+
+def comms_window_table(windows, columns, highlight="24h", prefix=""):
+    """One row per time window, one column per metric.
+
+    Every window is already in the snapshot, so switching window is reading a
+    different row rather than issuing another query. That is what makes the
+    15m/1h/24h/7d choice free, and it is why the page shows all four at once
+    instead of hiding three behind a selector.
+
+    ``prefix`` names the snapshot section, so each cell carries the path the
+    polling script reads it back from. Those cells are the only numbers the
+    browser rewrites, which keeps the server the single renderer of this page.
+    """
+    head = "".join(f"<th class='n'>{html_escape(label)}</th>" for _, label in columns)
+    rows = []
+    for window in (windows or {}):
+        values = windows.get(window) or {}
+        cells = "".join(
+            "<td class='n'"
+            + (f" data-comms='{html_escape(prefix)}.{html_escape(window)}.{html_escape(key)}'" if prefix else "")
+            + f">{int(values.get(key) or 0):,}</td>"
+            for key, _ in columns
+        )
+        cls = " class='is-now'" if window == highlight else ""
+        rows.append(f"<tr{cls}><th scope='row'>{html_escape(window)}</th>{cells}</tr>")
+    if not rows:
+        return "<p class='muted'>Unavailable.</p>"
+    return (
+        "<div class='comms-scroll'><table class='comms-dense'>"
+        f"<thead><tr><th scope='col'>Window</th>{head}</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></div>"
+    )
+
+
+def comms_duration_text(seconds):
+    try:
+        total = max(int(seconds or 0), 0)
+    except Exception:
+        return "—"
+    if total < 60:
+        return f"{total}s"
+    if total < 3600:
+        return f"{total // 60}m {total % 60:02d}s"
+    return f"{total // 3600}h {(total % 3600) // 60:02d}m"
+
+
+def comms_section_or_error(section, name):
+    """A failed section must say so where its numbers would have been."""
+    if (section or {}).get("state") == "error":
+        return (
+            "<div class='card' style='border-color:rgba(255,107,138,.5)'>"
+            f"<strong>{html_escape(name)} unavailable.</strong> "
+            f"<span class='muted'>This section's queries failed "
+            f"({html_escape(clean_html(str((section or {}).get('error') or 'unknown')))}). "
+            "No counts are shown for it &mdash; treat this as unknown, not as zero activity.</span>"
+            "</div>"
+        )
+    return ""
+
+
+def comms_ops_page_body(snapshot):
+    calls = snapshot.get("calls") or {}
+    chat = snapshot.get("chat") or {}
+    delivery = snapshot.get("delivery") or {}
+    providers_section = snapshot.get("providers") or {}
+
+    incidents = snapshot.get("incidents") or []
+    if incidents:
+        rows = "".join(
+            f"<li>{comms_state_chip('failed' if item.get('severity') == 'critical' else 'degraded')} "
+            f"<strong>{html_escape(clean_html(str(item.get('title') or '')))}</strong><br/>"
+            f"<span class='muted'>{html_escape(clean_html(str(item.get('detail') or '')))}</span></li>"
+            for item in incidents
+        )
+        incidents_html = (
+            "<div class='card' style='border-color:rgba(255,209,102,.5);background:rgba(255,209,102,.08)'>"
+            f"<h3>Live communication incidents &middot; {len(incidents)}</h3>"
+            f"<ul class='comms-incidents'>{rows}</ul></div>"
+        )
+    else:
+        incidents_html = (
+            "<div class='card'><h3>Live communication incidents</h3>"
+            "<p class='muted'>None. Every section was read successfully and no provider is "
+            "failing or degraded on observed outcomes.</p></div>"
+        )
+
+    # --- calls -------------------------------------------------------------
+    calls_panel = comms_section_or_error(calls, "Calls")
+    if not calls_panel:
+        active = calls.get("active") or []
+        if active:
+            rows = "".join(
+                "<tr>"
+                f"<td><code>{html_escape(clean_html(str(entry.get('session') or '')))}</code></td>"
+                f"<td>{html_escape(clean_html(str(entry.get('type') or '')))}</td>"
+                f"<td>{html_escape(clean_html(str(entry.get('scope') or '')))}</td>"
+                f"<td>{comms_state_chip('healthy' if entry.get('live') else 'unknown')} "
+                f"{html_escape(clean_html(str(entry.get('status') or '')))}</td>"
+                f"<td>{comms_time_cell(entry.get('started_at'))}</td>"
+                f"<td class='n'>{html_escape(comms_duration_text(entry.get('duration_seconds')))}</td>"
+                f"<td class='n'>{int(entry.get('participants') or 0)}</td>"
+                f"<td>{html_escape(clean_html(str(entry.get('provider') or '')))}</td>"
+                f"<td>{html_escape(clean_html(str(entry.get('error') or ''))) or '<span class=muted>&mdash;</span>'}</td>"
+                "</tr>"
+                for entry in active
+            )
+            active_html = (
+                "<div class='comms-scroll'><table class='comms-dense'><thead><tr>"
+                "<th>Session</th><th>Type</th><th>Scope</th><th>State</th><th>Started</th>"
+                "<th class='n'>Duration</th><th class='n'>In call</th><th>Provider</th><th>Error</th>"
+                f"</tr></thead><tbody>{rows}</tbody></table></div>"
+                + (
+                    f"<p class='muted'>Showing the {len(active):,} most recent of "
+                    f"{int(calls.get('active_count') or 0):,} calls in progress; the heading is a "
+                    "count, not the length of this list. "
+                    if calls.get("active_truncated")
+                    else f"<p class='muted'>Listing is capped at "
+                    f"{int(comms_ops_module().MAX_ACTIVE_CALLS)} rows; the heading counts them all. "
+                )
+                + "Session ids are shortened so they identify a call to an operator without being a "
+                "reusable handle. Participant counts are numbers, not identities.</p>"
+            )
+        else:
+            active_html = (
+                "<p class='muted'>No call is in an active state right now. Last call started "
+                + comms_time_cell(calls.get("last_call_at"))
+                + ". States counted as active: "
+                + html_escape(", ".join(comms_ops_module().ACTIVE_CALL_STATUSES))
+                + " &mdash; these are the values the call engine actually writes.</p>"
+            )
+
+        failures = calls.get("failures") or []
+        if failures:
+            frows = "".join(
+                "<tr>"
+                f"<td>{html_escape(clean_html(str(item.get('label') or '')))}</td>"
+                f"<td><code>{html_escape(clean_html(str(item.get('reason') or '')))}</code></td>"
+                f"<td>{comms_state_chip('degraded' if item.get('classified') else 'unknown')}</td>"
+                f"<td class='n'>{int(item.get('count') or 0):,}</td>"
+                "</tr>"
+                for item in failures
+            )
+            failures_html = (
+                "<div class='comms-scroll'><table class='comms-dense'><thead><tr>"
+                "<th>Category</th><th>Stored reason</th><th>Classified</th><th class='n'>Calls</th>"
+                f"</tr></thead><tbody>{frows}</tbody></table></div>"
+                "<p class='muted'>Categories are the exact <code>end_reason</code> values the call "
+                "engine writes; anything else is shown as unclassified rather than being guessed at. "
+                "Normal hangups are excluded, so a row here is a call that did not succeed.</p>"
+            )
+        else:
+            failures_html = (
+                "<p class='muted'>No unsuccessful calls in the last 24 hours. Deliberate hangups "
+                "are not counted as failures.</p>"
+            )
+
+        funnel = calls.get("funnel") or {}
+        funnel_html = (
+            "<div class='comms-scroll'><table class='comms-dense'><thead><tr>"
+            "<th>Stage</th><th class='n'>Calls</th><th>Measured from</th></tr></thead><tbody>"
+            f"<tr><th scope='row'>Initiated</th><td class='n'>{int(funnel.get('initiated') or 0):,}</td>"
+            "<td class='muted'>a call row exists</td></tr>"
+            f"<tr><th scope='row'>Rang</th><td class='n'>{int(funnel.get('rang') or 0):,}</td>"
+            "<td class='muted'>started_at is set</td></tr>"
+            f"<tr><th scope='row'>Answered</th><td class='n'>{int(funnel.get('answered') or 0):,}</td>"
+            "<td class='muted'>answered_at is set</td></tr>"
+            f"<tr><th scope='row'>Connected</th><td class='n'>{int(funnel.get('connected') or 0):,}</td>"
+            "<td class='muted'>duration_seconds &gt; 0</td></tr>"
+            "</tbody></table></div>"
+            "<p class='muted'>Four stages, not six: these are the only transitions the schema "
+            "records a timestamp for. Push delivery and CallKit presentation are not stored per "
+            "call, so there is no honest row for them.</p>"
+        )
+
+        quality = calls.get("quality") or {}
+        if not quality.get("measurable"):
+            # Deliberately not a zero. The reports table can be full and still
+            # hold no measurement, and "0 ms" would read as a perfect network
+            # when the truth is that nothing was measured.
+            quality_html = (
+                "<p class='muted'>No network measurement available. "
+                f"{int(quality.get('reports') or 0):,} quality report(s) were filed in the last 7 "
+                "days and none carries a latency, jitter or score above zero, so there is no figure "
+                "to show. An average over those rows would describe the instrumentation, not the "
+                "calls.</p>"
+            )
+        else:
+            score = quality.get("worst_quality_score")
+            score_cell = ("<span class='muted'>not rated</span>" if score is None
+                          else f"{float(score):.0f} / 100")
+            quality_html = (
+                "<div class='comms-scroll'><table class='comms-dense'><thead><tr>"
+                "<th>Worst seen</th><th class='n'>Value</th></tr></thead><tbody>"
+                f"<tr><th scope='row'>Round trip</th><td class='n'>"
+                f"{int(quality.get('worst_latency_ms') or 0):,} ms</td></tr>"
+                f"<tr><th scope='row'>Jitter</th><td class='n'>"
+                f"{int(quality.get('worst_jitter_ms') or 0):,} ms</td></tr>"
+                f"<tr><th scope='row'>Packet loss</th><td class='n'>"
+                f"{float(quality.get('worst_packet_loss') or 0.0) * 100:.2f}%</td></tr>"
+                f"<tr><th scope='row'>Quality score</th><td class='n'>{score_cell}</td></tr>"
+                "</tbody></table></div>"
+                f"<p class='muted'>Worst values, not averages, across "
+                f"{int(quality.get('measured') or 0):,} measured report(s) over "
+                f"{int(quality.get('calls') or 0):,} call(s) in 7 days"
+                + (f"; a further {int(quality.get('unmeasured') or 0):,} report(s) carried no "
+                   "measurement and are excluded. "
+                   if quality.get("unmeasured") else ". ")
+                + "Quality is filed after a call ends, so this describes recent calls and never "
+                "the one in progress. Latency describes a network path, so these figures are "
+                "attributed to calls and never to people.</p>"
+            )
+
+        calls_panel = (
+            "<div class='card comms-panel'><h3>Active calls &middot; "
+            + comms_count_cell(calls.get("active_count"), "calls.active_count")
+            + "</h3>"
+            f"{active_html}</div>"
+            "<div class='card comms-panel'><h3>Call volume by window</h3>"
+            + comms_window_table(calls.get("windows"), (
+                ("started", "Started"), ("answered", "Answered"),
+                ("unsuccessful", "Unsuccessful"), ("completed", "Completed"),
+            ), prefix="calls")
+            + "</div>"
+            "<div class='card comms-panel'><h3>Failed and unanswered calls &middot; 24h</h3>"
+            f"{failures_html}</div>"
+            "<div class='card comms-panel'><h3>Call funnel &middot; 24h</h3>"
+            f"{funnel_html}</div>"
+            "<div class='card comms-panel'><h3>Call network quality &middot; 7d</h3>"
+            f"{quality_html}</div>"
+        )
+
+    # --- chat --------------------------------------------------------------
+    chat_panel = comms_section_or_error(chat, "Chat")
+    if not chat_panel:
+        by_type = chat.get("by_type") or []
+        type_html = "".join(
+            f"<span class='pill'>{html_escape(clean_html(str(item.get('kind') or '')))} "
+            f"&middot; {int(item.get('count') or 0):,}</span>"
+            for item in by_type
+        ) or "<span class='muted'>No conversation activity in the last 24 hours.</span>"
+
+        signal = chat.get("message_delivery") or {}
+        if signal.get("measurable"):
+            delivery_note = (
+                f"<p>Per-message delivery failures &middot; 24h: <strong>{int(signal.get('failed') or 0):,}</strong></p>"
+            )
+        else:
+            delivery_note = (
+                "<p class='comms-note muted'>"
+                + html_escape(clean_html(str(signal.get("note") or "Per-message delivery state is not instrumented.")))
+                + "</p>"
+            )
+
+        chat_panel = (
+            "<div class='card comms-panel'><h3>Chat activity by window</h3>"
+            + comms_window_table(chat.get("windows"), (
+                ("active_conversations", "Active conversations"), ("messages", "Messages"),
+            ), prefix="chat")
+            + f"<p>Last message {comms_time_cell(chat.get('last_message_at'))}</p>"
+            + f"<div style='margin-top:10px'>{type_html}</div>"
+            + delivery_note
+            + "<p class='muted comms-note'>Counts and conversation types only. This page has no "
+              "message list and no message bodies: reading a private conversation is a Trust &amp; "
+              "Safety action and stays on the reported-content flow, where it is requested, "
+              "authorised and audited separately.</p>"
+            + "</div>"
+        )
+
+    # --- delivery ----------------------------------------------------------
+    delivery_panel = comms_section_or_error(delivery, "Notification delivery")
+    if not delivery_panel:
+        channel_rows = "".join(
+            "<tr>"
+            f"<td>{html_escape(clean_html(str(row.get('channel') or '')))}</td>"
+            f"<td><code>{html_escape(clean_html(str(row.get('status') or '')))}</code></td>"
+            f"<td>{comms_state_chip('failed' if row.get('failed') else ('unknown' if row.get('unroutable') else 'healthy'))}</td>"
+            f"<td class='n'>{int(row.get('count') or 0):,}</td>"
+            "</tr>"
+            for row in (delivery.get("by_channel") or [])
+        ) or "<tr><td colspan='4' class='muted'>No delivery attempts in the last 24 hours.</td></tr>"
+
+        reason_rows = "".join(
+            "<tr>"
+            f"<td>{html_escape(clean_html(str(row.get('channel') or '')))}</td>"
+            f"<td>{comms_state_chip('failed' if row.get('kind') == 'failure' else 'unknown')}</td>"
+            f"<td class='n'>{int(row.get('count') or 0):,}</td>"
+            f"<td class='prose'>{html_escape(clean_html(str(row.get('reason') or '')))}</td>"
+            "</tr>"
+            for row in (delivery.get("reasons") or [])
+        ) or "<tr><td colspan='4' class='muted'>No failed or undeliverable attempts in the last 24 hours.</td></tr>"
+
+        delivery_panel = (
+            "<div class='card comms-panel'><h3>Notification delivery by window</h3>"
+            + comms_window_table(delivery.get("windows"), (
+                ("total", "Attempts"), ("delivered", "Delivered"),
+                ("failed", "Failed"), ("unroutable", "No recipient"),
+            ), prefix="delivery")
+            + f"<p>Last attempt {comms_time_cell(delivery.get('last_attempt_at'))}</p>"
+            + "<p class='muted comms-note'><strong>Failed</strong> means the send itself broke. "
+              "<strong>No recipient</strong> means the member has no registered device or contact, "
+              "which is a member-settings fact rather than a provider fault &mdash; it is counted "
+              "separately and never degrades a provider's health.</p>"
+            + "<div class='comms-scroll'><table class='comms-dense'><thead><tr>"
+              "<th>Channel</th><th>Stored status</th><th>Reading</th><th class='n'>Attempts</th>"
+              f"</tr></thead><tbody>{channel_rows}</tbody></table></div></div>"
+            "<div class='card comms-panel'><h3>Delivery failure reasons &middot; 24h</h3>"
+            "<div class='comms-scroll'><table class='comms-dense'><thead><tr>"
+            "<th>Channel</th><th>Reading</th><th class='n'>Attempts</th><th>Reason recorded by the pipeline</th>"
+            f"</tr></thead><tbody>{reason_rows}</tbody></table></div>"
+            "<p class='muted'>Reasons are the delivery pipeline's own text. Nothing a member "
+            "typed and no provider response body is shown.</p></div>"
+        )
+
+    # --- providers ---------------------------------------------------------
+    providers_panel = comms_section_or_error(providers_section, "Provider health")
+    if not providers_panel:
+        prows = "".join(
+            "<tr>"
+            f"<td>{comms_state_chip(row.get('state'))}</td>"
+            f"<td><strong>{html_escape(clean_html(str(row.get('label') or '')))}</strong></td>"
+            f"<td class='prose'>{html_escape(clean_html(str(row.get('detail') or '')))}</td>"
+            f"<td class='muted'>{html_escape(clean_html(str(row.get('basis') or '')))}</td>"
+            "</tr>"
+            for row in (providers_section.get("providers") or [])
+        ) or "<tr><td colspan='4' class='muted'>No provider could be assessed.</td></tr>"
+        providers_panel = (
+            "<div class='card comms-panel'><h3>Provider health</h3>"
+            "<div class='comms-scroll'><table class='comms-dense'><thead><tr>"
+            "<th>State</th><th>Provider</th><th>What was observed</th><th>Basis</th>"
+            f"</tr></thead><tbody>{prows}</tbody></table></div>"
+            "<p class='muted comms-note'>Every state here is derived from stored outcomes of real "
+            "traffic. Configuration presence is never reported as health, so a provider with no "
+            "traffic in the window reads UNKNOWN rather than green. "
+            + ("Per-transport push breakdown (APNs vs FCM vs web push) is not stored, so the push "
+               "row covers all three together."
+               if not providers_section.get("transport_breakdown_available") else "")
+            + "</p></div>"
+        )
+
+    # §16. Deliberately not a user search. The grammar the endpoint enforces is
+    # stated here rather than left to be discovered by failing: an operator who
+    # types an email should learn why that is refused, not conclude the box is
+    # broken. Rendered as a GET form so it works with scripting unavailable, and
+    # the results region is filled by the server's JSON rather than built from
+    # guesses about shape.
+    lookup = (
+        "<div class='card comms-panel'><h3>Find a call or conversation</h3>"
+        "<form data-comms-lookup action='/admin/communications/lookup.json' method='get' "
+        "class='comms-lookup'>"
+        "<label class='muted' for='comms-lookup-q'>Session or conversation id</label>"
+        "<input id='comms-lookup-q' name='q' type='search' autocomplete='off' spellcheck='false' "
+        "placeholder='e.g. 3f9a81c2' maxlength='80'>"
+        "<button class='button' type='submit'>Look up</button>"
+        "</form>"
+        "<div data-comms-lookup-result aria-live='polite'></div>"
+        "<p class='muted'>Resolves the ids this page shows &mdash; a full id or the first eight "
+        "characters of one. Addresses and row numbers are refused on purpose: answering "
+        "&ldquo;found&rdquo; for an email would make this a way to discover who has an account, "
+        "and sequential numbers would make it enumerable. Returns the same facts as the tables "
+        "above &mdash; state, timing, counts &mdash; never a room handle, a message or a roster. "
+        "Every lookup is written to the admin audit log.</p></div>"
+    )
+
+    errors = snapshot.get("section_errors") or {}
+    meta = (
+        "<div class='card comms-panel'><h3>About these numbers</h3>"
+        "<table class='comms-dense'><tbody>"
+        "<tr><th scope='row'>Calls</th><td class='muted'><code>communication_calls</code> &middot; "
+        "<code>communication_call_participants</code> &mdash; written by the live call engine</td></tr>"
+        "<tr><th scope='row'>Chat</th><td class='muted'><code>comm_v2_conversations</code> &middot; "
+        "<code>comm_v2_messages</code> &mdash; metadata columns only</td></tr>"
+        "<tr><th scope='row'>Delivery</th><td class='muted'><code>notification_delivery_jobs</code> "
+        "&mdash; channel, status and the pipeline's own failure text</td></tr>"
+        "<tr><th scope='row'>Not shown</th><td class='muted'>message bodies, call audio, transcripts, "
+        "device and provider tokens, push subscriptions, stream keys</td></tr>"
+        f"<tr><th scope='row'>Snapshot cost</th><td class='muted'>{int(snapshot.get('query_ms') or 0)} ms, "
+        f"cached for {int(comms_ops_module().SNAPSHOT_CACHE_TTL_SECONDS)}s per worker; every query is "
+        "bounded by a time window and a row cap</td></tr>"
+        f"<tr><th scope='row'>Sections failed</th><td class='muted'>"
+        + (html_escape(clean_html(", ".join(f"{k} ({v})" for k, v in sorted(errors.items())))) if errors else "none")
+        + "</td></tr>"
+        "</tbody></table></div>"
+    )
+
+    return (
+        COMMS_OPS_PAGE_STYLE
+        + "<h1>Communications</h1>"
+        + "<p class='muted'>Calls, chat and notification delivery across PulseSoc. "
+          "Operational metadata only &mdash; no message contents, no call audio.</p>"
+        + "<p>"
+        + "<span data-comms-chip='state'>"
+        + comms_state_chip(snapshot.get("state"))
+        + "</span>"
+        + " <span class='muted'>snapshot taken </span>"
+        + "<span data-comms-stamp='generated_at'>"
+        + comms_time_cell(snapshot.get("generated_at"), empty="unknown")
+        + "</span>"
+        + " <span class='muted'>&middot; refreshes automatically</span>"
+        + " <a class='button' href='/admin/calls' style='margin-left:10px'>Call inspector</a>"
+        + " <a class='button' href='/admin/notification-delivery'>Delivery queue</a></p>"
+        # Counts update in place. Anything that would need rows drawn -- a call
+        # starting or ending, an incident opening -- fills this in and offers a
+        # reload instead, so the browser never becomes a second renderer that
+        # can disagree with the server about what the tables say.
+        + "<p class='comms-stale' data-comms-stale hidden></p>"
+        + incidents_html
+        + "<h2>Calls</h2>" + calls_panel
+        + "<h2>Chat</h2>" + chat_panel
+        + "<h2>Notification delivery</h2>" + delivery_panel
+        + "<h2>Providers</h2>" + providers_panel
+        + "<h2>Lookup</h2>" + lookup
+        + "<h2>Sources</h2>" + meta
+        + "<script src='/static/js/admin_comms_ops.js?v=comms-ops-20261003b' defer></script>"
+    )
+
+
+def comms_ops_module():
+    from services import pulsesoc_comms_ops as comms_ops
+
+    return comms_ops
+
+
+def comms_user_panel(user_id):
+    """§17. The communication diagnostics block for one account.
+
+    Rendered inside the user detail page, under that page's own authority. The
+    questions it answers are the support ones -- are their calls connecting, are
+    their notifications arriving, and if not what did the provider say.
+
+    Counts and outcomes only. No peer names, no conversation ids, no message
+    text: a per-user panel is the easiest place on an admin surface to acquire a
+    social graph, and "who they spoke to" would look like context while being a
+    record of who knows whom.
+    """
+    try:
+        diag = comms_ops_module().comms_user_diagnostics(int(user_id))
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "ADMIN_COMMS_USER_PANEL_FAILED user=%s error=%s", user_id, type(exc).__name__)
+        return (
+            "<div class='card' style='border-color:rgba(255,107,138,.5)'>"
+            "<strong>Communication diagnostics unavailable.</strong>"
+            f"<p class='muted'>The lookup failed ({html_escape(type(exc).__name__)}). "
+            "No counts are shown, so this is not a report that this member has no activity.</p>"
+            "</div>"
+        )
+
+    sections = diag.get("sections") or {}
+
+    def unavailable(section):
+        if (section or {}).get("state") == "ready":
+            return ""
+        reason = html_escape(clean_html(str((section or {}).get("error") or "unknown")))
+        # Said rather than shown as a zero. "No calls" and "could not look" are
+        # different answers to a support question and only one is actionable.
+        return (f"<p class='muted'>Unavailable ({reason}). Not a report of no activity.</p>")
+
+    placed = sections.get("calls_placed") or {}
+    joined = sections.get("calls_joined") or {}
+    outcomes = sections.get("calls_placed_outcomes") or {}
+    messages = sections.get("messages_sent") or {}
+    delivery = sections.get("delivery") or {}
+    reasons = sections.get("delivery_reasons") or {}
+
+    calls_card = "<div class='card'><strong>Calls</strong>" + (
+        unavailable(placed) or (
+            "<table class='comms-dense'><tbody>"
+            f"<tr><th scope='row'>Placed &middot; 7d</th><td class='n'>{int(placed.get('7d') or 0):,}</td></tr>"
+            f"<tr><th scope='row'>Placed &middot; 24h</th><td class='n'>{int(placed.get('24h') or 0):,}</td></tr>"
+            f"<tr><th scope='row'>Answered &middot; all time</th><td class='n'>{int(placed.get('answered') or 0):,}</td></tr>"
+            f"<tr><th scope='row'>Connected &middot; all time</th><td class='n'>{int(placed.get('connected') or 0):,}</td></tr>"
+            "<tr><th scope='row'>Last placed</th><td>"
+            + comms_time_cell(placed.get("last_at"), empty="never") + "</td></tr>"
+            "<tr><th scope='row'>Joined &middot; 7d</th><td class='n'>"
+            + (str(int(joined.get("7d") or 0)) if joined.get("state") == "ready" else "—")
+            + "</td></tr>"
+            "</tbody></table>"
+            "<p class='muted'>Placed means this account started the call; joined means it took "
+            "part in one. Other participants are counted, never named.</p>"
+        )
+    ) + "</div>"
+
+    status_rows = "".join(
+        f"<tr><td>{html_escape(clean_html(str(row.get('status') or '')))}</td>"
+        f"<td class='n'>{int(row.get('count') or 0):,}</td></tr>"
+        for row in (outcomes.get("by_status") or [])
+    )
+    outcomes_card = "<div class='card'><strong>Call outcomes &middot; 7d</strong>" + (
+        unavailable(outcomes) or (
+            f"<table class='comms-dense'><thead><tr><th>State</th><th class='n'>Calls</th></tr></thead>"
+            f"<tbody>{status_rows}</tbody></table>"
+            if status_rows else "<p class='muted'>No calls placed in the last 7 days.</p>"
+        )
+    ) + "</div>"
+
+    messages_card = "<div class='card'><strong>Messages sent</strong>" + (
+        unavailable(messages) or (
+            "<table class='comms-dense'><tbody>"
+            f"<tr><th scope='row'>7d</th><td class='n'>{int(messages.get('7d') or 0):,}</td></tr>"
+            f"<tr><th scope='row'>24h</th><td class='n'>{int(messages.get('24h') or 0):,}</td></tr>"
+            f"<tr><th scope='row'>Threads &middot; all time</th><td class='n'>{int(messages.get('threads') or 0):,}</td></tr>"
+            "<tr><th scope='row'>Last sent</th><td>"
+            + comms_time_cell(messages.get("last_at"), empty="never") + "</td></tr>"
+            "</tbody></table>"
+            "<p class='muted'>Counts only. Message contents and the identity of the other party "
+            "are not read by this page, and the threads figure is a number rather than a list "
+            "so it cannot be used to go and open them.</p>"
+        )
+    ) + "</div>"
+
+    channel_rows = "".join(
+        "<tr><td>" + html_escape(clean_html(str(row.get("channel") or ""))) + "</td>"
+        f"<td class='n'>{int(row.get('attempted') or 0):,}</td>"
+        f"<td class='n'>{int(row.get('delivered') or 0):,}</td>"
+        f"<td class='n'>{int(row.get('failed') or 0):,}</td>"
+        f"<td class='n'>{int(row.get('unroutable') or 0):,}</td>"
+        "<td>" + comms_time_cell(row.get("last_at"), empty="never") + "</td></tr>"
+        for row in (delivery.get("channels") or [])
+    )
+    failing = delivery.get("failing") or []
+    delivery_card = "<div class='card comms-wide'><strong>Notification delivery &middot; 7d</strong>" + (
+        unavailable(delivery) or (
+            (
+                "<table class='comms-dense'><thead><tr><th>Channel</th><th class='n'>Tried</th>"
+                "<th class='n'>Delivered</th><th class='n'>Failed</th><th class='n'>No route</th>"
+                f"<th>Last</th></tr></thead><tbody>{channel_rows}</tbody></table>"
+                + (
+                    "<p class='muted'><strong>Failing: "
+                    + html_escape(clean_html(", ".join(str(c) for c in failing)))
+                    + ".</strong> This is the panel that answers &ldquo;why am I not getting "
+                      "notifications?&rdquo;.</p>"
+                    if failing else
+                    "<p class='muted'>No delivery failures for this account in the window. "
+                    "&ldquo;No route&rdquo; means no device or contact was registered, which is "
+                    "not a provider fault.</p>"
+                )
+            )
+            if channel_rows else
+            "<p class='muted'>No notifications attempted for this account in the last 7 days.</p>"
+        )
+    ) + "</div>"
+
+    reason_rows = "".join(
+        f"<tr><td>{html_escape(clean_html(str(row.get('channel') or '')))}</td>"
+        # The pipeline's own text, escaped and tag-stripped. It is provider
+        # output, so it is treated as hostile and rendered as inert words.
+        f"<td class='prose'>{html_escape(clean_html(str(row.get('reason') or '')))}</td>"
+        f"<td class='n'>{int(row.get('count') or 0):,}</td></tr>"
+        for row in (reasons.get("reasons") or [])
+    )
+    reasons_card = ("<div class='card comms-wide'><strong>What the provider said &middot; 7d</strong>" + (
+        unavailable(reasons) or (
+            "<table class='comms-dense'><thead><tr><th>Channel</th><th>Reason</th>"
+            f"<th class='n'>Count</th></tr></thead><tbody>{reason_rows}</tbody></table>"
+            if reason_rows else "<p class='muted'>No failure reasons recorded.</p>"
+        )
+    ) + "</div>") if reason_rows or reasons.get("state") != "ready" else ""
+
+    errors = diag.get("section_errors") or {}
+    footer = (
+        "<p class='muted'>Sources: <code>communication_calls</code>, "
+        "<code>communication_call_participants</code>, <code>comm_v2_messages</code> (metadata "
+        "columns only), <code>notification_delivery_jobs</code>. Not shown: message contents, "
+        "call audio, room handles, device or push tokens, and who this member communicated with."
+        + (" Some sections could not be read: "
+           + html_escape(clean_html(", ".join(f"{k} ({v})" for k, v in sorted(errors.items()))))
+           + "." if errors else "")
+        + "</p>"
+    )
+
+    return (
+        COMMS_OPS_PAGE_STYLE
+        # comms-userdiag widens the tracks: these cards hold tables, not single
+        # metrics, so .grid's 210px floor packs five of them too tightly to read.
+        + "<div class='grid comms-userdiag'>"
+        + calls_card + outcomes_card + messages_card + delivery_card + reasons_card
+        + "</div>" + footer
+    )
+
+
+@webhook_app.route("/admin/communications", methods=["GET"])
+@admin_required
+def admin_communications_page():
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    try:
+        snapshot = comms_ops_module().cached_comms_ops_snapshot()
+    except Exception as exc:
+        # The page itself must stay observable. A total failure renders as a
+        # failure, not as a page of zeroes.
+        logging.getLogger(__name__).warning("ADMIN_COMMS_OPS_PAGE_FAILED error=%s", type(exc).__name__)
+        body = (
+            COMMS_OPS_PAGE_STYLE
+            + "<h1>Communications</h1>"
+            "<div class='card' style='border-color:rgba(255,107,138,.5)'>"
+            "<strong>Communications metrics unavailable.</strong>"
+            f"<p class='muted'>The snapshot could not be taken ({html_escape(type(exc).__name__)}). "
+            "No counts are shown. This is not a report of zero activity.</p>"
+            "<p><a class='button' href='/admin/calls'>Call inspector</a> "
+            "<a class='button' href='/admin/notification-delivery'>Delivery queue</a></p></div>"
+        )
+        return admin_page_html("Communications", body, admin)
+    return admin_page_html("Communications", comms_ops_page_body(snapshot), admin)
+
+
+@webhook_app.route("/admin/communications/snapshot.json", methods=["GET"])
+@admin_required
+def admin_communications_snapshot_json():
+    """Polling feed for the Communications page.
+
+    Served from the module's short-lived cache, so a page left open all day
+    costs one snapshot per cache window per worker no matter how many tabs are
+    watching it.
+    """
+    admin, denied = require_admin_api("system.view")
+    if denied:
+        return denied
+    try:
+        snapshot = comms_ops_module().cached_comms_ops_snapshot()
+    except Exception as exc:
+        logging.getLogger(__name__).warning("ADMIN_COMMS_OPS_JSON_FAILED error=%s", type(exc).__name__)
+        return jsonify({"ok": False, "state": "critical", "error": type(exc).__name__}), 503
+    response = jsonify(snapshot)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@webhook_app.route("/admin/communications/lookup.json", methods=["GET"])
+@admin_required
+def admin_communications_lookup_json():
+    """§16. Resolve one call or conversation id to its operational facts.
+
+    Authorised independently of the page that calls it, on the same permission.
+    A lookup endpoint that trusted the page's check would be reachable directly,
+    and this one answers questions about specific sessions, so it is the single
+    most attractive route on this surface.
+
+    Rate limited per admin, because a lookup is the one part of this surface
+    that takes input and can therefore be driven in a loop. The term grammar
+    already refuses numeric and address-shaped input -- the limit is the second
+    layer, bounding how fast an id space can be swept even within the grammar.
+
+    Audited, because §23 asks which admin did which sensitive operation when,
+    and looking up a specific session is the sensitive operation here. The term
+    is recorded; nothing private is, because nothing private is returned.
+    """
+    admin, denied = require_admin_api("system.view")
+    if denied:
+        return denied
+
+    term = (request.args.get("q") or "").strip()[:80]
+    admin_id = int((admin or {}).get("id") or 0)
+    if security_guard.rate_limited(f"admin_comms_lookup:{admin_id}", limit=30, window_seconds=60):
+        return jsonify({
+            "ok": False,
+            "state": "rate_limited",
+            "reason": "Too many lookups. This box resolves one id at a time by design.",
+        }), 429
+
+    ops = comms_ops_module()
+    refusal = ops.lookup_term_refusal(term)
+    if refusal:
+        # Refusals are not audited as lookups: nothing was looked up. They are
+        # counted against the rate limit above, which is what a sweep would hit.
+        return jsonify({"ok": False, "state": "refused", "term": term, "reason": refusal}), 400
+
+    try:
+        result = ops.comms_ops_lookup(term)
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "ADMIN_COMMS_OPS_LOOKUP_FAILED error=%s", type(exc).__name__)
+        return jsonify({"ok": False, "state": "error", "error": type(exc).__name__}), 503
+
+    log_admin_audit(
+        admin_id,
+        "comms_ops_lookup",
+        target_type="communication_identifier",
+        target_id=term,
+        metadata={
+            "state": result.get("state"),
+            "calls": len(result.get("calls") or []),
+            "conversations": len(result.get("conversations") or []),
+        },
+    )
+    response = jsonify({"ok": True, **result})
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @webhook_app.route("/admin/live-ops", methods=["GET"])
@@ -24577,6 +25446,11 @@ def admin_user_detail_page(user_id):
         f"<h2>Payment History</h2><div class='card'>{admin_rows_table(payments, [('amount','Amount'),('currency','Currency'),('status','Status'),('stripe_event_id','Event'),('invoice_id','Invoice'),('created_at','Date')])}</div>"
         f"<h2>Activity Timeline</h2><div class='card'><p class='muted'>Latest activity: {html_escape(clean_html((activity[0] or {}).get('event_type') if activity else 'none'))} · {len(activity)} recent items.</p><button type='button' onclick=\"var p=document.getElementById('activityPanel');p.hidden=!p.hidden;this.textContent=p.hidden?'View Activity Timeline':'Hide Timeline';\">View Activity Timeline</button><div id='activityPanel' hidden style='max-height:400px;overflow:auto;margin-top:12px'>{admin_rows_table(activity[:25], [('event_type','Event'),('event_label','Label'),('created_at','Date')])}</div></div>"
         f"<h2>Email Logs</h2><div class='card'>{admin_rows_table(emails, [('email_type','Type'),('subject','Subject'),('status','Status'),('created_at','Date')])}</div>"
+        # §17. Placed here, on the page an admin already opens when a member
+        # reports a problem, rather than behind a link from the operations
+        # screen: the question "do their calls connect, do their notifications
+        # arrive" arrives attached to a person, not to a time window.
+        f"<h2>Communications</h2>{comms_user_panel(user_id)}"
     )
     return admin_page_html("User Detail", body, admin)
 

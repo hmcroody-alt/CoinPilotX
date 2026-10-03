@@ -210,6 +210,7 @@
     "tests/commerce_discovery/test_the_suite_can_see_a_broken_engine.py",
     "tests/commerce_discovery/test_value_is_reconciled.py",
     "tests/commerce_discovery/test_viewer_policy.py",
+    "tests/comms_ops/test_comms_ops_surface.py",
     "tests/community/test_groups_rooms_activation.py",
     "tests/crypto_premium/test_cross_account_isolation.py",
     "tests/crypto_premium/test_crypto_premium_gate.py",
