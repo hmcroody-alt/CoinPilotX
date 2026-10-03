@@ -278,6 +278,12 @@ def _mutation_preconditions() -> str:
         # switches above say the owner authorised *a* payout run; they cannot
         # say the owner knew which Stripe it would reach.
         return "stripe_mode_unrecognized"
+    if stripe_mode.mode() == stripe_mode.MIXED:
+        # Secret key and publishable key name different Stripes, so one of them
+        # is live and nobody configured this deliberately. Refused for the same
+        # reason as `unrecognized`: the switches cannot record consent to a
+        # Stripe the operator did not know they were pointed at.
+        return "stripe_mode_mixed"
     return ""
 
 

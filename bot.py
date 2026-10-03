@@ -375,6 +375,7 @@ from services import (
     premium_capability_engine,
     payment_provider,
     seller_payment_onboarding,
+    stripe_mode,
     stripe_webhook_verification,
     premium_entitlement_service,
     premium_identity_engine,
@@ -65812,11 +65813,18 @@ def _marketplace_order_return(transaction_id):
     query string -- `?transaction_id=` is attacker-controlled and the only thing
     stopping this from confirming a stranger's order is the buyer check below.
 
-    Returns True only for a Marketplace product transaction whose buyer is the
-    signed-in account. Anything else -- another flow, a transaction that is not
-    the viewer's, a signed-out visitor, a malformed id, a database that will not
-    answer -- falls through to the generic wording, which has been correct for
-    every flow since before the cart existed.
+    Returns `{"status": <seller_transactions.status>}` only for a Marketplace
+    product transaction whose buyer is the signed-in account. Anything else --
+    another flow, a transaction that is not the viewer's, a signed-out visitor, a
+    malformed id, a database that will not answer -- returns False and falls
+    through to `_creator_order_return`, and then to wording that claims nothing.
+    The generic sentence this used to fall through to asserted "Your payment was
+    received." for every one of those cases, including the unresolvable ones.
+
+    The status is carried out because arriving at the success URL is not evidence
+    of payment: the buyer can reach it by navigating, and a created-but-unpaid
+    session sits at `checkout_created` indefinitely. Only the webhook writes
+    `paid`, so only the webhook can license the claim that money moved.
     """
     try:
         tx_id = int(str(transaction_id or "").strip())
@@ -65833,14 +65841,16 @@ def _marketplace_order_return(transaction_id):
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute(
-            "SELECT buyer_user_id, item_type FROM seller_transactions WHERE id=? LIMIT 1",
+            "SELECT buyer_user_id, item_type, status FROM seller_transactions WHERE id=? LIMIT 1",
             (tx_id,),
         )
         row = cur.fetchone()
         if not row:
             return False
-        return (int(row["buyer_user_id"] or 0) == int(viewer["user_id"])
-                and str(row["item_type"] or "") == "marketplace_product")
+        if not (int(row["buyer_user_id"] or 0) == int(viewer["user_id"])
+                and str(row["item_type"] or "") == "marketplace_product"):
+            return False
+        return {"status": str(row["status"] or "")}
     except Exception:
         # A result page that 500s after a real charge is worse than one that
         # prints the generic sentence, which is true of a Marketplace order too.
@@ -65852,6 +65862,140 @@ def _marketplace_order_return(transaction_id):
                 conn.close()
             except Exception:
                 pass
+
+
+#: The only two transaction statuses that license a page to say money moved.
+#: Everything else -- `pending`, `created`, `checkout_created`, `checkout_failed`,
+#: `checkout_expired` -- means PulseSoc has not been told a payment happened, and
+#: a return page that says otherwise is guessing from the fact that a browser
+#: arrived. Both writers of `paid` are provider-driven: the Stripe webhook for
+#: Marketplace, `creator_economy_service.mark_paid` for the creator lanes.
+_PAYMENT_CLAIM_STATUSES = ("paid", "refunded")
+
+
+def _creator_order_return(transaction_id):
+    """Payment truth for the non-Marketplace lanes that share these two URLs.
+
+    Courses, lessons, live classes and Premium all enter through
+    `creator_economy_service.create_transaction`, which inserts
+    `creator_transactions` and returns *that* row's id -- and that is the id
+    those lanes put in `?transaction_id=`. It also mirrors a
+    `seller_transactions` row, but under a separate autoincrement, linked only
+    by `metadata_json.creator_transaction_id`.
+
+    So the same query parameter on the same route carries two unrelated id
+    spaces. Resolving a creator id against `seller_transactions` is not merely
+    useless, it can *match* -- a different, unrelated row that happens to share
+    the integer. This reads the table the id actually came from.
+
+    Returns `{"status": <creator_transactions.status>}` when the row is the
+    signed-in viewer's, else False. As with Marketplace, the status is carried
+    out rather than collapsed to a boolean, because arriving here is not
+    evidence of payment: `create_transaction` writes `pending` and only
+    `mark_paid` writes `paid`.
+    """
+    try:
+        tx_id = int(str(transaction_id or "").strip())
+    except (TypeError, ValueError):
+        return False
+    if tx_id <= 0:
+        return False
+    viewer = require_account()
+    if not viewer:
+        return False
+    conn = None
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT buyer_user_id, item_type, status FROM creator_transactions WHERE id=? LIMIT 1",
+            (tx_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        # Same buyer check as the Marketplace helper, and for the same reason:
+        # `?transaction_id=` is attacker-controlled, so this is the only thing
+        # between a stranger's id and a page describing their purchase.
+        if int(row["buyer_user_id"] or 0) != int(viewer["user_id"]):
+            return False
+        return {"status": str(row["status"] or ""), "item_type": str(row["item_type"] or "")}
+    except Exception:
+        logging.getLogger(__name__).exception("CREATOR_PAYMENT_RESULT_LOOKUP_FAILED tx=%s", tx_id)
+        return False
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+#: Query-string value naming which table a `?transaction_id=` came from. The
+#: builders know -- the route cannot work it out, because the two id spaces are
+#: separate autoincrements and the same integer is a valid key in both.
+_PAYMENT_LANES = ("marketplace", "creator")
+
+
+def _payment_return_lanes():
+    """Resolve a return URL's transaction in the lane it actually came from.
+
+    Returns `(marketplace, creator, ambiguous)`.
+
+    The problem this exists for: `/payments/success?transaction_id=N` is shared
+    by the cart lane, the buy-now lane, the offers lane, courses, lessons, live
+    classes and Premium -- and those lanes do not agree on what `N` means. The
+    Marketplace lanes pass a `seller_transactions.id`; the creator lanes pass a
+    `creator_transactions.id`, because `create_transaction` returns that one.
+    Both are separate autoincrements starting at 1, so low integers are live
+    primary keys in both tables, naming unrelated purchases.
+
+    Reading the wrong table is not a miss, it is a *wrong answer*: a buyer who
+    has paid for nothing can be shown the confirming copy because an unrelated
+    paid row of theirs happens to share the integer. The buyer check in each
+    helper narrows this to the buyer's own rows; it does not remove it.
+
+    So the lane is named in the link. `?lane=` is attacker-controlled like every
+    other parameter here, which is why it only selects *which table to read* --
+    ownership and status are still proved from the row, so the worst a forged
+    lane can do is describe a different purchase of the forger's own.
+
+    Links already live in Stripe sessions created before this existed carry no
+    lane. Those fall back to asking both, and if both answer, `ambiguous` is
+    True and the caller must claim nothing: the id is genuinely unresolvable and
+    a coin flip between two of the buyer's purchases is not a payment proof.
+    """
+    tx_id = request.args.get("transaction_id")
+    lane = (request.args.get("lane") or "").strip().lower()
+    if lane not in _PAYMENT_LANES:
+        lane = ""
+    marketplace = _marketplace_order_return(tx_id) if lane in ("", "marketplace") else False
+    creator = _creator_order_return(tx_id) if lane in ("", "creator") else False
+    if marketplace and creator:
+        logging.getLogger(__name__).warning(
+            "PAYMENT_RETURN_ID_AMBIGUOUS tx=%s marketplace_status=%s creator_status=%s",
+            tx_id, marketplace.get("status"), creator.get("status"))
+        return marketplace, creator, True
+    return marketplace, creator, False
+
+
+def _payment_return_unknown_page():
+    """The page for a return this route cannot resolve to a purchase.
+
+    Reached when no row answers, when the row is not the viewer's, and when the
+    id is ambiguous across both lanes. All three have the same honest content:
+    a browser arrived, and that is not information about a payment.
+    """
+    return pulse_social_shell(
+        "Checkout Returned",
+        "This page cannot confirm a payment. Stripe's confirmation is what updates your account.",
+        "<section class='card'><h2>Checkout returned to PulseSoc</h2>"
+        "<p>We cannot tell from this page whether a payment completed. Nothing is charged or "
+        "unlocked by opening it &mdash; only Stripe's confirmation does that.</p>"
+        "<p>Check your account for the purchase, or your email for a Stripe receipt.</p>"
+        "<div class='actions'><a class='button primary' href='/pulse'>Back to PulseSoc</a>"
+        "<a class='button' href='/pulse/profile'>Your account</a></div></section>")
 
 
 #: The four stages of a Marketplace checkout, in the order a buyer meets them.
@@ -65903,7 +66047,37 @@ def _checkout_progress_html(done, pending=0):
 @webhook_app.route("/pulse/payments/success", methods=["GET"])
 @webhook_app.route("/payments/success", methods=["GET"])
 def pulse_payment_success_page():
-    if _marketplace_order_return(request.args.get("transaction_id")):
+    _return, _creator, _ambiguous = _payment_return_lanes()
+    if _ambiguous:
+        # Both tables hold a live row of this buyer's under the same integer and
+        # the link did not say which lane it came from. Two unrelated purchases,
+        # one id, no way to tell which one the buyer just came back from -- so
+        # describe neither. See `_payment_return_lanes`.
+        return _payment_return_unknown_page()
+    if _return and _return["status"] not in _PAYMENT_CLAIM_STATUSES:
+        # Reaching this URL is not a payment. `success_url` is a plain GET the
+        # buyer can navigate to, re-open from history, or land on after
+        # abandoning Stripe's page, and the transaction stays at
+        # `checkout_created` the whole time. Prod held exactly this row while
+        # this branch was being written: tx 44, session `open`, `unpaid`.
+        # So say what is actually known -- a payment was started -- and let the
+        # webhook be the only thing that upgrades the wording.
+        return pulse_social_shell(
+            "Checkout Started",
+            "We have not received your payment yet. Nothing is confirmed until Stripe tells PulseSoc it completed.",
+            "<section class='card'>"
+            # Two of four, same as the cancel page: the buyer reached Stripe and
+            # we have no confirmation. Drawing three here is the error this
+            # branch exists to prevent.
+            + _checkout_progress_html(2) +
+            "<h2>Payment not confirmed</h2>"
+            "<p>If you completed the payment, this page updates once Stripe's confirmation reaches "
+            "PulseSoc &mdash; usually within a few seconds. Reload to check.</p>"
+            "<p>If you did not complete it, nothing was charged and your cart is unchanged.</p>"
+            "<div class='actions'><a class='button primary' href='/pulse/orders'>View your orders</a>"
+            "<a class='button' href='/pulse/cart'>Back to your cart</a>"
+            "</div></section>")
+    if _return:
         # Deliberately not "your order is confirmed". Stripe has taken the
         # payment, but the order becomes an order in PulseSoc when
         # `checkout.session.completed` arrives, and the cart's own lines are
@@ -65929,13 +66103,65 @@ def pulse_payment_success_page():
             # place on the site still pointing at the old answer after that flips.
             f"<a class='button' href='{app_first_href('marketplace')}'>Keep browsing</a>"
             "</div></section>")
-    return pulse_social_shell("Payment Complete", "Your payment was received. Access and seller payout status update through Stripe webhooks.", "<section class='card'><h2>Payment received</h2><p>Thank you. If this was a course or product, access will update shortly.</p><a class='button primary' href='/pulse'>Back to PulseSoc</a></section>")
+    # Everything that is not a Marketplace product -- courses, lessons, live
+    # classes, Premium -- carries a `creator_transactions` id here, so ask that
+    # table rather than printing a sentence that was true of no flow in
+    # particular.
+    if _creator and _creator["status"] in _PAYMENT_CLAIM_STATUSES:
+        return pulse_social_shell(
+            "Payment Complete",
+            "Stripe received your payment. Access updates as the confirmation is applied.",
+            "<section class='card'><h2>Payment received</h2>"
+            "<p>Stripe has taken your payment. Access and seller payout status update from "
+            "Stripe's confirmation, not from this page.</p>"
+            "<div class='actions'><a class='button primary' href='/pulse'>Back to PulseSoc</a>"
+            "<a class='button' href='/pulse/profile'>Your account</a></div></section>")
+    if _creator:
+        # Resolved the row and it is not paid. This is the common case for an
+        # abandoned hosted-checkout page, and the one the old sentence got
+        # outright wrong: `create_transaction` writes `pending`, so a buyer who
+        # never paid was being told the payment arrived.
+        return pulse_social_shell(
+            "Checkout Started",
+            "We have not received your payment yet. Nothing is unlocked until Stripe confirms it.",
+            "<section class='card'><h2>Payment not confirmed</h2>"
+            "<p>If you completed the payment, this page updates once Stripe's confirmation "
+            "reaches PulseSoc &mdash; usually within a few seconds. Reload to check.</p>"
+            "<p>If you did not complete it, nothing was charged.</p>"
+            "<div class='actions'><a class='button primary' href='/pulse'>Back to PulseSoc</a>"
+            "<a class='button' href='/pulse/profile'>Your account</a></div></section>")
+    # Neither table answered for this id: no `transaction_id` at all, a signed-out
+    # visitor, someone else's id, or a row that does not exist. There is nothing
+    # here to support a claim either way, so make none. Saying "payment received"
+    # to a visitor who typed the URL is the defect this whole branch exists to
+    # remove, and saying "payment failed" would be the same mistake inverted.
+    return _payment_return_unknown_page()
 
 
 @webhook_app.route("/pulse/payments/cancel", methods=["GET"])
 @webhook_app.route("/payments/cancel", methods=["GET"])
 def pulse_payment_cancel_page():
-    if _marketplace_order_return(request.args.get("transaction_id")):
+    # The cancel URL is as freely reachable as the success one, so it can be
+    # opened by a buyer whose payment *did* go through -- from history, or by
+    # backing out of the success page. Telling them "no card was charged" is the
+    # success-page defect inverted, and the more expensive direction: a buyer who
+    # believes nothing was taken goes and buys it again.
+    _market, _creator, _ambiguous = _payment_return_lanes()
+    _paid = _market or _creator
+    if not _ambiguous and _paid and _paid["status"] in _PAYMENT_CLAIM_STATUSES:
+        return pulse_social_shell(
+            "Payment Received",
+            "This checkout was already paid. Do not pay again.",
+            "<section class='card'>"
+            + _checkout_progress_html(3, pending=4) +
+            "<h2>This payment already went through</h2>"
+            "<p>You reached the cancel page, but Stripe has already taken the payment for this "
+            "checkout. <strong>Do not pay again.</strong></p>"
+            "<p>It appears in your orders once Stripe's confirmation reaches PulseSoc.</p>"
+            "<div class='actions'><a class='button primary' href='/pulse/orders'>View your orders</a>"
+            f"<a class='button' href='{app_first_href('marketplace')}'>Keep browsing</a>"
+            "</div></section>")
+    if _market and not _ambiguous:
         # The cart is the one thing a buyer who just backed out of a payment
         # wants, and the generic page sent them to the feed instead. Nothing was
         # lost: `cart_checkout` empties no line, and the reservation it took is
@@ -65957,7 +66183,17 @@ def pulse_payment_cancel_page():
             # route's.
             f"<a class='button' href='{app_first_href('marketplace')}'>Keep browsing</a>"
             "</div></section>")
-    return pulse_social_shell("Payment Canceled", "No card was charged.", "<section class='card'><h2>Checkout canceled</h2><p>No payment was completed.</p><a class='button primary' href='/pulse'>Back to PulseSoc</a></section>")
+    # Unresolvable id: the guard above could not read a row, so "no payment was
+    # completed" is as unverified here as "payment received" was on the success
+    # page. Describe the cancellation without certifying the absence of a charge.
+    return pulse_social_shell(
+        "Checkout Canceled",
+        "Cancelling leaves nothing charged. Check your email for a Stripe receipt if you are unsure.",
+        "<section class='card'><h2>Checkout canceled</h2>"
+        "<p>Backing out of Stripe's payment page does not charge you.</p>"
+        "<p>If you did reach the end of the payment and are not sure it completed, check your "
+        "email for a Stripe receipt rather than paying again.</p>"
+        "<a class='button primary' href='/pulse'>Back to PulseSoc</a></section>")
 
 
 @webhook_app.route("/pulse/creator/payouts", methods=["GET"])
@@ -104672,8 +104908,8 @@ def api_pulse_payments_checkout():
         session_obj = stripe.checkout.Session.create(
             mode="payment",
             line_items=[{"price_data": {"currency": currency.lower(), "unit_amount": amount_cents, "product_data": {"name": title[:120]}}, "quantity": 1}],
-            success_url=f"{base}/pulse/payments/success?transaction_id={tx_id}",
-            cancel_url=f"{base}/pulse/payments/cancel?transaction_id={tx_id}",
+            success_url=f"{base}/pulse/payments/success?transaction_id={tx_id}&lane=marketplace",
+            cancel_url=f"{base}/pulse/payments/cancel?transaction_id={tx_id}&lane=marketplace",
             payment_intent_data=payment_intent_data,
             metadata=checkout_metadata,
             idempotency_key=f"marketplace-buy-now:{int(buyer['user_id'])}:{provider_attempt}",
@@ -104886,8 +105122,8 @@ def _creator_checkout_for_item(buyer, item_type, item_id, plan_key=""):
         platform_fee_cents=tx.get("platform_fee_cents") or 0,
         transaction_id=tx["transaction_id"],
         connected_account_id=connected_account_id,
-        success_url=f"{(APP_BASE_URL or request.url_root.rstrip('/')).rstrip('/')}/payments/success?transaction_id={tx['transaction_id']}",
-        cancel_url=f"{(APP_BASE_URL or request.url_root.rstrip('/')).rstrip('/')}/payments/cancel?transaction_id={tx['transaction_id']}",
+        success_url=f"{(APP_BASE_URL or request.url_root.rstrip('/')).rstrip('/')}/payments/success?transaction_id={tx['transaction_id']}&lane=creator",
+        cancel_url=f"{(APP_BASE_URL or request.url_root.rstrip('/')).rstrip('/')}/payments/cancel?transaction_id={tx['transaction_id']}&lane=creator",
     )
     if not checkout.get("ok"):
         return jsonify({**checkout, "transaction_id": tx["transaction_id"]}), 503 if checkout.get("status") == "setup_required" else 400
@@ -109417,14 +109653,36 @@ def admin_payments_health_page():
         except Exception:
             counts[key] = 0
     conn.close()
+    # `stripe_mode.status()` rather than another prefix inference here. It is
+    # built to leak nothing -- presence booleans only, no prefixes, no lengths --
+    # and it is the only reader that notices a secret key and a publishable key
+    # naming different Stripes, which is the state this page most needs to stop
+    # describing as "ready".
+    mode_status = stripe_mode.status()
     diagnostics = {
         "stripe_key_configured": bool(STRIPE_SECRET_KEY),
         "stripe_webhook_configured": bool(STRIPE_WEBHOOK_SECRET),
         "pro_price_configured": bool(os.getenv("STRIPE_PRO_PRICE_ID") or os.getenv("STRIPE_PRICE_ID")),
         "publishable_key_configured": bool(STRIPE_PUBLISHABLE_KEY),
-        "status": "ready" if STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET else "setup_required",
+        "stripe_mode": mode_status["mode"],
+        "may_move_real_money": mode_status["may_move_real_money"],
+        "test_mode_ready": mode_status["test_mode_ready"],
+        "keys_disagree": mode_status["keys_disagree"],
+        "secret_mode": mode_status["secret_mode"],
+        "publishable_mode": mode_status["publishable_mode"],
+        "publishable_key_env_var": mode_status["publishable_key_env_var"],
+        "missing_for_test_mode": mode_status["missing_for_test_mode"],
         "counts": counts,
     }
+    # Two keys naming different Stripes is not "ready" however many variables
+    # are populated, and it is the one misconfiguration a count of set
+    # variables cannot see.
+    if mode_status["keys_disagree"]:
+        diagnostics["status"] = "keys_disagree"
+    elif STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET:
+        diagnostics["status"] = "ready"
+    else:
+        diagnostics["status"] = "setup_required"
     body = f"<h1>Payments Health</h1><p class='muted'>No secrets are exposed. Missing Stripe setup shows as setup required, never a crash.</p><section class='card'><pre>{html_escape(clean_html(json.dumps(diagnostics, indent=2, default=str)))}</pre></section>"
     return admin_page_html("Payments Health", body, admin)
 

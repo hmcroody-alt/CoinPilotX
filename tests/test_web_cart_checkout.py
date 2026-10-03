@@ -866,8 +866,16 @@ def test_a_web_checkout_ends_at_a_stripe_hosted_session(buyer):
     kwargs = created[0]
     assert kwargs["mode"] == "payment"
     primary = payload["transaction_ids"][0]
-    assert kwargs["success_url"].endswith(f"/pulse/payments/success?transaction_id={primary}")
-    assert kwargs["cancel_url"].endswith(f"/pulse/payments/cancel?transaction_id={primary}")
+    # `lane=marketplace` says which table `transaction_id` is a key in. Both
+    # result pages are shared with the creator lanes, whose ids come from
+    # `creator_transactions` -- a separate autoincrement, so the same integer is
+    # live in both tables and the page cannot otherwise tell which purchase it is
+    # describing. A link that omits the lane is answered with no payment claim at
+    # all, so dropping this stamp would silently stop confirming real payments.
+    assert kwargs["success_url"].endswith(
+        f"/pulse/payments/success?transaction_id={primary}&lane=marketplace")
+    assert kwargs["cancel_url"].endswith(
+        f"/pulse/payments/cancel?transaction_id={primary}&lane=marketplace")
     # The amount is the server's snapshot, not a number that travelled through the
     # browser. Price manipulation has nowhere to enter: the request body carries a
     # seller id and an address, and no money at all.
@@ -989,19 +997,24 @@ def test_the_four_panels_are_mutually_exclusive_in_the_script():
 # 5. The Stripe return pages
 # ---------------------------------------------------------------------------
 
-def _transaction(buyer_user_id, item_type="marketplace_product"):
+def _transaction(buyer_user_id, item_type="marketplace_product", status="created"):
     """A `seller_transactions` row, written the way `cart_checkout` writes one.
 
-    `item_type` and `buyer_user_id` are the two columns `_marketplace_order_return`
-    reads, and they are the point of every test below; the rest are here so the
-    row is a plausible one rather than a stub the real lookup would reject.
+    `item_type`, `buyer_user_id` and `status` are the three columns
+    `_marketplace_order_return` reads, and they are the point of every test below;
+    the rest are here so the row is a plausible one rather than a stub the real
+    lookup would reject.
+
+    `status` defaults to what `cart_checkout` actually writes -- `created`, which
+    is *before* any money moves. A test that wants the paid copy has to ask for
+    `paid` explicitly, because only the webhook writes it.
     """
     conn = bot.db()
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO seller_transactions (seller_user_id, buyer_user_id, seller_type, "
         "item_type, item_id, amount_cents, currency, status) VALUES (?,?,?,?,?,?,?,?)",
-        (1, buyer_user_id, "merchant", item_type, 1, 1999, "USD", "created"))
+        (1, buyer_user_id, "merchant", item_type, 1, 1999, "USD", status))
     tx_id = cur.lastrowid
     conn.commit()
     return tx_id
@@ -1016,11 +1029,18 @@ def test_the_success_page_tells_a_marketplace_buyer_where_the_order_went(buyer):
     Stripe *received* the payment rather than that the order is confirmed,
     because the order becomes an order when `checkout.session.completed` arrives
     and this page has not been told that it has.
+
+    Seeded `paid` deliberately. This test used the helper's default, `created`,
+    and so asserted that an *unpaid* buyer is told Stripe took their money --
+    which is the thing
+    `test_the_success_page_will_not_say_a_payment_arrived_before_the_webhook_says_so`
+    now forbids. The copy under test here is the post-webhook copy, so the row
+    has to be post-webhook.
     """
     client, _listing_id, _seller_id = buyer
     with client.session_transaction() as session:
         buyer_id = session["account_user_id"]
-    tx_id = _transaction(buyer_id)
+    tx_id = _transaction(buyer_id, status="paid")
 
     body = client.get(f"/pulse/payments/success?transaction_id={tx_id}",
                       headers=HTTPS).get_data(as_text=True)
@@ -1097,12 +1117,20 @@ def test_another_buyers_transaction_does_not_specialise_the_page(buyer):
         "the success page confirmed a transaction belonging to another account")
 
 
-def test_a_non_marketplace_transaction_of_the_viewers_keeps_the_generic_copy(buyer):
+def test_a_non_marketplace_transaction_of_the_viewers_does_not_get_the_marketplace_copy(buyer):
     """Ownership alone is not enough: a course is the viewer's too.
 
     Both halves of the check are load-bearing, and this is the one a test suite
     usually forgets. The Marketplace copy talks about a seller shipping a thing;
     said to someone who just bought a course it is simply wrong.
+
+    What this used to assert is worth recording, because it was the second half
+    of the same defect: it required the string "access will update shortly",
+    which came from a generic page whose opening sentence was "Your payment was
+    received." This row is a `seller_transactions` row with no
+    `creator_transactions` sibling, so neither lookup can establish anything --
+    and the page now says so, instead of thanking the buyer for a payment that
+    nothing has confirmed.
     """
     client, _listing_id, _seller_id = buyer
     with client.session_transaction() as session:
@@ -1112,7 +1140,8 @@ def test_a_non_marketplace_transaction_of_the_viewers_keeps_the_generic_copy(buy
     body = client.get(f"/pulse/payments/success?transaction_id={tx_id}",
                       headers=HTTPS).get_data(as_text=True)
     assert "/pulse/orders" not in body
-    assert "access will update shortly" in body
+    assert "cannot tell from this page" in body
+    assert "payment was received" not in body.lower()
 
 
 def test_an_anonymous_visitor_is_told_nothing_about_the_order(buyer):
@@ -1937,3 +1966,324 @@ def test_mutation_the_cta_state_machine_assertions_can_fail():
     assert _DISABLED_SUBMIT in overcorrected["retryable"], "mutation 5 did not take effect"
     assert "Next: secure payment" not in overcorrected["retryable"], (
         "mutation 5 did not take effect")
+
+
+def test_the_success_page_will_not_say_a_payment_arrived_before_the_webhook_says_so(buyer):
+    """`success_url` is a GET. Arriving at it is not evidence that money moved.
+
+    `/payments/success?transaction_id=N` was specialised for Marketplace returns
+    on three facts: the row exists, the viewer is its buyer, and `item_type` is
+    `marketplace_product`. None of the three is a payment. The page then told the
+    buyer "Stripe has taken your payment" -- a claim it had not been told and
+    could not check, reachable by typing the URL, re-opening it from history, or
+    backing out of Stripe's page and landing on it.
+
+    Production held precisely that row while this was written: `seller_transactions`
+    id 44, a real Checkout Session at `status=open`, `payment_status=unpaid`,
+    nothing charged. Only the webhook writes `paid` (bot.py's
+    `checkout.session.completed` handler), so only the webhook may license the
+    claim.
+
+    Asserted in both directions against the same row, because a page that never
+    confirms anything would pass the first half on its own.
+    """
+    client, _listing_id, _seller_id = buyer
+    with client.session_transaction() as session:
+        buyer_id = session["account_user_id"]
+    tx_id = _transaction(buyer_id, status="checkout_created")
+
+    unpaid = client.get(f"/payments/success?transaction_id={tx_id}", headers=HTTPS)
+    assert unpaid.status_code == 200, unpaid.get_data(as_text=True)
+    body = unpaid.get_data(as_text=True)
+    assert "has taken your payment" not in body, (
+        "the success page told a buyer with an unpaid transaction (%s) that "
+        "Stripe had taken their payment" % tx_id)
+    assert "Stripe received your payment" not in body, body[:400]
+    assert "not received your payment" in body, (
+        "the unpaid return neither withheld the claim nor said what is true; "
+        "page said: %s" % body[:400])
+
+    # The other direction. Same row, same URL, one column changed -- so a page
+    # that simply never confirms cannot pass this.
+    conn = bot.db()
+    cur = conn.cursor()
+    cur.execute("UPDATE seller_transactions SET status='paid' WHERE id=?", (tx_id,))
+    conn.commit()
+
+    paid = client.get(f"/payments/success?transaction_id={tx_id}", headers=HTTPS)
+    assert paid.status_code == 200, paid.get_data(as_text=True)
+    paid_body = paid.get_data(as_text=True)
+    assert "has taken your payment" in paid_body, (
+        "a paid transaction was not confirmed to its buyer; page said: %s"
+        % paid_body[:400])
+    assert "not received your payment" not in paid_body, paid_body[:400]
+
+
+# ---------------------------------------------------------------------------
+# 5b. The same rule, applied to the lanes that are not Marketplace
+#
+# Courses, lessons, live classes and Premium share these two URLs with the cart,
+# and they carry a `creator_transactions` id rather than a `seller_transactions`
+# one -- a second id space on the same query parameter. The success page's
+# Marketplace branch was fixed first; the generic fallback it fell through to
+# said "Your payment was received." for every one of those flows, with no status
+# predicate anywhere, which is the identical defect one lane over.
+# ---------------------------------------------------------------------------
+
+#: The claims no return page may make without a provider-authoritative status.
+#: Asserted as a set so a new page cannot introduce a fifth phrasing of "paid"
+#: and pass because the test only knew about four.
+_PAYMENT_CLAIMS = (
+    "payment was received",
+    "payment received",
+    "has taken your payment",
+    "stripe received your payment",
+)
+
+
+def _creator_transaction(buyer_user_id, item_type="course", status="pending"):
+    """A `creator_transactions` row, written the way `create_transaction` writes one.
+
+    `status` defaults to `pending`, which is the literal
+    `creator_economy_service.create_transaction` inserts. Only `mark_paid` writes
+    `paid`, so a test that wants the confirming copy has to say so -- the same
+    discipline as `_transaction` above, for the same reason.
+    """
+    conn = bot.db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO creator_transactions (buyer_user_id, seller_user_id, seller_type, "
+        "item_type, item_id, gross_amount_cents, platform_fee_cents, provider_fee_cents, "
+        "net_amount_cents, currency, status, provider) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (buyer_user_id, 1, "teacher", item_type, "1", 4999, 0, 0, 4999, "USD",
+         status, "stripe"))
+    tx_id = cur.lastrowid
+    conn.commit()
+    return tx_id
+
+
+def test_a_pending_course_payment_is_not_announced_as_received(buyer):
+    """The generic fallback, in the state it is reached in most often.
+
+    A buyer who opens Stripe's hosted page for a course and closes it leaves a
+    `creator_transactions` row at `pending` forever. Landing back on
+    `/payments/success?transaction_id=N` -- from history, or from Stripe's own
+    return -- used to be answered with "Your payment was received."
+
+    Both directions on the same row, so a page that confirms nothing at all
+    cannot pass.
+    """
+    client, _listing_id, _seller_id = buyer
+    with client.session_transaction() as session:
+        buyer_id = session["account_user_id"]
+    tx_id = _creator_transaction(buyer_id)
+
+    pending = client.get(
+        f"/payments/success?transaction_id={tx_id}&lane=creator", headers=HTTPS)
+    assert pending.status_code == 200, pending.get_data(as_text=True)
+    body = pending.get_data(as_text=True).lower()
+    for claim in _PAYMENT_CLAIMS:
+        assert claim not in body, (
+            "a pending course transaction (%s) was told %r; page said: %s"
+            % (tx_id, claim, body[:400]))
+    assert "payment not confirmed" in body, body[:400]
+
+    conn = bot.db()
+    cur = conn.cursor()
+    cur.execute("UPDATE creator_transactions SET status='paid' WHERE id=?", (tx_id,))
+    conn.commit()
+
+    paid = client.get(
+        f"/payments/success?transaction_id={tx_id}&lane=creator", headers=HTTPS)
+    assert paid.status_code == 200, paid.get_data(as_text=True)
+    paid_body = paid.get_data(as_text=True).lower()
+    assert "has taken your payment" in paid_body, (
+        "a paid course transaction was not confirmed to its buyer; page said: %s"
+        % paid_body[:400])
+    assert "payment not confirmed" not in paid_body, paid_body[:400]
+
+
+def test_an_unresolvable_transaction_id_claims_nothing_in_either_direction(buyer):
+    """No row, no claim. This is the case the old sentence was reached by most.
+
+    An id in neither table -- a stale link, a typo, a guess, or simply no
+    `transaction_id` at all -- cannot support "your payment was received" and
+    cannot support "your payment failed" either. The page has to describe its own
+    ignorance, which is why this asserts the absence of claims in *both*
+    directions rather than the presence of a particular sentence.
+    """
+    client, _listing_id, _seller_id = buyer
+
+    for url in ("/payments/success",
+                "/payments/success?transaction_id=98765432&lane=creator",
+                "/payments/success?transaction_id=98765432&lane=marketplace",
+                "/payments/success?transaction_id=not-a-number"):
+        response = client.get(url, headers=HTTPS)
+        assert response.status_code == 200, (url, response.get_data(as_text=True))
+        body = response.get_data(as_text=True).lower()
+        for claim in _PAYMENT_CLAIMS:
+            assert claim not in body, (
+                "%s claimed %r with no row to support it; page said: %s"
+                % (url, claim, body[:400]))
+        assert "cannot tell from this page" in body, (url, body[:400])
+
+
+def test_another_buyers_creator_transaction_is_not_described_to_the_viewer(buyer):
+    """The IDOR on the second id space.
+
+    `?transaction_id=` is attacker-controlled on this route for creator lanes
+    exactly as it is for Marketplace ones, and the buyer check is the only thing
+    between a signed-in member and a page describing a stranger's purchase. The
+    row is seeded `paid` on purpose: an unpaid row would withhold the claim for
+    the wrong reason and the test would pass without the ownership check.
+    """
+    client, _listing_id, _seller_id = buyer
+    conn = bot.db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO users (username, email, password_hash) VALUES (?,?,?)",
+                ("creatorstranger", "creatorstranger@example.com", "x"))
+    stranger_id = cur.lastrowid
+    conn.commit()
+    tx_id = _creator_transaction(stranger_id, status="paid")
+
+    body = client.get(f"/payments/success?transaction_id={tx_id}&lane=creator",
+                      headers=HTTPS).get_data(as_text=True).lower()
+    for claim in _PAYMENT_CLAIMS:
+        assert claim not in body, (
+            "the success page confirmed a paid transaction belonging to another "
+            "account; page said: %s" % body[:400])
+
+
+def test_an_id_that_is_live_in_both_lanes_without_a_lane_confirms_nothing(buyer):
+    """A link made before `lane` existed, pointing at an integer both tables own.
+
+    Stripe sessions created before the lane was stamped are still out there, and
+    their `success_url` carries a bare `?transaction_id=N`. When `N` is a live
+    primary key in *both* tables for the same buyer there is no way to tell which
+    purchase they came back from -- and one of the two answers would be a payment
+    claim about the wrong purchase.
+
+    Seeded so the Marketplace row is `paid` and the course row is `pending`.
+    Picking the Marketplace row -- which is what resolution order alone does --
+    tells a buyer whose course payment never completed that Stripe took their
+    money. So the page must refuse to answer, and that refusal is what this pins.
+    """
+    client, _listing_id, _seller_id = buyer
+    with client.session_transaction() as session:
+        buyer_id = session["account_user_id"]
+    shared = _transaction(buyer_id, status="paid")
+    conn = bot.db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM creator_transactions WHERE id=?", (shared,))
+    cur.execute(
+        "INSERT INTO creator_transactions (id, buyer_user_id, seller_user_id, seller_type, "
+        "item_type, item_id, gross_amount_cents, platform_fee_cents, provider_fee_cents, "
+        "net_amount_cents, currency, status, provider) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (shared, buyer_id, 1, "teacher", "course", "1", 4999, 0, 0, 4999, "USD",
+         "pending", "stripe"))
+    conn.commit()
+
+    body = client.get(f"/payments/success?transaction_id={shared}",
+                      headers=HTTPS).get_data(as_text=True).lower()
+    for claim in _PAYMENT_CLAIMS:
+        assert claim not in body, (
+            "an id live in both lanes, with no lane named, produced the claim %r; "
+            "page said: %s" % (claim, body[:400]))
+    assert "cannot tell from this page" in body, body[:400]
+
+    # Naming the lane resolves it, which is the whole point of stamping the
+    # builders -- otherwise this guard would make every new link unanswerable.
+    named = client.get(f"/payments/success?transaction_id={shared}&lane=marketplace",
+                       headers=HTTPS).get_data(as_text=True).lower()
+    assert "has taken your payment" in named, named[:400]
+
+
+def test_a_creator_id_is_not_resolved_against_the_marketplace_table(buyer):
+    """The two id spaces overlap, and the integer alone cannot tell them apart.
+
+    `create_transaction` inserts `creator_transactions` and returns *that* id,
+    then mirrors a `seller_transactions` row under a separate autoincrement. So
+    the same integer is a valid primary key in both tables, naming unrelated
+    rows, and `?transaction_id=` carries whichever one its lane happened to put
+    there.
+
+    Seeded so that the same id is a *paid Marketplace* row and a *pending
+    course* row for the same buyer. Resolving the creator lane's id against
+    `seller_transactions` would tell a buyer who has paid for nothing that
+    Stripe has taken their payment.
+    """
+    client, _listing_id, _seller_id = buyer
+    with client.session_transaction() as session:
+        buyer_id = session["account_user_id"]
+    conn = bot.db()
+    cur = conn.cursor()
+    # Force one shared integer across both tables.
+    seller_tx = _transaction(buyer_id, status="paid")
+    cur.execute("DELETE FROM creator_transactions WHERE id=?", (seller_tx,))
+    cur.execute(
+        "INSERT INTO creator_transactions (id, buyer_user_id, seller_user_id, seller_type, "
+        "item_type, item_id, gross_amount_cents, platform_fee_cents, provider_fee_cents, "
+        "net_amount_cents, currency, status, provider) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (seller_tx, buyer_id, 1, "teacher", "course", "1", 4999, 0, 0, 4999, "USD",
+         "pending", "stripe"))
+    conn.commit()
+
+    # The Marketplace branch legitimately wins this id -- it owns the
+    # `seller_transactions` row and that row is paid. What must not happen is the
+    # reverse: a lane reading the table its id did not come from. Assert the
+    # resolver reads `creator_transactions` for a creator id by checking the
+    # pending course row is what decides the copy when no Marketplace row exists.
+    cur.execute("DELETE FROM seller_transactions WHERE id=?", (seller_tx,))
+    conn.commit()
+
+    body = client.get(f"/payments/success?transaction_id={seller_tx}&lane=creator",
+                      headers=HTTPS).get_data(as_text=True).lower()
+    assert "payment not confirmed" in body, (
+        "a pending course id was not resolved against creator_transactions; "
+        "page said: %s" % body[:400])
+    for claim in _PAYMENT_CLAIMS:
+        assert claim not in body, body[:400]
+
+
+def test_the_cancel_page_does_not_tell_a_paid_buyer_nothing_was_charged(buyer):
+    """The success-page defect inverted, and the more expensive direction.
+
+    `cancel_url` is as freely reachable as `success_url`. A buyer whose payment
+    completed can land on it from history or by backing out of the success page,
+    and the page told them "No card was charged" / "No payment was completed" --
+    on the strength of nothing but the request arriving. A buyer who believes
+    nothing was taken goes and pays again.
+
+    Both directions, because a cancel page that warns everybody would pass the
+    first half.
+    """
+    client, _listing_id, _seller_id = buyer
+    with client.session_transaction() as session:
+        buyer_id = session["account_user_id"]
+    tx_id = _transaction(buyer_id, status="paid")
+
+    paid = client.get(
+        f"/payments/cancel?transaction_id={tx_id}&lane=marketplace", headers=HTTPS)
+    assert paid.status_code == 200, paid.get_data(as_text=True)
+    body = paid.get_data(as_text=True)
+    assert "nothing was charged" not in body.lower(), (
+        "the cancel page told a paid buyer (%s) nothing was charged; page said: %s"
+        % (tx_id, body[:400]))
+    assert "No payment was taken" not in body, body[:400]
+    assert "already" in body.lower() and "Do not pay again" in body, body[:400]
+
+    # The other direction: a genuinely cancelled checkout must still be told it
+    # was cancelled, or this guard has simply replaced one wrong page with another.
+    conn = bot.db()
+    cur = conn.cursor()
+    cur.execute("UPDATE seller_transactions SET status='checkout_created' WHERE id=?", (tx_id,))
+    conn.commit()
+
+    cancelled = client.get(
+        f"/payments/cancel?transaction_id={tx_id}&lane=marketplace", headers=HTTPS)
+    cancelled_body = cancelled.get_data(as_text=True)
+    assert "Checkout canceled" in cancelled_body, cancelled_body[:400]
+    assert "Do not pay again" not in cancelled_body, cancelled_body[:400]

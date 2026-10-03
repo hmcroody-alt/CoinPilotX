@@ -531,3 +531,65 @@ export const linking: LinkingOptions<RootStackParamList> = {
     }
   }
 };
+
+/**
+ * The path a universal link or a `pulsesoc://` link is asking for, or "" if the
+ * URL is not ours to route.
+ *
+ * Host matching is strict: an https URL that is not pulsesoc.com returns "" so a
+ * link from anywhere else cannot steer navigation by arriving at the handler.
+ */
+export function inboundLinkPath(rawUrl: string) {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol === "https:" || url.protocol === "http:") {
+      if (!/(^|\.)pulsesoc\.com$/i.test(url.hostname)) return "";
+      return `${url.pathname}${url.search}`.slice(0, 240);
+    }
+    if (url.protocol === "pulsesoc:") {
+      const path = `/${url.hostname}${url.pathname}`.replace(/\/{2,}/g, "/");
+      return `${path}${url.search}`.slice(0, 240);
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+export type InboundLinkOwner = "linking" | "replay" | "none";
+
+/**
+ * Which code path owns an OS-delivered URL.
+ *
+ * `linking` above is attached to the NavigationContainer only while signed in,
+ * and when it is attached React Navigation resolves every cold and warm URL
+ * itself — there is no custom `subscribe` or `getInitialURL` to stop it. So a
+ * signed-in arrival is already routed by the time any listener in App.tsx sees
+ * it, and routing it a second time through the notification resolver does not
+ * add a destination, it *replaces* one: that resolver ends at the Activity
+ * Inbox for any path it does not recognise, which is 27 of the 107 paths
+ * declared in `config.screens` — `/search`, `/saved` and `/notifications` among
+ * them, all three claimed in the apple-app-site-association file and therefore
+ * reachable from the public site. An explicit destination must outrank the
+ * default one, so while signed in the link belongs to `linking` alone.
+ *
+ * Signed out there is no attached config, so the destination has to be held and
+ * replayed after login or it is lost.
+ */
+export function inboundLinkOwner(rawUrl: string, signedIn: boolean): { owner: InboundLinkOwner; path: string } {
+  const path = inboundLinkPath(rawUrl);
+  if (!path) return { owner: "none", path: "" };
+  return { owner: signedIn ? "linking" : "replay", path };
+}
+
+/**
+ * The route table answer for a held link, replayed once login completes.
+ *
+ * This is the same `getStateFromPath` a cold launch goes through, so a link that
+ * waited for a login lands where it would have landed had the member already
+ * been signed in. Returns undefined for a path the table cannot place, leaving
+ * the caller to fall back.
+ */
+export function linkingStateForPath(path: string) {
+  return linking.getStateFromPath?.(path, linking.config as never) ?? undefined;
+}

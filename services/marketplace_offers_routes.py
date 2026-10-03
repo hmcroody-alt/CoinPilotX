@@ -841,8 +841,8 @@ def offer_checkout(offer_id: int):
                                              "unit_amount": int(offer.get("amount_minor") or 0),
                                              "product_data": {"name": (listing.get("title") or "Marketplace item")[:120]}},
                              "quantity": qty}],
-                success_url=f"{base}/pulse/payments/success?transaction_id={tx_id}",
-                cancel_url=f"{base}/pulse/payments/cancel?transaction_id={tx_id}",
+                success_url=f"{base}/pulse/payments/success?transaction_id={tx_id}&lane=marketplace",
+                cancel_url=f"{base}/pulse/payments/cancel?transaction_id={tx_id}&lane=marketplace",
                 payment_intent_data=payment_intent_data,
                 metadata=checkout_metadata,
                 # Co-varies with `success_url`, `cancel_url`, `transfer_group`

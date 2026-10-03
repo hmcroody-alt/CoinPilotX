@@ -1666,8 +1666,8 @@ def cart_checkout():
                      "quantity": l["qty"]}
                     for l in lines
                 ],
-                success_url=f"{base}/pulse/payments/success?transaction_id={primary_tx}",
-                cancel_url=f"{base}/pulse/payments/cancel?transaction_id={primary_tx}",
+                success_url=f"{base}/pulse/payments/success?transaction_id={primary_tx}&lane=marketplace",
+                cancel_url=f"{base}/pulse/payments/cancel?transaction_id={primary_tx}&lane=marketplace",
                 payment_intent_data=payment_intent_data,
                 metadata=checkout_metadata,
                 idempotency_key=f"marketplace-cart:{buyer_id}:{provider_attempt}",

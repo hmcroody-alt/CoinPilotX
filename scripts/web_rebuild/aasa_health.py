@@ -79,6 +79,46 @@ DECISIONS = {
 }
 
 
+def config_object_source(text: str) -> str:
+    """The `config:` object's own source, brace-matched rather than run to EOF.
+
+    The region used to be `text.split("config:", 1)[1]` — every character from
+    the config key to the end of the file. That is the same region right up
+    until `linking.ts` grows a function *below* the object, and then any
+    `identifier: "string"` down there is read as a declared path. Four appeared
+    the first time it happened, and none of them look like a mistake in the
+    output: `url.protocol === "https:"` supplies the pair `https:` followed by
+    the capture `" || url.protocol === "`, and `owner: "none"` is textually
+    indistinguishable from a real one-segment path like `saved`.
+
+    That failure is loud — `test_no_family_is_undecided` goes red, because a
+    family nobody decided on is exactly what it watches for. The danger is the
+    inverse: a string that happens to parse as a *claimed* family would be
+    checked against the AASA and silently pass, and the file would be reporting
+    on paths the app does not declare.
+
+    An absent or unbalanced object returns "" rather than falling back to the
+    rest of the file, so a parse failure surfaces through
+    `test_the_native_route_table_was_actually_found` finding nothing instead of
+    through families being invented.
+    """
+    marker = text.find("config:")
+    if marker == -1:
+        return ""
+    start = text.find("{", marker)
+    if start == -1:
+        return ""
+    depth = 0
+    for index in range(start, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return ""
+
+
 def declared_native_paths(text: str | None = None) -> dict[str, list[str]]:
     """Every path `linking.ts` declares, grouped by first segment.
 
@@ -87,7 +127,7 @@ def declared_native_paths(text: str | None = None) -> dict[str, list[str]]:
     runtime and therefore appears in no screen table.
     """
     text = text if text is not None else LINKING_TS.read_text()
-    config = text.split("config:", 1)[1] if "config:" in text else text
+    config = config_object_source(text)
     paths = set()
     for match in re.finditer(r'(?:path|[A-Za-z][A-Za-z0-9]*)\s*:\s*"([^"]+)"', config):
         value = match.group(1)
