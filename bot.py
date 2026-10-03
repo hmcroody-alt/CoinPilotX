@@ -102847,6 +102847,66 @@ def api_pulse_payouts_connect():
         )
 
 
+def _marketplace_release_checkout_claim(buyer_id, key: str) -> None:
+    """Drop a blank checkout claim, on a connection of its own.
+
+    Called after the response has already been built, by which point the
+    route's own connection is closed — so this opens one, deletes, commits and
+    closes. `release` is scoped to rows whose `response_json` is still blank, so
+    it can never delete a *completed* attempt's answer and let a retry build a
+    second charge surface.
+
+    Never raises. The caller is a response hook: an exception here would turn a
+    buyer's legitimate 4xx into a 500 and lose the real diagnosis with it.
+    """
+    if not key:
+        return
+    conn = None
+    try:
+        from services import marketplace_checkout_identity as checkout_identity
+        conn = db(); conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        if checkout_identity.release(cur, user_id=buyer_id, key=key):
+            conn.commit()
+            logging.info("CHECKOUT_IDEMPOTENCY_RELEASED lane=buy_now buyer=%s", buyer_id)
+    except Exception:
+        # The claim now outlives its request, and will be taken over on age by
+        # `CLAIM_TTL_SECONDS` instead of immediately. Logged because that is a
+        # degraded outcome for the buyer (one TTL of `CHECKOUT_IN_PROGRESS`),
+        # not a correct one.
+        logging.exception("CHECKOUT_IDEMPOTENCY_RELEASE_FAILED lane=buy_now buyer=%s", buyer_id)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _buy_now_remember(cur, buyer_id, key: str, response_payload) -> None:
+    """Store the answer against the claim, so a retry replays it.
+
+    This replaces an `INSERT ... ON CONFLICT DO NOTHING`, which worked only
+    while nothing wrote the row earlier. The claim now writes it first with a
+    blank response, so that INSERT would conflict and store nothing — the answer
+    would never be recorded and every retry would build a second session.
+    `remember` UPDATEs the blank row, first-writer-wins.
+    """
+    if not key:
+        return
+    try:
+        from services import marketplace_checkout_identity as checkout_identity
+        if not checkout_identity.remember(cur, user_id=buyer_id, key=key,
+                                          payload=response_payload):
+            # Either a concurrent request already answered — fine, its answer is
+            # the buyer's — or the row is filled by an earlier attempt under a
+            # different payment mode. Worth seeing: in the second case the next
+            # retry builds a fresh session rather than replaying this one.
+            logging.warning("CHECKOUT_ANSWER_NOT_RECORDED lane=buy_now buyer=%s", buyer_id)
+    except Exception:
+        logging.exception("CHECKOUT_ANSWER_RECORD_FAILED lane=buy_now buyer=%s", buyer_id)
+
+
 @webhook_app.route("/api/pulse/payments/checkout", methods=["POST"])
 def api_pulse_payments_checkout():
     init_db()
@@ -102884,25 +102944,85 @@ def api_pulse_payments_checkout():
                     and str(payload.get("payment_mode") or "").strip().lower() == "payment_sheet")
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    # Whether *this* request owns the checkout claim, and under which key. A
+    # dict because the release below is a closure that must not rebind a local.
+    buy_now_claim = {"owned": False, "key": "", "buyer": int(buyer["user_id"] or 0)}
+    # The payable surface Stripe created for this attempt, if it got that far.
+    # Written immediately after the create call and read only by the failure
+    # path — the one place that can know the id is about to become unreachable.
+    created_payment_surface: dict = {}
     if item_type == "marketplace_product":
         from services import marketplace_cart_routes as marketplace_cart_service
+        from services import marketplace_checkout_identity as checkout_identity
         marketplace_cart_service._ensure_schema(cur)
         if idempotency_key:
-            cur.execute(
-                "SELECT response_json FROM marketplace_cart_checkout_keys WHERE user_id=? AND idempotency_key=? LIMIT 1",
-                (int(buyer["user_id"]), idempotency_key),
-            )
-            replay = dict(cur.fetchone() or {})
-            if replay.get("response_json"):
-                replay_payload = json.loads(replay["response_json"])
+            # This was a bare SELECT that fell straight through on a miss: two
+            # taps both read nothing, both inserted a transaction, both
+            # decremented stock and both reached Stripe. It only looked safe
+            # because the provider key below did not co-vary with the provider's
+            # parameters, so Stripe refused the second tap with a 400 —
+            # double-tap protection as an accidental side effect of a bug.
+            # Fixing that key (see `provider_attempt` below) removes the side
+            # effect, so the real guard has to exist first.
+            buy_now_claim["key"] = f"{checkout_identity.LANE_BUY_NOW}:{idempotency_key}"
+            checkout_identity.ensure_schema(cur)
+            outcome = checkout_identity.claim(
+                cur, user_id=buy_now_claim["buyer"], key=buy_now_claim["key"], now=now)
+            state = outcome.get("state")
+            if state == checkout_identity.REPLAY:
+                replay_payload = outcome.get("payload") or {}
                 replay_mode = marketplace_payment_pause.normalize_marketplace_payment_mode(
                     replay_payload.get("payment_method") or replay_payload.get("payment_mode")
                 )
-                if replay_mode != marketplace_payment_mode:
-                    replay_payload = {}
-                else:
+                # A stored answer for a different payment method is not this
+                # buyer's answer. Falling through builds a fresh attempt, which
+                # then cannot record itself over a filled row — surfaced by
+                # `_buy_now_remember` rather than dropped silently.
+                if replay_mode == marketplace_payment_mode:
                     conn.close()
+                    logging.info("CHECKOUT_IDEMPOTENCY_REUSED lane=buy_now buyer=%s",
+                                 buy_now_claim["buyer"])
                     return jsonify({**replay_payload, "replayed": True})
+            elif state == checkout_identity.IN_PROGRESS:
+                conn.close()
+                logging.info("CHECKOUT_IN_PROGRESS lane=buy_now buyer=%s",
+                             buy_now_claim["buyer"])
+                return api_error(checkout_identity.IN_PROGRESS_MESSAGE, 409,
+                                 error_code=checkout_identity.IN_PROGRESS_CODE,
+                                 error=checkout_identity.IN_PROGRESS_CODE)
+            elif state == checkout_identity.CLAIMED:
+                buy_now_claim["owned"] = True
+                # Committed here, before any of the work below. A concurrent tap
+                # has to be able to *see* the claim in order to lose the race,
+                # and several early returns between this point and the provider
+                # call close the connection without committing — a claim left
+                # pending would be rolled back on exactly the paths that most
+                # need it to persist.
+                conn.commit()
+                logging.info("CHECKOUT_IDEMPOTENCY_CLAIMED lane=buy_now buyer=%s detail=%s",
+                             buy_now_claim["buyer"], outcome.get("detail") or "")
+
+    # Release the claim on any failing exit. Registered once, here, rather than
+    # at each of the seventeen early returns between this point and the provider
+    # call: a blank claim surviving a *validation* refusal would refuse the
+    # buyer's corrected request for the whole TTL, which is the lockout this
+    # change exists to remove — so missing one of those returns would
+    # reintroduce it one layer in. Flask runs these callbacks for the 500 it
+    # synthesises from an unhandled exception too, so the raise-mid-flight case
+    # is covered along with the ordinary refusals.
+    from flask import after_this_request
+
+    @after_this_request
+    def _release_buy_now_claim(response):
+        try:
+            if buy_now_claim["owned"] and int(getattr(response, "status_code", 200) or 200) >= 400:
+                _marketplace_release_checkout_claim(buy_now_claim["buyer"], buy_now_claim["key"])
+        except Exception:
+            # A cleanup failure must not replace the buyer's answer with a 500.
+            logging.exception("CHECKOUT_IDEMPOTENCY_RELEASE_FAILED lane=buy_now buyer=%s",
+                              buy_now_claim["buyer"])
+        return response
+
     item = {}
     seller_type = "merchant"
     if item_type == "marketplace_product":
@@ -103059,6 +103179,7 @@ def api_pulse_payments_checkout():
         conn.close()
         return api_error(below_minimum["message"], below_minimum["status"],
                          error_code=below_minimum["code"],
+                         retryable=below_minimum["retryable"], cta=below_minimum["cta"],
                          minimum_charge_cents=below_minimum["minimum_minor"],
                          amount_cents=amount_cents, currency=currency)
 
@@ -103231,16 +103352,38 @@ def api_pulse_payments_checkout():
             actor_user_id=buyer["user_id"],
             extra={"payment_method": "cash"},
         )
-        if item_type == "marketplace_product" and idempotency_key:
-            cur.execute(
-                """INSERT INTO marketplace_cart_checkout_keys (user_id,idempotency_key,response_json,created_at)
-                VALUES (?,?,?,?) ON CONFLICT(user_id,idempotency_key) DO NOTHING""",
-                (int(buyer["user_id"]), idempotency_key, json.dumps(response_payload, default=str), now),
-            )
+        _buy_now_remember(cur, buy_now_claim["buyer"], buy_now_claim["key"], response_payload)
         conn.commit(); conn.close()
         return jsonify(response_payload)
     try:
         base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
+        # The provider key, and the one line in this lane that caused the
+        # October 2026 lockout in its cart twin.
+        #
+        # Stripe binds an idempotency key to the *parameters* of the first
+        # request that presents it, and holds that binding for 24 hours. Present
+        # the same key with different parameters and Stripe answers 400
+        # `idempotency_error` — not once, but for every subsequent use of that
+        # key until the window closes.
+        #
+        # `{idempotency_key or tx_id}` dropped the row id from the key whenever
+        # the client supplied a token, while `success_url`, `cancel_url`,
+        # `metadata.seller_transaction_ids` and
+        # `payment_intent_data.transfer_group` below all still name the
+        # `seller_transactions` row — and this lane inserts a new row per
+        # attempt. So attempt 2 presented attempt 1's key with attempt 2's
+        # parameters: a permanent 400 for that cart, surfaced to the buyer as
+        # "Payments are temporarily unavailable."
+        #
+        # The fix is to make the key co-vary with the parameters it was sent
+        # alongside, which is what `:{tx_id}` does. Making the *parameters*
+        # attempt-stable instead is not available: the success page and the
+        # settlement webhook read the transaction id back out of those URLs and
+        # that metadata. The client token stays in the key so the Stripe
+        # dashboard remains attributable to a logical cart; the double-tap
+        # guarantee the old collision supplied by accident is now supplied on
+        # purpose by the claim above.
+        provider_attempt = f"{idempotency_key or 'tx'}:{tx_id}"
         checkout_metadata = {"seller_transaction_id": str(tx_id), "seller_type": seller_type,
             "item_type": item_type, "item_id": str(item_id), "buyer_user_id": str(buyer["user_id"]),
             "seller_user_id": str(seller_user_id)}
@@ -103278,13 +103421,14 @@ def api_pulse_payments_checkout():
         # inventory reservation — is deliberately shared with the hosted path, so
         # the two surfaces cannot become two different policies.
         if native_sheet:
+            created_payment_surface.clear()
             intent = stripe.PaymentIntent.create(
                 amount=amount_cents,
                 currency=currency.lower(),
                 automatic_payment_methods={"enabled": True},
                 metadata=checkout_metadata,
                 **{k: v for k, v in payment_intent_data.items() if k != "metadata"},
-                idempotency_key=f"marketplace-buy-now-sheet:{int(buyer['user_id'])}:{idempotency_key or tx_id}",
+                idempotency_key=f"marketplace-buy-now-sheet:{int(buyer['user_id'])}:{provider_attempt}",
             )
             # Same unconditional import as the Session branch below. This read
             # happens to be safe today -- `native_sheet` is only ever true when
@@ -103296,6 +103440,8 @@ def api_pulse_payments_checkout():
             # created and chargeable.
             from services.marketplace_payment_errors import stripe_response_value
             intent_id = stripe_response_value(intent, "id")
+            if intent_id:
+                created_payment_surface.update({"kind": "payment_intent", "id": intent_id})
             client_secret = stripe_response_value(intent, "client_secret")
             cur.execute("UPDATE seller_transactions SET stripe_payment_intent_id=?, status='checkout_created', updated_at=? WHERE id=?",
                         (intent_id, now, tx_id))
@@ -103325,14 +103471,10 @@ def api_pulse_payments_checkout():
                 "payout_state": payout_state,
                 "commercial_quote": commercial_quote,
             }
-            if item_type == "marketplace_product" and idempotency_key:
-                cur.execute(
-                    """INSERT INTO marketplace_cart_checkout_keys (user_id,idempotency_key,response_json,created_at)
-                    VALUES (?,?,?,?) ON CONFLICT(user_id,idempotency_key) DO NOTHING""",
-                    (int(buyer["user_id"]), idempotency_key, json.dumps(response_payload, default=str), now),
-                )
+            _buy_now_remember(cur, buy_now_claim["buyer"], buy_now_claim["key"], response_payload)
             conn.commit(); conn.close()
             return jsonify(response_payload)
+        created_payment_surface.clear()
         session_obj = stripe.checkout.Session.create(
             mode="payment",
             line_items=[{"price_data": {"currency": currency.lower(), "unit_amount": amount_cents, "product_data": {"name": title[:120]}}, "quantity": 1}],
@@ -103340,7 +103482,7 @@ def api_pulse_payments_checkout():
             cancel_url=f"{base}/pulse/payments/cancel?transaction_id={tx_id}",
             payment_intent_data=payment_intent_data,
             metadata=checkout_metadata,
-            idempotency_key=f"marketplace-buy-now:{int(buyer['user_id'])}:{idempotency_key or tx_id}",
+            idempotency_key=f"marketplace-buy-now:{int(buyer['user_id'])}:{provider_attempt}",
             **shipping_checkout_params,
         )
         # Read once, through the helper. A stripe 15 `checkout.Session` is a
@@ -103360,6 +103502,8 @@ def api_pulse_payments_checkout():
         # exception name.
         from services.marketplace_payment_errors import stripe_response_value
         session_id = stripe_response_value(session_obj, "id")
+        if session_id:
+            created_payment_surface.update({"kind": "checkout_session", "id": session_id})
         checkout_url = stripe_response_value(session_obj, "url")
         cur.execute("UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?", (session_id, now, tx_id))
         pulse_emit_payment_checkout_event(
@@ -103373,12 +103517,7 @@ def api_pulse_payments_checkout():
         response_payload = {"ok": True, "checkout_url": checkout_url, "transaction_id": tx_id,
                             "platform_fee_cents": platform_fee, "seller_net_cents": seller_net,
                             "payout_state": payout_state, "commercial_quote": commercial_quote}
-        if item_type == "marketplace_product" and idempotency_key:
-            cur.execute(
-                """INSERT INTO marketplace_cart_checkout_keys (user_id,idempotency_key,response_json,created_at)
-                VALUES (?,?,?,?) ON CONFLICT(user_id,idempotency_key) DO NOTHING""",
-                (int(buyer["user_id"]), idempotency_key, json.dumps(response_payload, default=str), now),
-            )
+        _buy_now_remember(cur, buy_now_claim["buyer"], buy_now_claim["key"], response_payload)
         conn.commit(); conn.close()
         return jsonify(response_payload)
     except Exception as exc:
@@ -103390,6 +103529,36 @@ def api_pulse_payments_checkout():
         # misconfigured key were indistinguishable to the buyer, and a retry was
         # the only move any of them suggested.
         classified = classify_provider_exception(exc)
+        # Cancel the payable surface we created but can no longer deliver.
+        #
+        # October 2026, cart lane, tx 33: Stripe created a live $6.25 Checkout
+        # Session, our next line raised, and the buyer was shown a failure for a
+        # session that existed and was payable — which is still open at Stripe
+        # today. Nothing here ever returned or logged its URL, so it was
+        # unreachable rather than dangerous, but "unreachable" is a property of
+        # the code paths rather than a guarantee, and cancelling costs nothing.
+        #
+        # Strictly a *cancelling* write: it can only prevent a charge, never
+        # cause one, which is why it needs no owner gate on a path that has
+        # already failed. Everything is swallowed — this runs inside the handler
+        # for an exception that is already being reported, and a cleanup failure
+        # must not replace the diagnosis of the original with its own.
+        orphan_kind = str(created_payment_surface.get("kind") or "")
+        orphan_id = str(created_payment_surface.get("id") or "")
+        if orphan_id:
+            try:
+                if orphan_kind == "payment_intent":
+                    stripe.PaymentIntent.cancel(orphan_id)
+                else:
+                    stripe.checkout.Session.expire(orphan_id)
+                logging.warning("STRIPE_SESSION_EXPIRED_AFTER_FAILURE lane=buy_now "
+                                "kind=%s id=%s trace_id=%s", orphan_kind, orphan_id, trace_id)
+            except Exception:
+                # Now genuinely orphaned: live at Stripe, unreferenced by us.
+                # Logged with the id because hand reconciliation is the only
+                # remaining way to find it.
+                logging.exception("STRIPE_SESSION_ORPHANED lane=buy_now kind=%s id=%s "
+                                  "trace_id=%s", orphan_kind, orphan_id, trace_id)
         # The buy-now lane takes the same shared path as the cart, the offers
         # lane and the webhook branches. The release is a compare-and-swap on
         # `status='held'`, so a transaction that never reserved anything is a
@@ -103415,6 +103584,7 @@ def api_pulse_payments_checkout():
         # free-text message does not, so nothing can echo account or key detail.
         return api_error(classified["message"], classified["status"], trace_id,
                          error_code=classified["code"], provider_error=classified["provider_error"],
+                         retryable=classified["retryable"], cta=classified["cta"],
                          transaction_id=tx_id)
 
 

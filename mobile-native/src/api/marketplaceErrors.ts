@@ -51,7 +51,18 @@ const COPY: Record<MarketplaceErrorCode, string> = {
   FULFILLMENT_DETAILS_REQUIRED: "Some order details are still missing. Check the order details step.",
   ITEM_NEEDS_OWN_CHECKOUT: "Bookings, services and events are checked out one at a time. Buy this item on its own.",
   PAYMENT_UNAVAILABLE: "Payment is unavailable right now. No card was charged.",
-  PAYMENT_CONFIGURATION_ERROR: "Payments are temporarily unavailable. No card was charged.",
+  // Was "Payments are temporarily unavailable. No card was charged." — both
+  // halves false in the October 2026 incident, where payments were entirely
+  // available and the fault was one order's setup. "Temporarily" was the worse
+  // half: it promised that waiting would fix a thing waiting cannot fix.
+  //
+  // This code covers both a retryable cause (our idempotency key burned against
+  // changed parameters) and unretryable ones (a bad key, a destination Stripe
+  // will not accept). A code-keyed map cannot tell them apart, so this sentence
+  // is written to be true of both: it names the stage that failed, promises
+  // nothing about retrying, and forbids nothing either. `buyerCanRetry` below
+  // reads the server's actual verdict for the surfaces that need to act on it.
+  PAYMENT_CONFIGURATION_ERROR: "We couldn't open secure payment for this order. No card was charged.",
   PAYMENT_FAILED: "Your card could not be charged. No card was charged.",
   // Named as the order's problem, not the platform's: retrying, updating the
   // app or trying another card will never clear it, so copy that suggests any
@@ -95,4 +106,31 @@ export function buyerErrorCopy(error: unknown, fallback: string): string {
   // A handled 4xx with no code still carries deliberate, buyer-safe prose.
   if (error instanceof PulseApiError && error.message) return error.message;
   return fallback;
+}
+
+/**
+ * Whether a payment CTA may stay live after this failure.
+ *
+ * Read from `details.retryable`, which the three checkout lanes now return
+ * alongside `error_code`. It is a separate field rather than a new code on
+ * purpose: `MarketplaceErrorCode` is a closed union with a copy map beside it,
+ * so a new code on a server talking to an older build arrives with no copy at
+ * all. Meaning rides on new fields; codes stay stable.
+ *
+ * Defaults to `true` when the server sends no verdict — an older deployment, or
+ * a failure from outside the checkout lanes. That preserves the behaviour every
+ * screen already had, so this function can only ever *remove* a CTA that should
+ * not have been offered, never withhold one that should.
+ *
+ * The incident this exists for: a buyer held on a screen showing a refusal and
+ * an active "Continue to secure payment" button for five hours, because
+ * nothing on the wire said which of the two the server meant.
+ */
+export function buyerCanRetry(error: unknown): boolean {
+  if (!(error instanceof PulseApiError)) return true;
+  const verdict = error.details?.retryable;
+  if (typeof verdict === "boolean") return verdict;
+  const cta = error.details?.cta;
+  if (typeof cta === "string") return cta !== "blocked";
+  return true;
 }

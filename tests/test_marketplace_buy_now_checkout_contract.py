@@ -36,9 +36,25 @@ def test_buy_now_is_idempotent_and_reserves_inventory():
     What the shelf actually moves by now lives in
     ``tests/test_marketplace_buy_now_quantity.py``, which posts to the route and
     counts the stock afterwards.
+
+    The third literal in this file to go the same way: this line was
+    ``assert "marketplace_cart_checkout_keys" in CHECKOUT`` until the October
+    2026 checkout incident moved the claim/replay SQL out of the route and into
+    ``marketplace_checkout_identity``, where it is shared with the cart and
+    offers lanes and can be unit-tested on its own. The table name left the
+    route body; the idempotency got strictly stronger — the route gained a real
+    claim where it previously had a read that fell through on a miss. So the
+    assertion would have reported "buy-now is no longer idempotent" at the exact
+    moment it first properly was.
+
+    Delegation is checked here. That the delegation keeps its promise — one
+    transaction per double-tap, and a failed attempt that does not lock the
+    buyer out — is checked by posting to the route in
+    ``tests/marketplace/test_checkout_idempotency_collision.py``.
     """
     assert 'idempotency_key = str(payload.get("idempotency_key")' in CHECKOUT
-    assert "marketplace_cart_checkout_keys" in CHECKOUT
+    assert "checkout_identity.claim(" in CHECKOUT
+    assert "checkout_identity.LANE_BUY_NOW" in CHECKOUT
     assert "marketplace_inventory_reservations" in CHECKOUT
 
 
