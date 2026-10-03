@@ -2,7 +2,7 @@
 
 ## Findings log (published as found, not held for the final report)
 
-Status: **OPEN — 8 findings (1 low), 5 attacks passed, 1 fleet blocker, 1 gate landed (red)**
+Status: **OPEN — 9 findings (1 low), 6 attacks passed, 1 fleet blocker, 1 gate landed (red)**
 Branch: `search-os/agent-12-quality-sentinel`
 Measured against: `origin/main` @ `5bdf4e431`
 Method: Flask test client over `app.url_map`, against a scratch copy of the dev DB
@@ -332,6 +332,48 @@ highest-severity SEO attack there is and it is properly closed.
 **Double-slash reachability: PASS.** 0 host-relative double-slash URLs emitted
 across four sitemaps, `robots.txt`, and five rendered pages.
 
+**Every submitted URL resolves for an anonymous crawler: PASS.**
+`.attack/probe_sitemap_promises.py` walks `/sitemap.xml`, follows its children
+rather than trusting a hardcoded list, and fetches all **206** offered URLs with
+no session and no cookie — the only client whose opinion matters.
+
+```
+sitemaps reachable: 7   distinct URLs offered: 206
+status distribution: {200: 206}
+UNREADABLE ANONYMOUSLY : 0
+SUBMITTED BUT noindex  : 0
+CANONICAL POINTS AWAY  : 0
+offered URLs that `search_visibility.sitemap_eligible` rejects: 0
+```
+
+A three-zero sweep is the exact shape that needs a control, so each detector was
+given a live exemplar before I believed it: `/login` and `/pulse/cart` serve
+`noindex` (the noindex detector fires), `/pulse/marketplace/110` answers 404 and
+`/pulse/profile/2` 302s to `/login?next=…` (the unreadable detector fires).
+Every one of those is a real path on this property, and none of them is offered.
+
+Two structural facts worth freezing, both of which this measured rather than
+assumed:
+
+- **The offer set is a strict subset of the eligible set.** The generators use
+  curated path lists and database rows, not policy enumeration. That is *why*
+  A12-02 is harmless today — none of its five hazardous paths
+  (`/forgot-password`, `/forgot-username`, `/offline`, `/reset-pwa`,
+  `/scam-shield/scan`) is offered by any sitemap — and it is also exactly why
+  A12-02 is dangerous tomorrow, because Agent 8's IndexNow submitter is frozen
+  to the contract *"submit only `sitemap_eligible()` URLs"* and would enumerate
+  the policy instead. The protection is incidental, not architectural.
+- **A12-04 is latent at the offer layer.** `/pulse/help` and `/pulse/support`
+  declare themselves sitemap-eligible while rendering a canonical that disowns
+  them, but neither is offered — and neither is `/help` itself. The defect is
+  live at the policy layer and unexpressed at the offer layer.
+- **A12-06 is not latent.** `/pulse/marketplace` *is* offered, by
+  `/sitemap-products.xml`. So the one page that picks its robots directive from
+  the row count is a page we actively submit, which is what makes that finding
+  worth more than its row count suggests.
+
+Note the 206 against Agent 2's 61 for the same property. That gap is A12-09.
+
 **Agent 1's listing claims: 2 CONFIRMED, 1 unverifiable, 1 missed — and the
 product-page layer is clean.** `.attack/probe_verify_agent1_listing_claims.py`
 walks all 16 publishable rows rather than only the three Agent 1 named, and puts
@@ -515,6 +557,120 @@ the string), so the number is trendable and a jump is visible.
 
 **Owner: Agent 6** (Merchant/feed), with Agent 5 for the underlying price data.
 Invariant: price truth must be *observable*, not merely enforced.
+
+---
+
+## A12-09 — Agent 2's sitemap verifier is pointed at 3 of 6 sitemaps; widening the scope alone takes its own fault count from 0 to 13
+
+`scripts/search_os/verify_sitemap_vs_live.py` (Agent 2, `80c057163`) reports
+*"all 61 sitemap entries resolve 200, index,follow and self-canonical"* and
+prints `TOTAL FAULTY: 0`. I walked the same property and found **206** offered
+URLs. Both numbers cannot describe the same set, and the cause is one line:
+
+```python
+default="sitemap-products.xml,sitemap-categories.xml,sitemap-posts.xml",
+```
+
+Three filenames, hardcoded, with **no discovery step** — the script never fetches
+`/sitemap.xml` to ask what the index actually offers.
+
+```
+/sitemap.xml advertises 6 child sitemaps:
+
+  /sitemap-pages.xml          87 URLs   <<< NOT CHECKED
+  /sitemap-posts.xml         104 URLs   IN scope
+  /sitemap-categories.xml      1 URLs   IN scope
+  /sitemap-products.xml       14 URLs   IN scope
+  /sitemap-live.xml            0 URLs   <<< NOT CHECKED
+  /sitemap-replays.xml         0 URLs   <<< NOT CHECKED
+
+offered in total   206
+Agent 2 checks     119
+never checked       87   (42% of the property)
+```
+
+That would be a scoping nit if the excluded sitemaps were clean. They are not,
+and the proof deliberately uses **Agent 2's own fault classes, not mine** —
+`.attack/probe_agent2_verifier_scope.py` reuses `inspect()`'s checks and their
+exact names against the full offer set, so the only variable is scope. Writing
+my own checks would merely have proven that two people wrote different checks.
+
+```
+faults inside Agent 2's scope  :  0     <-- this is the 0 it reports
+faults it never looks at       : 13
+
+  /arena-preview                     NO_CANONICAL
+  /learn/arena-ranking-system        NO_ROBOTS_DIRECTIVE
+  /learn/crypto-risk-management      NO_ROBOTS_DIRECTIVE
+  /learn/crypto-scams                NO_ROBOTS_DIRECTIVE
+  /learn/crypto-trading-simulator    NO_ROBOTS_DIRECTIVE
+  /learn/how-to-detect-phishing      NO_ROBOTS_DIRECTIVE
+  /learn/market-psychology           NO_ROBOTS_DIRECTIVE
+  /learn/roast-battle-rules          NO_ROBOTS_DIRECTIVE
+  /predictions/crypto                NO_ROBOTS_DIRECTIVE
+  /quote                             NO_ROBOTS_DIRECTIVE
+  /quote/crypto/BTC                  NO_ROBOTS_DIRECTIVE
+  /quote/crypto/ETH                  NO_ROBOTS_DIRECTIVE
+  /sports-edge                       NO_ROBOTS_DIRECTIVE
+```
+
+**Credit where it is due: the twelve are known.** Agent 2's commit message says
+so — *"The twelve legacy crypto pages missing a robots directive are left alone
+… de-indexing indexed, sitemapped pages is not a call an SEO change gets to make
+by itself."* That is a correct and well-reasoned deferral, and my count landing
+on exactly twelve is independent confirmation of it. Three of them
+(`/predictions/crypto`, `/quote`, `/sports-edge`) are also A12-05 members, which
+upgrades part of A12-05 from latent to **actively submitted**.
+
+So the finding is not "Agent 2 missed defects." It is narrower and worse:
+
+1. **The script reports `TOTAL FAULTY: 0` while thirteen submitted URLs trip its
+   own fault classes.** This is the artifact most likely to become the shared CI
+   gate. Pointed as shipped, it will certify the property clean and the twelve
+   known-broken URLs will keep a green check over them. Phase 100: a gate whose
+   default scope excludes the defects its author documented is not a gate. The
+   fix is discovery, not a longer default — read `/sitemap.xml` and walk whatever
+   it advertises, so a sitemap added next quarter is covered the day it ships.
+2. **`/sitemap-live.xml` and `/sitemap-replays.xml` are empty today**, so their
+   exclusion costs nothing right now. They are also the two sitemaps for the
+   content type most likely to grow, and they would be born unchecked.
+3. **`/arena-preview` is new.** It is not one of the twelve, nobody has recorded
+   it, and it is a different and more actionable fault.
+
+### A12-09b — `/arena-preview` is a submitted, indexable page with no canonical, and it mints unbounded duplicates
+
+Not a missing *directive* — a missing *canonical*. The string `canonical` appears
+**zero times** in its 14,978-byte body. It is offered by `/sitemap-pages.xml` and
+serves `index,follow`. Consequence, measured:
+
+```
+/arena-preview                        200  robots='index,follow'  canonical=None
+/arena-preview?utm_source=newsletter  200  robots='index,follow'  canonical=None
+/arena-preview?fbclid=abc123          200  robots='index,follow'  canonical=None
+/arena-preview?ref=partner            200  robots='index,follow'  canonical=None
+/arena-preview?gclid=xyz              200  robots='index,follow'  canonical=None
+
+/quote   (no robots directive, A12-05)  canonical=https://pulsesoc.com/quote   <-- correct
+/help    (truncated directive, A12-03)  canonical=https://pulsesoc.com/help    <-- correct
+```
+
+Every tracking-parameter variant is a distinct indexable document with nothing to
+fold it back. That is an unbounded duplicate set on a URL we submit ourselves,
+and it is the one page of 206 where this is true — `/quote` and `/help` both
+canonicalise home correctly despite carrying defects of their own.
+
+**This also corrects my own URL-shape PASS.** That attack reported 12 variants ×
+5 indexable pages = 0 uncanonicalised duplicates, and the result was true of the
+five pages it sampled. `/arena-preview` was not among them. The pass was
+correctly measured and too narrowly scoped; the honest version is *"tracking
+parameters are handled correctly wherever a canonical exists."* Recorded rather
+than quietly amended, because a pass with the wrong corpus is the same failure
+mode as a gate with the wrong scope — which is the finding above.
+
+**Owner: Agent 2** (the verifier's scope, and `/arena-preview`'s canonical).
+Notify **Agent 6** (sitemaps), **Agent 8** (IndexNow — it would submit all 206).
+Invariant: **#7 (canonical must agree)** and **#13 (a gate must see the whole set
+it certifies)**.
 
 ---
 
