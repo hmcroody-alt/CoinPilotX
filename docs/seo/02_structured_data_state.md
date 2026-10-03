@@ -44,7 +44,11 @@ Four things are wrong with it, and they are independent:
 1. **No page shows that price.** `/pricing` answers 200 and contains no dollar
    amount at all; the string `14.99` does not appear in its HTML. Nor does it
    appear on any of the three pages carrying the node. The only reader who can
-   see this price is Google.
+   see this price is Google. This is the one defect here that is not a judgment
+   call: Google's structured-data policies say "Don't mark up content that is
+   not visible to readers of the page", under *Quality guidelines > Content*,
+   and open with "Your structured data must be a true representation of the page
+   content."
 2. **`$14.99` is a different product's price.** The canonical catalog
    (`services/business_os/entitlements/schema.py:62`) prices
    `crypto_pro_monthly` at `1499`. PulseSoc Premium's monthly plan is
@@ -54,9 +58,15 @@ Four things are wrong with it, and they are independent:
    declares the same. So Premium has three prices depending on who you ask:
    999 in the catalog, 1900 at the till, $14.99 to Google.
 4. **`offers.url` is a dead fragment.** There is no `id="pricing"` anywhere in
-   the live homepage, so that URL resolves to the top of `/`. An Offer whose
-   `url` does not reach the offer is a Merchant Center disqualification on its
-   own.
+   the live homepage, so that URL resolves to the top of `/`.
+
+   An earlier draft of this section called that "a Merchant Center
+   disqualification on its own". It is not, and the overstatement is corrected
+   rather than quietly dropped: `offers.url` is **recommended**, not required,
+   for merchant listing experiences. The defect is real — a URL that does not
+   reach the offer is wrong, and it is evidence that nobody checked the node
+   against a page — but it disqualifies nothing by itself. Defects 1–3 are what
+   matter.
 
 Fixed on this branch by `fdb337296`, which **deletes the node** rather than
 correcting the price. That is the fail-closed reading of the brief: the price
@@ -153,6 +163,38 @@ That is the standard the rest of the domain's structured data should be held to.
 
 ---
 
+## Rich-result readiness, against Google's actual requirement labels
+
+Checked against `developers.google.com/search/docs/appearance/structured-data/`
+(`product-snippet`, `merchant-listing`, `sd-policies`) on 2026-10-03. This
+section is the authority for every "required" / "recommended" word in this
+document; earlier drafts used those words from memory, and one of them was
+wrong (see defect 4 above).
+
+The live `/pulse/marketplace/163` Product node passes **every required property
+for both experiences**:
+
+| Experience | Required | Live node |
+|---|---|---|
+| Product snippet | `name` | present |
+| Product snippet | one of `review` / `aggregateRating` / `offers` | `offers` |
+| Merchant listing | `name`, `image`, `offers` | all present |
+| Merchant listing | `offers.price`, and it must be > 0 | `"30.50"` |
+| Merchant listing | `offers.priceCurrency` | `"USD"` |
+
+Everything this layer omits is **recommended**, never required: `brand`,
+`gtin`, `mpn`, `review`, `aggregateRating`, `shippingDetails`,
+`hasMerchantReturnPolicy`. That is the useful result here — the hard rule
+against inventing those costs the site no eligibility at all. `availability` is
+also only recommended, so the fail-closed omission at
+`services/marketplace_web.py:1445` is compliant rather than a gap.
+
+So the honest readiness answer is: eligible on the required properties,
+deliberately thin on the recommended ones, and the thinness is not fixable from
+this layer because the data does not exist.
+
+---
+
 ## Open, not addressed on this branch
 
 - **`bot.py:34045`** hand-writes a `WebPage` node with no `@id`, bypassing
@@ -179,12 +221,10 @@ That is the standard the rest of the domain's structured data should be held to.
   rollback away from mattering. Whether supplier titles should also be filtered
   at the write boundary is a question for whoever owns the import, not for this
   layer; structured data should not be the thing that sanitises the database.
-- **Official Google / Schema.org / Bing documentation was not consulted.**
-  `WebSearch` and `WebFetch` were unavailable for this session. Every
-  rich-result claim here rests on the schema.org vocabulary and on what
-  production emits, not on a current reading of Google's requirements. Anyone
-  acting on the rich-result readiness question should verify against the live
-  docs first.
+- **Bing and Schema.org's own documentation still not consulted.** Google's was,
+  late in the session — see the section below, which is the authority for the
+  requirement labels used in this document. Bing's product-markup requirements
+  are not checked against anything here.
 
 ---
 
@@ -210,11 +250,20 @@ they are still all of those things; they just stop making a price claim. No
 sitemap change is needed for this.
 
 **Agent 7 (Merchant Center).** Do not submit a Premium offer. There is no agreed
-price (999 / 1900 / $14.99) and the offer URL does not resolve. Marketplace
-listings are a separate matter and their Product nodes look submittable — but
-`availability` is omitted whenever stock is unknown, by design, and a feed that
-defaults the omission to `in stock` would reintroduce exactly the claim this
-layer refused to make.
+price (999 / 1900 / $14.99) and the offer URL does not resolve.
+
+Marketplace listings are a separate matter and are genuinely submittable, not
+just plausibly so: the live node carries every required merchant-listing
+property, verified property-by-property in the readiness section above. Two
+cautions, both of which are ways a feed could undo that:
+
+- `availability` is omitted whenever stock is unknown, by design. It is only a
+  *recommended* property, so omitting it costs nothing — but a feed that
+  defaults the omission to `in stock` would reintroduce exactly the claim this
+  layer refused to make.
+- `image` is **required**, and every live image URL is on a third-party
+  supplier CDN rather than a PulseSoc domain (see the Agent 9 handoff). A feed
+  inherits that dependency.
 
 **Agent 9 (media).** `Product.image` is every URL that
 `gallery_items` (`services/marketplace_web.py:1231`) collected whose kind is
@@ -224,8 +273,23 @@ layer refused to make.
 filters on kind, dedups, and caps at `limit`. What it does *not* do is ask
 whether a URL is publicly fetchable or whether it expires, and it has no way to:
 a signed or short-lived URL is indistinguishable from a permanent one at this
-layer. If either can occur, that is a structured-data correctness problem you
-own the input to.
+layer.
+
+Measured rather than assumed, across 13 live Product nodes drawn from
+`/sitemap-products.xml`: **every image URL is on `cjdropshipping.com`**
+(11 `cf.`, 2 `oss-cf.`) and **none is on a PulseSoc domain**. None carries a
+query string, so nothing is signature- or expiry-shaped today, and the one I
+fetched returns 200 `image/jpeg` with `max-age=31536000`. So the answer to the
+question above is currently "fine" — but by a supplier's choice, not by
+anything PulseSoc controls.
+
+That is worth your attention because `image` is a **required** property for
+merchant listing experiences (see the readiness section). If CJ rotates a path
+or drops an asset, the node does not degrade — it fails a required property,
+and this layer will keep emitting the dead URL because it has no way to know.
+Whether product imagery should be mirrored to PulseSoc-controlled storage is
+your call, not this layer's; I am telling you the dependency exists and that
+structured data is one of the things that breaks when it does.
 
 **Agents 0, 1, 3, 8, 10–12.** Two things are worth knowing regardless of lane.
 First, `seo.schema.serialise_graph` is the only sanctioned way to turn a graph
