@@ -11,14 +11,14 @@
   {% if bing_site_verification %}<meta name="msvalidate.01" content="{{ bing_site_verification }}" />{% endif %}
   <link rel="canonical" href="https://pulsesoc.com/privacy" />
   <meta property="og:title" content="Privacy Policy | PulseSoc" />
-  <meta property="og:description" content="How CoinPlotXAI Inc. handles PulseSoc user, website, optional Telegram, payment, analytics, and public blockchain data." />
+  <meta property="og:description" content="How PulseSoc handles your account, content, messages, marketplace orders, payments, and analytics data — and who processes it." />
   <meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-og-20260913.png" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://pulsesoc.com/privacy" />
   <meta property="og:site_name" content="PulseSoc" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Privacy Policy | PulseSoc" />
-  <meta name="twitter:description" content="Privacy details for PulseSoc platform AI tools, optional Telegram, payments, analytics, and public blockchain intelligence." />
+  <meta name="twitter:description" content="How PulseSoc handles your account, content, messages, marketplace orders, payments, and analytics data — and who processes it." />
   <meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-og-20260913.png" />
   <meta name="theme-color" content="#00e5ff" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -186,6 +186,58 @@
 
     li { margin: 8px 0; }
 
+    .lede { color: var(--text); font-size: 18px; }
+
+    .toc {
+      margin: 26px 0 8px;
+      padding: 18px 22px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(7, 11, 20, 0.5);
+    }
+
+    .toc-title {
+      margin: 0 0 8px;
+      color: var(--cyan);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .toc ol {
+      margin: 0;
+      padding-left: 20px;
+      columns: 2;
+      column-gap: 28px;
+    }
+
+    .toc li { margin: 4px 0; break-inside: avoid; }
+
+    .toc a { color: var(--muted); text-decoration: none; border-bottom: 1px solid transparent; }
+
+    .toc a:hover, .toc a:focus { color: var(--text); border-bottom-color: var(--cyan); }
+
+    h2 { scroll-margin-top: 24px; }
+
+    .table-scroll { overflow-x: auto; margin: 14px 0 4px; }
+
+    table.processors {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 15px;
+    }
+
+    table.processors th, table.processors td {
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      color: var(--muted);
+    }
+
+    table.processors th { color: var(--text); font-weight: 800; }
+
     .notice {
       margin-top: 22px;
       padding: 16px;
@@ -219,13 +271,14 @@
       <nav aria-label="Privacy navigation">
         <a class="brand" href="/">
           <img src="{{ url_for('static', filename='brand/pulsesoc-mark-20260913.png') }}" alt="PulseSoc logo" width="46" height="46" />
-          <span>CoinPlotXAI Inc.</span>
+          <span>PulseSoc</span>
         </a>
         <div class="nav-links">
           <a href="/">Home</a>
-          <a href="/support">Support</a>
           <a href="/terms">Terms</a>
-          <a href="https://t.me/DocShieldX_bot">Telegram Companion</a>
+          <a href="/community-rules">Community Rules</a>
+          <a href="/privacy-center">Privacy Center</a>
+          <a href="/support">Support</a>
         </div>
       </nav>
     </div>
@@ -236,64 +289,164 @@
       <article class="policy">
         <div class="kicker">Privacy Policy</div>
         <h1>Privacy Policy</h1>
-        <p>Last updated: May 2026</p>
-        <p>This Privacy Policy explains how CoinPlotXAI Inc. collects, uses, and protects information when you use PulseSoc, the PulseSoc website, PWA, optional Telegram companion, and related services.</p>
+        <p>Last updated: October 2026</p>
+        <p class="lede">This Policy explains what CoinPlotXAI Inc. collects when you use PulseSoc, why, and who else sees it. It covers the PulseSoc website, the installable web app, and the PulseSoc iPhone app.</p>
+        <p>This Policy describes what the service does today. Where something is not built yet, it says so rather than describing an intention as a practice.</p>
 
-        <h2>Information We Collect</h2>
-        <p>Depending on how you use PulseSoc, we may collect:</p>
+        <nav class="toc" aria-label="Sections of this Privacy Policy">
+          <p class="toc-title">On this page</p>
+          <ol>
+            <li><a href="#what-we-collect">What we collect</a></li>
+            <li><a href="#cookies">Cookies, storage and analytics</a></li>
+            <li><a href="#messages">Messages and calls</a></li>
+            <li><a href="#live-video">Live video and recordings</a></li>
+            <li><a href="#translation">Translation</a></li>
+            <li><a href="#ai">AI features</a></li>
+            <li><a href="#commerce">Buying and selling</a></li>
+            <li><a href="#advertising">Advertising</a></li>
+            <li><a href="#how-we-use">How we use information</a></li>
+            <li><a href="#who-we-share-with">Who we share it with</a></li>
+            <li><a href="#selling-data">We do not sell your information</a></li>
+            <li><a href="#retention">How long we keep it</a></li>
+            <li><a href="#your-choices">Your choices and requests</a></li>
+            <li><a href="#security">Security</a></li>
+            <li><a href="#age">Age</a></li>
+            <li><a href="#international">Where data is processed</a></li>
+            <li><a href="#changes">Changes to this Policy</a></li>
+            <li><a href="#contact">Contact</a></li>
+          </ol>
+        </nav>
+
+        <h2 id="what-we-collect">1. What we collect</h2>
+        <p><strong>When you create an account:</strong> your name, your chosen handle and display name, email address, a hash of your password (never the password itself), optionally a phone number, your country, and the fact that you confirmed you meet the age requirements where you live. We do not collect your date of birth.</p>
+        <p><strong>Your choices:</strong> whether you opted in to marketing email and, separately, marketing SMS; your language and region preferences; your privacy, notification and visibility settings.</p>
+        <p><strong>What you create:</strong> posts, comments, replies, reels, statuses, stories, photos, video, audio, live broadcasts, profile and store details, product listings, reviews, groups and events, and the messages and calls described below.</p>
+        <p><strong>How you use PulseSoc:</strong> account activity such as sign-in times, and website usage events — the page viewed, the event name, the referring page, UTM campaign parameters from links you arrive through, your browser and device type, your full browser user-agent string, a session identifier, a country value, and a <em>hashed</em> form of your IP address. We store the hash rather than the address itself, as a way of recognising repeated activity from one source for abuse prevention — section 14 explains why you should not read that hash as anonymisation.</p>
+        <p>Two kinds of usage event are recorded, and the difference matters. The page-view events the website sends as you browse carry <strong>no account identifier at all</strong>, even when you are signed in. Separately, when you take an action in the product while signed in, we record that action <em>with</em> your account identifier, alongside the page it happened on, your browser and device type, and the same hashed IP value. So please do not read the first kind as meaning your usage is never linked to your account — some of it is.</p>
+        <p><strong>Commerce:</strong> your orders, carts, and the priced quote recorded for each order; payment status and payment-provider references; and, where an order ships, the delivery address collected by our payment processor.</p>
+        <p><strong>Support:</strong> what you send us when you contact support, including the subject and message.</p>
+        <p><strong>Market-information features:</strong> if you use them, the public wallet addresses, public transaction IDs, watchlists or portfolio entries you choose to enter. We never ask for and must never be given a seed phrase, private key, recovery phrase, or wallet password.</p>
+
+        <h2 id="cookies">2. Cookies, storage and analytics</h2>
+        <p>PulseSoc uses cookies and browser storage to keep you signed in, to remember your preferences, and to protect the service against abuse. These are necessary for the site to work.</p>
+        <p><strong>PulseSoc's analytics are first-party.</strong> Usage events are sent to PulseSoc's own servers and stored in PulseSoc's own database. As of the date of this Policy, PulseSoc's website does <strong>not</strong> load Google Analytics, Google Ads conversion tracking, PostHog, or any other third-party analytics or advertising tag, and no such third party receives your browsing activity on our site. If we add one, we will update this Policy and, where consent is required, ask for it before loading it.</p>
+        <p>You can clear or block cookies in your browser. Blocking the necessary ones will sign you out and may stop parts of PulseSoc working.</p>
+
+        <h2 id="messages">3. Messages and calls</h2>
+        <p>Direct messages and group chats are <strong>not end-to-end encrypted</strong>. Traffic is encrypted in transit, but message content is stored on our servers in a form our systems can read. That is what allows search, moderation, abuse investigation, and translation to work. It also means PulseSoc is technically able to access message content, and we do so where it is necessary to operate the service, investigate abuse or fraud, or comply with a legal obligation.</p>
+        <p>Please do not use PulseSoc messaging for anything that requires end-to-end encryption.</p>
+        <p>Voice and video calls are carried by our realtime provider. We store the records needed to place and account for a call — such as who the participants were and when it happened.</p>
+
+        <h2 id="live-video">4. Live video and recordings</h2>
+        <p>When you broadcast live, your audio and video pass through our realtime provider and our live-video provider to reach viewers. Live broadcasts may be recorded and the recording stored in our media storage so it can be replayed. If you go live, assume a recording exists.</p>
+
+        <h2 id="translation">5. Translation</h2>
+        <p>PulseSoc can translate content when you ask it to. Translation is performed by <strong>Google Cloud Translation</strong>, which means the text being translated is sent to Google for processing.</p>
+        <p>The content types that can be translated include posts, comments, replies, reels, statuses, profiles, marketplace and product text, reviews, support messages, group and event text, and <strong>chat messages</strong>. So if you use translation on a conversation, that chat text is sent to Google. Links, email addresses, @mentions, hashtags, and code blocks are held back from the text that is sent.</p>
+
+        <h2 id="ai">6. AI features</h2>
+        <p>PulseSoc includes AI-assisted features. When you use one, the content you submit to it is sent to the AI provider that serves the request. PulseSoc chooses the provider on the server, so your request never carries our provider keys, but the content does reach the provider. The providers configured for PulseSoc are listed in the table below.</p>
+
+        <h2 id="commerce">7. Buying and selling</h2>
+        <p>Card payments are handled by <strong>Stripe</strong>. Your card details are entered on Stripe's own payment page — PulseSoc does not receive or store your full card number. Stripe shares back the result of the payment and references we need to reconcile the order.</p>
+        <p>Where an order ships, Stripe collects the delivery address and passes it to us so the order can be fulfilled. Shipping destinations are currently limited to the United States.</p>
+        <p>You can check out as a guest without an account. In that case we process the items, quantities, options and delivery or pickup choices needed to fulfil the order, under a guest record rather than a member account.</p>
+        <p>If you sell on PulseSoc and accept card payments, you complete identity and bank verification directly with Stripe. Those checks are Stripe's; we receive the status of your account's capabilities, not the underlying documents.</p>
+        <p>Some sales are paid in cash on pickup or in person. Those payments happen between buyer and seller and are not processed by PulseSoc.</p>
+
+        <h2 id="advertising">8. Advertising</h2>
+        <p>PulseSoc shows advertising and promoted content, and places commerce content through its own discovery and curation systems. Targeting uses information held on PulseSoc. PulseSoc does not use a date of birth for advertising, because PulseSoc does not collect one, and PulseSoc does not send your activity to a third-party ad network from our website.</p>
+
+        <h2 id="how-we-use">9. How we use information</h2>
         <ul>
-          <li>Telegram user ID, username, display name, and optional companion interaction history needed to operate connected Telegram features.</li>
-          <li>Email address if you choose to provide it for payment confirmations or account notifications.</li>
-          <li>Name, phone number, country, and separate email/SMS marketing consent choices if you submit a website update form.</li>
-          <li>Account registration information such as name, email, hashed password, phone, country, account settings, login timestamps, plan, subscription status, and Telegram connection status.</li>
-          <li>Subscription, payment status, Stripe session references, BTC TXID references, and verification attempts.</li>
-          <li>Public wallet addresses, public transaction IDs, watchlists, portfolio entries, and manual balance settings you choose to submit.</li>
-          <li>Website usage events such as page views, button clicks, CTA clicks, scroll depth, time on page, referral source, UTM campaign parameters, device type, browser type, anonymous session ID, and hashed IP-derived security information.</li>
+          <li>To run the product: your feed, profile, messages, calls, live video, reels, groups, stores and listings.</li>
+          <li>To create and protect your account, sign you in, reset your password, and keep sessions secure.</li>
+          <li>To process orders, payments, payouts and refunds, and to keep the records a transaction has to leave behind.</li>
+          <li>To moderate content, enforce the community rules, and investigate abuse, fraud and security incidents.</li>
+          <li>To send you service and security notices, and the notifications you have enabled.</li>
+          <li>To send marketing email or SMS only on the channel you opted in to.</li>
+          <li>To understand how the site performs and improve it, using the first-party analytics described above.</li>
+          <li>To meet legal, accounting and regulatory obligations.</li>
         </ul>
 
-        <h2>Cookies, Sessions, and Analytics</h2>
-        <p>The website may use basic cookies, browser storage, anonymous session IDs, server logs, or analytics tools to understand site performance, live visitor activity, product interest, and conversion flow. Analytics are intended for product improvement and should not include private keys, seed phrases, wallet passwords, or sensitive financial credentials.</p>
-        <p>CoinPlotXAI Inc. may record events such as page views, Telegram clicks, pricing clicks, Pro upgrade clicks, Day Signal clicks, AI Assistant clicks, Sports Edge clicks, support clicks, scroll depth, time on page, device type, browser type, referral source, and UTM campaign parameters.</p>
+        <h2 id="who-we-share-with">10. Who we share it with</h2>
+        <p>We use the following providers to operate PulseSoc. Each receives only what its function requires.</p>
+        <div class="table-scroll">
+        <table class="processors">
+          <thead>
+            <tr><th scope="col">Provider</th><th scope="col">Function</th><th scope="col">What reaches them</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Railway</td><td>Hosting and database</td><td>Everything PulseSoc stores</td></tr>
+            <tr><td>Stripe</td><td>Payments and payouts</td><td>Card details you enter on Stripe, order amounts, delivery address where an order ships, seller verification data</td></tr>
+            <tr><td>Agora</td><td>Realtime audio and video</td><td>Call and live audio/video streams, channel and session identifiers</td></tr>
+            <tr><td>Mux</td><td>Live video delivery and replay</td><td>Live and recorded video</td></tr>
+            <tr><td>Cloudflare R2</td><td>Media storage</td><td>Photos, video, audio, attachments, live recordings</td></tr>
+            <tr><td>Brevo</td><td>Email and SMS</td><td>Email address, phone number where you opted in, and the message content we send you</td></tr>
+            <tr><td>Twilio</td><td>SMS and voice messaging</td><td>Phone number and message content, where used</td></tr>
+            <tr><td>Apple (APNs), Google (Firebase Cloud Messaging), and web push</td><td>Push notifications</td><td>Your device's push token and the notification text</td></tr>
+            <tr><td>Google Cloud Translation</td><td>Translation you request</td><td>The text being translated, which can include chat content</td></tr>
+            <tr><td>OpenAI, Anthropic, Google, DeepSeek, Groq</td><td>AI features</td><td>The content you submit to an AI feature</td></tr>
+            <tr><td>CoinGecko</td><td>Market data for market-information features</td><td>Nothing about you — we read prices from them</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p>We also share information where we are legally required to, where it is necessary to investigate fraud, abuse or a threat to someone's safety, and with professional advisers where needed. If the business is ever reorganised or acquired, information may transfer as part of that, and this Policy continues to apply until it is replaced.</p>
+        <p>Other members see what the product shows them: your profile, your public content, and what your privacy settings allow. The settings that actually decide this are the privacy and visibility settings in your account settings. The visibility tick-boxes on <a href="/privacy-center">Privacy Center</a> are not what controls it, for the reason set out in section 13.</p>
 
-        <h2>Email and SMS Marketing</h2>
-        <p>If you submit an update form, email marketing consent and SMS marketing consent are separate choices. SMS consent is optional and requires a phone number. Message and data rates may apply. You can unsubscribe from promotional emails using the unsubscribe option when available or by contacting support. You can opt out of SMS messages by replying STOP where supported or by contacting support.</p>
-        <p>We use submitted contact information only for the consented purpose, account/security notices, support, and future product updates if enabled. CoinPlotXAI Inc. does not collect phone numbers or email addresses for marketing without consent.</p>
+        <h2 id="selling-data">11. We do not sell your information</h2>
+        <p>CoinPlotXAI Inc. does not sell your personal information, and does not share it with third parties for their own advertising.</p>
 
-        <h2>Telegram Integration</h2>
-        <p>PulseSoc operates as a web and mobile-first platform. Telegram is an optional companion, and Telegram may process information under its own privacy practices. CoinPlotXAI Inc. uses Telegram information only for optional Telegram companion commands, account status, subscriptions, alerts, and user-requested intelligence features.</p>
-        <p>If you choose to connect Telegram to your website account, CoinPlotXAI Inc. stores your Telegram user ID, username, and chat ID so the optional companion can show your own account status, plan, subscription state, and preferences. The bot does not allow account lookup by email and does not ask for website passwords in Telegram.</p>
-
-        <h2>Public Blockchain Data</h2>
-        <p>PulseSoc may analyze public blockchain data such as public wallet addresses and transaction IDs. Public blockchain data is not private. Never submit seed phrases, private keys, recovery phrases, wallet passwords, or signing credentials.</p>
-
-        <h2>How We Use Information</h2>
+        <h2 id="retention">12. How long we keep it</h2>
+        <p>We keep information for as long as it serves the purpose it was collected for:</p>
         <ul>
-          <li>To operate PulseSoc platform commands, AI assistant features, market intelligence, wallet checks, scam protection, and portfolio tools.</li>
-          <li>To create and secure user accounts, process logins, password resets, website account settings, and Telegram account linking.</li>
-          <li>To manage subscriptions, Pro access, BTC payment verification, and payment confirmations.</li>
-          <li>To improve reliability, safety, product quality, and customer support.</li>
-          <li>To measure website performance, understand feature interest, and improve onboarding while avoiding sensitive wallet credential collection.</li>
-          <li>To send promotional email or SMS updates only when you have opted in to that channel.</li>
-          <li>To detect abuse, protect users, and maintain service security.</li>
+          <li><strong>Your account and your content</strong> — while your account is open, and until you delete the content or your account is removed.</li>
+          <li><strong>Messages</strong> — while the conversation exists for the people in it.</li>
+          <li><strong>Orders, payments and payouts</strong> — for as long as needed to complete the order, handle refunds and disputes, and meet accounting and tax obligations.</li>
+          <li><strong>Security, moderation and abuse records</strong> — for as long as needed to protect members and to investigate repeat behaviour.</li>
+          <li><strong>Website analytics events</strong> — kept in aggregate and event form to measure and improve the site.</li>
         </ul>
+        <p>Some records outlive an account deletion where we are required to keep them — for example payment and tax records, and records of serious abuse. We have deliberately not published a single fixed retention period for every category, because a number published here has to be one the system actually enforces.</p>
 
-        <h2>Security Practices</h2>
-        <p>CoinPlotXAI Inc. uses reasonable technical and organizational safeguards for stored data. Passwords are stored as password hashes, not plain text. No online system can be guaranteed perfectly secure. CoinPlotXAI Inc. will never ask for seed phrases, private keys, recovery phrases, wallet passwords, or remote wallet access.</p>
+        <h2 id="your-choices">13. Your choices and requests</h2>
+        <p>You can edit your profile, and change your privacy, notification and visibility settings, at any time in your settings.</p>
+        <p><strong>Marketing email and SMS are opt-in.</strong> The promotional-email and promotional-text tick-boxes in your <a href="/account/settings">account settings</a> are the control, and that control works: unticking one takes you off the matching marketing list we keep with Brevo, the provider that sends our email and SMS. We are not going to point you at an unsubscribe link, or tell you to reply STOP, because PulseSoc generates neither. We do not run marketing campaigns from the product itself today — the mail PulseSoc sends you is transactional, such as sign-in, verification, password, payment and order messages. If a marketing message does reach you and you want it stopped, untick the box in your settings or email <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a>.</p>
+        <p><a href="/privacy-center">Privacy Center</a> shows four tick-boxes, and we have to be straight with you about them, because three are not connected to anything yet. <strong>"Opt out of personalized ads" works</strong> — our ad selection reads it, and if you have never saved the page you are treated as opted out already. The other three — opting out of optional analytics, "Public profile visible", and "Creator visibility enabled" — save your choice and nothing currently reads it. In particular, <strong>unticking "Public profile visible" on that page does not make your profile private.</strong> Use the privacy and visibility settings in your account settings for that, and treat those three boxes as a preference we have recorded rather than a control we have applied.</p>
+        <p><strong>Account deletion on this website.</strong> You can delete your account yourself at <a href="/account/delete">Account → Delete Account</a>. It asks for your password, and when you confirm, the deletion runs immediately — it is not queued and there is no waiting period. We remove the personal details on your account, including your username, email address, phone number, password, country, bio, profile and banner images, recovery contacts and any linked payment-customer or messaging identifiers, and we delete your saved notification devices and any outstanding sign-in, password-reset or verification tokens. Your posts, status updates and comments are withdrawn from PulseSoc at the same time.</p>
+        <p>We want to be exact about what that does <em>not</em> do, because the difference matters. Deletion does not erase every trace of you from every system. Messages you sent to other people remain in their conversations. Marketplace orders, payouts and the payment and tax records attached to them are kept, because we are required to keep them. Uploaded media files and operational logs are not purged by this step. An internal record of the account remains, in an anonymised form, so that the orders and records above still make sense.</p>
+        <p><strong>Deleting from the PulseSoc mobile app is not the same thing, and right now it is worse.</strong> The app's delete-account screen does not perform the deletion described above. It records a request, tells you the account is scheduled for deletion about 30 days later, and cancels that request if you sign back in before then. The cancellation works. The deletion does not: <strong>nothing currently carries out a scheduled deletion</strong>, so a request made in the app can sit indefinitely and your account is not removed. We are not going to describe that as a 30-day deletion, because it is not one. Until the app is fixed, use <a href="/account/delete">Account → Delete Account</a> on this website if you want your account actually deleted, or email us and we will do it by hand.</p>
+        <p><strong>Data export.</strong> There is <strong>no working self-service data download on PulseSoc today</strong>. The mobile app has a button for it, and tapping that button produces a message saying a download link is on its way to you. <strong>No link is ever sent.</strong> The request is recorded and nothing processes it, so please do not wait for the email. Ask us at <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a> instead and we will put your copy together by hand. We do not promise a turnaround time, because no automated job is doing the work.</p>
+        <p>Depending on where you live you may have further rights over your information, such as access, correction, deletion, portability, or objecting to a particular use. To exercise any of these, or to ask a question about this Policy, email <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a> from the address on your account, or include the email address or phone number you used.</p>
 
-        <h2>Sharing of Information</h2>
-        <p>We may use service providers such as hosting, payment, email, analytics, Telegram, blockchain data providers, and AI infrastructure providers to operate PulseSoc. We do not sell private user information.</p>
+        <h2 id="security">14. Security</h2>
+        <p>We use reasonable technical and organisational measures to protect what we store. Passwords are stored as hashes, never as plain text. Traffic to PulseSoc is encrypted in transit.</p>
+        <p>Three things we will not overstate:</p>
+        <ul>
+          <li><strong>PulseSoc does not currently offer two-factor authentication.</strong> Your password is the factor protecting your account, so use a strong, unique one. If a security screen shows two-factor protection as "enabled", that setting does not currently add a second factor: nothing asks you for a code, and the recovery codes it issues are not currently checked. We would rather tell you that than let the screen reassure you.</li>
+          <li><strong>Messages are not end-to-end encrypted</strong>, as described above.</li>
+          <li><strong>The hashed IP address in our analytics is not anonymisation, and we are not going to list it as a safeguard.</strong> We do store a hash instead of the address. But the hash is produced with a fixed value kept in our own code rather than a secret, and there are few enough possible addresses that anyone holding that value can work back from a hash to the address it came from. Treat it as a label standing in for your address, not as something that hides it. It is there so we can recognise repeated activity from one source, which is why it has not simply been removed.</li>
+        </ul>
+        <p>No online service can be guaranteed secure. CoinPlotXAI Inc. will never ask you for a seed phrase, private key, recovery phrase, or wallet password. To report a security issue, email <a href="mailto:security@pulsesoc.com">security@pulsesoc.com</a>.</p>
 
-        <h2>Data Choices</h2>
-        <p>You may contact support to request help with account information, marketing opt-outs, email updates, SMS opt-outs, data access, or data deletion requests. Some operational records may be retained for security, legal, accounting, payment, or abuse-prevention reasons.</p>
-        <p>To request deletion or opt out, contact <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a> with the email address or phone number you used.</p>
+        <h2 id="age">15. Age</h2>
+        <p>PulseSoc is not intended for young children. When you create an account you confirm that you meet the age requirements that apply where you live. PulseSoc does not collect a date of birth and <strong>does not verify anyone's age</strong>, so this Policy does not claim an age check that does not exist. If you believe a child has given us information, contact <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a> and we will act on it.</p>
+        {# OWNER / COUNSEL DECISION REQUIRED (D4): see the matching note in
+           templates/terms.html. The product states 16+ on the iPhone signup
+           checkbox, 13+ in the Terms bundled inside the app, and local
+           requirements here. No single age is asserted on this page until that
+           decision is made, and no verification is claimed because none runs. #}
 
-        <h2>Children</h2>
-        <p>PulseSoc is not intended for children. Users should comply with applicable age, financial, crypto, and betting laws in their location.</p>
+        <h2 id="international">16. Where data is processed</h2>
+        <p>PulseSoc is operated from the United States, and the providers listed above process information in the United States and in other countries where they run infrastructure. If you use PulseSoc from outside the United States, your information is transferred to and processed in the United States.</p>
 
-        <h2>Contact</h2>
-        <p>For privacy questions, contact <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a>.</p>
+        <h2 id="changes">17. Changes to this Policy</h2>
+        <p>We may update this Policy as the product changes. Each published version carries the date above, and your acceptance is recorded against the version you were actually shown. When a new version is published, the website asks you to accept it the next time you sign in.</p>
 
-        <div class="notice">CoinPlotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.</div>
+        <h2 id="contact">18. Contact</h2>
+        <p>Privacy questions: <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a>. Security reports: <a href="mailto:security@pulsesoc.com">security@pulsesoc.com</a>.</p>
+        <p>PulseSoc is operated by CoinPlotXAI Inc.</p>
+
+        <div class="notice">Two things worth repeating: PulseSoc messages are not end-to-end encrypted, and PulseSoc does not currently offer two-factor authentication. Both are stated plainly here so you can decide what to put on the platform.</div>
       </article>
 
       {#
@@ -335,9 +488,11 @@
     <div class="container footer-inner">
       <div>PulseSoc™ • Built by CoinPlotXAI Inc.</div>
       <div class="nav-links">
-        <a href="/support">Support</a>
-        <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/community-rules">Community Rules</a>
+        <a href="/refund-policy">Refunds</a>
+        <a href="/support">Support</a>
       </div>
     </div>
   </footer>

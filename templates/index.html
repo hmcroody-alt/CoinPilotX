@@ -144,6 +144,9 @@
 
     .brand img { width: 42px; height: 42px; border-radius: 12px; object-fit: contain; box-shadow: 0 0 26px rgba(110, 223, 246, 0.26); }
     .footer-logo { display: block; width: min(220px, 54vw); height: auto; margin: 0 0 14px; opacity: 0.92; }
+    .footer-legal { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 14px 0 0; font-weight: 700; }
+    .footer-legal a { color: var(--muted); text-decoration: none; font-size: 14px; }
+    .footer-legal a:hover, .footer-legal a:focus { color: var(--text); text-decoration: underline; }
     .brand span { display: grid; line-height: 1.05; }
     .brand small { color: var(--muted); font-size: 0.74rem; font-weight: 800; }
 
@@ -946,6 +949,13 @@
     <span>PulseSoc.com</span>
     <span aria-hidden="true"> · </span>
     <span>PulseSoc™ • Built by CoinPlotXAI Inc.</span>
+    <nav class="footer-legal" aria-label="Policies">
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/community-rules">Community Rules</a>
+      <a href="/refund-policy">Refunds</a>
+      <a href="/support">Support</a>
+    </nav>
   </footer>
 
   <button class="scroll-top" type="button" data-scroll-top aria-label="Back to top">↑</button>

@@ -15,7 +15,7 @@ re-acceptance instead of silently reinterpreting an older consent as agreement t
 the new text. This is the same shape for members.
 
 A version is not a serial number invented here. It names what the document says
-about itself — both currently state "Last updated: May 2026" — and
+about itself — both currently state "Last updated: October 2026" — and
 ``tests/test_legal_acceptance.py`` asserts each constant still agrees with the
 page that renders. Editing a document without bumping its constant fails there,
 which is the only thing that makes a stored version mean anything. Without that
@@ -39,13 +39,18 @@ from services import db
 #: What both documents currently say about themselves, verbatim. Shared because
 #: they were last revised together and the test reads this same string out of
 #: each rendered page.
-STATED_LAST_UPDATED = "May 2026"
+STATED_LAST_UPDATED = "October 2026"
 
 #: Document key -> the version a member accepts today. Keys are stored in the
 #: table, so renaming one orphans existing rows; add a new key instead.
+#:
+#: Bumped from ..._2026_05 when both documents were rewritten to describe
+#: PulseSoc rather than the retired crypto product. Every member becomes
+#: `outstanding()` again, which is the point: the May consent was to text that no
+#: longer exists.
 DOCUMENTS = {
-    "terms": "PULSESOC_TERMS_2026_05",
-    "privacy": "PULSESOC_PRIVACY_2026_05",
+    "terms": "PULSESOC_TERMS_2026_10",
+    "privacy": "PULSESOC_PRIVACY_2026_10",
 }
 
 #: The signup checkbox also binds the member to the "no-tolerance rules", and
@@ -72,10 +77,16 @@ SOURCES = ("web_signup", "web_login", "mobile_register", "mobile_login")
 #:
 #: The native app carries its own copy of this text under
 #: `mobile-native/src/screens/settings/legalContent.ts`, and that copy is dated
-#: "1 March 2026" while the documents in force here say "May 2026". So an
+#: "1 March 2026" while the documents in force here say "October 2026". So an
 #: acceptance step must send the member to these paths and not to the bundled
 #: copy: accepting version X while reading version X-1 is precisely the defect a
 #: version column exists to prevent.
+#:
+#: The gap is now wider than a date. The bundled Privacy Policy tells members
+#: they can enable two-factor authentication, which has not shipped; the
+#: documents at these paths say it has not. Only a new App Store build can
+#: correct the bundled copy, so these paths are the authoritative text until
+#: one goes out.
 DOCUMENT_PATHS = {
     "terms": "/terms",
     "privacy": "/privacy",
