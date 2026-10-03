@@ -615,6 +615,7 @@
     "tests/test_resource_page_app_ctas.py",
     "tests/test_scam_shield_routing.py",
     "tests/test_schema_ddl_once.py",
+    "tests/test_search_truth.py",
     "tests/test_search_visibility.py",
     "tests/test_seller_access_state.py",
     "tests/test_seller_lifecycle.py",
