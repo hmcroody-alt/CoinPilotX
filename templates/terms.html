@@ -11,14 +11,14 @@
   {% if bing_site_verification %}<meta name="msvalidate.01" content="{{ bing_site_verification }}" />{% endif %}
   <link rel="canonical" href="https://pulsesoc.com/terms" />
   <meta property="og:title" content="Terms of Service | PulseSoc" />
-  <meta property="og:description" content="Terms for PulseSoc AI crypto intelligence, subscriptions, wallet tools, Sports Edge, and educational market analysis." />
+  <meta property="og:description" content="The Terms of Service for PulseSoc: accounts, content, messaging, the marketplace, fees, payments, and refunds." />
   <meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-og-20260913.png" />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://pulsesoc.com/terms" />
   <meta property="og:site_name" content="PulseSoc" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Terms of Service | PulseSoc" />
-  <meta name="twitter:description" content="Terms for using PulseSoc AI crypto intelligence, market alerts, wallet scans, Sports Edge, and optional Telegram companion tools." />
+  <meta name="twitter:description" content="The Terms of Service for PulseSoc: accounts, content, messaging, the marketplace, fees, payments, and refunds." />
   <meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-og-20260913.png" />
   <meta name="theme-color" content="#00e5ff" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -185,6 +185,44 @@
 
     li { margin: 8px 0; }
 
+    .lede { color: var(--text); font-size: 18px; }
+
+    .toc {
+      margin: 26px 0 8px;
+      padding: 18px 22px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(7, 11, 20, 0.5);
+    }
+
+    .toc-title {
+      margin: 0 0 8px;
+      color: var(--cyan);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .toc ol {
+      margin: 0;
+      padding-left: 20px;
+      columns: 2;
+      column-gap: 28px;
+    }
+
+    .toc li { margin: 4px 0; break-inside: avoid; }
+
+    .toc a { color: var(--muted); text-decoration: none; border-bottom: 1px solid transparent; }
+
+    .toc a:hover, .toc a:focus { color: var(--text); border-bottom-color: var(--cyan); }
+
+    h2 { scroll-margin-top: 24px; }
+
+    @media (max-width: 720px) {
+      .toc ol { columns: 1; }
+    }
+
     .notice {
       margin-top: 22px;
       padding: 16px;
@@ -218,13 +256,14 @@
       <nav aria-label="Terms navigation">
         <a class="brand" href="/">
           <img src="{{ url_for('static', filename='brand/pulsesoc-mark-20260913.png') }}" alt="PulseSoc logo" width="46" height="46" />
-          <span>CoinPlotXAI Inc.</span>
+          <span>PulseSoc</span>
         </a>
         <div class="nav-links">
           <a href="/">Home</a>
-          <a href="/support">Support</a>
           <a href="/privacy">Privacy</a>
-          <a href="https://t.me/DocShieldX_bot">Telegram Companion</a>
+          <a href="/community-rules">Community Rules</a>
+          <a href="/refund-policy">Refunds</a>
+          <a href="/support">Support</a>
         </div>
       </nav>
     </div>
@@ -235,65 +274,159 @@
       <article class="terms">
         <div class="kicker">Terms of Service</div>
         <h1>Terms of Service</h1>
-        <p>Last updated: May 2026</p>
-        <p>These Terms of Service govern your use of PulseSoc, the website, PWA, optional Telegram companion, subscriptions, AI features, blockchain intelligence tools, Sports Edge features, and related services operated by CoinPlotXAI Inc.</p>
+        <p>Last updated: October 2026</p>
+        <p class="lede">These Terms are an agreement between you and CoinPlotXAI Inc., the company that operates PulseSoc. They cover the PulseSoc website, the installable web app, and the PulseSoc iPhone app. One account, one set of rules, whichever way you sign in.</p>
+        <p>Where these Terms say what PulseSoc does, they describe how the service actually works today. Where a feature does not exist yet, these Terms say so instead of reserving it.</p>
 
-        <h2>Educational Intelligence Only</h2>
-        <p>CoinPlotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice. PulseSoc content is for informational and educational purposes only.</p>
+        <nav class="toc" aria-label="Sections of these Terms">
+          <p class="toc-title">On this page</p>
+          <ol>
+            <li><a href="#what-pulsesoc-is">What PulseSoc is</a></li>
+            <li><a href="#your-account">Your account</a></li>
+            <li><a href="#acceptable-use">Acceptable use</a></li>
+            <li><a href="#your-content">Your content</a></li>
+            <li><a href="#moderation">Objectionable content and moderation</a></li>
+            <li><a href="#messages-and-calls">Messages, calls and live video</a></li>
+            <li><a href="#marketplace">Marketplace: who you are buying from</a></li>
+            <li><a href="#prices-and-fees">Prices and fees</a></li>
+            <li><a href="#payment-methods">Payment methods</a></li>
+            <li><a href="#delivery">Delivery</a></li>
+            <li><a href="#returns">Returns and refunds</a></li>
+            <li><a href="#selling">Selling on PulseSoc</a></li>
+            <li><a href="#advertising">Advertising</a></li>
+            <li><a href="#premium">Premium</a></li>
+            <li><a href="#ai-features">AI features</a></li>
+            <li><a href="#market-information">Market information features</a></li>
+            <li><a href="#third-parties">Third-party services</a></li>
+            <li><a href="#intellectual-property">Intellectual property</a></li>
+            <li><a href="#suspension">Suspension and termination</a></li>
+            <li><a href="#disclaimers">Disclaimers</a></li>
+            <li><a href="#liability">Limitation of liability</a></li>
+            <li><a href="#changes">Changes to these Terms</a></li>
+            <li><a href="#governing-law">Governing law</a></li>
+            <li><a href="#contact">Contact</a></li>
+          </ol>
+        </nav>
 
-        <h2>No Guaranteed Outcomes</h2>
-        <p>PulseSoc may provide market context, risk analysis, wallet checks, scam warnings, sports context, portfolio scenarios, and AI explanations. CoinPlotXAI Inc. does not guarantee profits, trading outcomes, betting outcomes, investment results, wallet safety, market accuracy, or uninterrupted service.</p>
+        <h2 id="what-pulsesoc-is">1. What PulseSoc is</h2>
+        <p>PulseSoc is a social platform with a marketplace built into it. You can follow people, post, comment, share reels and statuses, message and call other members, broadcast live, take part in groups, spaces and events, open a store, list products, and buy from other members.</p>
+        <p>PulseSoc is a social and commerce service. It is not a brokerage, exchange, bank, payment institution, escrow service, wallet provider, or investment adviser.</p>
 
-        <h2>User Responsibility</h2>
-        <p>You are responsible for your own decisions, accounts, wallets, trades, bets, subscriptions, taxes, legal compliance, and risk management. You should not risk money you cannot afford to lose. You should consult qualified professionals where appropriate.</p>
+        <h2 id="your-account">2. Your account</h2>
+        <p>You are responsible for keeping your password and your access to your account secure, for the accuracy of the contact details you give us, and for activity that happens under your account. Do not share your password.</p>
+        <p>When you create an account you confirm that you meet the age requirements that apply where you live. PulseSoc does not ask for your date of birth and does not verify your age. We rely on the confirmation you give us.</p>
+        {# OWNER / COUNSEL DECISION REQUIRED (D4): the product currently states
+           three different ages — the iPhone signup checkbox says 16+, the
+           Terms bundled inside the app say 13+, and this page asks only that
+           you meet local requirements. No date of birth is collected anywhere,
+           so none of the three is enforced. A single minimum age is a legal and
+           product decision, not an engineering one, and it is deliberately not
+           invented here. Until it is made, this section states only what is
+           true: a self-confirmation with no verification behind it. #}
+        <p>PulseSoc protects accounts with a hashed password and session controls. PulseSoc does not currently offer two-factor authentication, and you should not assume a second factor is protecting your account.</p>
 
-        <h2>Account Responsibilities</h2>
-        <p>If you create a PulseSoc account, you are responsible for keeping your login credentials secure, using accurate contact information, and promptly updating your account if your email, phone number, Telegram account, or subscription details change. Do not share your password or account access with others.</p>
+        <h2 id="acceptable-use">3. Acceptable use</h2>
+        <p>You agree not to attack or disrupt the service, probe or bypass its security, scrape it at scale, reverse engineer restricted systems, impersonate anyone, commit fraud, infringe anyone's rights, evade a block or a suspension, or use PulseSoc to break the law.</p>
 
-        <h2>Wallet and Security Rules</h2>
-        <p>CoinPlotXAI Inc. never asks for seed phrases, private keys, recovery phrases, wallet passwords, or remote wallet access. You may only submit public wallet addresses or public transaction IDs when using wallet and transaction tools.</p>
+        <h2 id="your-content">4. Your content</h2>
+        <p>You keep ownership of what you post. To run the service we need permission to use it: you grant CoinPlotXAI Inc. a non-exclusive, worldwide, royalty-free licence to host, store, copy, encode, adapt for display, distribute, and show your content on PulseSoc, for as long as you keep it on PulseSoc and for the time it takes to remove copies and backups afterwards. This licence exists so the product can function — it does not let us sell your content as our own.</p>
+        <p>You are responsible for having the rights to what you upload, including music, video, images, and product photography.</p>
 
-        <h2>Acceptable Use</h2>
-        <p>You agree not to misuse PulseSoc, attack the service, reverse engineer restricted systems, submit illegal content, use the service to commit fraud, harass others, violate third-party rights, or attempt to bypass subscription/payment systems.</p>
-
-        <h2>User-Generated Content and No-Tolerance Moderation</h2>
+        <h2 id="moderation">5. Objectionable content and moderation</h2>
         <p>PulseSoc has no tolerance for objectionable content or abusive users. You may not post, upload, stream, message, sell, promote, or share content that is illegal, hateful, harassing, sexually exploitative, violent, threatening, fraudulent, impersonating, spam, malware, scam activity, or otherwise unsafe for the PulseSoc community.</p>
-        <p>PulseSoc provides content filtering, report controls, user blocking, and administrator moderation tools for user-generated posts, comments, media, profiles, messages, marketplace listings, statuses, live content, and community surfaces. Users can flag objectionable content and block abusive users from PulseSoc content menus or support channels.</p>
+        <p>PulseSoc provides content filtering, report controls, user blocking, and administrator moderation tools for posts, comments, media, profiles, messages, marketplace listings, statuses, live content, and community surfaces. You can flag objectionable content and block abusive users from PulseSoc content menus or support channels.</p>
         <ul>
           <li>Flagged objectionable content is sent to PulseSoc moderation for review.</li>
           <li>Blocking a user removes that user's content from your feed where supported and notifies PulseSoc moderation for review.</li>
           <li>PulseSoc acts on objectionable content reports within 24 hours by removing violating content when appropriate and restricting, suspending, or ejecting offending users when required.</li>
           <li>Private content remains subject to privacy rules, but privacy cannot be used to hide abuse, fraud, illegal content, or platform misuse.</li>
         </ul>
+        <p>The community rules that apply alongside these Terms are published at <a href="/community-rules">/community-rules</a>.</p>
 
-        <h2>Subscriptions and Payments</h2>
-        <p>PulseSoc Premium is managed through the PulseSoc website account flow and is optional. The core ecosystem is free for authenticated users, while Premium adds prestige identity, creator enhancements, and elite profile effects. CoinPlotXAI Inc. will not claim a payment or subscription is active until the payment provider confirms it.</p>
+        <h2 id="messages-and-calls">6. Messages, calls and live video</h2>
+        <p>Direct messages and group chats on PulseSoc are <strong>not</strong> end-to-end encrypted. Connections are encrypted in transit, but message content is stored on our servers in a form our systems can read, which is what allows features such as search, moderation, abuse investigation, and the translation described below to work at all. Do not use PulseSoc messaging for information that requires end-to-end encryption.</p>
+        <p>Voice and video calls run through our realtime provider. Live broadcasts may be recorded and stored so they can be replayed later; if you broadcast, assume a recording exists.</p>
 
-        <h2>Refunds and Billing Support</h2>
-        <p>For payment or subscription questions, contact <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a>. Include your account email, optional Telegram username, or payment reference when available. Refund eligibility may depend on payment method, service usage, fraud prevention, and applicable law.</p>
+        <h2 id="marketplace">7. Marketplace: who you are buying from</h2>
+        <p>When you buy on PulseSoc you are buying from the seller named on the listing. The seller is responsible for the item, its description, its condition, its legality, and for getting it to you.</p>
+        <p>PulseSoc operates the platform and the checkout. For card orders, CoinPlotXAI Inc. is the merchant of record for the initial charge and pays the seller afterwards. Being merchant of record for the charge does not make PulseSoc the owner, manufacturer, importer, or inspector of the goods.</p>
+        <p>PulseDrop curates and publishes listings into PulseSoc surfaces. PulseDrop is not the seller, does not own the inventory, and is not the merchant of record for any order.</p>
 
-        <h2>Intellectual Property</h2>
-        <p>PulseSoc, the website, bot flows, copy, visuals, software, interface elements, and original content are owned by or licensed to CoinPlotXAI Inc. You may not copy, resell, or misuse PulseSoc materials without permission.</p>
+        <h2 id="prices-and-fees">8. Prices and fees</h2>
+        <p>The price you pay is shown in the order summary before you confirm. When you check out, PulseSoc records a priced quote for the order, including the commission rate in effect at that moment, and that quote is what the order is settled against.</p>
+        <ul>
+          <li><strong>Seller commission.</strong> PulseSoc currently charges sellers <strong>no commission</strong> — the rate in force today is 0%. A future rate takes effect only once it is approved and disclosed, and only for orders quoted after that point.</li>
+          <li><strong>Buyer service fee.</strong> There is currently no buyer service fee.</li>
+          <li><strong>Listing and subscription fees for sellers.</strong> There is currently no listing fee and no monthly seller fee.</li>
+          <li><strong>Shipping.</strong> Buyers are not currently charged a separate shipping amount at checkout. If that changes, the amount will appear in the order summary before you pay.</li>
+          <li><strong>Tax.</strong> PulseSoc does not currently calculate or collect sales tax at checkout, and your order record states that tax was not calculated. Do not treat a PulseSoc order summary as a tax determination.</li>
+        </ul>
 
-        <h2>Third-Party Services and Data</h2>
-        <p>PulseSoc may use third-party providers for hosting, Telegram, payments, blockchain data, market data, sports data, analytics, email, and AI infrastructure. Third-party data may be delayed, incomplete, unavailable, or inaccurate.</p>
+        <h2 id="payment-methods">9. Payment methods</h2>
+        <p>Card payments are processed by Stripe. PulseSoc does not receive or store your full card number.</p>
+        <p>Paying by card requires two separate things to be true: card payments must be enabled on the platform, and the individual seller must have completed the onboarding our payment processor requires for their store. When either is not true, card payment is unavailable for that listing — so card availability is conditional, and neither "cards are unavailable" nor "cards always work" describes PulseSoc.</p>
+        <p>Some sellers offer cash on pickup, local pickup, or payment in person. Those payments happen directly between you and the seller. PulseSoc does not process, hold, escrow, or guarantee them, and PulseSoc charges no commission on them.</p>
+        <p>You can add items to a cart and complete a purchase as a guest, without creating an account. If you check out as a guest we still process the order details needed to fulfil the purchase.</p>
 
-        <h2>Limitation of Liability</h2>
-        <p>To the maximum extent permitted by law, CoinPlotXAI Inc. is not liable for indirect, incidental, special, consequential, exemplary, trading, betting, investment, wallet, data, or profit/loss damages arising from use of PulseSoc.</p>
+        <h2 id="delivery">10. Delivery</h2>
+        <p>Delivery is arranged by the seller. Shipping destinations on PulseSoc are currently limited to the United States. PulseSoc does not currently offer worldwide shipping, and no PulseSoc order is currently fulfilled by a third-party supplier network.</p>
+        <p>Where an order ships, our payment processor collects the delivery address needed to fulfil it.</p>
 
-        <h2>Termination</h2>
-        <p>CoinPlotXAI Inc. may suspend or terminate access if users violate these Terms, misuse the service, create security risk, abuse payments, or use PulseSoc unlawfully.</p>
+        <h2 id="returns">11. Returns and refunds</h2>
+        <p>The commerce refund policy at <a href="/refund-policy">/refund-policy</a> governs marketplace orders. Read it before you buy; it sets out what can be returned and how a refund is handled.</p>
+        <p>For a payment or billing question, contact <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a> with your account email and the order or payment reference.</p>
 
-        <h2>Changes to Terms</h2>
-        <p>CoinPlotXAI Inc. may update these Terms as the product evolves. Continued use of PulseSoc after changes means you accept the updated Terms.</p>
+        <h2 id="selling">12. Selling on PulseSoc</h2>
+        <p>If you sell on PulseSoc you are responsible for your listings being accurate and lawful, for having the right to sell the item, for fulfilling orders, for honouring the refund policy, and for your own tax and regulatory obligations.</p>
+        <p>PulseSoc does not independently verify a seller's identity, business registration, or the truth of a listing. Sellers who accept card payments complete identity and bank verification with Stripe, our payment processor; those checks belong to Stripe and are performed for payment purposes. Do not read the presence of a store on PulseSoc as PulseSoc vouching for the person behind it.</p>
+        <p>Seller payouts are made through our payment processor after the buyer's charge settles.</p>
 
-        <h2>Governing Law</h2>
+        <h2 id="advertising">13. Advertising</h2>
+        <p>PulseSoc shows advertising and promoted content, and some commerce content is placed by PulseSoc's own discovery and curation systems rather than by you following an account. PulseSoc does not use a date of birth to target advertising, because PulseSoc does not collect one.</p>
+
+        <h2 id="premium">14. Premium</h2>
+        <p>PulseSoc Premium is optional and is managed through the PulseSoc account flow. The core platform is available to members without it. CoinPlotXAI Inc. does not treat a payment or a membership as active until the payment provider confirms it.</p>
+
+        <h2 id="ai-features">15. AI features</h2>
+        <p>PulseSoc includes AI-assisted features such as assistants, summaries, recommendations, and translation. AI output can be wrong, incomplete, or out of date. Check anything you intend to rely on, and do not treat AI output as professional advice.</p>
+        <p>Translation is performed by a third-party provider when you ask for it. See the <a href="/privacy">Privacy Policy</a> for what that sends.</p>
+
+        <h2 id="market-information">16. Market information features</h2>
+        <p>PulseSoc still contains optional market-information features from the earlier CoinPlotXAI product. Where they appear, they are informational only. They are not financial, investment, trading, betting, tax, or legal advice, and nothing in PulseSoc is a recommendation to buy or sell anything.</p>
+        <p>PulseSoc does not take custody of cryptocurrency, does not execute trades, and does not operate a wallet on your behalf. CoinPlotXAI Inc. will never ask you for a seed phrase, private key, recovery phrase, or wallet password; where these features read blockchain data, they read public information for addresses you choose to enter. Treat any message asking you for a seed phrase as an attack, whoever appears to have sent it.</p>
+
+        <h2 id="third-parties">17. Third-party services</h2>
+        <p>PulseSoc depends on third parties for hosting, payments, realtime audio and video, live video delivery, media storage, email and SMS, push notifications, translation, and AI infrastructure. They are listed in the <a href="/privacy">Privacy Policy</a>. Their data and availability are outside our control, and third-party data can be delayed, incomplete, or wrong.</p>
+
+        <h2 id="intellectual-property">18. Intellectual property</h2>
+        <p>PulseSoc, the website and apps, the software, the interface, the copy, and the visual design are owned by or licensed to CoinPlotXAI Inc. You may not copy, resell, or misuse them without permission. This does not affect your ownership of your own content.</p>
+
+        <h2 id="suspension">19. Suspension and termination</h2>
+        <p>CoinPlotXAI Inc. may restrict, suspend, or terminate access where someone breaks these Terms, abuses the service or other members, creates a security or fraud risk, or uses PulseSoc unlawfully. You can stop using PulseSoc at any time, and you can ask us to delete your account — see the <a href="/privacy">Privacy Policy</a> for how that request is handled today.</p>
+
+        <h2 id="disclaimers">20. Disclaimers</h2>
+        <p>PulseSoc is provided as it is and as available. To the extent the law allows, CoinPlotXAI Inc. does not warrant that the service will be uninterrupted, error-free, or fit for a particular purpose, and does not guarantee the conduct of other members, the quality or legality of anything sold on the marketplace, or the accuracy of third-party data.</p>
+        <p>No online service can be guaranteed secure, and nothing here promises that a breach cannot happen.</p>
+
+        <h2 id="liability">21. Limitation of liability</h2>
+        <p>To the maximum extent permitted by law, CoinPlotXAI Inc. is not liable for indirect, incidental, special, consequential, or exemplary damages, or for lost profits, lost revenue, lost data, or loss of goodwill, arising from your use of PulseSoc.</p>
+        <p>Nothing in these Terms excludes or limits liability that cannot lawfully be excluded or limited.</p>
+
+        <h2 id="changes">22. Changes to these Terms</h2>
+        <p>CoinPlotXAI Inc. may update these Terms as the product changes. Each published version carries the date above, and your acceptance is recorded against the version you were actually shown. When a new version is published, the website asks you to accept it the next time you sign in.</p>
+
+        <h2 id="governing-law">23. Governing law</h2>
         <p>These Terms are governed by applicable law. A final governing law and venue may be specified by CoinPlotXAI Inc. as business operations mature.</p>
+        {# OWNER / COUNSEL DECISION REQUIRED (D3): this deferral is carried
+           forward from the previous version deliberately. Naming a jurisdiction
+           and a venue is a corporate decision; inventing one here would be a
+           new fiction replacing an old one. #}
 
-        <h2>Contact</h2>
-        <p>Questions about these Terms may be sent to <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a>.</p>
+        <h2 id="contact">24. Contact</h2>
+        <p>Questions about these Terms: <a href="mailto:support@pulsesoc.com">support@pulsesoc.com</a>. Security reports: <a href="mailto:security@pulsesoc.com">security@pulsesoc.com</a>.</p>
+        <p>PulseSoc is operated by CoinPlotXAI Inc.</p>
 
-        <div class="notice">CoinPlotXAI Inc. provides educational AI intelligence only and does not provide financial, betting, investment, or legal advice.</div>
+        <div class="notice">PulseSoc is a social and commerce platform. Market-information features are informational only — CoinPlotXAI Inc. does not provide financial, investment, betting, tax, or legal advice, and does not hold or trade assets for you.</div>
       </article>
 
       {# See templates/privacy.html for why this block sits after the policy
@@ -314,9 +447,11 @@
     <div class="container footer-inner">
       <div>PulseSoc™ • Built by CoinPlotXAI Inc.</div>
       <div class="nav-links">
-        <a href="/support">Support</a>
-        <a href="/privacy">Privacy</a>
         <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/community-rules">Community Rules</a>
+        <a href="/refund-policy">Refunds</a>
+        <a href="/support">Support</a>
       </div>
     </div>
   </footer>

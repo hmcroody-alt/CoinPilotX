@@ -28,6 +28,7 @@ import os
 import re
 import sys
 import tempfile
+from datetime import datetime
 
 import pytest
 
@@ -92,9 +93,10 @@ def test_each_version_agrees_with_the_date_the_page_publishes(client, document, 
         f"If it was revised, bump legal_acceptance.DOCUMENTS[{document!r}] -- which "
         "will correctly make every member outstanding again."
     )
-    assert legal_acceptance.DOCUMENTS[document].endswith("2026_05"), (
-        f"{document} version {legal_acceptance.DOCUMENTS[document]!r} no longer "
-        f"matches the date {path} publishes"
+    expected = datetime.strptime(legal_acceptance.STATED_LAST_UPDATED, "%B %Y").strftime("%Y_%m")
+    assert legal_acceptance.DOCUMENTS[document].endswith(expected), (
+        f"{document} version {legal_acceptance.DOCUMENTS[document]!r} does not end "
+        f"in {expected!r}, the date both it and {path} claim to have been revised"
     )
 
 
