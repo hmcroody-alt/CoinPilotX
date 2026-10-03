@@ -139,26 +139,26 @@
     .auth-shell > h1,
     .auth-shell > .notice,
     .auth-shell > .error { display: none; }
+    /* No min-height. A fixed 760px floor is what made the brand story taller
+       than the viewport and pushed the thing people came here to do below the
+       fold; the hero is now only as tall as what it says. */
     .auth-hero {
       position: relative;
       isolation: isolate;
-      min-height: 760px;
       display: grid;
       align-content: center;
       justify-items: center;
-      gap: 22px;
+      gap: 20px;
       text-align: center;
       overflow: hidden;
-      padding: 62px 0 24px;
+      padding: 16px 0;
     }
+    .auth-langbar { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
     .auth-lang {
-      position: absolute;
-      top: 4px;
-      right: 0;
-      z-index: 5;
-      min-height: 54px;
+      min-height: 48px;
       width: auto;
-      padding: 0 48px 0 22px;
+      max-width: 100%;
+      padding: 0 44px 0 18px;
       border-radius: 999px;
       color: #f2fbff;
       border: 1px solid rgba(110, 223, 246, .42);
@@ -167,13 +167,13 @@
       font-weight: 950;
       appearance: none;
       background-image: linear-gradient(45deg, transparent 50%, #6edff6 50%), linear-gradient(135deg, #6edff6 50%, transparent 50%);
-      background-position: calc(100% - 24px) 24px, calc(100% - 16px) 24px;
+      background-position: calc(100% - 22px) 21px, calc(100% - 14px) 21px;
       background-size: 8px 8px, 8px 8px;
       background-repeat: no-repeat;
     }
     .auth-orbit {
       position: relative;
-      width: min(62vw, 430px);
+      width: min(34vw, 300px);
       aspect-ratio: 1;
       display: grid;
       place-items: center;
@@ -205,7 +205,7 @@
     .auth-logo {
       position: relative;
       z-index: 2;
-      width: min(42vw, 230px);
+      width: min(20vw, 160px);
       aspect-ratio: 1;
       border-radius: 28%;
       object-fit: cover;
@@ -214,47 +214,54 @@
     }
     .auth-hero h2 {
       margin: -2px 0 0;
-      font-size: clamp(56px, 9vw, 96px);
-      line-height: .94;
+      font-size: clamp(30px, 3.2vw, 44px);
+      line-height: 1.08;
       letter-spacing: 0;
     }
-    .auth-hero p {
-      max-width: 720px;
+    /* Two paragraphs with two jobs. The old single `.auth-hero p` rule set both
+       at up to 42px/900, which is why the product sentence read as a second
+       headline. */
+    .auth-hero .auth-slogan {
+      max-width: 520px;
       margin: 0;
-      font-size: clamp(24px, 3.6vw, 42px);
+      font-size: clamp(17px, 1.8vw, 22px);
       line-height: 1.3;
       font-weight: 900;
       color: #c7d8e4;
     }
+    .auth-hero .auth-blurb {
+      max-width: 460px;
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.6;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    /* Three pillars, three columns, no horizontal scroller. The strip used to
+       hold six cards and overflow, so two of them were only reachable by a
+       swipe nobody was told about. */
     .auth-feature-strip {
       display: grid;
-      grid-auto-flow: column;
-      grid-auto-columns: minmax(210px, 1fr);
-      gap: 16px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
       width: 100%;
-      max-width: 760px;
-      overflow-x: auto;
-      padding: 10px 4px 14px;
-      scroll-snap-type: x proximity;
-      scrollbar-width: none;
+      max-width: 560px;
+      padding: 6px 0 2px;
     }
-    .auth-feature-strip::-webkit-scrollbar { display: none; }
     .auth-feature {
-      min-height: 168px;
-      scroll-snap-align: center;
       display: grid;
       align-content: start;
-      gap: 26px;
+      gap: 10px;
       text-align: left;
       border: 1px solid rgba(110, 223, 246, .25);
-      border-radius: 28px;
-      padding: 26px;
+      border-radius: 18px;
+      padding: 16px;
       background: linear-gradient(180deg, rgba(54, 61, 70, .86), rgba(54, 61, 70, .9));
       box-shadow: inset 0 -60px 70px rgba(54, 229, 143, .045);
     }
     .auth-feature span {
-      width: 54px;
-      height: 54px;
+      width: 36px;
+      height: 36px;
       display: grid;
       place-items: center;
       border-radius: 999px;
@@ -262,8 +269,10 @@
       border: 2px solid rgba(54, 229, 143, .62);
       background: rgba(54, 229, 143, .08);
       font-weight: 950;
+      font-size: 15px;
     }
-    .auth-feature strong { font-size: 24px; line-height: 1.16; }
+    .auth-feature strong { font-size: 15px; line-height: 1.24; }
+    .auth-feature small { color: var(--muted); font-size: 13px; line-height: 1.45; }
     .auth-content {
       border: 1px solid rgba(110, 223, 246, .2);
       border-radius: 26px;
@@ -272,7 +281,10 @@
       box-shadow: 0 30px 90px rgba(0, 0, 0, .32);
     }
     .auth-content .kicker { display: block; }
-    .auth-content h1 { margin-top: 6px; font-size: clamp(36px, 5vw, 58px); }
+    /* 58px was sized for the one-word "Login". "Sign in to PulseSoc" at that
+       size wraps to three lines on a phone and reads as a second hero rather
+       than a panel heading. */
+    .auth-content h1 { margin: 6px 0 10px; font-size: clamp(26px, 2.6vw, 34px); line-height: 1.12; }
     .auth-content .button.primary {
       min-height: 62px;
       border-radius: 999px;
@@ -280,11 +292,53 @@
       box-shadow: 0 0 32px rgba(54, 229, 143, .24);
     }
     .auth-content .button:not(.primary) { border-radius: 999px; }
-    .auth-footer {
-      margin-top: 8px;
-      color: rgba(159, 181, 192, .9);
-      font-weight: 900;
-      text-align: center;
+    .auth-content .auth-sub { margin: 0 0 4px; font-size: 15px; }
+    .auth-form { margin-top: 16px; gap: 14px; }
+    .field { display: grid; gap: 6px; }
+    .field > label { color: var(--text); font-size: 13px; font-weight: 800; }
+    /* The reveal sits in the field, not under it, so the input keeps the full
+       48px touch target and the button gets its own. */
+    .field-with-action { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+    .field-with-action .reveal {
+      min-height: 44px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, .05);
+      color: var(--muted);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .field-aside { justify-self: end; color: var(--cyan); font-size: 13px; font-weight: 800; text-decoration: none; }
+    .auth-switch { margin: 16px 0 0; font-size: 14px; text-align: center; }
+    .auth-switch a { color: var(--green); font-weight: 900; text-decoration: none; }
+    /* Progressive disclosure with no JavaScript in the path: the verification
+       recovery forms are real and reachable, they just are not the first thing
+       a returning member has to read past. */
+    .auth-help { margin-top: 18px; border-top: 1px solid rgba(255, 255, 255, .08); padding-top: 14px; }
+    .auth-help > summary {
+      cursor: pointer;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      color: var(--cyan);
+      font-size: 14px;
+      font-weight: 800;
+      list-style: none;
+    }
+    .auth-help > summary::-webkit-details-marker { display: none; }
+    .auth-help > summary::after { content: "+"; margin-left: auto; font-size: 18px; }
+    .auth-help[open] > summary::after { content: "\2212"; }
+    .auth-help-body { display: grid; gap: 4px; padding-top: 4px; }
+    .auth-help-body .auth-form { margin-top: 10px; padding-top: 14px; border-top: 1px solid rgba(255, 255, 255, .06); }
+    .auth-help-body p { font-size: 13px; }
+    .auth-legal { margin: 18px 0 0; font-size: 12px; text-align: center; }
+    .auth-legal a { color: var(--muted); text-decoration: none; }
+    :where(a, button, input, select, summary):focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
     }
     .danger-zone {
       border-color: rgba(255,107,122,.34);
@@ -300,6 +354,9 @@
     th, td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; vertical-align: top; }
     th { color: var(--cyan); }
     code { color: #c8ffe2; font-weight: 900; word-break: break-word; }
+    /* Tablet and small laptop. One column, and the decorative media is what
+       shrinks: the brief's order of sacrifice is ornament before legibility
+       and legibility before the form. */
     @media (min-width: 761px) and (max-width: 1180px) {
       html, body { overflow-x: hidden; }
       .premium-auth-main {
@@ -308,32 +365,42 @@
       }
       .auth-container { width: min(100% - 36px, 900px); }
       .panel.auth-shell { grid-template-columns: 1fr; gap: 18px; }
-      .auth-hero { min-height: auto; padding: 72px 0 12px; }
-      .auth-lang { top: 0; right: max(0px, env(safe-area-inset-right)); }
-      .auth-orbit { width: min(48vw, 390px); }
-      .auth-logo { width: min(26vw, 200px); }
-      .auth-hero h2 { font-size: clamp(58px, 8vw, 82px); }
-      .auth-hero p { max-width: 720px; font-size: clamp(25px, 3.6vw, 34px); }
-      .auth-feature-strip { grid-auto-columns: minmax(190px, 220px); max-width: 100%; }
-      .auth-content { width: min(100%, 720px); justify-self: center; }
+      .auth-hero { padding: 8px 0 4px; }
+      .auth-orbit { width: min(30vw, 220px); }
+      .auth-logo { width: min(16vw, 120px); }
+      .auth-feature-strip { max-width: 100%; }
+      /* Form first here too. This range is single-column, and leaving the hero
+         on top put the email field 877px down the page on an iPad in portrait --
+         the same below-the-fold login the phone rule exists to prevent, just at
+         a width nobody thinks of as mobile. */
+      .auth-langbar { order: 0; }
+      .auth-content { order: 1; width: min(100%, 560px); justify-self: center; }
+      .auth-hero { order: 2; }
     }
+    /* Phone. The form is the first thing in the column and the brand story
+       follows it -- a returning member should not have to scroll past a hero to
+       reach the only control they came for. */
     @media (max-width: 760px) {
       main { padding-top: 42px; }
       .grid { grid-template-columns: 1fr; }
       .panel { padding: 22px; }
       .button { width: 100%; }
-      .premium-auth-main { padding-top: max(18px, env(safe-area-inset-top)); }
+      .premium-auth-main { align-items: start; padding-top: max(18px, env(safe-area-inset-top)); }
       .panel.auth-shell { grid-template-columns: 1fr; gap: 14px; }
-      .auth-hero { min-height: auto; gap: 16px; padding: 74px 0 10px; }
-      .auth-lang { top: 0; right: 2px; min-height: 48px; max-width: 178px; }
-      .auth-orbit { width: min(78vw, 360px); }
-      .auth-logo { width: min(42vw, 190px); }
-      .auth-hero h2 { font-size: clamp(48px, 13vw, 72px); }
-      .auth-hero p { font-size: clamp(22px, 6vw, 34px); }
-      .auth-feature-strip { grid-auto-columns: minmax(172px, 210px); max-width: 100%; }
-      .auth-feature { min-height: 150px; border-radius: 22px; padding: 20px; gap: 20px; }
-      .auth-feature strong { font-size: 20px; }
-      .auth-content { padding: 20px; border-radius: 22px; }
+      .auth-langbar { order: 0; }
+      .auth-content { order: 1; padding: 20px; border-radius: 22px; }
+      .auth-hero { order: 2; gap: 14px; padding: 4px 0 0; }
+      .auth-lang { max-width: 100%; }
+      .auth-orbit { display: none; }
+      .auth-hero h2 { font-size: clamp(22px, 6vw, 28px); }
+      .auth-hero .auth-slogan { font-size: 16px; }
+      .auth-feature-strip { grid-template-columns: 1fr; gap: 10px; max-width: 100%; }
+      .auth-feature { border-radius: 16px; padding: 14px; gap: 8px; }
+      .field-with-action .reveal { width: auto; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .auth-logo { animation: none; }
+      * { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
     }
   </style>
 </head>
@@ -368,7 +435,11 @@
         {% if message %}<div class="notice">{{ message }}</div>{% endif %}
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
         {% if page in ["signup", "login"] %}
-          <section class="auth-hero" aria-label="PulseSoc welcome">
+          {# Its own row in the shell rather than absolutely positioned inside
+             the hero: on a phone the hero now sits *below* the form, and a
+             language control that travelled down with it would be the last
+             thing a non-English speaker found instead of the first. #}
+          <div class="auth-langbar">
             <select class="auth-lang" data-auth-language aria-label="Language">
               <option value="en">English</option>
               <option value="fr">Français</option>
@@ -376,28 +447,50 @@
               <option value="es">Español</option>
               <option value="pt">Português</option>
             </select>
+          </div>
+          <section class="auth-hero" aria-label="PulseSoc welcome">
             <div class="auth-orbit" aria-hidden="true">
               <img class="auth-logo" src="{{ url_for('static', filename='brand/pulsesoc-mark-20260913.png') }}" alt="" />
             </div>
-            <h2 data-i18n="headline">Join PulseSoc</h2>
-            <p data-i18n="slogan">Connect. Create. Discover. Pulse the World.</p>
+            {% if page == "login" %}
+              <h2 data-i18n="headlineLogin">Welcome back to PulseSoc</h2>
+            {% else %}
+              <h2 data-i18n="headline">Join PulseSoc</h2>
+            {% endif %}
+            <p class="auth-slogan" data-i18n="slogan">Connect. Create. Discover. Shop.</p>
+            <p class="auth-blurb" data-i18n="blurb">Your network, conversations, creators and marketplace — all connected through PulseSoc.</p>
             <div class="auth-feature-strip" aria-label="PulseSoc features">
-              <div class="auth-feature"><span>C</span><strong data-i18n="featureCommunities">Join Communities</strong></div>
-              <div class="auth-feature"><span>V</span><strong data-i18n="featureVideos">Watch Videos & Reels</strong></div>
-              <div class="auth-feature"><span>RT</span><strong data-i18n="featureChat">Chat in Real Time</strong></div>
-              <div class="auth-feature"><span>AI</span><strong data-i18n="featureAi">AI-Powered Discovery</strong></div>
-              {% if paid_digital_access_available %}
-                <div class="auth-feature"><span>XP</span><strong data-i18n="featurePremium">Exclusive Premium</strong></div>
-              {% endif %}
-              <div class="auth-feature"><span>PF</span><strong data-i18n="featurePrivacy">Privacy First</strong></div>
+              <div class="auth-feature">
+                <span aria-hidden="true">C</span>
+                <strong data-i18n="pillarConnect">Connect &amp; Create</strong>
+                <small data-i18n="pillarConnectBody">Share your world, join communities and grow together.</small>
+              </div>
+              <div class="auth-feature">
+                <span aria-hidden="true">R</span>
+                <strong data-i18n="pillarReels">Reels &amp; Discovery</strong>
+                <small data-i18n="pillarReelsBody">Watch, explore and get inspired by creators.</small>
+              </div>
+              <div class="auth-feature">
+                <span aria-hidden="true">S</span>
+                <strong data-i18n="pillarShop">Shop the Marketplace</strong>
+                <small data-i18n="pillarShopBody">Discover products from sellers around the world.</small>
+              </div>
             </div>
-            <div class="auth-footer">PulseSoc™ • Built by CoinPlotXAI Inc.</div>
           </section>
           <section class="auth-content" aria-label="PulseSoc account form">
             <div class="kicker">PulseSoc Account</div>
-            <h1 data-auth-title>{{ title }}</h1>
-            {% if message %}<div class="notice">{{ message }}</div>{% endif %}
-            {% if error %}<div class="error">{{ error }}</div>{% endif %}
+            {# `title` is also the browser tab and the value nine other page
+               types share, so the panel heading is named separately rather than
+               by renaming the argument underneath all of them. #}
+            {% if page == "login" and legal_acceptance_required %}
+              <h1 data-auth-title data-i18n="legalHeading">Review the updated terms</h1>
+            {% elif page == "login" %}
+              <h1 data-auth-title data-i18n="signinHeading">Sign in to PulseSoc</h1>
+            {% else %}
+              <h1 data-auth-title>{{ title }}</h1>
+            {% endif %}
+            {% if message %}<div class="notice" role="status">{{ message }}</div>{% endif %}
+            {% if error %}<div class="error" role="alert">{{ error }}</div>{% endif %}
         {% endif %}
 
         {% if page == "signup" %}
@@ -420,36 +513,99 @@
           </section>
 
         {% elif page == "login" %}
-          <p data-i18n="loginIntro">Log in to manage your PulseSoc profile, account, alerts, and optional Telegram companion connection.</p>
-          <form method="post">
+          {% if legal_acceptance_required %}
+            {# A versioned re-acceptance step, not a per-session tick. Reached only
+               after the password and the email confirmation have already passed,
+               and only when `legal_acceptance.outstanding()` names a document the
+               member has not accepted at the version now in force. #}
+            <p data-i18n="legalIntro">Before you continue, PulseSoc needs your agreement to the current Terms and Privacy Policy.</p>
+            <form method="post" class="auth-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+              <input type="hidden" name="next" value="{{ next_target }}" />
+              <input type="hidden" name="legal_acceptance_submit" value="1" />
+              {# Carried across the interstitial too: the member picked a language
+                 on the form they just left, and this POST is the one that lands
+                 the session. #}
+              <input type="hidden" name="preferred_language" data-auth-language-field value="" />
+              <label class="consent-row">
+                <input type="checkbox" name="terms_accepted" required />
+                <span>I agree to the <a href="/terms">Terms</a>, the <a href="/privacy">Privacy Policy</a>, and the PulseSoc no-tolerance rules for objectionable content and abusive users.</span>
+              </label>
+              <button class="button primary" type="submit" data-i18n="legalCta">Agree and continue</button>
+            </form>
+            <p class="muted"><a href="/login" data-i18n="legalCancel">Cancel and return to sign in</a></p>
+          {% else %}
+          <p class="auth-sub" data-i18n="loginIntro">Log in to manage your profile, account, notifications and marketplace orders.</p>
+          <form method="post" class="auth-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <input type="hidden" name="next" value="{{ next_target }}" />
-            <input name="email" type="email" autocomplete="email" placeholder="Email address" value="{{ resend_email or '' }}" required />
-            <input name="password" type="password" autocomplete="current-password" placeholder="Password" required />
-            <label class="consent-row"><input type="checkbox" name="terms_accepted" required /><span>I agree to the Terms, Privacy Policy, and PulseSoc no-tolerance rules for objectionable content and abusive users.</span></label>
+            {# The language control used to write only to localStorage, so a
+               member who picked Kreyòl here was still English to the server on
+               the very next page. The route already reads this field and saves
+               it to the account; it just never received one. #}
+            <input type="hidden" name="preferred_language" data-auth-language-field value="" />
+            <div class="field">
+              <label for="login-email" data-i18n="emailLabel">Email address</label>
+              <input id="login-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" value="{{ resend_email or '' }}" required />
+            </div>
+            <div class="field">
+              <label for="login-password" data-i18n="passwordLabel">Password</label>
+              <div class="field-with-action">
+                <input id="login-password" name="password" type="password" autocomplete="current-password" data-i18n-placeholder="passwordPlaceholder" placeholder="Enter your password" required />
+                <button type="button" class="reveal" data-password-toggle="login-password" aria-controls="login-password" aria-pressed="false">Show</button>
+              </div>
+              <a class="field-aside" href="/forgot-password" data-i18n="forgotPassword">Forgot password?</a>
+            </div>
             {% if login_challenge and login_challenge.required %}
-              <label class="settings-card">
+              <div class="field settings-card">
                 <span class="kicker">Security Check</span>
-                <span class="muted">{{ login_challenge.prompt }}</span>
-                <input name="login_challenge_answer" inputmode="numeric" autocomplete="off" placeholder="Answer" required />
-              </label>
+                <label for="login-challenge" class="muted">{{ login_challenge.prompt }}</label>
+                <input id="login-challenge" name="login_challenge_answer" inputmode="numeric" autocomplete="off" placeholder="Answer" required />
+              </div>
             {% endif %}
-            <button class="button primary" type="submit" data-i18n="signinCta">Sign In to PulseSoc</button>
+            <button class="button primary" type="submit" data-submitting-label="Signing in…" data-i18n="signinCta">Sign in</button>
           </form>
-          <form method="post" action="/resend-confirmation">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-            <input name="email" type="email" autocomplete="email" placeholder="Email address" value="{{ resend_email or '' }}" required />
-            <button class="button" type="submit">Resend Email</button>
-          </form>
-          <form method="post" action="/change-confirmation-email">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-            <input name="old_email" type="email" autocomplete="email" placeholder="Current unverified email" value="{{ resend_email or '' }}" required />
-            <input name="new_email" type="email" autocomplete="email" placeholder="New email address" required />
-            <input name="password" type="password" autocomplete="current-password" placeholder="Account password" required />
-            <button class="button" type="submit">Change Email Address</button>
-          </form>
-          <p class="muted">If your account is new, check your email to confirm your account before logging in.</p>
-          <p class="muted"><a href="/forgot-password">Forgot password?</a> · <a href="/forgot-username">Forgot account email?</a> · <a href="/signup">Create account</a></p>
+          <p class="auth-switch">
+            <span data-i18n="newToPulseSoc">New to PulseSoc?</span>
+            <a href="/signup{% if next_target %}?next={{ next_target | urlencode }}{% endif %}" data-i18n="createAccount">Create an account →</a>
+          </p>
+          <details class="auth-help">
+            <summary data-i18n="verifyHelp">Having trouble verifying your email?</summary>
+            <div class="auth-help-body">
+              <p class="muted" data-i18n="verifyHelpBody">A new account has to be confirmed from the link PulseSoc emails you. If it never arrived, send it again — or correct the address it went to.</p>
+              <form method="post" action="/resend-confirmation" class="auth-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <div class="field">
+                  <label for="resend-email" data-i18n="resendLabel">Send the confirmation link again</label>
+                  <input id="resend-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" value="{{ resend_email or '' }}" required />
+                </div>
+                <button class="button" type="submit" data-i18n="resendCta">Resend confirmation email</button>
+              </form>
+              <form method="post" action="/change-confirmation-email" class="auth-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <div class="field">
+                  <label for="change-old-email" data-i18n="changeOldLabel">Change the address on an unconfirmed account</label>
+                  <input id="change-old-email" name="old_email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" data-i18n-placeholder="changeOldPlaceholder" placeholder="Current unconfirmed email" value="{{ resend_email or '' }}" required />
+                </div>
+                <div class="field">
+                  <label for="change-new-email" data-i18n="changeNewLabel">New email address</label>
+                  <input id="change-new-email" name="new_email" type="email" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" placeholder="you@example.com" required />
+                </div>
+                <div class="field">
+                  <label for="change-password" data-i18n="changePasswordLabel">Account password</label>
+                  <input id="change-password" name="password" type="password" autocomplete="current-password" data-i18n-placeholder="passwordPlaceholder" placeholder="Enter your password" required />
+                </div>
+                <button class="button" type="submit" data-i18n="changeCta">Change email address</button>
+              </form>
+              <p class="muted"><a href="/forgot-username" data-i18n="forgotEmail">Forgot which email you signed up with?</a></p>
+            </div>
+          </details>
+          {% endif %}
+          <p class="auth-legal">
+            <a href="/terms" data-i18n="terms">Terms</a> ·
+            <a href="/privacy" data-i18n="privacy">Privacy</a> ·
+            <a href="/support" data-i18n="support">Support</a>
+          </p>
           </section>
 
         {% elif page == "forgot" %}
@@ -729,90 +885,289 @@
       const copy = {
         en: {
           headline: "Join PulseSoc",
-          slogan: "Connect. Create. Discover. Pulse the World.",
-          createCta: "Create Your PulseSoc Account",
-          signinCta: "Sign In to PulseSoc",
+          headlineLogin: "Welcome back to PulseSoc",
+          slogan: "Connect. Create. Discover. Shop.",
+          blurb: "Your network, conversations, creators and marketplace — all connected through PulseSoc.",
+          pillarConnect: "Connect & Create",
+          pillarConnectBody: "Share your world, join communities and grow together.",
+          pillarReels: "Reels & Discovery",
+          pillarReelsBody: "Watch, explore and get inspired by creators.",
+          pillarShop: "Shop the Marketplace",
+          pillarShopBody: "Discover products from sellers around the world.",
           signupIntro: "{% if paid_digital_access_available %}Create your PulseSoc account. Core tools are free for authenticated users; PulseSoc Premium is optional for prestige identity, elite creator effects, and deeper creator enhancements.{% else %}Create your PulseSoc account. Core social tools are available in this iOS build.{% endif %}",
-          loginIntro: "Log in to manage your PulseSoc profile, account, alerts, and optional Telegram companion connection.",
-          featureCommunities: "Join Communities",
-          featureVideos: "Watch Videos & Reels",
-          featureChat: "Chat in Real Time",
-          featureAi: "AI-Powered Discovery",
-          featurePremium: "{% if paid_digital_access_available %}Exclusive Premium{% else %}Core Access{% endif %}",
-          featurePrivacy: "Privacy First"
+          createCta: "Create Your PulseSoc Account",
+          signinHeading: "Sign in to PulseSoc",
+          legalHeading: "Review the updated terms",
+          passwordPlaceholder: "Enter your password",
+          changeOldPlaceholder: "Current unconfirmed email",
+          loginIntro: "Log in to manage your profile, account, notifications and marketplace orders.",
+          emailLabel: "Email address",
+          passwordLabel: "Password",
+          revealShow: "Show",
+          revealHide: "Hide",
+          forgotPassword: "Forgot password?",
+          signinCta: "Sign in",
+          signingIn: "Signing in…",
+          newToPulseSoc: "New to PulseSoc?",
+          createAccount: "Create an account →",
+          verifyHelp: "Having trouble verifying your email?",
+          verifyHelpBody: "A new account has to be confirmed from the link PulseSoc emails you. If it never arrived, send it again — or correct the address it went to.",
+          resendLabel: "Send the confirmation link again",
+          resendCta: "Resend confirmation email",
+          changeOldLabel: "Change the address on an unconfirmed account",
+          changeNewLabel: "New email address",
+          changePasswordLabel: "Account password",
+          changeCta: "Change email address",
+          forgotEmail: "Forgot which email you signed up with?",
+          legalIntro: "Before you continue, PulseSoc needs your agreement to the current Terms and Privacy Policy.",
+          legalCta: "Agree and continue",
+          legalCancel: "Cancel and return to sign in",
+          terms: "Terms",
+          privacy: "Privacy",
+          support: "Support"
         },
         fr: {
           headline: "Rejoignez PulseSoc",
-          slogan: "Connectez. Créez. Découvrez. Faites vibrer le monde.",
-          createCta: "Créer votre compte PulseSoc",
-          signinCta: "Se connecter à PulseSoc",
+          headlineLogin: "Bon retour sur PulseSoc",
+          slogan: "Connectez. Créez. Découvrez. Achetez.",
+          blurb: "Votre réseau, vos conversations, vos créateurs et votre marketplace — réunis par PulseSoc.",
+          pillarConnect: "Connecter et créer",
+          pillarConnectBody: "Partagez votre univers, rejoignez des communautés et grandissez ensemble.",
+          pillarReels: "Reels et découverte",
+          pillarReelsBody: "Regardez, explorez et inspirez-vous des créateurs.",
+          pillarShop: "Achetez sur la marketplace",
+          pillarShopBody: "Découvrez les produits de vendeurs du monde entier.",
           signupIntro: "{% if paid_digital_access_available %}Créez votre compte PulseSoc. Les outils de base sont gratuits; PulseSoc Premium reste optionnel pour l'identité, les effets créateur et les avantages avancés.{% else %}Créez votre compte PulseSoc. Les outils sociaux principaux sont disponibles dans cette version iOS.{% endif %}",
-          loginIntro: "Connectez-vous pour gérer votre profil PulseSoc, votre compte, vos alertes et vos connexions.",
-          featureCommunities: "Rejoindre des communautés",
-          featureVideos: "Voir vidéos et Reels",
-          featureChat: "Discuter en temps réel",
-          featureAi: "Découverte avec IA",
-          featurePremium: "{% if paid_digital_access_available %}Premium exclusif{% else %}Accès principal{% endif %}",
-          featurePrivacy: "Confidentialité d'abord"
+          createCta: "Créer votre compte PulseSoc",
+          signinHeading: "Connectez-vous à PulseSoc",
+          legalHeading: "Consultez les conditions mises à jour",
+          passwordPlaceholder: "Saisissez votre mot de passe",
+          changeOldPlaceholder: "Adresse non confirmée actuelle",
+          loginIntro: "Connectez-vous pour gérer votre profil, votre compte, vos notifications et vos commandes.",
+          emailLabel: "Adresse e-mail",
+          passwordLabel: "Mot de passe",
+          revealShow: "Afficher",
+          revealHide: "Masquer",
+          forgotPassword: "Mot de passe oublié ?",
+          signinCta: "Se connecter",
+          signingIn: "Connexion…",
+          newToPulseSoc: "Nouveau sur PulseSoc ?",
+          createAccount: "Créer un compte →",
+          verifyHelp: "Problème pour vérifier votre e-mail ?",
+          verifyHelpBody: "Un nouveau compte doit être confirmé depuis le lien envoyé par PulseSoc. S'il n'est jamais arrivé, renvoyez-le — ou corrigez l'adresse.",
+          resendLabel: "Renvoyer le lien de confirmation",
+          resendCta: "Renvoyer l'e-mail de confirmation",
+          changeOldLabel: "Changer l'adresse d'un compte non confirmé",
+          changeNewLabel: "Nouvelle adresse e-mail",
+          changePasswordLabel: "Mot de passe du compte",
+          changeCta: "Changer l'adresse e-mail",
+          forgotEmail: "Vous ne savez plus quel e-mail vous avez utilisé ?",
+          legalIntro: "Avant de continuer, PulseSoc a besoin de votre accord sur les Conditions et la Politique de confidentialité en vigueur.",
+          legalCta: "Accepter et continuer",
+          legalCancel: "Annuler et revenir à la connexion",
+          terms: "Conditions",
+          privacy: "Confidentialité",
+          support: "Assistance"
         },
         ht: {
           headline: "Antre nan PulseSoc",
-          slogan: "Konekte. Kreye. Dekouvri. Fè mond lan bat.",
-          createCta: "Kreye kont PulseSoc ou",
-          signinCta: "Konekte sou PulseSoc",
+          headlineLogin: "Byenveni tounen sou PulseSoc",
+          slogan: "Konekte. Kreye. Dekouvri. Achte.",
+          blurb: "Rezo ou, konvèsasyon ou, kreyatè ou yo ak mache a — tout ansanm nan PulseSoc.",
+          pillarConnect: "Konekte ak kreye",
+          pillarConnectBody: "Pataje mond ou, antre nan kominote epi grandi ansanm.",
+          pillarReels: "Reels ak dekouvèt",
+          pillarReelsBody: "Gade, eksplore epi pran enspirasyon nan men kreyatè yo.",
+          pillarShop: "Achte nan mache a",
+          pillarShopBody: "Dekouvri pwodwi vandè toupatou nan mond lan.",
           signupIntro: "{% if paid_digital_access_available %}Kreye kont PulseSoc ou. Zouti prensipal yo gratis; PulseSoc Premium opsyonèl pou idantite, efè kreyatè, ak avantaj avanse.{% else %}Kreye kont PulseSoc ou. Zouti sosyal prensipal yo disponib nan vèsyon iOS sa a.{% endif %}",
-          loginIntro: "Konekte pou jere pwofil PulseSoc ou, kont ou, alèt ou, ak koneksyon ou yo.",
-          featureCommunities: "Antre nan kominote",
-          featureVideos: "Gade videyo ak Reels",
-          featureChat: "Pale an tan reyèl",
-          featureAi: "Dekouvèt ak AI",
-          featurePremium: "{% if paid_digital_access_available %}Premium eksklizif{% else %}Aksè prensipal{% endif %}",
-          featurePrivacy: "Konfidansyalite avan tout"
+          createCta: "Kreye kont PulseSoc ou",
+          signinHeading: "Konekte sou PulseSoc",
+          legalHeading: "Gade kondisyon ki mete ajou yo",
+          passwordPlaceholder: "Antre modpas ou",
+          changeOldPlaceholder: "Imèl ki poko konfime a",
+          loginIntro: "Konekte pou jere pwofil ou, kont ou, notifikasyon ou ak kòmand ou yo.",
+          emailLabel: "Adrès imèl",
+          passwordLabel: "Modpas",
+          revealShow: "Montre",
+          revealHide: "Kache",
+          forgotPassword: "Ou bliye modpas ou?",
+          signinCta: "Konekte",
+          signingIn: "N ap konekte…",
+          newToPulseSoc: "Ou nouvo sou PulseSoc?",
+          createAccount: "Kreye yon kont →",
+          verifyHelp: "Ou gen pwoblèm pou verifye imèl ou?",
+          verifyHelpBody: "Yon nouvo kont dwe konfime ak lyen PulseSoc voye pou ou. Si li pa janm rive, voye l ankò — oswa korije adrès la.",
+          resendLabel: "Voye lyen konfimasyon an ankò",
+          resendCta: "Voye imèl konfimasyon an ankò",
+          changeOldLabel: "Chanje adrès yon kont ki pa konfime",
+          changeNewLabel: "Nouvo adrès imèl",
+          changePasswordLabel: "Modpas kont lan",
+          changeCta: "Chanje adrès imèl",
+          forgotEmail: "Ou bliye ki imèl ou te enskri avèk?",
+          legalIntro: "Anvan ou kontinye, PulseSoc bezwen akò ou sou Kondisyon yo ak Politik Konfidansyalite aktyèl la.",
+          legalCta: "Dakò epi kontinye",
+          legalCancel: "Anile epi retounen pou konekte",
+          terms: "Kondisyon",
+          privacy: "Konfidansyalite",
+          support: "Sipò"
         },
         es: {
           headline: "Únete a PulseSoc",
-          slogan: "Conecta. Crea. Descubre. Haz latir el mundo.",
-          createCta: "Crear tu cuenta PulseSoc",
-          signinCta: "Iniciar sesión en PulseSoc",
+          headlineLogin: "Bienvenido de nuevo a PulseSoc",
+          slogan: "Conecta. Crea. Descubre. Compra.",
+          blurb: "Tu red, tus conversaciones, tus creadores y tu marketplace — conectados por PulseSoc.",
+          pillarConnect: "Conecta y crea",
+          pillarConnectBody: "Comparte tu mundo, únete a comunidades y crece en conjunto.",
+          pillarReels: "Reels y descubrimiento",
+          pillarReelsBody: "Mira, explora e inspírate con los creadores.",
+          pillarShop: "Compra en el marketplace",
+          pillarShopBody: "Descubre productos de vendedores de todo el mundo.",
           signupIntro: "{% if paid_digital_access_available %}Crea tu cuenta PulseSoc. Las herramientas principales son gratis; PulseSoc Premium es opcional para identidad, efectos de creador y mejoras avanzadas.{% else %}Crea tu cuenta PulseSoc. Las herramientas sociales principales están disponibles en esta versión iOS.{% endif %}",
-          loginIntro: "Inicia sesión para administrar tu perfil PulseSoc, cuenta, alertas y conexiones.",
-          featureCommunities: "Unirse a comunidades",
-          featureVideos: "Ver videos y Reels",
-          featureChat: "Chat en tiempo real",
-          featureAi: "Descubrimiento con IA",
-          featurePremium: "{% if paid_digital_access_available %}Premium exclusivo{% else %}Acceso principal{% endif %}",
-          featurePrivacy: "Privacidad primero"
+          createCta: "Crear tu cuenta PulseSoc",
+          signinHeading: "Inicia sesión en PulseSoc",
+          legalHeading: "Revisa los términos actualizados",
+          passwordPlaceholder: "Escribe tu contraseña",
+          changeOldPlaceholder: "Correo sin confirmar actual",
+          loginIntro: "Inicia sesión para gestionar tu perfil, cuenta, notificaciones y pedidos.",
+          emailLabel: "Correo electrónico",
+          passwordLabel: "Contraseña",
+          revealShow: "Mostrar",
+          revealHide: "Ocultar",
+          forgotPassword: "¿Olvidaste tu contraseña?",
+          signinCta: "Iniciar sesión",
+          signingIn: "Iniciando sesión…",
+          newToPulseSoc: "¿Nuevo en PulseSoc?",
+          createAccount: "Crear una cuenta →",
+          verifyHelp: "¿Problemas para verificar tu correo?",
+          verifyHelpBody: "Una cuenta nueva debe confirmarse con el enlace que PulseSoc te envía. Si nunca llegó, vuelve a enviarlo — o corrige la dirección.",
+          resendLabel: "Enviar de nuevo el enlace de confirmación",
+          resendCta: "Reenviar correo de confirmación",
+          changeOldLabel: "Cambiar la dirección de una cuenta sin confirmar",
+          changeNewLabel: "Nuevo correo electrónico",
+          changePasswordLabel: "Contraseña de la cuenta",
+          changeCta: "Cambiar correo electrónico",
+          forgotEmail: "¿No recuerdas con qué correo te registraste?",
+          legalIntro: "Antes de continuar, PulseSoc necesita tu aceptación de los Términos y la Política de Privacidad vigentes.",
+          legalCta: "Aceptar y continuar",
+          legalCancel: "Cancelar y volver al inicio de sesión",
+          terms: "Términos",
+          privacy: "Privacidad",
+          support: "Soporte"
         },
         pt: {
           headline: "Entre no PulseSoc",
-          slogan: "Conecte. Crie. Descubra. Pulse o mundo.",
-          createCta: "Criar sua conta PulseSoc",
-          signinCta: "Entrar no PulseSoc",
+          headlineLogin: "Bem-vindo de volta ao PulseSoc",
+          slogan: "Conecte. Crie. Descubra. Compre.",
+          blurb: "Sua rede, suas conversas, seus criadores e seu marketplace — conectados pelo PulseSoc.",
+          pillarConnect: "Conecte e crie",
+          pillarConnectBody: "Compartilhe seu mundo, entre em comunidades e cresça junto.",
+          pillarReels: "Reels e descoberta",
+          pillarReelsBody: "Assista, explore e inspire-se com os criadores.",
+          pillarShop: "Compre no marketplace",
+          pillarShopBody: "Descubra produtos de vendedores de todo o mundo.",
           signupIntro: "{% if paid_digital_access_available %}Crie sua conta PulseSoc. As ferramentas principais são gratuitas; PulseSoc Premium é opcional para identidade, efeitos de criador e recursos avançados.{% else %}Crie sua conta PulseSoc. As ferramentas sociais principais estão disponíveis nesta versão iOS.{% endif %}",
-          loginIntro: "Entre para gerenciar seu perfil PulseSoc, conta, alertas e conexões.",
-          featureCommunities: "Participar de comunidades",
-          featureVideos: "Assistir vídeos e Reels",
-          featureChat: "Conversar em tempo real",
-          featureAi: "Descoberta com IA",
-          featurePremium: "{% if paid_digital_access_available %}Premium exclusivo{% else %}Acesso principal{% endif %}",
-          featurePrivacy: "Privacidade primeiro"
+          createCta: "Criar sua conta PulseSoc",
+          signinHeading: "Entre no PulseSoc",
+          legalHeading: "Revise os termos atualizados",
+          passwordPlaceholder: "Digite sua senha",
+          changeOldPlaceholder: "E-mail atual não confirmado",
+          loginIntro: "Entre para gerenciar seu perfil, conta, notificações e pedidos.",
+          emailLabel: "E-mail",
+          passwordLabel: "Senha",
+          revealShow: "Mostrar",
+          revealHide: "Ocultar",
+          forgotPassword: "Esqueceu a senha?",
+          signinCta: "Entrar",
+          signingIn: "Entrando…",
+          newToPulseSoc: "Novo no PulseSoc?",
+          createAccount: "Criar uma conta →",
+          verifyHelp: "Problemas para verificar seu e-mail?",
+          verifyHelpBody: "Uma conta nova precisa ser confirmada pelo link que o PulseSoc envia. Se nunca chegou, envie novamente — ou corrija o endereço.",
+          resendLabel: "Enviar o link de confirmação novamente",
+          resendCta: "Reenviar e-mail de confirmação",
+          changeOldLabel: "Alterar o endereço de uma conta não confirmada",
+          changeNewLabel: "Novo e-mail",
+          changePasswordLabel: "Senha da conta",
+          changeCta: "Alterar e-mail",
+          forgotEmail: "Não lembra com qual e-mail se cadastrou?",
+          legalIntro: "Antes de continuar, o PulseSoc precisa da sua concordância com os Termos e a Política de Privacidade atuais.",
+          legalCta: "Concordar e continuar",
+          legalCancel: "Cancelar e voltar para entrar",
+          terms: "Termos",
+          privacy: "Privacidade",
+          support: "Suporte"
         }
       };
       const select = document.querySelector("[data-auth-language]");
+      // The chosen language rides along with the sign-in so the server stores
+      // it on the account. Without this field the control only ever repainted
+      // this one page and the member was English again on the next request.
+      const languageFields = Array.prototype.slice.call(document.querySelectorAll("[data-auth-language-field]"));
+      const reveals = Array.prototype.slice.call(document.querySelectorAll("[data-password-toggle]"));
+      let dictionary = copy.en;
+
+      function phrase(key, fallback) {
+        return dictionary[key] || copy.en[key] || fallback || "";
+      }
+
+      function paintReveal(button) {
+        const shown = button.getAttribute("aria-pressed") === "true";
+        button.textContent = shown ? phrase("revealHide", "Hide") : phrase("revealShow", "Show");
+      }
+
       function applyLanguage(lang) {
-        const dictionary = copy[lang] || copy.en;
+        dictionary = copy[lang] || copy.en;
         document.querySelectorAll("[data-i18n]").forEach(node => {
           const key = node.getAttribute("data-i18n");
           if (dictionary[key]) node.textContent = dictionary[key];
         });
+        document.querySelectorAll("[data-i18n-placeholder]").forEach(node => {
+          const key = node.getAttribute("data-i18n-placeholder");
+          if (dictionary[key]) node.placeholder = dictionary[key];
+        });
+        reveals.forEach(paintReveal);
+        languageFields.forEach(field => { field.value = lang; });
         try { localStorage.setItem("pulsesoc_language", lang); } catch (_) {}
       }
+
       if (select) {
         const saved = (function () { try { return localStorage.getItem("pulsesoc_language") || "en"; } catch (_) { return "en"; } })();
         select.value = copy[saved] ? saved : "en";
         applyLanguage(select.value);
         select.addEventListener("change", () => applyLanguage(select.value));
       }
+
+      // Checking a password you just typed. The input's own type flips and the
+      // button reports its state; nothing is copied anywhere.
+      reveals.forEach(button => {
+        const input = document.getElementById(button.getAttribute("data-password-toggle"));
+        if (!input) {
+          button.hidden = true;
+          return;
+        }
+        button.addEventListener("click", () => {
+          const shown = button.getAttribute("aria-pressed") === "true";
+          button.setAttribute("aria-pressed", shown ? "false" : "true");
+          input.type = shown ? "password" : "text";
+          paintReveal(button);
+        });
+      });
+
+      // One submit per sign-in. An impatient second click is otherwise a second
+      // attempt against the rate limiter, which is how a member locks themselves
+      // out of a password they typed correctly.
+      document.querySelectorAll("form.auth-form").forEach(form => {
+        form.addEventListener("submit", () => {
+          const button = form.querySelector("button[type='submit'][data-submitting-label]");
+          if (!button || button.disabled) return;
+          button.textContent = phrase("signingIn", button.getAttribute("data-submitting-label"));
+          button.disabled = true;
+          // Restored-from-history pages keep their DOM, so a back navigation
+          // would otherwise find a permanently dead button.
+          window.setTimeout(() => { button.disabled = false; }, 8000);
+        });
+      });
     })();
   </script>
   {% endif %}
