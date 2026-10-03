@@ -48523,10 +48523,26 @@ def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_p
         return {"ok": False, "message": "PulseSoc user not found."}, 404
     if str(target.get("account_status") or "active").lower() in {"suspended", "banned", "deleted"}:
         return {"ok": False, "message": "This user cannot receive messages right now."}, 403
+    # This read used to name `private_chat_blocks`, a table that exists in no
+    # migration, no `init_db()` call, and not in production. Wrapped in the
+    # `except: pass` below, the resulting "no such table" was swallowed on
+    # every request, so the block check here had never once denied anything.
+    # `blocked_users` is the table the Block button actually writes (see
+    # `pulse_social_graph_service.block_user`, which dual-writes it and
+    # `comm_v2_blocks`).
+    #
+    # Checked in both directions, matching `profile_viewer_permissions`: a
+    # block means neither party reaches the other, so testing only "did the
+    # target block me" would let someone keep opening threads with an account
+    # they had themselves blocked.
+    #
+    # The `try` stays, because an unprovisioned optional table must not take
+    # down messaging — but it no longer hides the normal case.
     try:
         cur.execute(
-            "SELECT 1 FROM private_chat_blocks WHERE blocker_user_id=? AND blocked_user_id=? LIMIT 1",
-            (target_user_id, current_user_id),
+            "SELECT 1 FROM blocked_users WHERE (blocker_user_id=? AND blocked_user_id=?) "
+            "OR (blocker_user_id=? AND blocked_user_id=?) LIMIT 1",
+            (target_user_id, current_user_id, current_user_id, target_user_id),
         )
         if cur.fetchone():
             return {"ok": False, "message": "This user cannot receive messages right now."}, 403
