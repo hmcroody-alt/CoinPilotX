@@ -28,10 +28,12 @@ call. :func:`snapshot` is SELECTs and arithmetic.
 
 On the vocabulary
 -----------------
-The owner named six canonical states. Five map exactly. The sixth case —
-``UNVERIFIED_NOT_YET_REACHED`` — is a seventh fact that the six cannot express,
-and it is reported under its own name rather than folded into a neighbour. See
-:data:`CANONICAL_STATES` for why that matters.
+The owner named six canonical states. Five map exactly. Two further facts the
+six cannot express — ``UNVERIFIED_NOT_YET_REACHED`` and
+``SUPPLIER_VARIANT_UNBOUND`` — are each reported under their own name rather
+than folded into a neighbour. The test for whether a new name is earned is not
+"is it different" but "would the nearest existing name send the reader to the
+wrong person": both of these would. See :data:`CANONICAL_STATES`.
 """
 from __future__ import annotations
 
@@ -51,6 +53,23 @@ UNVERIFIED_DRAIN_BEHIND = "UNVERIFIED_DRAIN_BEHIND"
 SUPPLIER_UNCONFIRMED = "SUPPLIER_UNCONFIRMED"
 AFFIRMATIVE_NEGATIVE_BLOCK = "AFFIRMATIVE_NEGATIVE_BLOCK"
 
+#: No supplier variant is bound, so the gate refused before it asked anything.
+#:
+#: An eighth fact, and like ``UNVERIFIED_NOT_YET_REACHED`` it gets its own name
+#: rather than the nearest neighbour's. Both neighbours would mis-address it:
+#: ``SUPPLIER_UNCONFIRMED`` points an owner at the reconciler, and no amount of
+#: reconciling can bind a variant; ``AFFIRMATIVE_NEGATIVE_BLOCK`` says the
+#: supplier told us something is wrong, and the supplier was never asked. The
+#: action is a merchant's — choose the variant that ships — and a state name
+#: that sends them anywhere else costs them the one thing this module is for.
+#:
+#: Expected count in production: 1. ``quantity > 0`` and "bound" coincide across
+#: the whole catalogue (43 of 43 measured 2026-10-03) because ``drafts.publish``
+#: is what sets both, so :func:`snapshot`'s purchasable population contains
+#: exactly one unbound listing — id 35, which reached ``published`` through the
+#: admin bulk-approve path that validates nothing.
+SUPPLIER_VARIANT_UNBOUND = "SUPPLIER_VARIANT_UNBOUND"
+
 #: The reconciler is running *and keeping up*, and this particular listing has
 #: simply not been reached yet — ``CONFIRMATION_NEVER`` with a healthy latch.
 #:
@@ -68,11 +87,12 @@ UNVERIFIED_NOT_YET_REACHED = "UNVERIFIED_NOT_YET_REACHED"
 #: catalogue and a reader can see the denominator they are reasoning about.
 NOT_APPLICABLE = "NOT_APPLICABLE"
 
-#: Ordered worst-understood-last, which is the order a reader wants: the two
+#: Ordered worst-understood-last, which is the order a reader wants: the three
 #: refusals first because they cost a sale right now, then the unverified
 #: allows, which cost nothing today and are the ones that will surprise someone
 #: later.
 CANONICAL_STATES = (
+    SUPPLIER_VARIANT_UNBOUND,
     AFFIRMATIVE_NEGATIVE_BLOCK,
     SUPPLIER_UNCONFIRMED,
     UNVERIFIED_DRAIN_BEHIND,
@@ -94,9 +114,11 @@ UNVERIFIED_STATES = (
     UNVERIFIED_NOT_YET_REACHED,
 )
 
-#: States that refuse a buyer. Both cost a sale; they differ in whether anything
-#: is wrong with the *item* (affirmative) or with our *knowledge* of it.
-REFUSING_STATES = (AFFIRMATIVE_NEGATIVE_BLOCK, SUPPLIER_UNCONFIRMED)
+#: States that refuse a buyer. All three cost a sale; they differ in whose
+#: problem it is — the *item* (affirmative), our *knowledge* of it
+#: (unconfirmed), or a commercial decision nobody has taken (unbound).
+REFUSING_STATES = (SUPPLIER_VARIANT_UNBOUND, AFFIRMATIVE_NEGATIVE_BLOCK,
+                   SUPPLIER_UNCONFIRMED)
 
 
 def classify(verdict: Mapping[str, Any]) -> str:
@@ -127,7 +149,15 @@ def classify(verdict: Mapping[str, Any]) -> str:
         return UNVERIFIED_NOT_YET_REACHED
 
     # A refusal. Which kind matters more than the fact: one is the supplier
-    # telling us something is wrong, the other is us not knowing.
+    # telling us something is wrong, one is us not knowing, one is nobody
+    # having decided.
+    #
+    # Tested first, matching the gate's own branch order, so that an unbound
+    # listing whose siblings are sold out is reported as unbound rather than as
+    # a sell-out. The gate makes that argument where it refuses; repeating the
+    # order here is what keeps the dashboard agreeing with the decision.
+    if verdict.get("reason") == gate.REASON_UNBOUND:
+        return SUPPLIER_VARIANT_UNBOUND
     if verdict.get("reason") == gate.REASON_SOLD_OUT:
         return AFFIRMATIVE_NEGATIVE_BLOCK
     if str(verdict.get("sync_state") or "").strip().upper() in gate.FAILED_SYNC_STATES:
@@ -393,8 +423,11 @@ def alert_conditions(observations: Sequence[Mapping[str, Any]],
 
     What is alertable is a condition that is *new information*:
 
-    ``refusing`` — a buyer is being turned away right now. Zero in production
-    today, so any non-zero value is a change.
+    ``refusing`` — a buyer is being turned away right now. One in production
+    today, and it is ``SUPPLIER_VARIANT_UNBOUND`` on listing 35: a standing
+    condition that clears when somebody binds it or pulls it, not an incident.
+    Read ``states`` rather than this sum before treating it as news, because
+    the three refusals ask three different people to act.
 
     ``worker_stopped`` — nothing is reconciling at all. Distinct from behind:
     behind still produces confirmations, just too slowly.

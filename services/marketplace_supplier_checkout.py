@@ -150,6 +150,7 @@ __all__ = [
     "NOT_APPLICABLE",
     "REASON_SOLD_OUT",
     "REASON_STALE_CONFIRMATION",
+    "REASON_UNBOUND",
     "REFUSAL_CODES",
     "WIRE_CODES",
     "reconciliation_evidence",
@@ -208,9 +209,25 @@ NOT_APPLICABLE = "NOT_APPLICABLE"
 REASON_SOLD_OUT = "SUPPLIER_SOLD_OUT"
 REASON_STALE_CONFIRMATION = "SUPPLIER_UNCONFIRMED"
 
-#: The only two codes a lane may return from this gate. Enumerated so the client
+#: No supplier variant is bound, so no supplier order can be created at all.
+#:
+#: Spelled the same as ``business_os.suppliers.drafts.SUPPLIER_VARIANT_UNBOUND``
+#: on purpose: publication validation and this gate are refusing one fact, and
+#: two names for it is how a merchant's draft screen and a buyer's checkout end
+#: up disagreeing about why the same listing will not sell.
+#:
+#: ``gateway.get_product_binding`` raises ``product_binding_required`` when
+#: ``marketplace_product_sources.provider_variant_id`` is falsy, and
+#: ``fulfillment.create_intent`` routes every line through it — so an unbound
+#: listing fails fulfilment *after* the card has been charged, 100% of the time.
+#: Without this branch the money moves and nothing can ship. Measured in
+#: production 2026-10-03: 153 of 196 drop-shipped listings are unbound, and
+#: listing 35 was published, approved, in stock and purchasable while unbound.
+REASON_UNBOUND = "SUPPLIER_VARIANT_UNBOUND"
+
+#: The only three codes a lane may return from this gate. Enumerated so the client
 #: strings and the tests are written against one list.
-REFUSAL_CODES = (REASON_SOLD_OUT, REASON_STALE_CONFIRMATION)
+REFUSAL_CODES = (REASON_SOLD_OUT, REASON_STALE_CONFIRMATION, REASON_UNBOUND)
 
 #: The code that goes on the wire, which is not the same as the reason recorded
 #: internally. ``marketplace_cart_routes._error`` documents a fixed vocabulary
@@ -228,7 +245,14 @@ REFUSAL_CODES = (REASON_SOLD_OUT, REASON_STALE_CONFIRMATION)
 #: relies on ``buyerErrorCopy``'s documented fallback to server prose for a handled
 #: 4xx. That is why :data:`MESSAGES` has to be buyer-complete on its own, including
 #: saying that no charge was made.
-WIRE_CODES = {REASON_SOLD_OUT: "OUT_OF_STOCK"}
+#: ``SUPPLIER_VARIANT_UNBOUND`` maps to ``ITEM_UNAVAILABLE`` for the reason
+#: ``SUPPLIER_UNCONFIRMED`` does not: that copy's permanence is *accurate* here.
+#: An unbound listing does not come back on its own — it stays unsellable until
+#: the merchant chooses which variant ships — so "no longer available" is the
+#: truthful thing to tell a buyer, and telling them to try again shortly would be
+#: the lie.
+WIRE_CODES = {REASON_SOLD_OUT: "OUT_OF_STOCK",
+              REASON_UNBOUND: "ITEM_UNAVAILABLE"}
 
 #: What the buyer reads. Neither names the supplier, the provider or the
 #: connection — §27 applies to a refusal as much as to a success, and "our
@@ -239,6 +263,8 @@ MESSAGES = {
     REASON_STALE_CONFIRMATION: (
         "We can't confirm this item is still available right now. "
         "You have not been charged — please try again shortly."),
+    REASON_UNBOUND: (
+        "This item can't be ordered right now. You have not been charged."),
 }
 
 #: Latch states from ``business_os.suppliers.fulfillment.drain_status`` that mean
@@ -457,6 +483,11 @@ def evaluate(cur, *, listing_id: Any, evidence: Mapping[str, Any] | None = None,
     is the same asymmetry ``normalize`` applies across warehouses, and for the
     same reason: out-of-stock is the claim nobody escalates, so it needs the
     strongest evidence.
+
+    Which variant the *merchant* bound is a different question and is asked, via
+    :data:`REASON_UNBOUND`. "Which one does this buyer want" is unanswerable here;
+    "has anyone named the one that ships" is answered by a stored column, and when
+    the answer is no there is nothing for the checks below to be about.
     """
     now_dt = _clock(now)
     try:
@@ -489,6 +520,25 @@ def evaluate(cur, *, listing_id: Any, evidence: Mapping[str, Any] | None = None,
     #: exactly the decisions someone will come back to ask about.
     seen = {"evidence_state": _state_of(evidence), "confirmation": confirmation,
             "confirmation_age_seconds": age, "sync_state": sync_state}
+
+    if not str(source.get("provider_variant_id") or "").strip():
+        # First, and above even a sell-out, because it is the only refusal here
+        # that does not depend on the supplier's answer: there is no variant to
+        # ask about. Stock, freshness and sync state are all claims about a
+        # specific variant, and this listing names none, so every check below is
+        # reasoning about a choice nobody has made yet.
+        #
+        # Ordered ahead of `REASON_SOLD_OUT` deliberately. An unbound listing
+        # whose siblings happen to be sold out would otherwise report a sell-out,
+        # sending the merchant to restock a product whose actual blocker is a
+        # decision only they can take -- the same mistaken instruction
+        # `importer._create_draft_listing` refuses to print by leaving `quantity`
+        # NULL rather than 0.
+        #
+        # Matches `gateway.get_product_binding`'s own falsy test rather than an
+        # `IS NULL` so that the whitespace-only row refuses here too, instead of
+        # passing this gate and raising 409 after the charge.
+        return _refuse(REASON_UNBOUND, **seen)
 
     rows = _orderable(variants.variants_for(cur, int(source["listing_id"])))
     states = [str(row.get("stock_state") or "").strip().upper() for row in rows]

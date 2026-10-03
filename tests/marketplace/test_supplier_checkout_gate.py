@@ -248,6 +248,112 @@ def test_a_malformed_listing_reference_does_not_break_a_checkout(cur):
 
 
 # ---------------------------------------------------------------------------
+# Unbound: the refusal that does not depend on the supplier's answer
+# ---------------------------------------------------------------------------
+
+def test_an_unbound_listing_is_refused_before_the_money(cur):
+    """Nothing can ship, so nothing may be charged.
+
+    ``marketplace_product_sources.provider_variant_id`` names the one variant an
+    order is placed for. ``gateway.get_product_binding`` raises
+    ``product_binding_required`` when it is falsy and
+    ``fulfillment.create_intent`` routes every line through it — so without this
+    branch the refusal still happens, but *after* the card is charged.
+
+    Everything else about this listing is healthy: stocked, freshly confirmed, a
+    draining reconciler. That is the point — no supplier evidence can rescue a
+    listing that names no variant, so the obvious "it's in stock, let it through"
+    reading has to lose here.
+    """
+    bind(cur, provider_variant_id=None)
+    add_variant(cur)
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_REFUSE
+    assert decision["reason"] == gate.REASON_UNBOUND
+    assert decision["message"]
+
+
+def test_an_unbound_listing_is_not_reported_as_a_sell_out(cur):
+    """Ordering, and the merchant-facing reason it matters.
+
+    An unbound listing whose catalogue happens to be sold out satisfies both
+    refusals. Reporting the sell-out would send the merchant to restock a product
+    whose real blocker is a decision only they can take — the same wrong
+    instruction ``importer._create_draft_listing`` refuses to print when it leaves
+    ``quantity`` NULL instead of 0.
+    """
+    bind(cur, provider_variant_id=None)
+    add_variant(cur, stock_state=schema.STOCK_OUT_OF_STOCK, stock_quantity=0)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["reason"] == gate.REASON_UNBOUND, (
+        "a sold-out sibling must not mask the missing binding")
+
+
+def test_a_bound_listing_is_still_allowed(cur):
+    """The inverse, so the branch above cannot degrade into refusing everything.
+
+    ``source_for`` is a ``SELECT *`` and this gate reads the binding off that
+    dict. A rename, or a projection that stopped carrying the column, would make
+    every drop-shipped checkout read as unbound — the catalogue-wide refusal this
+    module's docstring exists to prevent, arriving by one more route.
+    """
+    bind(cur)
+    add_variant(cur)
+    confirm(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["decision"] == gate.DECISION_ALLOW, decision
+
+
+def test_a_binding_of_only_whitespace_is_not_a_binding(cur):
+    """A row ``link_source`` could not have written, but a hand-written one could.
+
+    ``_optional_text`` collapses a blank reference to NULL, so the writer already
+    makes this unreachable. It is reachable by UPDATE, and this deployment has a
+    documented history of those: every CJ listing published by the admin path
+    needed a hand-written UPDATE to go live. The gate matches
+    ``get_product_binding``'s own falsy test rather than ``IS NULL`` so such a row
+    refuses here instead of passing and raising 409 after the charge.
+    """
+    bind(cur)
+    add_variant(cur)
+    confirm(cur)
+    cur.execute("UPDATE marketplace_product_sources SET provider_variant_id='   ' "
+                "WHERE listing_id=?", (DROPSHIP,))
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, evidence=draining(cur), now=NOW)
+    assert decision["reason"] == gate.REASON_UNBOUND
+
+
+def test_an_unbound_refusal_tells_the_buyer_the_truth_about_permanence(cur):
+    """``ITEM_UNAVAILABLE``, unlike ``SUPPLIER_UNCONFIRMED``'s bare reason.
+
+    That code's copy ("no longer available") was rejected for a stale
+    confirmation because the state is transient and the copy forecloses the retry
+    that fixes it. Here the permanence is accurate: an unbound listing does not
+    come back on its own, it waits for the merchant to choose. Telling this buyer
+    to try again shortly would be the lie.
+    """
+    assert gate.WIRE_CODES[gate.REASON_UNBOUND] == "ITEM_UNAVAILABLE"
+    bind(cur, provider_variant_id=None)
+    add_variant(cur)
+    decision = gate.evaluate(cur, listing_id=DROPSHIP, now=NOW)
+    assert gate.refusal_code(decision) == "ITEM_UNAVAILABLE"
+    assert "try again" not in gate.MESSAGES[gate.REASON_UNBOUND].lower()
+
+
+def test_this_gate_and_publication_validation_spell_unbound_the_same_way(cur):
+    """One fact, one name, across the two surfaces that refuse it.
+
+    ``drafts`` refuses to *publish* an unbound listing and this gate refuses to
+    *charge* for one. Two spellings is how a merchant's draft screen and a
+    buyer's checkout end up disagreeing about why the same listing will not sell.
+    """
+    from services.business_os.suppliers import drafts
+
+    assert gate.REASON_UNBOUND == drafts.SUPPLIER_VARIANT_UNBOUND
+
+
+# ---------------------------------------------------------------------------
 # Sold out: the claim that needs the strongest evidence
 # ---------------------------------------------------------------------------
 
@@ -967,6 +1073,37 @@ def test_a_basket_is_refused_whole_on_its_first_bad_line(cur):
     assert screened["refused_listing_id"] == DROPSHIP_B
     # Stopped at the first refusal rather than judging the rest of the basket.
     assert DROPSHIP not in screened["decisions"]
+
+
+def test_an_unbound_line_refuses_the_whole_basket_through_the_real_entry_point(cur):
+    """The branch is only worth anything if it survives the trip the lanes take.
+
+    All three callers — the cart lane, the offers lane and the buy-now route in
+    ``bot.py`` — reach this gate through ``screen`` and then hand the client
+    ``refusal_code``. A refusal that ``evaluate`` returns but ``screen`` drops, or
+    that arrives at the client as server prose instead of a known word, is not a
+    gate from the buyer's side.
+
+    The other line is deliberately healthy and listed second, so the basket is
+    refused on the unbound one and not incidentally on anything else.
+    """
+    bind(cur, listing_id=DROPSHIP_B, provider_variant_id="20002")
+    add_variant(cur, listing_id=DROPSHIP_B)
+    bind(cur)
+    add_variant(cur)
+    confirm(cur)
+    confirm(cur, listing_id=DROPSHIP_B)
+    draining(cur)
+    cur.execute("UPDATE marketplace_product_sources SET provider_variant_id=NULL "
+                "WHERE listing_id=?", (DROPSHIP_B,))
+
+    screened = gate.screen(cur, [DROPSHIP_B, DROPSHIP], now=NOW)
+    assert screened["refusal"]["reason"] == gate.REASON_UNBOUND
+    assert screened["refused_listing_id"] == DROPSHIP_B
+    assert gate.refusal_code(screened["refusal"]) == "ITEM_UNAVAILABLE"
+    # Nothing is annotated onto a transaction, because there is no transaction:
+    # this refusal happens before the charge, which is the whole point of it.
+    assert gate.audit_for(screened, DROPSHIP_B) == {}
 
 
 def test_a_basket_every_line_of_which_is_sellable_is_not_refused(cur):
