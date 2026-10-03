@@ -29,6 +29,7 @@ Three things are asserted that are easy to get wrong in the other direction:
 Runs against a temp sqlite file so nothing touches coinpilotx.db.
 """
 
+import logging
 import os
 import sqlite3
 import sys
@@ -562,6 +563,128 @@ class ModerationStateReadCase(unittest.TestCase):
         _post(self.client, HOST, VIEWER, "ban")
         _post(self.client, HOST, VIEWER, "unban")
         self.assertEqual(self._get(HOST).get_json()["count"], 0)
+
+
+# =========================================================================
+# 7. The two boundaries that refuse a banned account must say so
+# =========================================================================
+
+class BoundaryDenialEventCase(unittest.TestCase):
+    """A ban that stops someone must be visible in the logs as a ban.
+
+    The three co-host boundaries already answered with their own
+    ``BLOCKED_BY_HOST`` code, so a ban there was always distinguishable from a
+    full stage or a disabled flag. The other two were not. ``/join`` refused
+    silently, and the token mint logged ``reason=NOT_AUTHORIZED`` -- the same
+    string a followers-only Live produces for someone who does not follow.
+
+    That gap matters more than it sounds. The token is what actually buys
+    access to the stream, so "did the ban take effect" is really "did the next
+    mint get refused", and there was no record either way. These tests assert
+    the two named events exist and, just as importantly, that they are *not*
+    emitted for an ordinary audience miss -- an event that fires for every
+    denial names nothing.
+    """
+
+    def setUp(self):
+        self.client = bot.webhook_app.test_client()
+        _clear_bans()
+
+    def tearDown(self):
+        _clear_bans()
+        conn = _conn()
+        conn.execute("UPDATE pulse_live_sessions SET audience='public' WHERE id=?", (LIVE_A,))
+        conn.execute("DELETE FROM pulse_live_viewers WHERE live_id=?", (LIVE_A,))
+        conn.commit()
+        conn.close()
+
+    def _call(self, path, actor=VIEWER, body=None):
+        with _as(actor), _no_admin():
+            return self.client.post(path, json=body or {})
+
+    def _join(self, actor=VIEWER):
+        return self._call(f"/api/pulse/live/{LIVE_A}/join", actor=actor)
+
+    def _token(self, actor=VIEWER):
+        return self._call(f"/api/pulse/live/{LIVE_A}/agora/token", actor=actor,
+                          body={"role": "viewer"})
+
+    def _followers_only(self):
+        conn = _conn()
+        conn.execute("UPDATE pulse_live_sessions SET audience='followers' WHERE id=?", (LIVE_A,))
+        conn.commit()
+        conn.close()
+
+    def test_join_names_the_ban(self):
+        _post(self.client, HOST, VIEWER, "ban")
+        with self.assertLogs(level="WARNING") as captured:
+            response = self._join()
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(
+            any("LIVE_JOIN_DENIED_BANNED" in line for line in captured.output),
+            f"join refused a banned viewer without naming the ban: {captured.output}",
+        )
+
+    def test_join_does_not_name_a_ban_for_an_ordinary_audience_miss(self):
+        self._followers_only()
+        with self.assertLogs(level="WARNING") as captured:
+            response = self._join()
+            # assertLogs fails the test if nothing is logged at all, which would
+            # be a confusing way to learn that this route stayed quiet. Emit a
+            # marker so the assertion below is about the ban event only.
+            logging.warning("AUDIENCE_MISS_CONTROL_MARKER")
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(
+            any("LIVE_JOIN_DENIED_BANNED" in line for line in captured.output),
+            "a followers-only miss must not be reported as a moderation ban",
+        )
+
+    def test_the_token_mint_names_the_ban(self):
+        _post(self.client, HOST, VIEWER, "ban")
+        with self.assertLogs(level="WARNING") as captured:
+            response = self._token()
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(
+            any("LIVE_TOKEN_DENIED_BANNED" in line for line in captured.output),
+            f"the token mint refused a banned viewer silently: {captured.output}",
+        )
+
+    def test_the_token_mint_does_not_name_a_ban_for_an_audience_miss(self):
+        self._followers_only()
+        with self.assertLogs(level="WARNING") as captured:
+            response = self._token()
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(
+            any("LIVE_TOKEN_DENIED_BANNED" in line for line in captured.output),
+            "a followers-only miss must not be reported as a moderation ban",
+        )
+
+    def test_neither_event_leaks_the_private_moderator_note(self):
+        """The note is trust & safety metadata for the moderator surface. It
+        must not reach a log line that an on-call engineer reads, or that a log
+        aggregator indexes, just because a banned viewer retried."""
+        _post(self.client, HOST, VIEWER, "ban",
+              body={"reason": "private note about this person"})
+        with self.assertLogs(level="WARNING") as captured:
+            self._join()
+        with self.assertLogs(level="WARNING") as token_captured:
+            self._token()
+        for line in captured.output + token_captured.output:
+            self.assertNotIn("private note", line)
+
+    def test_an_unbanned_viewer_reaches_the_stream_again(self):
+        """The point of the whole chain. Not "the row is gone" -- the two
+        boundaries that refused this account now let it through."""
+        _post(self.client, HOST, VIEWER, "ban")
+        self.assertEqual(self._join().status_code, 403)
+        _post(self.client, HOST, VIEWER, "unban")
+        self.assertEqual(self._join().status_code, 200,
+                         "unban must restore the join boundary, not just the row")
+        self.assertNotEqual(
+            self._token().status_code, 403,
+            "unban must restore the token mint; a 403 here means the viewer is "
+            "still locked out of the stream itself",
+        )
 
 
 if __name__ == "__main__":

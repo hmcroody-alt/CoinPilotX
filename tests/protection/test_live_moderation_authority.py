@@ -296,8 +296,37 @@ class TestTheSixEnforcementSitesStillRead(unittest.TestCase):
         # A live ban and a social block are separate controls with separate
         # reasons. Collapsing them would make "get out of my stream" silently
         # mean "I never want to hear from this person again".
-        self.assertIn("live_blocked", gate)
+        self.assertIn("PULSE_LIVE_BANNED_REASON", gate)
+        self.assertIn('PULSE_LIVE_BANNED_REASON = "live_blocked"', self.bot_src)
         self.assertIn("social_blocked", gate)
+
+    def test_the_two_silent_boundaries_now_name_the_ban(self):
+        """``/join`` and the token mint must report a ban as a ban.
+
+        The three co-host boundaries always answered ``BLOCKED_BY_HOST``, so a
+        ban there was legible. These two were not: join refused without logging
+        anything, and the token mint logged ``reason=NOT_AUTHORIZED``, which is
+        also what a followers-only Live says to a non-follower. The token is
+        what buys access to the stream, so that was the single most important
+        denial in the chain and it left no trace.
+
+        Both events are pinned to the shared reason constant rather than to a
+        repeated literal, so the gate cannot start reporting a ban under a name
+        these two branches no longer recognise.
+        """
+        join = _extract_function(self.bot_src, "api_pulse_live_join")
+        token = _extract_function(self.bot_src, "api_pulse_live_agora_token")
+        for name, src in (("join", join), ("agora token", token)):
+            self.assertIn(
+                "if viewer_reason == PULSE_LIVE_BANNED_REASON:", src,
+                f"the {name} route no longer distinguishes a ban from an audience miss",
+            )
+        self.assertIn("LIVE_JOIN_DENIED_BANNED", join)
+        self.assertIn("LIVE_TOKEN_DENIED_BANNED", token)
+        # The private note is trust & safety metadata. Neither event may carry
+        # it, however convenient it would be for whoever is reading the logs.
+        for src in (join, token):
+            self.assertNotIn("reason=%s", src)
 
     def test_the_single_reader_delegates_to_the_authority_module(self):
         """One module owns reading and writing this table, so the six sites

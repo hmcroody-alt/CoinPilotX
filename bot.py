@@ -55599,6 +55599,13 @@ def pulse_live_user_is_blocked(cur, live_id, user_id):
     return live_moderation.is_banned(cur, live_id, user_id)
 
 
+#: The gate's reason code for "this account is banned from this Live". It is a
+#: named constant because three call sites now branch on it to emit a distinct
+#: denial event, and a ban that is logged as a generic audience miss is a ban
+#: nobody can prove happened.
+PULSE_LIVE_BANNED_REASON = "live_blocked"
+
+
 def pulse_live_viewer_authorized(cur, live, viewer_user_id):
     """Canonical audience gate shared by Live tokens and Feed entry."""
     viewer_user_id = safe_int(viewer_user_id, 0)
@@ -55608,7 +55615,7 @@ def pulse_live_viewer_authorized(cur, live, viewer_user_id):
     if viewer_user_id == host_user_id or bool(admin_current_user()):
         return True, "host"
     if pulse_live_user_is_blocked(cur, safe_int((live or {}).get("id"), 0), viewer_user_id):
-        return False, "live_blocked"
+        return False, PULSE_LIVE_BANNED_REASON
     cur.execute(
         """
         SELECT 1 FROM blocked_users
@@ -56092,6 +56099,17 @@ def api_pulse_live_agora_token(live_id):
     is_host = user_id == host_user_id or bool(admin_current_user())
     viewer_authorized, viewer_reason = pulse_live_viewer_authorized(cur, live, user_id)
     if not viewer_authorized:
+        if viewer_reason == PULSE_LIVE_BANNED_REASON:
+            # The generic failure log below records reason=NOT_AUTHORIZED for
+            # every audience miss alike, and viewer_reason only reaches the
+            # response when cohost diagnostics are switched on. So a ban stopping
+            # a token mint -- the single most important thing this authority does,
+            # since the token is what buys access to the stream -- left no trace
+            # at all. This line is that trace.
+            logging.warning(
+                "LIVE_TOKEN_DENIED_BANNED trace_id=%s live_id=%s user_id=%s requested_role=%s",
+                trace_id, live_id, user_id, requested_role,
+            )
         conn.close()
         return pulse_live_cohost_error("NOT_AUTHORIZED", status=403, message="This Live is not available to this account.", trace_id=trace_id, live_id=live_id, viewer_user_id=user_id, host_user_id=host_user_id, diagnostic=viewer_reason)
     is_guest_request = requested_role in {"guest", "cohost", "co-host"}
@@ -56831,8 +56849,18 @@ def api_pulse_live_join(live_id):
     if not live:
         conn.close()
         return api_error("Live stream not found.", 404)
-    viewer_authorized, _viewer_reason = pulse_live_viewer_authorized(cur, live, user["user_id"])
+    viewer_authorized, viewer_reason = pulse_live_viewer_authorized(cur, live, user["user_id"])
     if not viewer_authorized:
+        if viewer_reason == PULSE_LIVE_BANNED_REASON:
+            # A ban is the one denial here that somebody decided on purpose, so
+            # it gets its own event. Until this line existed the join refusal
+            # was silent and indistinguishable from a followers-only miss, which
+            # meant there was no way to show from the logs that a moderator's
+            # decision had taken effect at this boundary.
+            logging.warning(
+                "LIVE_JOIN_DENIED_BANNED live_id=%s user_id=%s",
+                live_id, int(user["user_id"] or 0),
+            )
         conn.close()
         return api_error("This Live is not available to this account.", 403)
     visitor = f"user-{int(user['user_id'])}"

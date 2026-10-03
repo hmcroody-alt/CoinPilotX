@@ -95,7 +95,15 @@ class TestEveryDoorOntoTheStageIsGuarded(unittest.TestCase):
     def test_the_audience_gate_covers_both_directions_of_a_social_block(self):
         gate = _extract_function(self.src, "pulse_live_viewer_authorized")
         self.assertIn("blocker_user_id=? AND blocked_user_id=?) OR (blocker_user_id=? AND blocked_user_id=?", gate)
-        self.assertIn('return False, "live_blocked"', gate)
+        # The Live-level ban branch. The reason code moved from an inline
+        # literal to PULSE_LIVE_BANNED_REASON when the join and token routes
+        # started branching on it to emit their own denial events -- three
+        # readers of one string is the point at which it should stop being
+        # three strings. The value is unchanged, and is pinned here beside the
+        # constant that produces it so the gate cannot begin reporting a ban
+        # under a different name than the routes are testing for.
+        self.assertIn("return False, PULSE_LIVE_BANNED_REASON", gate)
+        self.assertIn('PULSE_LIVE_BANNED_REASON = "live_blocked"', self.src)
 
     def test_an_invite_may_only_be_answered_by_its_own_target(self):
         # The check that stops someone walking onto the stage holding an invite

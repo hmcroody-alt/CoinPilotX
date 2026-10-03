@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ten ways to break the live-ban authority. Every one must turn the suite red.
+"""Thirteen ways to break the live-ban authority. Each must turn the suite red.
 
 A green suite proves nothing on its own. This table shipped with six
 authorization readers, zero rows, and a passing test suite for its entire
@@ -10,8 +10,14 @@ tests, break the authority on purpose and confirm each break is caught.
 Each mutation below is a plausible refactor or a plausible mistake, not a
 syntactic scribble: delegating to the wrong helper, inverting a fail-closed
 return, dropping a self-ban guard, narrowing a vocabulary, unbanning one row
-instead of all. If any survives, the corresponding property is not actually
-tested and the gap is named in the output rather than glossed over.
+instead of all, renaming a denial event to something that means a different
+thing. If any survives, the corresponding property is not actually tested and
+the gap is named in the output rather than glossed over.
+
+Three of them attack the observability rather than the decision, because an
+authority nobody can prove fired is only half built -- and one of those three
+attacks it from the other side, firing the ban event for every audience miss.
+An event that is emitted for all denials identifies none of them.
 
 Edits a scratch copy of the repository. Nothing is written to the working
 tree. Run:  python3 scripts/protection/mutate_live_moderation_authority.py
@@ -101,6 +107,31 @@ MUTATIONS = [
         "    return False",
         "All six enforcement sites answer 'not banned' forever. This is the "
         "original production state, reintroduced.",
+    ),
+    (
+        "the_join_boundary_stops_naming_the_ban",
+        BOT,
+        '        if viewer_reason == PULSE_LIVE_BANNED_REASON:\n            # A ban is the one denial here',
+        '        if False:\n            # A ban is the one denial here',
+        "A banned viewer is refused at join and nothing records it, so there is "
+        "no way to show from the logs that a moderator's decision took effect.",
+    ),
+    (
+        "the_token_mint_reports_a_ban_as_an_audience_miss",
+        BOT,
+        "                \"LIVE_TOKEN_DENIED_BANNED trace_id=%s live_id=%s user_id=%s requested_role=%s\",",
+        "                \"LIVE_TOKEN_DENIED_FOLLOWERS trace_id=%s live_id=%s user_id=%s requested_role=%s\",",
+        "The most important denial in the chain -- the token that buys access to "
+        "the stream -- is filed under a name that means something else.",
+    ),
+    (
+        "a_followers_only_miss_is_reported_as_a_ban",
+        BOT,
+        "        if viewer_reason == PULSE_LIVE_BANNED_REASON:\n            # The generic failure log below",
+        "        if True:\n            # The generic failure log below",
+        "Every audience miss is logged as a moderation ban. An event that fires "
+        "for all denials identifies none of them, and it invents bans that a "
+        "moderator never issued.",
     ),
     (
         "the_route_skips_authorization",
