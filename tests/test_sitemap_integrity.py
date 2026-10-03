@@ -45,11 +45,19 @@ from services import search_visibility as sv  # noqa: E402
 SITEMAP_ROUTES = (
     "/sitemap-pages.xml",
     "/sitemap-posts.xml",
-    # Row-level filtering for this one is tested in
+    # Row-level filtering for these two is tested in
     # `tests/test_marketplace_public_pages.py`, next to the seeded catalogue the
-    # assertions need. What it is here for is the invariants above, which every
-    # child owes regardless of what it lists: no `noindex` URL, no non-canonical
-    # host, no duplicate, no fabricated `lastmod`.
+    # assertions need. What they are here for is the invariants above, which
+    # every child owes regardless of what it lists: no `noindex` URL, no
+    # non-canonical host, no duplicate, no fabricated `lastmod`.
+    #
+    # The categories child is the first one whose URLs carry a query string, so
+    # it is the first to exercise the canonical check below against a path
+    # `canonical_url` used to rewrite. It stripped the query, which made every
+    # department canonicalise to the bare hub -- so this route would have
+    # emitted one `<loc>` per department, all identical, each with its own
+    # `lastmod`.
+    "/sitemap-categories.xml",
     "/sitemap-products.xml",
     "/sitemap-live.xml",
     "/sitemap-replays.xml",

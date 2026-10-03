@@ -25,6 +25,7 @@ must never be the only thing standing between the public and private data.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import parse_qsl, urlencode
 
 from .pulse_ai.content_policy import is_automated_author
 
@@ -290,6 +291,28 @@ def is_indexable(path):
     return classify(path).indexable
 
 
+#: Query parameters that *select content* rather than track a visit, per path.
+#
+# Everything else in a query string is dropped, which is right for `utm_*` and
+# `pulse_app` -- they reach the same page and must not compete with it. But
+# `/pulse/marketplace?category=mens-clothing` is not the same page as
+# `/pulse/marketplace`: it has its own `<h1>`, its own title, its own product
+# set, and it already declares *itself* canonical in its own `<head>`.
+#
+# Stripping it here meant this helper disagreed with the page it describes, and
+# the disagreement was silent until something tried to put a department URL in a
+# sitemap: twelve distinct departments all rendered `<loc>` as the bare hub, so
+# `sitemap_xml`'s dedupe (which keys on the *input* path) passed them all through
+# and emitted the same URL twelve times with twelve different `lastmod` values.
+#
+# Allowlisted per path and by name, so this cannot become a general "keep the
+# query string" rule -- that would undo the tracking-parameter behaviour above
+# and mint a duplicate of every product page for every campaign tag.
+_CONTENT_QUERY_PARAMS = {
+    "/pulse/marketplace": ("category",),
+}
+
+
 def canonical_url(path):
     """Absolute canonical URL on the one host we rank.
 
@@ -298,10 +321,35 @@ def canonical_url(path):
     alias resolves to the path it is an alias of, so a caller that asks for the
     canonical of `/support` is told `/help` rather than being handed back the
     duplicate it started with.
+
+    The exception is `_CONTENT_QUERY_PARAMS` above -- a parameter that selects
+    which content the page shows is part of that page's identity, not noise on
+    top of it.
+
+    One thing this function cannot do, deliberately: it has no catalogue access,
+    so it cannot tell a real department from an invented `?category=` value and
+    will hand back a canonical for either. The page is what resolves that -- an
+    unknown slug renders `noindex,follow` and canonicalises to the bare hub, so
+    nothing a crawler reaches is affected. The callers that *submit* URLs read
+    the live taxonomy first, which is why the sitemap never asks about a slug no
+    listing carries.
     """
 
     p = _normalize(path)
-    return CANONICAL_ORIGIN + _CANONICAL_ALIASES.get(p.lower(), p)
+    resolved = _CANONICAL_ALIASES.get(p.lower(), p)
+
+    allowed = _CONTENT_QUERY_PARAMS.get(resolved)
+    if not allowed or "?" not in (path or ""):
+        return CANONICAL_ORIGIN + resolved
+
+    raw = (path or "").split("?", 1)[1].split("#", 1)[0]
+    kept = [
+        (name, value)
+        for name, value in parse_qsl(raw, keep_blank_values=False)
+        if name in allowed and value
+    ]
+    query = ("?" + urlencode(sorted(kept))) if kept else ""
+    return CANONICAL_ORIGIN + resolved + query
 
 
 # Minimum body length for a user post to be worth asking Google to rank. Short

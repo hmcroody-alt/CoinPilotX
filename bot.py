@@ -2974,7 +2974,7 @@ def add_pwa_headers(response):
         response.headers["Expires"] = "0"
     elif request.path.startswith(("/static/", "/icons/")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml", merchant_center_feed.FEED_PATH, "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
+    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml", merchant_center_feed.FEED_PATH, "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
         response.headers["Cache-Control"] = "public, max-age=300"
     if (
         response.status_code == 200
@@ -31329,8 +31329,27 @@ def marketplace_public_entries(limit=500):
     return entries
 
 
+def marketplace_category_entries(limit=500):
+    """Department URLs as `(path, lastmod)`, from the same read as the products.
+
+    Shares `marketplace_public_listings` with the product sitemap and the
+    Shopping feed, for the reason stated there and one more that is specific to
+    categories: `marketplace_seo.category_entries` builds the category tree from
+    exactly the rows the grid builds *its* tree from, and a department's slug is
+    chosen by majority spelling across that set. A second, differently-filtered
+    query here would be free to pick a different spelling, and then the grid
+    would call the slug we submitted an unknown category and serve it
+    `noindex`.
+
+    Which departments are substantial enough to submit is a policy question and
+    it is answered in `marketplace_seo`. This function is only the read.
+    """
+
+    return marketplace_seo.category_entries(marketplace_public_listings(limit))
+
+
 #: Child sitemaps, in the order `/sitemap.xml` lists them.
-SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml")
+SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml")
 
 
 @webhook_app.route("/sitemap.xml", methods=["GET"])
@@ -31359,6 +31378,28 @@ def sitemap_posts_xml():
     """Member posts, each with its own real `updated_at`."""
 
     return Response(seo_engine.sitemap_xml(pulse_public_entries()), mimetype="application/xml")
+
+
+@webhook_app.route("/sitemap-categories.xml", methods=["GET"])
+@public_route(reason="Sitemap for crawlers. Lists only marketplace department URLs that the category-eligibility policy already cleared, each of which the public grid already serves anonymously as index,follow.")
+def sitemap_categories_xml():
+    """Marketplace departments, in their own child sitemap.
+
+    These URLs were already indexable and already linked -- `?category=<slug>`
+    gets its own `<h1>`, `<title>`, meta description and self-referencing
+    canonical from `marketplace_storefront.render_discovery`, and twelve of them
+    existed in production on 2026-10-02. What they did not have was a sitemap:
+    their only route to discovery was the hub's category nav, which is one link
+    deep from one page.
+
+    Separate from `/sitemap-products.xml` for the reason the index docstring
+    gives. Coverage is reported per sitemap, and a department not being indexed
+    has a different cause from a product not being indexed -- a thin department
+    is a catalogue-size problem, a thin product is a seller who wrote no
+    description. Folded together, one number would hide both.
+    """
+
+    return Response(seo_engine.sitemap_xml(marketplace_category_entries()), mimetype="application/xml")
 
 
 @webhook_app.route("/sitemap-products.xml", methods=["GET"])
