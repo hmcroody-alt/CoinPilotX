@@ -3,9 +3,16 @@
 Status record, findings, and downstream contracts for the PULSE SEARCH OS fleet.
 
 Evidence gathered 2026-10-03 against `origin/main` = `5bdf4e431`, which
-`/api/service/health` reports as the deployed production commit. Every
-production claim below was taken off the wire with a Googlebot user agent, not
-inferred from the source.
+`/api/service/health` reported as the deployed production commit at the time.
+Every production claim below was taken off the wire with a Googlebot user agent,
+not inferred from the source.
+
+Production moved to `6e9b64110` while this was being written — one commit ahead,
+with `5bdf4e431` as its ancestor and **no change to any of
+`search_visibility.py`, `marketplace_seo.py` or `marketplace_storefront.py`**.
+The §5 evidence was re-run against `6e9b64110` and still reports 0 faults. Main
+takes roughly 60 commits a day from parallel sessions; re-run the verifier (§7)
+rather than trusting either SHA.
 
 ---
 
@@ -382,6 +389,14 @@ python3 scripts/search_os/verify_sitemap_vs_live.py \
 ```
 
 Exit code is non-zero on any fault. Writes nothing; issues GETs only.
+
+**Read a lone `TRANSPORT:` fault as a flake until you have retried it.** At the
+default `--workers 6` a run against production returned
+`TRANSPORT:[Errno 54] Connection reset by peer` for one post; that URL then
+answered 200 three times in a row, and a full re-run at `--workers 2` reported 0
+faults. The fault class is still worth emitting — a reset is a real result and
+silently retrying it would hide a genuinely flaky page — but drop concurrency
+before believing it. Every other fault class is deterministic.
 
 ---
 
