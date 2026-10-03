@@ -455,7 +455,29 @@ def sitemap_eligible(path, record=None):
     A sitemap is a recommendation, so an entry that is `noindex`, non-canonical
     or not publicly eligible is a self-contradiction rather than a small
     inaccuracy.
+
+    A query string the canonical would not keep disqualifies the entry outright.
+    `classify` is deliberately query-blind -- it answers for a *request* path,
+    and `?page=2` is the same page *shape* as the hub -- but a sitemap entry is
+    a *canonical* claim, and the two questions diverge exactly here. Without
+    this check, feeding `/pulse/marketplace?page=2` to a sitemap passes the gate
+    and then emits `canonical_url(...)`, which drops the unallowlisted `page`
+    and writes the bare hub: the same silent duplicate-`<loc>` failure twelve
+    department URLs hit before `_CONTENT_QUERY_PARAMS` existed, and it stays
+    invisible because `sitemap_xml` dedupes on the *input* path and so never
+    sees the collision it emitted.
+
+    Nothing feeds a paginated path to a sitemap today, so this is depth rather
+    than a live bug fix -- it makes "paginated URLs stay out of the sitemaps" a
+    property of this gate instead of a property of every caller remembering.
     """
+
+    if "?" in (path or ""):
+        allowed = _CONTENT_QUERY_PARAMS.get(_normalize(path)) or ()
+        raw = (path or "").split("?", 1)[1].split("#", 1)[0]
+        for name, value in parse_qsl(raw, keep_blank_values=True):
+            if name not in allowed or not value:
+                return False
 
     decision = classify(path)
     if not decision.sitemap_eligible:
