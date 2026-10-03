@@ -791,11 +791,32 @@ def _publish_core(cur, listing_id, seller_user_id, listing, shipping_cents=None)
     # reconciling with the store it is about to overwrite would preserve
     # whatever stale value was already there.
     cover = media[0]
+    # `commerce_publication_enabled` is set here because pressing Publish *is*
+    # the decision that column records. It has to be written on this path or the
+    # at-creation hold becomes a trap: `importer` holds an import it could not
+    # bind, the merchant then binds a variant and publishes, and without this
+    # line they get a `published` row no buyer can see and no copy explaining
+    # why -- the merchant reading "Live" on something invisible, which is the
+    # exact failure `publication.release` refuses an unready product to avoid.
+    #
+    # Safe to grant here, where it would not be in `listing_review`, and the
+    # difference is the whole point of §16's split. This function runs only from
+    # `publish` and `autopublish`, both of which are a merchant acting in the
+    # request; it has also just cleared `_validate`, so the product is bound and
+    # fulfillable. Moderator APPROVE answers "may this be sold" and is not a
+    # decision to show anything now, which is why it must never write this
+    # column -- and why the 152 exist.
+    #
+    # No separate publication audit row: one decision should leave one entry,
+    # and the publish this is part of is already recorded by its caller.
     cur.execute(
         "UPDATE marketplace_listings SET status='published', quantity=?, "
-        "price_label=?, price_minor=?, cover_image_url=?, published_at=?, updated_at=? "
+        "price_label=?, price_minor=?, cover_image_url=?, published_at=?, "
+        "commerce_publication_enabled=?, updated_at=? "
         "WHERE id=? AND seller_user_id=?",
-        (units, label, retail_cents, cover, _iso(), _iso(), listing_id, int(seller_user_id)))
+        (units, label, retail_cents, cover, _iso(),
+         lifecycle.PUBLICATION_RELEASED, _iso(),
+         listing_id, int(seller_user_id)))
     return verdict, {
         "listing_id": listing_id,
         "status": "published",

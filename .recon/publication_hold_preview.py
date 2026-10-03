@@ -137,5 +137,84 @@ else:
     print("  unexplained remainder      : %d"
           % abs((buy_before - buy_after) - max(0, buy_before - buy_after)))
 
+
+# --- Step 4: every writer of the column, and how far each one reaches --------
+#
+# Steps 1-3 are about the *read* clause. The commit also introduces writers, and
+# a §30 preview that reported only the predicate would be answering a narrower
+# question than the one asked: a backfill UPDATE hiding in this change would not
+# move either number above, because both were measured before it ran.
+#
+# So the writers are enumerated from the source rather than from memory, and the
+# claim checked is specifically that none of them is a bulk statement. Each known
+# writer is keyed on a single `id` or `seller_user_id`, which is what makes "0
+# existing rows affected" true: there is no statement in the tree that can touch
+# a row nobody imported or published.
+print()
+print("=" * 72)
+print("STEP 4 -- every writer of the column, and how far each reaches")
+print("=" * 72)
+
+import re  # noqa: E402
+import subprocess  # noqa: E402
+
+REPO = "/Users/hmcherie/Desktop/cpx-catalog"
+EXPECTED = {
+    "bot.py":
+        "init_db: adds the column, no DEFAULT -> every existing row NULL",
+    "services/business_os/suppliers/publication.py":
+        "hold()/release()/hold_at_creation(): WHERE id=?, one listing",
+    "services/business_os/suppliers/drafts.py":
+        "_publish_core: WHERE id=? AND seller_user_id=?, one listing",
+}
+
+found = {}
+# `grep -rn`, not `git grep`: git grep skips untracked files, and it skipped
+# `publication.py` on the first run of this step -- which is the whole writer
+# this commit adds. A writer-enumeration that cannot see a new file is a
+# writer-enumeration that approves whatever arrives next.
+grep = subprocess.run(
+    ["grep", "-rn", "--include=*.py", "commerce_publication_enabled", "."],
+    cwd=REPO, capture_output=True, text=True)
+for line in grep.stdout.splitlines():
+    path, _, text = line.partition(":")
+    path = path[2:] if path.startswith("./") else path
+    if path.startswith(("tests/", ".recon/", "scripts/")):
+        continue
+    # Every hit already names the column; this keeps the ones that *write* it.
+    #
+    # Both patterns are narrower than they look, because the loose versions were
+    # wrong. `commerce_publication_enabled=` alone is fine, but a bare
+    # `("commerce_publication_enabled"` also matches
+    # `listing.get("commerce_publication_enabled", _UNPROJECTED)` -- a read --
+    # and reported `lifecycle` as an unexpected writer. The DDL is matched by its
+    # actual shape instead.
+    assigns = re.search(r"commerce_publication_enabled\s*=[^=]", text)
+    declares = re.search(
+        r'\(\s*"commerce_publication_enabled"\s*,\s*"INTEGER"\s*\)', text)
+    if assigns or declares:
+        found.setdefault(path, []).append(line.split(":", 2)[1])
+
+unexpected = sorted(set(found) - set(EXPECTED))
+missing = sorted(set(EXPECTED) - set(found))
+for path in sorted(found):
+    note = EXPECTED.get(path, "*** UNEXPECTED WRITER ***")
+    print("  %-52s %s" % (path, note))
+    print("  %-52s lines: %s" % ("", ", ".join(found[path])))
+if unexpected:
+    print("  *** %d unexpected writer(s): %s" % (len(unexpected), unexpected))
+if missing:
+    print("  *** %d expected writer(s) not found: %s" % (len(missing), missing))
+print()
+if unexpected or missing:
+    print("  WRITER SET NOT AS EXPECTED -- the claim below is not established.")
+else:
+    print("  Writers found: %d, all expected. Bulk/backfill statements: 0."
+          % len(found))
+print("  Existing production rows any writer would touch on deploy: 0")
+print("  Reason: both row writers run per-request, on a listing being imported")
+print("  or published. Neither iterates the catalogue, and no backfill exists --")
+print("  which is the point of the enumeration above rather than a promise.")
+
 print()
 print("Read-only: no write, no DDL, no commit was issued by this script.")

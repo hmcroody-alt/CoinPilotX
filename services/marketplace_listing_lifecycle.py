@@ -51,6 +51,26 @@ AWAITING_DECISION_STATES = frozenset({PENDING_REVIEW, REVIEW_READY})
 MERCHANT_RELEASED_STATUSES = AWAITING_DECISION_STATES | PUBLIC_STATUSES
 STOCKLESS_TYPES = frozenset({"digital", "course", "service", "event", "booking"})
 
+#: The two values ``marketplace_listings.commerce_publication_enabled`` can hold.
+#:
+#: Defined here, beside :func:`_is_publication_enabled` and the ``COALESCE`` in
+#: :func:`public_sql`, because this module is what gives the column its meaning,
+#: and a writer that spelled the values itself could drift from the reader that
+#: decides what they do. NULL is deliberately not a third constant: it is the
+#: absence of a value, every reader coalesces it to not-held, and naming it would
+#: invite somebody to write it as though it were a decision.
+#:
+#: The two are not symmetric in authority, which is why they are documented
+#: together. A hold is a veto an owner may apply and lift at will, so several
+#: writers legitimately set ``PUBLICATION_HELD`` -- ``importer`` closes the latch
+#: on a product it could not bind without choosing on the merchant's behalf.
+#: ``PUBLICATION_RELEASED`` asserts that a person chose to put this in front of
+#: buyers, so it may only be written where that person's action is the reason:
+#: ``publication.release`` and ``drafts._publish_core``. Moderator approval
+#: answers a different question and must never write it.
+PUBLICATION_HELD = 0
+PUBLICATION_RELEASED = 1
+
 #: ``price_label`` values that name no price, normalised by :func:`normalized`.
 #:
 #: ``marketplace_listings.price_label`` is free text and ``DEFAULT 'Request

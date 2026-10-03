@@ -244,6 +244,7 @@
     "tests/dropshipping/test_dropship_draft_publish.py",
     "tests/dropshipping/test_dropship_environment_badge.py",
     "tests/dropshipping/test_dropship_import_audit.py",
+    "tests/dropshipping/test_dropship_publication_hold.py",
     "tests/dropshipping/test_dropship_import_pipeline.py",
     "tests/dropshipping/test_dropship_landed_cost.py",
     "tests/dropshipping/test_dropship_pricing.py",

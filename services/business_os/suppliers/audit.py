@@ -227,6 +227,75 @@ _ALLOWED_REPRICE = (
 )
 
 
+#: Somebody decided whether a buyer may see this product. Filed apart from the
+#: other two families for the same reason they are filed apart from each other --
+#: it is a third question with a third answer. An import row says why a price was
+#: chosen; a reprice row says why it changed; a publication row says *who chose to
+#: put it in front of buyers, and when*, which neither of the others can answer
+#: and which the listing row stores only as a current value with no history.
+#:
+#: That history is the point. `commerce_publication_enabled` is one integer, so
+#: the listing itself cannot distinguish "held since import, never released" from
+#: "released in March and pulled back in September". The second is the one a
+#: merchant asks about, and this trail is the only place it exists.
+PUBLICATION_SUBJECT = "supplier_publication"
+
+#: Two verbs, fixed rather than derived. A hold and a release are not two values
+#: of one outcome code -- they are opposite acts with different authority
+#: requirements (a hold needs nothing but ownership; a release has to pass the
+#: publish gate), so an operator filtering the timeline for one almost never
+#: wants the other.
+PUBLICATION_HELD = "supplier.publication.held"
+PUBLICATION_RELEASED = "supplier.publication.released"
+
+#: The publication vocabulary. Separate from the other two allowlists on the
+#: same reasoning :data:`_ALLOWED_REPRICE` gives for not being a union with
+#: :data:`_ALLOWED`: a list you cannot read as a description of one row's
+#: contents has stopped doing the job it exists for.
+_ALLOWED_PUBLICATION = (
+    # --- which product ------------------------------------------------------
+    "listing_id",
+    "provider",
+    "external_product_id",
+
+    # --- the decision itself ------------------------------------------------
+    # The column's own value, in both `before` and `after`, because the pair is
+    # the row: "held" and "released" are only meaningful as a transition, and
+    # recording the new value alone would make an idempotent retry
+    # indistinguishable from a real change. Carried as the raw tri-state --
+    # None, 0 or 1 -- and `_facts` keeps an explicit null, which is what lets a
+    # first-ever hold say "nobody had decided before this" rather than implying
+    # somebody had previously released it.
+    "commerce_publication_enabled",
+    # Why. Free text from the caller, and the one field here that is not
+    # derived -- a hold applied to 152 products by one operator action needs to
+    # say so, or the trail records 152 unexplained withdrawals.
+    "reason",
+
+    # --- what was true at the time ------------------------------------------
+    # A release is only as good as the gate it passed, and the gate's verdict is
+    # a fact about a moment. Storing it means a product that later breaks does
+    # not retroactively make the release look negligent -- and a product
+    # released while `publishable` was false would be visible as exactly that.
+    "publishable",
+    "problems",
+    # Which physical variant the seller committed to. The §8 decision, recorded
+    # where it can be audited: this is the field that answers "which item did we
+    # promise this buyer", and a release with no binding is the failure the whole
+    # mission exists to prevent.
+    "provider_variant_id",
+    # The surrounding lifecycle, so a publication row can be read without
+    # joining back to a listing that has since moved on. All three, because the
+    # interesting case is disagreement: `status='published'` with a hold in
+    # force is the §16 state this control was added to express, and a row
+    # showing both is that state being used correctly rather than a bug.
+    "status",
+    "approval_status",
+    "price_label",
+    "quantity",
+)
+
+
 def action_for(outcome) -> str:
     """``PUBLISHED`` -> ``supplier.import.published``.
 
@@ -348,6 +417,36 @@ def record_reprice(conn, *, business_id, listing_id, action, before, after) -> N
         actor=SYSTEM_ACTOR,
         before=_facts(_ALLOWED_REPRICE, before),
         after=_facts(_ALLOWED_REPRICE, after),
+    )
+
+
+def record_publication(conn, *, business_id, listing_id, action, actor,
+                       before, after) -> None:
+    """Write one publication event on the caller's transaction. Not committed here.
+
+    Takes the connection for the reason the other two do, and the stake here is
+    the mirror of :func:`record_reprice`'s. That one guards a write that changes
+    what a buyer is charged; this one guards a write that changes whether a buyer
+    can be charged at all. A row committing on a second connection while the
+    ``UPDATE marketplace_listings SET commerce_publication_enabled`` rolled back
+    would leave a trail asserting a product was taken off sale while it was still
+    selling -- which is worse than no trail, because somebody would believe it.
+
+    ``actor`` is a real user id and is required. There is deliberately no system
+    actor for this family: :data:`SYSTEM_ACTOR` exists because a reprice genuinely
+    happens with nobody awake, whereas a publication decision that no person made
+    is the thing §12 forbids. If a caller ever has no actor to name, the right
+    response is to refuse the write, not to invent an actor for it.
+    """
+    store_service._audit(
+        conn,
+        business_id=business_id,
+        subject_type=PUBLICATION_SUBJECT,
+        subject_ref=listing_id,
+        action=action,
+        actor=actor,
+        before=_facts(_ALLOWED_PUBLICATION, before),
+        after=_facts(_ALLOWED_PUBLICATION, after),
     )
 
 

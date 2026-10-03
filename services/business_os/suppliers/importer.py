@@ -94,7 +94,8 @@ from services import db, marketplace_variants as variants
 from services import marketplace_supplier_schema as supplier_schema
 from services.business_os.suppliers import (audit, connections, drafts,
                                             gateway, import_cart, normalize,
-                                            policy, pricing, store_policy)
+                                            policy, pricing, publication,
+                                            store_policy)
 from services.business_os.suppliers.errors import SupplierError
 
 #: Per-item outcomes. A bulk import returns one of these per requested item.
@@ -586,8 +587,26 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
         # they already have, with its merchant edits intact.
         return ALREADY_EXISTS, {"listing_id": existing}
 
+    # Asked once, here, and used twice below: it decides the binding written to
+    # the source row *and* whether this listing arrives held. Those two have to
+    # come from the same answer -- a listing bound by one reading and held by
+    # another would be a product whose latch disagrees with its own provenance.
+    binding = _sole_orderable(chosen)
+
     listing_id = _create_draft_listing(cur, seller_user_id, product,
                                        marketplace_autolist=marketplace_autolist)
+    if binding is None:
+        # No orderable variant could be determined without choosing on the
+        # merchant's behalf, so the publication control is closed before
+        # anything downstream can open the latch. See
+        # `publication.hold_at_creation` for why the publish gate refusing this
+        # product is not enough on its own: moderator review publishes without
+        # consulting any supplier fact, and the supplier feed fills in the
+        # quantity and price that are the only other things holding it back.
+        #
+        # Written here rather than after `link_source` so there is no instant,
+        # even inside one transaction, at which the row is bindable and unheld.
+        publication.hold_at_creation(cur, listing_id)
     _write_variants(cur, listing_id, seller_user_id, chosen, rule, shipping_cents)
 
     low, high = normalize.cost_range(chosen)
@@ -615,7 +634,7 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
         # one would ship a buyer whichever variant we guessed. `link_source`
         # refuses to re-point an existing binding, so this cannot silently
         # override a merchant's later explicit choice either.
-        provider_variant_id=_sole_orderable(chosen),
+        provider_variant_id=binding,
         # The low end of the range, and ``None`` when no variant had a readable
         # cost. Never 0 — see ``normalize.cost_range``.
         supplier_cost_cents=low,
