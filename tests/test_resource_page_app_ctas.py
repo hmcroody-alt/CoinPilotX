@@ -173,7 +173,14 @@ def test_the_profile_page_links_to_that_profile(seeded):
     html = render(seeded, f"/pulse/profile/{seeded['user_id']}")
     href, label = ctas(html)["profile"]
     assert href.startswith("/open/profile/")
-    assert label == "Open this profile in PulseSoc"
+    # Deliberately not "Open this <thing> in PulseSoc" like its three siblings
+    # above. On a post, reel or group page that CTA is the page's own call to
+    # action; on a profile it was competing with Follow and Message for the
+    # same attention, so the copy was shortened and the button de-emphasised.
+    # The href is the guarantee this test exists for -- the link still has to
+    # name *this* profile rather than the app's front door -- and it is
+    # unchanged.
+    assert label == "Open in PulseSoc App"
 
 
 def resource_paths(seeded):
