@@ -475,6 +475,7 @@
     "tests/test_call_multi_guest.py",
     "tests/test_call_two_sided_hangup.py",
     "tests/test_clean_html_accepts_row_values.py",
+    "tests/test_comm_v2_direct_conversation_reopen.py",
     "tests/test_command_center_ai_routing.py",
     "tests/test_commerce_discovery_surface_registration.py",
     "tests/test_commerce_discovery_thin_catalogue.py",
