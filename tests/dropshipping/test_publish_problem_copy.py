@@ -77,7 +77,16 @@ IMPORT_CART_SCREEN = os.path.join(
 #: code it can emit is a code that reaches a screen, and measuring only
 #: ``_validate`` would leave the new ones outside the enumeration -- which is the
 #: hole this whole file exists to close, reopened one function along.
-EMITTERS = (drafts._validate, drafts.verify_published)
+#:
+#: ``canonical_price_cents`` is the third, and it is here for that same sentence.
+#: The price codes used to be appended inside ``_validate``; they now come back
+#: from the one function that decides whether a single listing-level price exists,
+#: and ``_validate`` passes its answer through. They still reach the same screen,
+#: so a measurement that read only the caller would have gone quiet about
+#: ``VARIANT_PRICE_SPREAD`` the moment it moved -- a code that stopped being
+#: counted without stopping being emitted, which is worse than one that was never
+#: counted at all.
+EMITTERS = (drafts._validate, drafts.verify_published, drafts.canonical_price_cents)
 
 
 def backend_codes():

@@ -201,6 +201,43 @@ def _retail_of(variant):
     return variant.get("price_cents")
 
 
+def priced_variants(rows, rule, shipping_cents):
+    """``marketplace_listing_variants`` rows with this store's economics attached.
+
+    The shape every other function in this module means by ``priced``:
+    :func:`_offered`, :func:`_sold_variant`, :func:`canonical_price_cents` and
+    :func:`_validate` all read it. ``listing_readiness.evaluate`` deliberately does
+    *not* take this shape -- it is handed the raw rows and projects them itself, so
+    its verdict cannot depend on a caller's version. Handing it this one silently
+    strips ``price_cents``, which is what :func:`_retail_of` reads.
+
+    Public because a caller evaluating many listings at once cannot reach it
+    through :func:`get_draft`, which opens and closes its own connection per
+    product. Rebuilding the shape at the call site instead is the drift this
+    module keeps closing by hand: the economics here come from ``pricing.quote``
+    against the store's resolved rule and shipping allowance, and a bulk reader
+    that quoted a different basis would report a margin the publish gate does not
+    judge -- the same divergence :func:`get_draft` documents for the Review
+    screen, reintroduced one layer out.
+    """
+    out = []
+    for variant in rows:
+        economics = pricing.quote(rule, variant.get("cost_cents"), _retail_of(variant),
+                                  shipping_cents=shipping_cents)
+        out.append({
+            "variant_id": variant.get("id"),
+            "options": variant.get("options"),
+            "sku": variant.get("sku"),
+            "provider_variant_id": variant.get("provider_variant_id"),
+            "stock_state": variant.get("stock_state"),
+            "stock_quantity": variant.get("stock_quantity"),
+            "availability": variants.availability(variant),
+            "currency": variant.get("currency"),
+            **economics,
+        })
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Read
 # ---------------------------------------------------------------------------
@@ -237,21 +274,7 @@ def get_draft(business_id, store_id, actor_user_id, connection_id, listing_id, *
     finally:
         conn.close()
 
-    priced = []
-    for variant in rows:
-        economics = pricing.quote(rule, variant.get("cost_cents"), _retail_of(variant),
-                                  shipping_cents=shipping_cents)
-        priced.append({
-            "variant_id": variant.get("id"),
-            "options": variant.get("options"),
-            "sku": variant.get("sku"),
-            "provider_variant_id": variant.get("provider_variant_id"),
-            "stock_state": variant.get("stock_state"),
-            "stock_quantity": variant.get("stock_quantity"),
-            "availability": variants.availability(variant),
-            "currency": variant.get("currency"),
-            **economics,
-        })
+    priced = priced_variants(rows, rule, shipping_cents)
 
     media = _media_of(listing)
     return {
@@ -443,13 +466,9 @@ def _live_price_label(cur, listing_id, listing):
     priced = [{"provider_variant_id": v.get("provider_variant_id"),
                "retail_cents": _retail_of(v),
                "availability": variants.availability(v)} for v in rows]
-    offered = _offered(priced, variants.source_for(cur, listing_id))
-    if not offered or any(v["retail_cents"] is None for v in offered):
+    cents, problem = canonical_price_cents(priced, variants.source_for(cur, listing_id))
+    if problem is not None:
         raise SupplierError("publication_blocked", http_status=422)
-    distinct = {v["retail_cents"] for v in offered}
-    if len(distinct) > 1 or max(distinct) > MAX_CHECKOUT_PRICE_CENTS:
-        raise SupplierError("publication_blocked", http_status=422)
-    cents = offered[0]["retail_cents"]
     return _checkout_price_label(cents, listing.get("currency")), int(cents)
 
 
@@ -562,6 +581,40 @@ def _offered(priced, source=None):
             if v.get("availability") != variants.UNAVAILABLE] or list(priced)
 
 
+def canonical_price_cents(priced, source=None):
+    """The one retail price this listing can charge, or the code denying it.
+
+    Returns ``(cents, problem)`` with exactly one side set. The question is not
+    "is anything priced" but "is there a single number we could honour for
+    whichever variant this buyer ends up with", because the checkout charges one
+    listing-level price and has no variant selector — see :func:`_validate`.
+
+    Public because the answer is useful *before* a publish. A listing whose
+    offered variants all agree on a price has a derivable listing-level price
+    even while nothing is bound yet, and that derivation involves no choice: the
+    number is the same whichever variant is later bound, so filling it in is a
+    repair rather than a guess. Where the variants disagree there is no such
+    number and this refuses, which is the whole point —
+    :data:`VARIANT_PRICE_SPREAD` is a price that cannot be derived, not a price
+    that is merely inconvenient.
+
+    This was three separate copies — the publish gate, the publish write and
+    ``_live_price_label`` — which agreed only because they were written together.
+    """
+    offered = _offered(priced, source)
+    if not offered:
+        return None, NO_VARIANTS_SELECTED
+    if any(v.get("retail_cents") is None for v in offered):
+        return None, MISSING_PRICE
+    distinct = {int(v["retail_cents"]) for v in offered}
+    if len(distinct) > 1:
+        return None, VARIANT_PRICE_SPREAD
+    cents = distinct.pop()
+    if cents > MAX_CHECKOUT_PRICE_CENTS:
+        return None, PRICE_ABOVE_CHECKOUT_LIMIT
+    return cents, None
+
+
 def _checkout_price_label(cents, currency):
     """Render the agreed retail price as the label the buyer's checkout parses.
 
@@ -615,15 +668,13 @@ def _validate(listing, priced, source, media):
     # had priced *something*. A product with one variant at $20 and another left
     # blank published happily, and the blank one was then sold at $20.
     sold = _sold_variant(priced, source)
-    offered = _offered(priced, source)
-    if offered and any(v.get("retail_cents") is None for v in offered):
-        problems.append(MISSING_PRICE)
-    elif offered:
-        distinct = {v["retail_cents"] for v in offered}
-        if len(distinct) > 1:
-            problems.append(VARIANT_PRICE_SPREAD)
-        elif max(distinct) > MAX_CHECKOUT_PRICE_CENTS:
-            problems.append(PRICE_ABOVE_CHECKOUT_LIMIT)
+    # `NO_VARIANTS_SELECTED` is already owned by the `not priced` check above, and
+    # it is the only problem `canonical_price_cents` can report for an empty
+    # offer, so skipping it here keeps one fault from being counted twice in
+    # "N things left".
+    _, price_problem = canonical_price_cents(priced, source)
+    if price_problem is not None and price_problem != NO_VARIANTS_SELECTED:
+        problems.append(price_problem)
     if any(v.get("margin_state") == pricing.NEGATIVE_MARGIN for v in priced):
         problems.append(NEGATIVE_MARGIN)
     # Indeterminate stock is asked of the variant that will actually ship. While
@@ -725,7 +776,12 @@ def _publish_core(cur, listing_id, seller_user_id, listing, shipping_cents=None)
     # `_validate` has just established that every offered variant carries the
     # same price, so there is exactly one number here and it is the merchant's
     # own -- nothing is being chosen on their behalf.
-    retail_cents = int(offered[0]["retail_cents"])
+    retail_cents, price_problem = canonical_price_cents(priced, source)
+    if price_problem is not None:
+        # Unreachable: `_validate` refused above on the same function's answer.
+        # Asserted rather than assumed because the alternative to a derivable
+        # price is a fabricated one on a live product page.
+        return {"publishable": False, "problems": [price_problem]}, None
     label = _checkout_price_label(retail_cents, listing.get("currency"))
     # `_validate` has just established `media` is non-empty. `media[0]` is the
     # cover by this package's own definition, and it is what `_cover_of`

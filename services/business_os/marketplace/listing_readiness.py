@@ -330,7 +330,7 @@ def _stock_codes(listing: dict) -> list:
     return []
 
 
-def _supplier_facts(supplier: Any) -> Optional[tuple]:
+def _supplier_facts(supplier: Any, shipping_cents: Optional[int] = None) -> Optional[tuple]:
     """``(source, priced)`` for a supplier-sourced listing, or ``None``.
 
     ``supplier`` is ``{"source": <marketplace_product_sources row>, "variants":
@@ -363,13 +363,17 @@ def _supplier_facts(supplier: Any) -> Optional[tuple]:
         "stock_quantity": row.get("stock_quantity"),
         "retail_cents": _drafts._retail_of(row),
         "availability": _variants.availability(row),
-        # Shipping is not known on this surface -- it is a parameter of the
-        # merchant's publish request. `basis` with no freight understates the
-        # cost, so this can only ever report a margin that is negative before
-        # shipping is even added. Never a blocker the publish gate would not
-        # also raise; at worst one it raises later.
+        # Freight is included when the caller resolved it, because the publish
+        # gate resolves it and judges margin against cost *plus* shipping. Absent,
+        # `basis` with no freight understates the cost, so this can only ever
+        # report a margin that is negative before shipping is even added: never a
+        # blocker the publish gate would not also raise, at worst one it raises
+        # later. Present, the two agree, which is the point -- a merchant told
+        # HEALTHY here and refused for NEGATIVE_MARGIN on the same listing is the
+        # divergence this module exists to close.
         "margin_state": _pricing.margin_state(
-            _drafts._retail_of(row), _pricing.basis(row.get("cost_cents"), None)[1]),
+            _drafts._retail_of(row),
+            _pricing.basis(row.get("cost_cents"), shipping_cents)[1]),
     } for row in rows]
     return source, priced
 
@@ -435,7 +439,7 @@ def _supplier_stock_codes(facts: tuple) -> list:
 
 
 def evaluate(listing: dict, *, media: Optional[list] = None,
-             supplier: Any = None) -> dict:
+             supplier: Any = None, shipping_cents: Optional[int] = None) -> dict:
     """The one verdict. ``listing`` is a ``marketplace_listings`` row.
 
     ``media`` is the listing's attached media rows when the caller already has
@@ -456,10 +460,19 @@ def evaluate(listing: dict, *, media: Optional[list] = None,
     columns a supplier draft does not fill until the moment it publishes, so
     reading them was asking an unpublished listing why it was not published.
     Omitted, every previous verdict is unchanged.
+
+    ``shipping_cents`` is the store's supplier freight allowance, when the caller
+    has resolved it. It exists because the publish gate resolves it -- see
+    ``drafts.publish``, whose own comment is that "resolving the rule but not the
+    allowance would wave it through" -- so a verdict computed without it reports a
+    healthy margin on a product the gate will refuse for ``NEGATIVE_MARGIN``.
+    Optional rather than required because the Store screen's payload genuinely
+    does not know the allowance, and understating cost there can only ever hide a
+    blocker the gate raises later, never invent one.
     """
     blockers = []
     warnings = []
-    facts = _supplier_facts(supplier)
+    facts = _supplier_facts(supplier, shipping_cents)
 
     if not _text(listing.get("title")):
         blockers.append(MISSING_TITLE)
