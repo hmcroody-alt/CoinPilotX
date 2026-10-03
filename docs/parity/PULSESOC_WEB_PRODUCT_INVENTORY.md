@@ -4,11 +4,11 @@
 # PulseSoc Web Product Inventory
 
 - Rules in the booted Flask `url_map`: **2081** (authoritative)
-- Rules visible to static analysis: **1831**
+- Rules visible to static analysis: **1833**
   - the difference is blueprint route packs registered inside `except Exception`
 - Rules that render an HTML page: **425**
   - admin: **189**, user-facing: **236**
-- JSON/API rules: **1242**
+- JSON/API rules: **1244**
 - Jinja templates: **32**
 
 Most web pages are not Jinja templates; they are assembled by Python HTML
