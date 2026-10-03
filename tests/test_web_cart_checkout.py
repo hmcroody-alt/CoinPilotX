@@ -1402,7 +1402,16 @@ def test_the_progress_strip_on_the_return_pages_never_marks_confirmation_reached
     assert len(cells) == 1, strip
     assert "&#10003;" not in cells[0], (
         "the success page ticks Confirmation, which only the webhook can do")
-    assert "#2ecc71" not in cells[0], (
+    # Named by token, because that is what the helper emits. It used to emit
+    # `#2ecc71`; bot.py's hardcoded-colour ratchet refuses new hex literals and
+    # counts `var(--x, #abc123)` fallbacks too, so the literal went and this
+    # assertion would have passed vacuously against a strip that still drew
+    # Confirmation as done.
+    done_colour = "var(--status-success)"
+    assert done_colour in strip, (
+        f"the strip no longer draws any step in {done_colour}, so asserting its "
+        "absence on Confirmation proves nothing about Confirmation")
+    assert done_colour not in cells[0], (
         "the success page draws Confirmation in the done colour")
 
     # The cancel page: the buyer reached Stripe and came back without paying, so

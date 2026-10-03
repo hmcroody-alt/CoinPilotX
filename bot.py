@@ -64031,15 +64031,24 @@ def _checkout_progress_html(done, pending=0):
     flight* without saying it has arrived. Drawing step four as reached would be
     this page asserting something only `checkout.session.completed` knows, which
     is the same claim the copy below it carefully declines to make.
+
+    The colours are token names, not hex. bot.py is under a ratchet
+    (`tests/web_parity/test_design_tokens.py::test_hardcoded_colour_budget_in_bot_py`)
+    that counts distinct `#rrggbb` and refuses any growth while the Phase 3
+    cleanup is outstanding -- and its regex counts the fallback inside
+    `var(--x, #abc123)` just the same, so a "safe" fallback is not on offer.
+    A bare `var()` resolves because `pulsesoc-tokens.css` is loaded by the
+    shell these pages render inside, which is the same reason the inline
+    styling is acceptable in the first place.
     """
     cells = []
     for index, name in enumerate(_CHECKOUT_STEPS, start=1):
         if index <= done:
-            mark, colour = "&#10003;", "#2ecc71"
+            mark, colour = "&#10003;", "var(--status-success)"
         elif index == pending:
-            mark, colour = "&hellip;", "#e8c468"
+            mark, colour = "&hellip;", "var(--status-warning)"
         else:
-            mark, colour = str(index), "#8d9a92"
+            mark, colour = str(index), "var(--text-secondary)"
         cells.append(
             f"<li style='display:flex;align-items:center;gap:6px;color:{colour};white-space:nowrap'>"
             f"<span style='width:17px;height:17px;border-radius:50%;border:1px solid {colour};"
