@@ -1,17 +1,28 @@
-"""``/pulse/post/<id>`` was telling anonymous readers what we think of a post.
+"""Two things PulseSoc was telling people it should not have been telling them.
 
-The byline read ``Type: text · Status: approved · Risk score: 45``.
-``pulse_posts.risk_score`` is a scam-shield output -- an input to a moderation
-decision, not a fact about the post -- and ``moderation_status`` is its review
-state. This is the one social surface that answers an anonymous request with a
-200, so both were being served to the open web; verified against production on
-2026-10-01 with a Googlebot user-agent and no cookies, post 2516 returned
-``Risk score: 45``.
+Both were found by asking the same question of two unrelated surfaces: the
+route decides *whether* you may read this entity, but who decides *which
+fields* you receive? In both cases nobody did, and the answer defaulted to
+"all of them".
 
-The access gate was never wrong: it 404s anything not approved. The field
-projection was. Deciding *whether* a reader may have this post is a different
-question from deciding *which fields* they receive, and only the first one was
-being asked.
+``/pulse/post/<id>`` -- anonymous
+    The byline read ``Type: text · Status: approved · Risk score: 45``.
+    ``pulse_posts.risk_score`` is a scam-shield output, an input to a
+    moderation decision, not a fact about the post. This is the one social
+    surface that answers an anonymous request with a 200, so the number was
+    being served to the open web; verified against production on 2026-10-01
+    with a Googlebot user-agent and no cookies, post 2516 returned
+    ``Risk score: 45``. The access gate was never wrong -- it 404s anything not
+    approved. The field projection was.
+
+``/api/pulse/profile/<key>`` and ``/api/pulse/identity/<id>`` -- authenticated
+    Returned the target's ``email`` and ``full_name`` to any logged-in viewer.
+    The builder starts from ``pulse_mobile_user_payload``, which *is* a
+    positive allowlist -- but one written for ``/api/mobile/auth/session``,
+    where the subject and the viewer are the same person. Reused for an
+    arbitrary target it published the owner's field set to a stranger. A
+    correct allowlist pointed at the wrong audience fails exactly as loudly as
+    no allowlist at all, which is to say silently.
 
 WHAT THESE TESTS ARE FOR
 ------------------------
@@ -21,14 +32,19 @@ The load-bearing property is that every seeded value is a *distinct* sentinel.
 An earlier version of this check gave every numeric column the same placeholder
 and was therefore blind to ``risk_score``, the one column it existed for: the
 assertion passed because the value it was looking for was also the value of
-four fields that were legitimately present. ``test_the_sentinels_are_distinguishable``
-fails if that ever stops being true.
+four fields that were legitimately present. So the email, the legal name and
+the score here share no digits and no substrings, and
+``test_the_sentinels_are_distinguishable`` fails if that ever stops being true.
+
+The profile assertions search the serialized JSON rather than the key set, so a
+field smuggled out under a different name is still caught.
 
 Runs against a temp sqlite file, so nothing here touches coinpilotx.db.
 
 Run: python3 -m pytest tests/test_privacy_p1_exposure.py
 """
 
+import json
 import os
 import re
 import sys
@@ -221,6 +237,104 @@ class PostPageExposure(PrivacyFixture):
         page = self.client.get(f"/pulse/post/{RISKY_POST}").get_data(as_text=True)
         self.assertNotIn("Status: approved", page)
         self.assertNotIn("moderation_status", page)
+
+
+class ProfilePayloadExposure(PrivacyFixture):
+    """What one account's profile says about it to a different account."""
+
+    def other_user_profile(self):
+        self.seed_accounts()
+        self.login_as(VIEWER, "privacy_viewer", VIEWER_EMAIL)
+        response = self.client.get(f"/api/pulse/profile/{SUBJECT_USERNAME}")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return response.get_json()
+
+    def test_the_profile_route_answers_at_all(self):
+        """The control: these are absence assertions, and a 404 body contains
+        no email either."""
+        payload = self.other_user_profile()
+        self.assertTrue(payload.get("ok"))
+        self.assertEqual(int(payload["profile"]["user_id"]), SUBJECT)
+
+    def test_a_stranger_does_not_receive_the_subjects_email_address(self):
+        payload = self.other_user_profile()
+        self.assertNotIn(SUBJECT_EMAIL, json.dumps(payload))
+
+    def test_a_stranger_does_not_receive_the_subjects_legal_name(self):
+        """Separate from the email on purpose.
+
+        They were removed by one edit but they are two different disclosures,
+        and a future change that reinstates one is not caught by a test that
+        folds them together.
+        """
+        payload = self.other_user_profile()
+        self.assertNotIn(SUBJECT_FULL_NAME, json.dumps(payload))
+
+    def test_the_stranger_payload_carries_no_key_named_for_either_field(self):
+        """Belt to the value assertions' braces.
+
+        A row whose ``email`` happens to be empty would satisfy the value
+        checks while the key was still being published, and the key returning
+        is how the field comes back.
+        """
+        profile = self.other_user_profile()["profile"]
+        self.assertNotIn("email", profile)
+        self.assertNotIn("full_name", profile)
+
+    def test_the_public_half_of_the_profile_still_arrives(self):
+        """The strip has to be narrow. A profile that lost its display name
+        would also pass every assertion above."""
+        profile = self.other_user_profile()["profile"]
+        self.assertEqual(profile.get("username"), SUBJECT_USERNAME)
+        self.assertTrue(profile.get("display_name"))
+        self.assertIn("viewer_permissions", profile)
+        self.assertFalse(profile.get("is_self"))
+
+    def test_the_owner_still_receives_their_own_email_and_legal_name(self):
+        """``/api/pulse/profile/me`` and ``/api/mobile/auth/session`` carry both
+        legitimately, and the shipped iOS build reads
+        ``authState.user?.email``.
+
+        This is why the strip lives in ``pulse_native_profile_payload`` keyed on
+        the viewer, and not in ``pulse_mobile_user_payload``: removing the
+        fields at the source would have signed the owner out of their own
+        account settings screen.
+        """
+        self.seed_accounts()
+        self.login_as(SUBJECT, SUBJECT_USERNAME, SUBJECT_EMAIL)
+        response = self.client.get("/api/pulse/profile/me")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        profile = response.get_json()["user"]
+        self.assertTrue(profile.get("is_self"))
+        self.assertEqual(profile.get("email"), SUBJECT_EMAIL)
+        self.assertEqual(profile.get("full_name"), SUBJECT_FULL_NAME)
+
+    def test_the_owner_reading_their_own_profile_by_key_keeps_both_fields(self):
+        """Same account, the other route. ``is_self`` is what the strip keys on,
+        so the two paths to one's own profile must agree."""
+        self.seed_accounts()
+        self.login_as(SUBJECT, SUBJECT_USERNAME, SUBJECT_EMAIL)
+        response = self.client.get(f"/api/pulse/profile/{SUBJECT_USERNAME}")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        profile = response.get_json()["profile"]
+        self.assertTrue(profile.get("is_self"))
+        self.assertEqual(profile.get("email"), SUBJECT_EMAIL)
+
+    def test_the_session_payload_builder_is_unchanged(self):
+        """``pulse_mobile_user_payload`` is the owner's allowlist and stays that
+        way.
+
+        If a later cleanup "simplifies" by deleting the fields here instead,
+        every test above still passes and the account settings screen loses the
+        user's own email. Pinning the builder is what makes the strip's
+        location deliberate rather than incidental.
+        """
+        built = bot.pulse_mobile_user_payload(
+            {"user_id": SUBJECT, "email": SUBJECT_EMAIL, "full_name": SUBJECT_FULL_NAME,
+             "username": SUBJECT_USERNAME}
+        )
+        self.assertEqual(built.get("email"), SUBJECT_EMAIL)
+        self.assertEqual(built.get("full_name"), SUBJECT_FULL_NAME)
 
 
 if __name__ == "__main__":

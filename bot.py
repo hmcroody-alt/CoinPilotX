@@ -115064,6 +115064,9 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
     except Exception:
         modules = []
     theme["modules"] = modules if isinstance(modules, list) else []
+    # Computed once and reused by the strip below, so the flag the client reads
+    # and the rule that decides what the client receives cannot disagree.
+    is_self = target_user_id == int(viewer_user_id or 0)
     payload = pulse_mobile_user_payload(account)
     payload.update({
         "display_name": ident.get("name") or ident.get("display_name") or payload.get("display_name"),
@@ -115092,7 +115095,7 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
         "follower_count": follower_count,
         "following_count": following_count,
         "viewer_follows": viewer_follows,
-        "is_self": target_user_id == int(viewer_user_id or 0),
+        "is_self": is_self,
         "theme": theme or {"theme_key": "deep_space", "accent_color": "#32e6b3", "layout_key": "classic", "motion_level": "balanced", "modules": []},
         # Authoritative answer to "what may this viewer see about this owner",
         # resolved here so every Profile OS destination on the native app gates
@@ -115116,6 +115119,31 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
             payload.update(pulsedrop_account.profile_overlay())
     except Exception:
         logging.getLogger(__name__).exception("PULSEDROP_PROFILE_OVERLAY_FAILED user_id=%s", target_user_id)
+    # An account's email address and legal name belong to the account, not to
+    # whoever looked it up.
+    #
+    # ``pulse_mobile_user_payload`` above is a positive allowlist and the
+    # structure is right -- but the allowlist it encodes is the *owner's* field
+    # set, because that function was written for ``/api/mobile/auth/session``
+    # where the subject and the viewer are the same person. Reused here it
+    # serves an arbitrary target to an arbitrary logged-in viewer, and nothing
+    # downstream removed the two owner-only fields: ``GET
+    # /api/pulse/profile/<key>`` and ``GET /api/pulse/identity/<pulse_id>``
+    # handed any authenticated requester the target's ``email`` and
+    # ``full_name``. The route's own gate is not the problem -- it correctly
+    # 410s deleted accounts, 403s restricted ones and 403s private profiles for
+    # a non-self viewer. Deciding *whether* a viewer may read a profile is a
+    # different question from deciding *which fields* they receive, and only
+    # the first one was being asked.
+    #
+    # Stripped here, last, rather than inside ``pulse_mobile_user_payload``:
+    # the session route and ``/api/pulse/profile/me`` legitimately carry both,
+    # and the shipped iOS build reads ``authState.user?.email`` from the
+    # session payload. No mobile-native screen reads either field off an
+    # other-user profile, so this removes nothing a client was using.
+    if not is_self:
+        payload.pop("email", None)
+        payload.pop("full_name", None)
     return payload
 
 
