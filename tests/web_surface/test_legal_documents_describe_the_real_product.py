@@ -486,6 +486,18 @@ def test_the_policy_describes_self_service_deletion_while_the_route_offers_it(pa
 REQUEST_LEDGER = "pulse_account_data_requests"
 REQUEST_LEDGER_OWNERS = {"services/pulse_settings_routes.py"}
 
+#: Privacy Center stores four choices in `privacy_preferences`. Enforcement is
+#: measured by who reads the *table*, not by who mentions a column name:
+#: `public_profile` collides with `can_view_public_profile`, a `public_profile()`
+#: builder and a `_public_profile()` helper across half a dozen services, none of
+#: which touch this table. Searching for the column name would have "proved" a
+#: control enforced that nothing enforces.
+PREFERENCE_TABLE = "privacy_preferences"
+PREFERENCE_TABLE_OWNERS = {"bot.py"}
+#: The one reader, and the single control it honours.
+PREFERENCE_READERS = {"services/pulse_ads_service.py"}
+ENFORCED_PREFERENCE = "personalized_ads_opt_out"
+
 
 def _ledger_processors():
     """Files that touch the request ledger and are neither the route nor a test."""
@@ -578,6 +590,74 @@ def test_the_policy_does_not_repeat_the_apps_export_email_promise(pages):
     )
     assert not promised, (
         f"the Privacy Policy repeats the app's unkept email promise: {promised}"
+    )
+
+
+def _preference_table_readers():
+    """Files reading the Privacy Center's store, excluding the page and tests."""
+
+    found = set()
+    for path in ROOT.rglob("*.py"):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel in PREFERENCE_TABLE_OWNERS or "node_modules" in rel:
+            continue
+        if rel.startswith(("tests/", "scripts/")):
+            continue
+        try:
+            if PREFERENCE_TABLE in path.read_text(errors="ignore"):
+                found.add(rel)
+        except OSError:
+            continue
+    return found
+
+
+def test_the_policy_does_not_endorse_the_privacy_center_boxes_that_do_nothing(pages):
+    """Four tick-boxes, one of them wired to anything.
+
+    `bot.py` says so in its own comment above `PRIVACY_CENTER_CONTROLS`: the only
+    control anything enforces is `personalized_ads_opt_out`. The page saves all
+    four into `privacy_preferences`, and the sole reader of that table outside the
+    page is `services/pulse_ads_service.py`.
+
+    An earlier draft of this Policy told members they could change their "privacy,
+    notification and visibility settings ... through Privacy Center". That bundled
+    a working path with a placebo one, which is the 2FA-toggle defect wearing
+    different clothes: a member who unticks "Public profile visible" there and
+    reads this Policy would believe their profile is now private. It is not.
+
+    Enforcement is read from who touches the *table*. `public_profile` as a bare
+    string appears in `profile_viewer_permissions.py`, `business_os/profile`,
+    `chat_realtime_service.py` and more -- as `can_view_public_profile`, as a
+    `public_profile()` builder, as a `_public_profile()` helper. None reads this
+    table. A column-name grep would have reported the control enforced.
+    """
+
+    readers = _preference_table_readers()
+    assert readers == PREFERENCE_READERS, (
+        f"the readers of {PREFERENCE_TABLE} changed: expected {sorted(PREFERENCE_READERS)}, "
+        f"found {sorted(readers)}. If a control that did nothing is now enforced, the "
+        "Privacy Policy's paragraph calling it unconnected has become the false claim. "
+        "Read what the new reader honours and rewrite that paragraph."
+    )
+
+    visible = pages[PRIVACY]["visible"]
+    assert re.search(r"Opt out of personalized ads", visible, re.I), (
+        "the one Privacy Center control that is actually enforced is the one "
+        "members most need named, and the Policy does not name it"
+    )
+    assert re.search(
+        r"does not make your profile private", visible, re.I
+    ), (
+        "the Privacy Center's 'Public profile visible' box saves a value nothing "
+        "reads; a Policy that points members at that page has to say so, because "
+        "unticking it looks exactly like making a profile private"
+    )
+    endorsement = _unnegated(
+        visible, r"(?:change|manage|update)[^.]{0,200}?(?:through|in|at|via)\s+Privacy Center"
+    )
+    assert not endorsement, (
+        "the Policy presents Privacy Center as the place to change privacy and "
+        f"visibility settings; three of its four boxes do nothing: {endorsement}"
     )
 
 

@@ -154,6 +154,30 @@ MUTATIONS = [
         suites=[CLAIM_MATRIX],
     ),
     dict(
+        name="privacy-center-presented-as-a-working-control",
+        control=(
+            "The exact sentence an earlier draft carried. Three of the Privacy "
+            "Center's four boxes save a value nothing reads, so pointing members "
+            "there to change visibility bundles a real path with a placebo one."
+        ),
+        path=PRIVACY,
+        old="<p>You can edit your profile, and change your privacy, notification and visibility settings, at any time in your settings.",
+        new="<p>You can edit your profile, change your privacy, notification and visibility settings, and withdraw marketing consent at any time in your settings or through <a href=\"/privacy-center\">Privacy Center</a>.",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
+        name="public-profile-box-left-looking-like-a-privacy-control",
+        control=(
+            "Unticking 'Public profile visible' looks exactly like making a "
+            "profile private and does nothing. Dropping this one clause is the "
+            "whole defect: everything else on the page can stay honest."
+        ),
+        path=PRIVACY,
+        old="In particular, <strong>unticking \"Public profile visible\" on that page does not make your profile private.</strong> ",
+        new="",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
         name="website-deletion-speaks-for-the-whole-product",
         control=(
             "The quietest §64 failure, and it was mine. Deleting on the website is "
