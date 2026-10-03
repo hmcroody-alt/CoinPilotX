@@ -962,3 +962,127 @@ def test_the_reader_imports_the_gate_rather_than_restating_its_rules():
         assert literal not in src.replace("2026-10-03", ""), (
             "%s appears as a literal; it must come from the module that owns it"
             % literal)
+
+
+# --------------------------------------------------------------------------
+# The denominator (§5). Two populations, and the wrong one is reassuring.
+# --------------------------------------------------------------------------
+
+#: Production, 2026-10-03. Both measured, both real, and they answer different
+#: questions: 44 listings are *purchasable* (published, in stock, priced) and so
+#: form the gate's exposure denominator; 196 products are *sourced* and so form
+#: the reconciler's demand denominator. The reconciler refreshes all 196
+#: regardless of whether any of them can be bought.
+MEASURED_PURCHASABLE_LISTINGS = 44
+MEASURED_SOURCED_PRODUCTS = 196
+
+
+def test_the_two_denominators_invert_the_verdict_so_they_cannot_be_swapped():
+    """The exposure count does not merely understate the load — it flips it.
+
+    This is the trap worth a test rather than a comment. ``snapshot()`` puts an
+    ``applicable`` integer in the caller's hand, it is the obvious thing to
+    reach for, and feeding it to the projection returns ``keeps_up=True``: the
+    single most reassuring output the function can produce, at the moment the
+    queue is in fact 4x oversubscribed with 277 of 395 jobs overdue.
+
+    Pinned via ``break_even_product_count``, which is solved from ``CADENCE``,
+    so this stays an assertion about the deployed worker rather than about two
+    numbers someone typed. The verdict inverts precisely because break-even
+    falls *between* the two populations.
+    """
+    break_even = obs.break_even_product_count()
+    assert MEASURED_PURCHASABLE_LISTINGS <= break_even < MEASURED_SOURCED_PRODUCTS, (
+        "break-even is %d, which no longer separates the exposure count (%d) from "
+        "the demand count (%d) -- the inversion this test pins has moved, and the "
+        "capacity_projection docstring's worked example is now wrong"
+        % (break_even, MEASURED_PURCHASABLE_LISTINGS, MEASURED_SOURCED_PRODUCTS))
+
+    exposure = obs.capacity_projection(MEASURED_PURCHASABLE_LISTINGS)
+    demand = obs.capacity_projection(MEASURED_SOURCED_PRODUCTS)
+    assert exposure["keeps_up"] is True
+    assert demand["keeps_up"] is False
+    assert exposure["oversubscription"] < 1.0 < demand["oversubscription"]
+    # And the consequence the gate actually cares about: over the real
+    # population a full sweep cannot meet the freshness the gate demands, which
+    # is why DRAIN_BEHIND is latched permanently rather than intermittently.
+    assert exposure["within_gate_freshness"] is True
+    assert demand["within_gate_freshness"] is False
+
+
+def test_the_demand_population_is_counted_from_the_queue_not_the_catalogue(cur):
+    """Distinct products over the per-product kinds, ignoring everything else.
+
+    Seeded with the shape production actually has: every product carrying both
+    recurring kinds, plus the per-connection singletons (``health``, ``shops``)
+    that are not per-product and must not inflate the count.
+    """
+    moment = _epoch()
+    for n in range(7):
+        for kind in obs.PER_PRODUCT_JOB_KINDS:
+            cur.execute(
+                "INSERT INTO business_os_supplier_sync_jobs (id, connection_id, "
+                "business_id, store_id, kind, resource_id, available_at) "
+                "VALUES(?,'conn','biz','store',?,?,?)",
+                (f"job-{kind}-{n}", kind, f"prod-{n}", moment),
+            )
+    for kind in ("health", "shops"):
+        cur.execute(
+            "INSERT INTO business_os_supplier_sync_jobs (id, connection_id, "
+            "business_id, store_id, kind, resource_id, available_at) "
+            "VALUES(?,'conn','biz','store',?,'whole-shop',?)",
+            (f"job-{kind}", kind, moment),
+        )
+
+    assert obs.catalogue_demand_population(cur) == 7
+    # 7 products x 2 kinds = 14 recurring jobs; the 2 singletons are not the
+    # projection's business, and counting them would overstate a catalogue.
+    assert obs.measured_capacity(cur)["recurring_jobs"] == 14
+
+
+def test_an_unreadable_queue_is_none_rather_than_a_comfortable_zero(cur):
+    """Because ``capacity_projection(0)`` reports a healthy worker.
+
+    The substitution is a single ``or 0`` away and produces the same false
+    reassurance as a percentile of zero over an empty sample. Asserted together
+    so the comfortable answer is visible next to the honest one.
+    """
+    assert obs.capacity_projection(0)["keeps_up"] is True
+
+    cur.execute("DROP TABLE business_os_supplier_sync_jobs")
+    assert obs.catalogue_demand_population(cur) is None
+
+    out = obs.measured_capacity(cur)
+    assert out["measured"] is False
+    assert out["product_count"] is None
+    assert "keeps_up" not in out, (
+        "a verdict was reported for a population that could not be read")
+
+
+def test_an_empty_queue_is_zero_rather_than_unreadable(cur):
+    """The other half: zero sourced products is a real, reportable answer.
+
+    ``None`` and ``0`` must not collapse in either direction -- an empty queue
+    genuinely means the reconciler has nothing to do.
+    """
+    assert obs.catalogue_demand_population(cur) == 0
+    out = obs.measured_capacity(cur)
+    assert out["measured"] is True
+    assert out["product_count"] == 0
+
+
+def test_measured_capacity_is_the_projection_over_the_counted_population(cur):
+    """No second arithmetic path. It composes, it does not re-derive."""
+    moment = _epoch()
+    for n in range(3):
+        for kind in obs.PER_PRODUCT_JOB_KINDS:
+            cur.execute(
+                "INSERT INTO business_os_supplier_sync_jobs (id, connection_id, "
+                "business_id, store_id, kind, resource_id, available_at) "
+                "VALUES(?,'conn','biz','store',?,?,?)",
+                (f"job-{kind}-{n}", kind, f"prod-{n}", moment),
+            )
+    measured = obs.measured_capacity(cur, intents_per_tick=5)
+    expected = obs.capacity_projection(3, intents_per_tick=5)
+    expected["measured"] = True
+    assert measured == expected
