@@ -77,10 +77,16 @@ SOURCES = ("web_signup", "web_login", "mobile_register", "mobile_login")
 #:
 #: The native app carries its own copy of this text under
 #: `mobile-native/src/screens/settings/legalContent.ts`, and that copy is dated
-#: "1 March 2026" while the documents in force here say "May 2026". So an
+#: "1 March 2026" while the documents in force here say "October 2026". So an
 #: acceptance step must send the member to these paths and not to the bundled
 #: copy: accepting version X while reading version X-1 is precisely the defect a
 #: version column exists to prevent.
+#:
+#: The gap is now wider than a date. The bundled Privacy Policy tells members
+#: they can enable two-factor authentication, which has not shipped; the
+#: documents at these paths say it has not. Only a new App Store build can
+#: correct the bundled copy, so these paths are the authoritative text until
+#: one goes out.
 DOCUMENT_PATHS = {
     "terms": "/terms",
     "privacy": "/privacy",
