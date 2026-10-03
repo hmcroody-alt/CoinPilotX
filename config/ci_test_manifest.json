@@ -272,6 +272,7 @@
     "tests/marketplace/test_charge_model_authority.py",
     "tests/marketplace/test_checkout_financial_events.py",
     "tests/marketplace/test_checkout_idempotency_collision.py",
+    "tests/marketplace/test_checkout_money_invariants.py",
     "tests/marketplace/test_checkout_options_route.py",
     "tests/marketplace/test_commercial_operations.py",
     "tests/marketplace/test_connect_webhook_state.py",

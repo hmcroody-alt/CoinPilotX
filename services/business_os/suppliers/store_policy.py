@@ -78,15 +78,26 @@ TABLE = "business_os_store_import_policy"
 #: Derived, not picked. A sale at retail ``R`` on an item costing ``C`` pays,
 #: before the merchant sees anything:
 #:
-#: * the PulseSoc platform fee -- ``bot.seller_fee_bps`` returns 1000 bps (10% of
-#:   ``R``) for a non-teacher seller when ``platform_fee_rules`` has no active
-#:   row, which is the state of the table for an ordinary merchant;
+#: * the PulseSoc platform fee -- **zero** today. ``bot.seller_fee_bps`` routes
+#:   the ``merchant`` lane to ``business_os.marketplace.policy.platform_fee_bps``
+#:   and never reads ``platform_fee_rules``, so that table's undisclosed 10%
+#:   merchant row is unreachable from this lane. The policy answers 0 bps until
+#:   the owner opens all three ``MARKETPLACE_STANDARD_V1`` gates and
+#:   ``PROPOSED_PLATFORM_FEE_BPS`` (500 -- 5%, not 10%) after. There is no
+#:   third value, so 5% is the ceiling this derivation has to survive;
 #: * card processing -- Stripe's usual 2.9% + $0.30.
 #:
-#: That is roughly 13% of retail gone before cost of goods. A target margin of
-#: 45% sets ``R = C / 0.55`` (about 1.82x cost) and leaves the merchant near 32%
-#: of retail after fees and before shipping -- positive with room for a shipping
-#: estimate we could not read, which is what "conservative" has to mean here.
+#: So roughly 3% of retail gone before cost of goods now, and under 9% even with
+#: the gates open. A target margin of 45% sets ``R = C / 0.55`` (about 1.82x
+#: cost) and leaves the merchant near 42% of retail after today's fees and
+#: before shipping -- positive with room for a shipping estimate we could not
+#: read, which is what "conservative" has to mean here.
+#:
+#: The 45 is deliberately *not* being cut to track the fee going to zero. It was
+#: derived against a 13% assumption that is no longer true, which means it is now
+#: more conservative than its own arithmetic requires -- and that is the safe
+#: direction (see below). Repricing it would reprice every auto-published
+#: listing, which is a merchandising decision and not a fee correction.
 #: Conservative in this direction is *higher*, not lower: the failure this
 #: default exists to avoid is an auto-published listing that loses money on every
 #: sale, and a thin margin is how that happens silently.
