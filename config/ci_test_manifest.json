@@ -494,6 +494,7 @@
     "tests/test_failed_login_alert_dispatch.py",
     "tests/test_feature_pages.py",
     "tests/test_federated_native_auth.py",
+    "tests/test_federated_native_providers.py",
     "tests/test_federated_replay.py",
     "tests/test_federated_signin_routes.py",
     "tests/test_home_rail_commerce_shelf.py",

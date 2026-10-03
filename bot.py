@@ -9506,6 +9506,51 @@ def federated_sign_in_options():
     return options
 
 
+def federated_native_provider_ready(adapter):
+    """Whether a *phone's* token for this provider could actually be honoured.
+
+    Deliberately stricter than `configured()`, which is the web test. A provider
+    can be fully configured for the website and still have no native client id,
+    and in that state `federated_native_profile` refuses with
+    `provider_config_error` -- because each adapter's `audiences()` is the web
+    client id plus the native ones, so honouring a phone's token without a
+    native audience would honour a token minted for the website in a browser.
+
+    One function, called by both the endpoint that *advertises* providers and
+    the branch that *enforces* them, because two copies of this predicate would
+    be free to drift -- and the direction that matters is the silent one: an
+    advertisement looser than the enforcement is a button that opens a provider
+    sheet, collects a real credential from the member, and then fails.
+    """
+
+    try:
+        return bool(adapter.configured() and adapter.native_client_ids())
+    except Exception as exc:
+        logging.warning("FEDERATED_NATIVE_READY_CHECK_FAILED error=%s", exc.__class__.__name__)
+        return False
+
+
+def federated_native_sign_in_options():
+    """Providers a native client should offer, as the server sees it.
+
+    The web answers this in Jinja, where an unconfigured provider is simply
+    absent from the rendered HTML. A native client has no such luxury -- its UI
+    shipped in a binary long before this server process started, and cannot be
+    re-rendered when configuration changes -- so it has to ask, and this is the
+    answer.
+    """
+
+    options = []
+    for provider, adapter in FEDERATED_ADAPTERS.items():
+        if not federated_native_provider_ready(adapter):
+            continue
+        options.append({
+            "provider": provider,
+            "label": external_identity.PROVIDER_LABELS.get(provider, provider.title()),
+        })
+    return options
+
+
 LOGIN_HERO_PREFIX = "login-hero"
 # Best first. AVIF is roughly half the bytes of the JPEG at this size and this
 # image is the LCP element on the sign-in page, so the order is the point rather
@@ -10275,14 +10320,13 @@ def federated_native_profile(provider, payload):
     adapter = federated_adapter(provider)
     if adapter is None:
         return None, federated_native_error("invalid_provider_response", 404)
-    try:
-        if not adapter.configured() or not adapter.native_client_ids():
-            # No native client ID means no audience a phone's token could carry.
-            # Answered as configuration rather than as a bad token, because that
-            # is what it is -- and because telling a client "try again" for
-            # something retrying cannot fix is how a support queue fills up.
-            return None, federated_native_error("provider_config_error", 503)
-    except Exception:
+    # The same predicate `/api/mobile/auth/providers` advertises, so the set of
+    # buttons a client is told to show and the set this endpoint will honour
+    # cannot drift apart. No native client ID means no audience a phone's token
+    # could carry. Answered as configuration rather than as a bad token, because
+    # that is what it is -- and because telling a client "try again" for
+    # something retrying cannot fix is how a support queue fills up.
+    if not federated_native_provider_ready(adapter):
         return None, federated_native_error("provider_config_error", 503)
 
     assertion = str(payload.get("id_token") or payload.get("identity_token") or "")
@@ -10398,6 +10442,41 @@ def federated_native_admit(provider, user, payload, preferred_language):
         details={"provider": provider, "surface": "ios", "db_engine": db_service.ENGINE_NAME},
     )
     return complete_mobile_login(user, payload, preferred_language, identifier=email)
+
+
+@webhook_app.route("/api/mobile/auth/providers", methods=["GET"])
+@webhook_app.route("/api/pulse/mobile/auth/providers", methods=["GET"])
+@public_route(reason="Tells a not-yet-signed-in app which federated providers this server can actually honour, so it does not render a button that cannot complete. Reports configuration state only -- no account data, no credentials, and nothing that varies per caller.")
+def api_mobile_auth_providers():
+    """Which federated providers this server can honour from a phone, right now.
+
+    The login screen cannot work this out for itself. `AppleAuthentication.
+    isAvailableAsync()` answers "can this *device* show the sheet", which is
+    true on every iPhone since iOS 13 and says nothing about whether this
+    server holds the Apple credentials needed to verify what comes back. A
+    button gated on device capability alone is therefore live on every phone
+    the moment the screen ships, regardless of configuration -- it opens the
+    real Apple sheet, takes a real credential from the member, and then eats a
+    503. That is worse than no button: the member has authenticated as far as
+    they can tell, and the failure arrives after the commitment.
+
+    So availability is answered here, by the side that knows. Deliberately
+    unauthenticated -- a login screen has no session by construction -- and
+    deliberately boring: configuration state, identical for every caller,
+    disclosing nothing an attacker could not learn by pressing the button.
+    """
+
+    # No `init_db()`. This endpoint reads environment configuration and touches
+    # no table, and a cold start answering "which buttons" should not be the
+    # thing that builds ~170 tables.
+    options = federated_native_sign_in_options()
+    return jsonify({
+        "ok": True,
+        "providers": options,
+        # Flattened for the client's convenience, and because a list of strings
+        # is what the gate actually tests against.
+        "available": [option["provider"] for option in options],
+    })
 
 
 @webhook_app.route("/api/mobile/auth/federated", methods=["POST"])

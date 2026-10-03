@@ -19,12 +19,34 @@
  *
  * ## Why a button may be absent
  *
- * Neither button is rendered on availability alone. Apple's is gated on the
- * device actually offering Sign in with Apple, Google's on this build having
- * been configured with an iOS client id. A provider button that opens a sheet
- * which cannot complete is worse than no button: the member has already
- * committed to an identity choice by the time it fails, and the failure looks
- * like PulseSoc rejecting their Apple account.
+ * A provider button that opens a sheet which cannot complete is worse than no
+ * button: the member has already committed to an identity choice by the time
+ * it fails, and the failure looks like PulseSoc rejecting their Apple account.
+ * So a button needs two independent yeses.
+ *
+ * The *device* must offer the provider -- Apple's sheet must exist on this
+ * iPhone, and Google's native module must have been configured into this build
+ * with an iOS client id.
+ *
+ * The *server* must also say it can honour the result, which the device cannot
+ * work out for itself. `AppleAuthentication.isAvailableAsync()` is true on
+ * every iPhone since iOS 13 whether or not PulseSoc holds a single Apple
+ * credential, so device capability alone would make the Apple button live on
+ * every phone the moment this screen shipped -- opening the real Apple sheet,
+ * taking a real credential, and then eating the 503 that
+ * `/api/mobile/auth/federated` answers when the provider is unconfigured.
+ * `/api/mobile/auth/providers` is asked instead, and it reports the *same*
+ * predicate that endpoint enforces, so what is offered and what is accepted
+ * cannot drift apart.
+ *
+ * That answer has to come at runtime rather than from build config, because
+ * this binary outlives the configuration: a provider can be enabled or revoked
+ * on the server months after the App Store release, and neither direction
+ * should need a new build.
+ *
+ * Unreachable server, timeout, malformed answer: no provider buttons. The
+ * fallback for "cannot tell" is the one that cannot mislead, and
+ * email/password is untouched by it.
  *
  * ## Why Google's button is required lazily
  *
@@ -40,6 +62,7 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import * as AppleAuthentication from "expo-apple-authentication";
+import { getFederatedProviders } from "../../api/auth";
 import { FederatedProvider, appleSignInAvailable, googleSignInAvailable } from "../../auth/providerSheets";
 import { useTranslation } from "../../i18n";
 import { colors } from "../../theme/colors";
@@ -48,33 +71,70 @@ export type ProviderSignInButtonsProps = {
   onSelect: (provider: FederatedProvider) => void;
   /** The provider whose sheet is open, or null. Disables both buttons. */
   busyProvider?: FederatedProvider | null;
-  /** Test seam: skip the async availability probe and force both states. */
+  /** Test seam: skip the async availability probe and force both device states. */
   availabilityOverride?: { apple: boolean; google: boolean };
+  /**
+   * Test seam: skip the server probe and force the honoured set. Separate from
+   * `availabilityOverride` so a test can hold the device capable and still
+   * assert the server's veto -- which is the whole point of the second gate.
+   */
+  serverProvidersOverride?: FederatedProvider[];
 };
 
 export function ProviderSignInButtons({
   onSelect,
   busyProvider = null,
-  availabilityOverride
+  availabilityOverride,
+  serverProvidersOverride
 }: ProviderSignInButtonsProps) {
   const { t } = useTranslation();
-  const [appleReady, setAppleReady] = useState(availabilityOverride?.apple ?? false);
+  const [appleCapable, setAppleCapable] = useState(availabilityOverride?.apple ?? false);
+  // Starts empty, so the first paint offers nothing. A button that appears and
+  // then vanishes is worse than one that appears a moment late -- the member
+  // may already be reaching for it.
+  const [serverProviders, setServerProviders] = useState<string[]>(serverProvidersOverride ?? []);
 
-  // Google's answer is synchronous (a config value), Apple's is a native call.
-  const googleReady = availabilityOverride?.google ?? googleSignInAvailable();
+  // Google's device answer is synchronous (a build config value), Apple's is a
+  // native call.
+  const googleCapable = availabilityOverride?.google ?? googleSignInAvailable();
 
   useEffect(() => {
     if (availabilityOverride) return undefined;
     let mounted = true;
     appleSignInAvailable()
       .then((available) => {
-        if (mounted) setAppleReady(available);
+        if (mounted) setAppleCapable(available);
       })
       .catch(() => undefined);
     return () => {
       mounted = false;
     };
   }, [availabilityOverride]);
+
+  useEffect(() => {
+    if (serverProvidersOverride) return undefined;
+    let mounted = true;
+    getFederatedProviders()
+      .then((response) => {
+        if (!mounted) return;
+        // Shape-checked rather than trusted. A proxy or captive portal can
+        // answer 200 with something that is not this, and `available` arriving
+        // as a string would otherwise make `.includes("apple")` a substring
+        // test that passes on arbitrary text.
+        const available = response?.available;
+        setServerProviders(Array.isArray(available) ? available.filter((p) => typeof p === "string") : []);
+      })
+      .catch(() => {
+        // Fail closed, and stay closed: no retry loop on a login screen.
+        if (mounted) setServerProviders([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [serverProvidersOverride]);
+
+  const appleReady = appleCapable && serverProviders.includes("apple");
+  const googleReady = googleCapable && serverProviders.includes("google");
 
   // Render nothing at all rather than an empty divider. A lone "or continue
   // with" above no buttons reads as a broken screen.
