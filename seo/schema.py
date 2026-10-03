@@ -200,6 +200,42 @@ def commerce_policy_graph(page):
     }, ensure_ascii=False)
 
 
+def about_page_graph(page):
+    """The graph for `/about`.
+
+    `AboutPage` rather than a bare `WebPage` because schema.org has a type for
+    exactly this and Google uses it to understand which page of a site speaks
+    for the entity. The Organization node is the same canonical `#organization`
+    every other page publishes, so this page describes that entity rather than
+    introducing a second one -- which is what the hand-rolled node here used to
+    do, under a name no other page used.
+
+    Four nodes, and the omissions are deliberate. No `mobile_app_schema()`: the
+    page links the App Store and says the app is free, but its subject is the
+    platform, and a `MobileApplication` node would invite Google to read a brand
+    page as app marketing. No `Service` node, which `schema_graph` would attach
+    with `serviceType` defaulting to "AI intelligence" -- the single claim this
+    rewrite exists to stop making. No `aggregateRating`, `review`, `founder`,
+    `numberOfEmployees` or `award`: there is nothing real behind any of them, and
+    an About page is where fabricated social proof is most tempting to add.
+    """
+
+    webpage = webpage_schema(page)
+    webpage["@type"] = "AboutPage"
+    return json.dumps({
+        "@context": "https://schema.org",
+        "@graph": [
+            organization_schema(),
+            website_schema(),
+            webpage,
+            breadcrumb_schema([
+                ("Home", SITE_URL + "/"),
+                (page["breadcrumb"], page["canonical"]),
+            ]),
+        ],
+    }, ensure_ascii=False)
+
+
 def service_schema(page):
     return {
         "@type": "Service",

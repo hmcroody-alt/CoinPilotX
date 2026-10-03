@@ -14,9 +14,9 @@
   ],
   "routes": {
     "about_page": {
-      "auth": "unknown",
-      "declared": false,
-      "evidence": "no-known-gate",
+      "auth": "public",
+      "declared": true,
+      "evidence": "declared:public (The page that says what PulseSoc is. Anonymous by definition -- a visitor deciding whether this is for them has no account yet, and search engines have none either.)",
       "methods": [
         "GET"
       ],

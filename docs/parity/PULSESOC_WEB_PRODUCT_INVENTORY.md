@@ -6,10 +6,10 @@
 - Rules in the booted Flask `url_map`: **2083** (authoritative)
 - Rules visible to static analysis: **1817**
   - the difference is blueprint route packs registered inside `except Exception`
-- Rules that render an HTML page: **420**
-  - admin: **188**, user-facing: **232**
+- Rules that render an HTML page: **421**
+  - admin: **188**, user-facing: **233**
 - JSON/API rules: **1234**
-- Jinja templates: **31**
+- Jinja templates: **32**
 
 Most web pages are not Jinja templates; they are assembled by Python HTML
 helpers in `bot.py`. The shell helpers, by route count:
@@ -19,7 +19,7 @@ helpers in `bot.py`. The shell helpers, by route count:
 | `admin_page_html` | 182 |
 | `pulse_social_shell` | 75 |
 | `arena_page_shell` | 39 |
-| `render_template` | 26 |
+| `render_template` | 27 |
 | `render_account_page` | 21 |
 | `arena_simple_page` | 17 |
 | `render_seo_landing` | 10 |
@@ -48,6 +48,7 @@ helpers in `bot.py`. The shell helpers, by route count:
 | `index.html` | 1 |
 | `privacy.html` | 1 |
 | `terms.html` | 1 |
+| `about.html` | 1 |
 | `search.html` | 1 |
 | `offline.html` | 1 |
 | `dashboard.html` | 1 |
