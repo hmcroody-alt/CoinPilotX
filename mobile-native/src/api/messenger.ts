@@ -588,6 +588,26 @@ export async function getConversation(conversationId: number, params: { limit?: 
   return { ...data, messages };
 }
 
+/**
+ * Ask the server for the canonical direct conversation with one person.
+ *
+ * `START_OR_OPEN`, not "create": the endpoint is idempotent and the server owns
+ * the id, so this is also the only honest way to recover from a conversation id
+ * the server has rejected. Re-requesting the rejected id can only be refused
+ * again; re-resolving the *pair* produces the id that actually exists.
+ *
+ * Identity is the canonical user id. Never a store id, a listing id, or a
+ * display name — a store is a presentation of a user, and messaging is between
+ * the users.
+ */
+export async function resolveDirectConversation(peerUserId: number): Promise<number> {
+  const data = await pulseApi<{ ok?: boolean; conversation_id?: number }>("/api/pulse/messages/start", {
+    method: "POST",
+    body: JSON.stringify({ user_id: Number(peerUserId) })
+  });
+  return Number(data.conversation_id || 0);
+}
+
 export async function getPulseAiConversation(params: { limit?: number } = {}) {
   const query = new URLSearchParams();
   query.set("limit", String(params.limit || 80));

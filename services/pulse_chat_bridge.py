@@ -465,6 +465,76 @@ def sync_thread(cur, conn, legacy_conversation_id, commit: bool = True) -> int:
         return 0
 
 
+def direct_thread(cur, conn, user_a, user_b) -> int:
+    """Resolve — or create — the canonical v2 direct conversation for a user pair.
+
+    Returns the v2 conversation id, or ``0`` when v2 is disabled or the pairing
+    could not be made; callers fall back to their previous behaviour on ``0``,
+    exactly as with :func:`sync_thread`.
+
+    This is the direct-message counterpart to ``sync_thread``. A room/group owns a
+    legacy entity worth reconciling *from*; a DM does not. Its identity is the pair
+    itself, so pairing a legacy ``pulse_conversations`` row would mint a second v2
+    thread for a pair that already has one — every one of production's five legacy
+    direct rows has a canonical v2 thread for the same two members. Keying on
+    ``direct_key`` joins the existing thread instead of forking it.
+
+    Runs on the caller's cursor rather than ``service.create_conversation`` (which
+    opens its own connection) so the v2 rows land in the same transaction as the
+    legacy ones: either both sides of "start or open" commit, or neither does.
+    """
+    a, b = _int(user_a), _int(user_b)
+    if not a or not b or a == b or not _v2_enabled():
+        return 0
+    # Byte-identical to the key `service.create_conversation` builds, including the
+    # numeric (not lexical) sort -- a pair keyed "9:15" here and "15:9" there would
+    # mint a second thread for a pair that already has one.
+    direct_key = ":".join(str(x) for x in sorted([a, b]))
+    try:
+        service = _v2_service()
+        _ensure_v2_schema(cur, conn)
+        now = _now()
+        # INSERT-then-SELECT, never SELECT-then-INSERT: `direct_key` carries a
+        # unique index, and `INSERT OR IGNORE` is rewritten to `ON CONFLICT DO
+        # NOTHING` by services.db, so two simultaneous taps converge on one row.
+        # The id comes from the SELECT, never from `lastrowid` — on the losing
+        # side of that race no row was inserted and `lastrowid` is stale.
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO comm_v2_conversations
+            (public_id, conversation_type, title, owner_user_id, created_by_user_id, direct_key,
+             privacy, visibility, status, member_count, created_at, updated_at, last_activity_at)
+            VALUES (?, 'direct', '', ?, ?, ?, 'private', 'members', 'active', 0, ?, ?, ?)
+            """,
+            (service._public_id("dm"), a, a, direct_key, now, now, now),
+        )
+        cur.execute(
+            "SELECT id, COALESCE(deleted_at,'') AS deleted_at FROM comm_v2_conversations WHERE direct_key=? LIMIT 1",
+            (direct_key,),
+        )
+        row = _row(cur.fetchone())
+        conversation_id = _int(row.get("id"))
+        if not conversation_id:
+            return 0
+        # "Start or open" means the thread is usable afterwards. A pair who had
+        # soft-deleted or left their thread must get it back rather than a 404 on
+        # a row that demonstrably exists -- `_conversation_access` filters on both
+        # `deleted_at` and active membership.
+        if row.get("deleted_at"):
+            cur.execute(
+                "UPDATE comm_v2_conversations SET deleted_at='', status='active', updated_at=? WHERE id=?",
+                (now, conversation_id),
+            )
+        # Idempotent, and it reactivates a member who had left -- both sides must be
+        # active or `_conversation_access` still calls the thread inaccessible.
+        service._add_participant(cur, conversation_id, a, "member")
+        service._add_participant(cur, conversation_id, b, "member")
+        return conversation_id
+    except Exception:
+        logging.exception("PULSE_CHAT_BRIDGE_DIRECT_FAILED direct_key=%s", direct_key)
+        return 0
+
+
 def thread_id(cur, legacy_conversation_id) -> int:
     """Return the already-paired v2 conversation id without reconciling. 0 if unpaired."""
     legacy_conversation_id = _int(legacy_conversation_id)
