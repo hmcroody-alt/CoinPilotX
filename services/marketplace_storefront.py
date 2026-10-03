@@ -63,6 +63,8 @@ from services import marketplace_web as mw
 from services import pulse_runtime_assets
 from services import search_visibility
 
+from seo import schema as seo_schema
+
 #: Canonical, stable, human-readable product and listing URLs. These are the
 #: paths the old routes already served, so nothing that was indexable or
 #: shareable before changes shape. See §21 of the mission brief: existing URLs
@@ -2019,14 +2021,13 @@ def head_html(page: RenderedPage, *, origin: str = mw.PUBLIC_ORIGIN) -> str:
     tags.append(f'<meta name="twitter:description" content="{esc(page.meta_description)}">')
     for block in page.jsonld:
         # JSON is the one place `esc()` must not be used — HTML-escaping would
-        # corrupt the payload. Two facts make the single replace below
-        # sufficient. `ensure_ascii=True` already emits U+2028/U+2029 (the two
-        # characters that are line terminators in JavaScript but legal inside a
-        # JSON string) as \\uXXXX escapes. And inside a raw-text <script>
-        # element the only sequence that can end the element early is a literal
-        # `<`. Escaping every `<` as \\u003c is still valid JSON and decodes to
-        # the identical string, so `</script>` and `<!--` both survive as data.
-        encoded = json.dumps(block, ensure_ascii=True).replace("<", "\\u003c")
+        # corrupt the payload. This used to hold its own copy of the escaping,
+        # which was correct and was still a second implementation of a security
+        # property; `seo.schema.serialise_graph` is now the only one, and
+        # `ensure_ascii=True` is passed so the output is byte-identical to what
+        # this line produced before. That flag escapes U+2028/U+2029, which are
+        # legal inside a JSON string and are line terminators in JavaScript.
+        encoded = seo_schema.serialise_graph(block, ensure_ascii=True)
         tags.append(f'<script type="application/ld+json">{encoded}</script>')
     return "".join(tags)
 

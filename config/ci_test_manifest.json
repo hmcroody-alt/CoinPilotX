@@ -637,6 +637,7 @@
     "tests/test_storekit_configuration_matches_catalog.py",
     "tests/test_stripe_onboarding_return.py",
     "tests/test_stripe_webhook_verification.py",
+    "tests/test_structured_data_sinks.py",
     "tests/test_sync_upload_duration_measurement.py",
     "tests/test_telegram_text_routing.py",
     "tests/test_translation_spend.py",
