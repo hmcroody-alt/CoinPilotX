@@ -61,6 +61,34 @@
 .comms-dense td.prose { white-space: normal; min-width: 240px; max-width: 560px; }
 .comms-dense tr.is-now { background: rgba(54, 229, 143, .08); }
 
+/* Per-user diagnostics ----------------------------------------------------- */
+/* Five dense tables share one .grid row, and .grid's track floor is 210px, so
+ * each card gets ~235px while the six-column delivery table intrinsically wants
+ * ~484px and the reasons table ~468px. .card does not clip, so the overflow was
+ * not hidden behind a scrollbar -- it painted *underneath the neighbouring
+ * card*, which is opaque. The right-hand columns were simply unreadable, at
+ * every desktop width including 4K.
+ *
+ * Wider tracks (three ~400px columns at the 1320px content cap) fix the common
+ * case; the overflow-x is the backstop that keeps a table inside its own card
+ * at any width rather than over its neighbour. Making the table itself the
+ * scroller is the same device admin_ops_center.css already uses below 960px. */
+.comms-userdiag { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.comms-userdiag .comms-dense { display: block; overflow-x: auto; }
+/* The two cards that carry a six-column table and a sentence take the full row,
+ * so the delivery counts and the provider's reason are read rather than
+ * scrolled to.
+ *
+ * `1 / -1` rather than `span 2` deliberately. Spanning a fixed 2 is only safe
+ * once auto-fit has produced a second track, and the obvious guard -- a
+ * min-width media query -- gates on the wrong quantity: this grid's width is
+ * the content column after the sidebar and the 1320px cap, not the viewport.
+ * Measured, a 785px viewport leaves a 461px grid, which is one track; `span 2`
+ * there would invent an implicit column and bring back the overflow this
+ * section exists to remove. `1 / -1` spans whatever tracks actually exist, so
+ * it is correct at one column and at four without being told the width. */
+.comms-userdiag .comms-wide { grid-column: 1 / -1; }
+
 /* Panels ------------------------------------------------------------------ */
 .comms-note { border-left: 3px solid var(--line); padding-left: 12px; margin: 10px 0; }
 .comms-panel { margin-top: 18px; }

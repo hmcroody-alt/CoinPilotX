@@ -46,8 +46,8 @@ BOT = os.path.join(REPO, "bot.py")
 #: -- the point of recording them together is that the diff shows you doing it.
 CACHE_PINNED_ASSETS = {
     "static/css/admin_comms_ops.css": (
-        "comms-ops-20261003a",
-        "37288c39356c4bb9c833f6c60880b2216bf5aefa7c42d734dae692f5f9e1ecbb",
+        "comms-ops-20261003c",
+        "3d37d773889c1f5417fc4c3856f2397b78202823ff2d04a706046fcc150c7c04",
     ),
     "static/css/admin_ops_center.css": (
         "opsv2-20260914c",

@@ -18852,7 +18852,7 @@ def comms_dashboard_section():
 #: cache-pin gate greps bot.py as text, so a URL split across two adjacent
 #: literals reads to it as an asset referenced with no token at all.
 COMMS_OPS_PAGE_STYLE = (
-    "<link rel='stylesheet' href='/static/css/admin_comms_ops.css?v=comms-ops-20261003a'/>"
+    "<link rel='stylesheet' href='/static/css/admin_comms_ops.css?v=comms-ops-20261003c'/>"
 )
 
 
@@ -19375,7 +19375,7 @@ def comms_user_panel(user_id):
         for row in (delivery.get("channels") or [])
     )
     failing = delivery.get("failing") or []
-    delivery_card = "<div class='card'><strong>Notification delivery &middot; 7d</strong>" + (
+    delivery_card = "<div class='card comms-wide'><strong>Notification delivery &middot; 7d</strong>" + (
         unavailable(delivery) or (
             (
                 "<table class='comms-dense'><thead><tr><th>Channel</th><th class='n'>Tried</th>"
@@ -19401,11 +19401,11 @@ def comms_user_panel(user_id):
         f"<tr><td>{html_escape(clean_html(str(row.get('channel') or '')))}</td>"
         # The pipeline's own text, escaped and tag-stripped. It is provider
         # output, so it is treated as hostile and rendered as inert words.
-        f"<td>{html_escape(clean_html(str(row.get('reason') or '')))}</td>"
+        f"<td class='prose'>{html_escape(clean_html(str(row.get('reason') or '')))}</td>"
         f"<td class='n'>{int(row.get('count') or 0):,}</td></tr>"
         for row in (reasons.get("reasons") or [])
     )
-    reasons_card = ("<div class='card'><strong>What the provider said &middot; 7d</strong>" + (
+    reasons_card = ("<div class='card comms-wide'><strong>What the provider said &middot; 7d</strong>" + (
         unavailable(reasons) or (
             "<table class='comms-dense'><thead><tr><th>Channel</th><th>Reason</th>"
             f"<th class='n'>Count</th></tr></thead><tbody>{reason_rows}</tbody></table>"
@@ -19427,7 +19427,9 @@ def comms_user_panel(user_id):
 
     return (
         COMMS_OPS_PAGE_STYLE
-        + "<div class='grid'>"
+        # comms-userdiag widens the tracks: these cards hold tables, not single
+        # metrics, so .grid's 210px floor packs five of them too tightly to read.
+        + "<div class='grid comms-userdiag'>"
         + calls_card + outcomes_card + messages_card + delivery_card + reasons_card
         + "</div>" + footer
     )
