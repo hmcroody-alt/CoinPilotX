@@ -166,9 +166,34 @@ advertise.** 130 of 146 publications duplicate a listing title verbatim, served
 Agent 2's lane (indexability) and Agent 6's (sitemap eligibility), not mine. A
 fix keyed on authorship — `COALESCE(login_enabled,1)=0 AND password_hash IS
 NULL`, which matches exactly one of 48 users and zero humans — exists on
-`claude/seo-phase1-defects` and is unmerged. Note the authorship veto in
-`search_visibility.content_eligibility()` currently keys on `user_id <= 0`, and
-PulseDrop is a real `users` row at id 42, so it walks straight through.
+`claude/seo-phase1-defects` and is unmerged.
+
+**Why the existing automated-author veto does not stop it, precisely.**
+`content_eligibility` does call `is_automated_author`, so the veto exists and is
+not missing. It fails for a reason worth stating exactly, because the obvious
+fix is a no-op: `is_automated_author` tests four things in order — a nested
+`author.automated` / `author.official_system_account` / `author.account_type`,
+then top-level `automated` / `official_system_account` / `account_type`, then
+falls back to `user_id <= 0`. **Neither `users` nor `pulse_posts` has any of
+those marker columns** (checked `information_schema`: zero columns matching
+`account_type`, `automat%`, `system%`, `official%` on either table). PulseDrop's
+markers are produced by `pulsedrop/account.py::profile_overlay()`, which is a
+*profile payload* builder and never reaches this path. So the first three
+branches are structurally unreachable from `pulse_public_entries`, whose SELECT
+is `pulse_posts` columns only, and the decision collapses to the id fallback.
+PulseDrop is `users.user_id = 42`, `username='pulsedrop'`, positive — so
+`42 <= 0` is False and all **146** of its posts clear the prefilter.
+
+The veto is therefore defeated by a **record-shape mismatch**, not a wrong
+comparison. MEMBER_000 is caught only because `user_id <= 0` happens to be true
+of it. Measured on the live prefilter: 1,875 public approved posts by the single
+`user_id <= 0` author are vetoed, and 170 posts by 7 positive-id authors walk
+through — **146 of those 170 are PulseDrop's**, leaving ~24 genuinely human. Do
+not "fix" this by comparing `account_type` in SQL; there is no such column.
+Either join `users` on the authorship predicate above, or call
+`pulsedrop.account.account_user_id()`. The docstring above that SELECT already
+states the general rule this violates: "A column left out of the SELECT list is
+a permission silently granted."
 
 **To Agent 2 — `hidden_from_discovery` is not a noindex consent signal.** One
 account (user 30, a QA account) carries `hidden_from_discovery=1` and three
@@ -177,6 +202,47 @@ canonical gate `services/discovery_visibility.py::discovery_visible_sql` encodes
 "may appear in in-product discovery". Reusing it as "consented to be indexed"
 is how someone gets published without being asked. Decide this deliberately
 rather than by reusing the fragment.
+
+**To Agents 2, 5, 6, 11 and 12 — provenance must be semantic, not a sign test
+on a user id.** This is the generalisation of the finding above and the one to
+carry forward: `user_id <= 0` does not mean "automated". PulseDrop is a real,
+followable `users` row with a positive id, deliberately — `profile_overlay()`
+explains that being followable "is the entire reason this account is a real
+`users` row". Any new rule that infers authorship class from the id's sign will
+misclassify it as an ordinary human creator, and will keep doing so as more
+automated accounts are provisioned the same way. What the platform needs is an
+authority/provenance field that survives into whatever record the consumer
+builds. It does not have one; `account_type` exists only in payload builders.
+
+**To Agent 4 — do not let a graph query decide whether a PDP renders.** If a
+social-commerce module is eventually built: render only real public content,
+link canonically, never render an empty shell, and never pad to a card count
+(see §5 — padding here means four near-identical PulseDrop promos). Keep the
+query bounded and keep the PDP's own render independent of it, so a slow or
+failed graph read degrades the module and not the product page.
+
+**To Agent 5 — none of these edges support a structured-data claim.** This is
+the sharpest boundary Agent 10 owns. A creator attachment is a statement of
+*aboutness* and nothing more: it is not a review, a rating, an endorsement, a
+demonstration, a purchase or an ownership claim. A PulseDrop publication is a
+curation act, not social proof. Therefore likes are not a `ratingValue`,
+comments are not `review`, reel views are not a popularity claim, and no count
+on either table may become `aggregateRating`. There is no review corpus in
+production to aggregate.
+
+**To Agent 7 — canonical Marketplace truth outranks every social surface.**
+Never let a PulseDrop promo body, creator caption, signal text or reel caption
+override merchant price, availability, brand, identifier, variant or seller.
+The edges already do this correctly by storing none of it (§1); the risk is a
+consumer re-deriving a product fact from post copy, which for 130 of 146
+publications is a verbatim copy of the listing title and so looks authoritative
+while being a duplicate.
+
+**To Agent 8 — do not proactively submit social URLs before Agents 2 and 6
+decide.** IndexNow distribution must consume their eligibility decision rather
+than assume every publication is worth announcing. Submitting the PulseDrop
+corpus today would be announcing 146 pages that duplicate the titles of the
+PDPs they point at.
 
 **To Agent 3 — do not model a second seller identity.** Both edge tables already
 store `seller_user_id` and `tagging` re-checks it against the live listing on
@@ -197,6 +263,7 @@ plus `scripts/protection/creator_tagging_mutation_matrix.py`, which deletes each
 of 11 guards in turn and proves a test fails for each. Attack the *reverse*
 projection when someone writes one; that is the unguarded surface, because it is
 where a private post or a hidden author would first leak into a public page.
+Section 8 lists the fifteen specific mutations that must fail.
 
 ## 7. What Agent 10 deliberately did not do
 
@@ -212,3 +279,68 @@ where a private post or a hidden author would first leak into a public page.
   De-indexing live, indexed, sitemapped pages is not a call this agent gets to
   make alone.
 - **Nothing touching payments, Stripe, the catalog safety gate, or auth.**
+
+## 8. The fifteen mutations that must fail
+
+Each line is a claim someone could make the code assert. A test must reject it.
+Numbers 1 and 15 are the two that production would *currently* let through, so
+they are the ones with real bite; the rest guard semantics that hold today and
+would be cheap to lose.
+
+| # | mutation | must fail because |
+|---|---|---|
+| 1 | PulseDrop's positive `user_id` ⇒ human creator | §6 — this is live today, 146 posts |
+| 2 | PulseDrop publication ⇒ creator endorsement | it is a curation act, not a statement by a person |
+| 3 | creator attachment ⇒ review | attachment is aboutness only |
+| 4 | creator attachment ⇒ `aggregateRating` | there is no review corpus to aggregate |
+| 5 | signal likes ⇒ product rating | engagement is not an assessment of a product |
+| 6 | reel views ⇒ "best seller" / "popular" | needs a separately authoritative methodology |
+| 7 | private signal attached to public product ⇒ shown on PDP | the attachment does not publish the content |
+| 8 | private reel attached to public product ⇒ public video projection | same, for media |
+| 9 | held product ⇒ live CTA via an old attachment | `hydration` withdraws the CTA, not the content |
+| 10 | deleted content ⇒ stale PDP module entry | 0 such rows today; keep it 0 |
+| 11 | edge snapshots an old price ⇒ old price rendered | nothing stores a price (§1) |
+| 12 | client attachment payload carries a price ⇒ canonical price changes | the writer accepts no price field |
+| 13 | creator attaches another seller's product ⇒ factual commercial relationship | `REFUSED_NOT_OWNER` (§4) |
+| 14 | four repetitive PulseDrop promos ⇒ diverse social proof | §5 |
+| 15 | `hidden_from_discovery` ⇒ noindex | **unfrozen contract — Agents 0/2 decide, not a test** |
+
+Mutation 15 is deliberately phrased as "must fail *until* the contract is
+frozen". The current code neither infers it nor denies it; the risk is a future
+author reusing `discovery_visible_sql` as if it meant indexing consent. The test
+to write is the one that fails if someone makes that inference silently.
+
+## 9. Status, and the gate on reactivation
+
+**Status: complete, pushed, standby.** Branch
+`search-os/agent-10-social-commerce-graph`, commit `ac1a87a7a` plus this
+revision. No new edge table, node type, or service was added, and none should
+be — `pulse_content_products` and `pulsedrop_publications` are the two
+relations, and a third under a new name (`social_product_edges_v2`,
+`product_content_graph`, …) is a duplication defect, not a feature, however it
+arrives.
+
+**Numbers in §3 and §5 are a snapshot, not a contract.** Re-derive them with the
+inventory script; Pulse Loop publishes hourly, so they move unattended. Nothing
+downstream should hard-code them, and no "social SEO score" should be
+synthesised from them — UNKNOWN is a valid answer for a product with no social
+context, and 157 of 196 products have none.
+
+"See It in the Pulse" stays designed and unbuilt. Agent 0 should freeze
+measurable activation criteria rather than inherit a threshold invented here;
+the inputs worth evaluating are factual creator coverage, independent
+creator/seller count, content diversity, non-duplicate publications, privacy and
+moderation eligibility, freshness, and bounded per-viewer frequency — which
+nothing currently measures, since the two curators share no viewer ledger.
+
+Reactivate Agent 10 only on: Agent 0 authorising a creator→third-party-product
+model; seller population changing enough that real creator edges accumulate;
+Agents 2/6 needing implementation changes after the indexability decision;
+Agent 11 finding graph drift or corruption; Agent 12 breaking an Agent 10
+invariant; a real privacy leak in a relationship resolver; an attachment
+beginning to snapshot canonical commerce truth; or the activation criteria above
+being met on evidence.
+
+**The standing distinction, in one line:** an empty graph is not a missing
+graph, and the remedy for sparseness is real participation — never a weakened
+ownership gate, and never automation dressed as human social proof.
