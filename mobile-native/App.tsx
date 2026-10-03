@@ -13,7 +13,7 @@ import { I18nProvider, useI18n, useTranslation } from "./src/i18n";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { AuthNavigator } from "./src/navigation/AuthNavigator";
 import { LegalAcceptanceScreen } from "./src/screens/LegalAcceptanceScreen";
-import { linking } from "./src/navigation/linking";
+import { inboundLinkOwner, linking, linkingStateForPath } from "./src/navigation/linking";
 import { navigationRef, routeNotificationTarget, setupNotificationResponseRouting } from "./src/navigation/notificationRouting";
 import { RootStackParamList } from "./src/navigation/types";
 import { AuthContext, AuthState, expiredState, fatalErrorState, restoreSession, stateFor } from "./src/session/auth";
@@ -209,6 +209,11 @@ function AppRoot() {
     return () => configurePulseShareCenter(null);
   }, [authState.status]);
 
+  // Read inside the URL listener below, which is mounted once and therefore
+  // cannot close over a live `authState`.
+  const signedInRef = useRef(authState.status === "signedIn");
+  signedInRef.current = authState.status === "signedIn";
+
   useEffect(() => {
     let mounted = true;
 
@@ -218,8 +223,15 @@ function AppRoot() {
         const result = await tryHandleQaSimulatorAuthUrl(url);
         if (!mounted) return;
         if (!result.handled) {
-          const redirectTarget = authenticatedRedirectTarget(url);
-          if (redirectTarget) setPendingQaRedirectTarget(redirectTarget);
+          const inbound = inboundLinkOwner(url, signedInRef.current);
+          // Signed in, the NavigationContainer's linking config has already
+          // resolved this URL. Claiming it here too would overwrite an explicit
+          // destination with the notification resolver's default.
+          if (inbound.owner !== "replay") return;
+          // An explicit link outranks a notification target still waiting for
+          // login: the member acted on the link second and more deliberately.
+          setPendingNotificationTarget("");
+          setPendingQaRedirectTarget(inbound.path);
           return;
         }
         if (result.authState) setAuthState(result.authState);
@@ -265,7 +277,9 @@ function AppRoot() {
     const interval = setInterval(() => {
       attempts += 1;
       if (navigationRef.isReady()) {
-        routeNotificationTarget(pendingQaRedirectTarget).catch(() => undefined);
+        const state = linkingStateForPath(pendingQaRedirectTarget);
+        if (state) navigationRef.reset(state as never);
+        else routeNotificationTarget(pendingQaRedirectTarget).catch(() => undefined);
         setPendingQaRedirectTarget("");
         clearInterval(interval);
       } else if (attempts >= 20) {
@@ -455,21 +469,4 @@ function ThemedNavigationShell({ signedIn }: { signedIn: boolean }) {
       {signedIn ? <AppNavigator /> : <AuthNavigator />}
     </NavigationContainer>
   );
-}
-
-function authenticatedRedirectTarget(rawUrl: string) {
-  try {
-    const url = new URL(rawUrl);
-    if (url.protocol === "https:" || url.protocol === "http:") {
-      if (!/(^|\.)pulsesoc\.com$/i.test(url.hostname)) return "";
-      return `${url.pathname}${url.search}`.slice(0, 240);
-    }
-    if (url.protocol === "pulsesoc:") {
-      const path = `/${url.hostname}${url.pathname}`.replace(/\/{2,}/g, "/");
-      return `${path}${url.search}`.slice(0, 240);
-    }
-  } catch {
-    return "";
-  }
-  return "";
 }
