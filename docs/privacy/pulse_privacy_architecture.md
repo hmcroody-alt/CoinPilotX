@@ -13,15 +13,16 @@ The owner's instruction was explicit: do not sit behind a design document while
 sensitive signals leak. Three defects were found. Each is stated with how it was
 verified, who can see it, and the smallest safe fix.
 
-> **Status, 2026-10-03.** 0.1 and 0.2 are **fixed and merged** — PR #130,
-> squash-merged to `main` as `078329545`, which Railway auto-deploys. 0.3 is
-> **open**, deferred to Phase 2 below.
+> **Status, 2026-10-03.** All three are **fixed and merged**. 0.1 and 0.2 via
+> PR #130 (`078329545`); 0.3 via PR #134, which also carries a separate
+> block-table finding (§0.7). Railway auto-deploys `main`.
 >
 > Each finding is left in the tense it was written in. The design that follows
-> is an argument *from* these two defects — §C's ACCESS ≠ EXPOSURE claim is
-> 0.1, and §G's "a correct allowlist aimed at the wrong audience" is 0.2 — and
-> rewriting them into the past tense would quietly turn the evidence into
-> anecdote. The per-defect status lines below say which are closed.
+> is an argument *from* these defects — §C's ACCESS ≠ EXPOSURE claim is 0.1,
+> §G's "a correct allowlist aimed at the wrong audience" is 0.2, and 0.3 is the
+> evidence for the §34 rule that a static gate must read schema and AST rather
+> than text. Rewriting them into the past tense would quietly turn the evidence
+> into anecdote. The per-defect status lines below say which are closed.
 
 ### 0.1 — P1, ANONYMOUS: `/pulse/post/<id>` prints an internal risk assessment
 
@@ -170,6 +171,37 @@ it inside Phase 2 below (the audience resolver), not hotfixing it. Flagged here
 because the owner asked for current exposure, and a privacy control that silently
 does nothing is an exposure.
 
+> **Closed, PR #134** (`services/message_privacy.py`). Not folded into Phase 2
+> after all: Phase 2 is unapproved and this needed no new architecture, just
+> the store the UI already writes.
+>
+> Two things the write-up above got incomplete, both found while fixing it:
+>
+> 1. **There are two stores, not one.** Besides `message_requests`, the native
+>    `PrivacySettingsScreen` writes `pulse_native_preferences` →
+>    `privacy.allowDirectMessages`. They are independent writers with no shared
+>    ledger, so they can disagree; the resolver takes the **stricter**, because
+>    discarding a restriction the user set on one screen is the one outcome a
+>    privacy control must never produce.
+> 2. **Absence had to mean "everyone", not deny** — the opposite of the
+>    default-deny rule §11 sets for *field exposure*, and the contrast is worth
+>    keeping. For a field, absence means nobody decided to publish it, so
+>    withholding is safe. For a gate, absence means the account never expressed
+>    a restriction, and inventing one would break messaging for every user with
+>    no row. Default-deny is not a universal law; it is the right answer for
+>    exposure and the wrong one for availability.
+>
+> Fixed at **both** layers. This module's own docstring says a hidden button is
+> not access control, so repairing only the `can_message` hint would have
+> reproduced exactly the failure it warns about. One resolver answers the hint
+> and gates both conversation-opening paths, so they cannot drift. Both gates
+> sit below the existing-thread branch: the control governs who may *open* a
+> conversation, not who may continue one.
+>
+> No behaviour change today — every production user resolves to `everyone`, so
+> the deny branch is unreachable until someone changes a setting. That is
+> precisely what made it safe to land enforcement rather than defer it.
+
 ### 0.4 — what is clean
 
 Checked anonymously against production today, Googlebot UA, for
@@ -189,7 +221,8 @@ Checked anonymously against production today, Googlebot UA, for
 1. Deploy 0.1 today, standalone. It is one string and it is anonymous. — **done**
 2. Deploy 0.2 next, as its own commit with a test. It is larger blast radius
    (PII) but narrower audience (authenticated). — **done**
-3. Fold 0.3 into Phase 2. — open
+3. Fold 0.3 into Phase 2. — **superseded.** Shipped standalone as PR #134; it
+   needed the existing settings store, not the unapproved audience resolver.
 4. Then build the architecture below. — awaiting approval
 
 ### 0.6 — what actually shipped, 2026-10-03
@@ -252,6 +285,66 @@ unchanged turns the Scam Shield card into a permanent "Risk score 0" — the
 failure of §G in miniature, and it is *caused* by the fix. Nothing is wrong
 today; the string must be removed in the same commit whenever that series
 moves. It is a third `risk_score` surface and was not in §0 above.
+
+### 0.7 — a fourth defect, found while fixing 0.3
+
+Not in the original three. Found because fixing 0.3 meant reading every path
+that opens a conversation, and one of them was checking blocks against a table
+that does not exist.
+
+`bot.pulse_start_conversation`:
+
+```python
+try:
+    cur.execute(
+        "SELECT 1 FROM private_chat_blocks WHERE blocker_user_id=? AND blocked_user_id=? LIMIT 1",
+        (target_user_id, current_user_id),
+    )
+    …
+except Exception:
+    pass
+```
+
+`private_chat_blocks` appears **exactly once in the repository** — in that
+read. No `CREATE TABLE`, no migration, no writer, and it does not exist in
+production. The `except: pass` swallowed the resulting "no such table" on every
+request, so **the block check had never once denied anything.**
+
+This is a worse version of the same family as 0.1 and 0.3, and worth naming
+separately in the taxonomy:
+
+| | mechanism | why it survived |
+| --- | --- | --- |
+| 0.1 / 0.2 | field included that should not be | nothing errors; output looks plausible |
+| 0.3 | `.get()` on an absent column returns `None`, `or`-chain supplies a default | nothing errors; **permissive** default |
+| **0.7** | query against an absent table raises, `except: pass` discards it | nothing errors **and nothing is logged** |
+
+0.3 at least leaves a readable `or "everyone"` in the source to argue with. 0.7
+leaves a check that *looks* correct, is syntactically fine, reads from a
+plausible table name, and is a no-op at runtime with no trace anywhere. No
+test, no log line, and no amount of reading the function will tell you — the
+only way to find it is to ask whether the table exists.
+
+**Bounded severity, and worth stating precisely rather than alarmingly.** Live
+messaging runs through comm_v2, which enforces blocks correctly and
+bidirectionally via `_blocked_between` at conversation access, creation and
+member-add; `block_user` already dual-writes `blocked_users` and
+`comm_v2_blocks`. The broken path is legacy (`pulse_messages`: 29 rows, last
+2026-07-17) but still routed, so it was a genuine bypass rather than dead code.
+All three block tables hold zero rows in production, so nobody was affected.
+
+**Fixed** in PR #134 as its own commit: reads `blocked_users`, in both
+directions, matching `profile_viewer_permissions`. The `try` stays — an
+unprovisioned optional table must not take messaging down — but it no longer
+hides the normal case.
+
+**The general lesson, for §34's gate.** A swallowed exception around a table
+that does not exist is invisible to every technique this document otherwise
+relies on: it passes review, passes tests, emits no log, and returns the safe-
+looking answer. The static gate should assert that **every table named in a
+SQL string literal exists in `init_db()`** — that check is cheap, it is AST-
+reachable, and it would have caught this years ago. Added to the Phase 1 gate
+scope.
 
 ---
 
@@ -438,8 +531,10 @@ Stated explicitly because the design must not invent semantics:
   `pulse_friends`.
 - Blocks are symmetric in effect: `_blocked_either_way` closes the profile if
   either party blocked the other.
-- The only follower-scoped *setting* in the product is `message_requests`, and it
-  is the one that is currently inert (defect 0.3).
+- The only follower-scoped *settings* in the product are `message_requests` and
+  the native `privacy.allowDirectMessages` — two independent writers of the same
+  control, both inert until PR #134 (defect 0.3). The pair is itself an argument
+  for this document: one user-facing control, two stores, no shared resolver.
 
 So the audience ladder the product actually supports is:
 **anonymous → authenticated → follower → friend → owner**, with follower
@@ -1235,10 +1330,11 @@ Its three limitations are the argument for §H:
   *fields*. The profile route calls it and then leaks an email anyway. Access
   control working perfectly did not help.
 - **One caller.** bot.py:114862. The canonical mechanism covers one route.
-- **It reads a column that does not exist** (defect 0.3), and its
+- **It reads a column that does not exist** (defect 0.3 — since closed by
+  PR #134, but it shipped this way and the point stands), and its
   `_fetch_account` does `SELECT * FROM users` into a dict that it hands back to
   the caller as the `account` parameter — the §11 hazard in the one module built
-  to prevent this class of problem.
+  to prevent this class of problem. That `SELECT *` is still there.
 
 That last point is not a criticism of the module. It is the evidence that
 discipline at the call site is not sufficient, which is the premise of this
@@ -1979,12 +2075,16 @@ behaviour changed.** *Revert:* delete two files.
   relationship inputs rather than reimplementing them.
 - **Make the block veto shared** before anything else is shared (§O8). This is
   the highest-value user-facing fix in the whole plan.
-- Fix defect 0.3 here: wire `_can_message` to the `message_requests` setting
-  that actually exists.
+- ~~Fix defect 0.3 here: wire `_can_message` to the `message_requests` setting
+  that actually exists.~~ **Done ahead of this phase** (PR #134), and it turned
+  out to need `services/message_privacy.py` rather than this one: there are two
+  settings stores, not one. Phase 2 should *call* that resolver, not re-derive
+  the preference.
 
 *Exit:* one block check, called from every surface that renders another user's
-content; the message-privacy preference works. *Revert:* the shared check is
-additive; surfaces keep their existing inline checks until Phase 5.
+content. The message-privacy half of this exit condition is already met.
+*Revert:* the shared check is additive; surfaces keep their existing inline
+checks until Phase 5.
 
 ### Phase 3 — `project()`, adopted by one serializer *(2 days)*
 
@@ -2051,7 +2151,8 @@ serializer rewrite, no sitemap membership change, and no rewrite of
 | Login wall | `pulse_social_shell` (bot.py:50820) | unchanged | **Keep** | none | none | neutral |
 | Profile access gate | inline in `api_pulse_public_profile` | `services/exposure/audience.py` (Phase 2) | **Modify** | low — additive | none | positive |
 | Block enforcement | `profile_viewer_permissions`, **1 caller** | shared, every surface | **Modify** | medium — many call sites | none | **high positive** — §O8 |
-| Message-privacy preference | `profile_viewer_permissions._can_message`, reads a nonexistent column | same module, wired to `message_requests` | **Modify** | low | none | positive — the control currently does nothing |
+| Message-privacy preference | was `profile_viewer_permissions._can_message` reading a nonexistent column | `services/message_privacy.py`, reading **both** settings stores and taking the stricter | **Modified** | none — no production user has a restriction set | none — `can_message` keeps its shape | positive — inert control, now enforced at the hint *and* both conversation-opening paths; **closed** (defect 0.3, PR #134) |
+| Messaging block check (legacy path) | `bot.pulse_start_conversation`, read `private_chat_blocks` — no writer, inside `try/except: pass` | same function, reads `blocked_users` in both directions | **Modified** | none — all three block tables are empty in prod | none | positive — the check had never denied anything; **closed** (§0.7, PR #134) |
 | Field exposure | each serializer, ad hoc | `services/exposure/project.py` | **Replace** | **high** — the core change; mitigated by one-serializer-per-PR | low with §U2's narrow-don't-remove rule | **high positive** |
 | `pulse_mobile_user_payload` | bot.py:8191, shared by owner + other-user paths | owner audience only | **Keep** — the strip landed one level up, in `pulse_native_profile_payload`, and a test pins this builder unchanged | low | **none verified** — no screen reads other-user `email` | **closed** (defect 0.2, `0b2c13e66`) |
 | `/pulse/post/<id>` byline | bot.py template | unchanged shape, two fields removed | **Modified** | none | none (HTML) | **closed** (defect 0.1, `d8fc3054b`) |
