@@ -35,6 +35,7 @@ import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 
 import pytest
 
@@ -492,6 +493,585 @@ def test_a_corrupt_gallery_json_does_not_lose_the_cover():
 def test_the_gallery_is_capped():
     payload = {"gallery_json": json.dumps([f"https://cdn/{n}.jpg" for n in range(40)])}
     assert len(mw.gallery_items(payload, limit=8)) == 8
+
+
+# ---------------------------------------------------------------------------
+# 3b. JavaScript is not a visibility requirement
+#
+# The invariant: NO JAVASCRIPT + SUCCESSFUL IMAGE FETCH = VISIBLE IMAGE.
+#
+# This exists because the storefront shipped the exact opposite. The rule was
+# `.mkt-media img:not([data-mkt-loaded]) { opacity: 0 }` and the only writer of
+# `data-mkt-loaded` was `settleImage()` in `pulse_marketplace.js`, an external
+# deferred file. Server-rendered markup carries no `data-mkt-*` attribute at
+# all, so the document's own default state was "every product image
+# transparent", and a 404 on the `?v=` token, a CSP rule, a dropped request or
+# a reader with JS off got a 200 page with a complete, correct, invisible
+# catalogue. Nothing in the suite noticed, because every existing CSS assertion
+# asks whether a declaration is *present* rather than whether it *wins*.
+#
+# So the check has to be a cascade evaluation, not a substring search. The three
+# helpers below are a deliberately small CSS subset -- enough for this
+# stylesheet and no more -- and they RAISE on any selector construct they do not
+# understand rather than skipping it. A gate that silently ignores the one rule
+# it cannot parse is not a gate; see `_unsupported` in `_winning_declaration`.
+# ---------------------------------------------------------------------------
+
+#: The properties that can make a fetched image unseeable. `opacity` is the one
+#: that actually bit, but a `display: none` or `visibility: hidden` arriving by
+#: the same route -- default state, cleared by script -- would be the same bug
+#: wearing different clothes, so all three are evaluated together.
+HIDING_PROPERTIES = ("opacity", "display", "visibility")
+
+#: Widths the gate evaluates at. 360 and 1280 are a phone and a desktop; 560 and
+#: 900 are the two breakpoints `CARD_SIZES` and `HERO_SIZES` name, included
+#: because a rule that hides an image can hide it on one side of a breakpoint
+#: only, and the boundary is where an off-by-one lands.
+GATE_WIDTHS = (360, 560, 900, 1280)
+
+
+def _declarations(body):
+    """`{property: (value, important)}` for one rule body.
+
+    Only the last occurrence of a property survives, which is what the cascade
+    does within a single rule.
+    """
+    out = {}
+    for piece in body.split(";"):
+        name, _, value = piece.partition(":")
+        name = name.strip().lower()
+        value = value.strip()
+        if not name or not value:
+            continue
+        important = value.endswith("!important")
+        if important:
+            value = value[: -len("!important")].strip()
+        out[name] = (value.lower(), important)
+    return out
+
+
+def _flatten_rules(css, context=()):
+    """Every style rule as `(at_rules, selector, declarations)`.
+
+    Brace-counted and recursive so a rule inside an `@media` is returned
+    *with* the query that guards it. A regex over rule bodies would either
+    miss those rules entirely or report them as unconditional -- and the
+    responsive half of this gate is exactly the rules inside media queries.
+    """
+    rules, index, length = [], 0, len(css)
+    while index < length:
+        brace = css.find("{", index)
+        if brace < 0:
+            break
+        prelude = css[index:brace].strip()
+        depth, end = 1, brace + 1
+        while depth and end < length:
+            depth += {"{": 1, "}": -1}.get(css[end], 0)
+            end += 1
+        body = css[brace + 1:end - 1]
+        index = end
+        if prelude.startswith("@"):
+            name = prelude.split()[0].lower()
+            if name in ("@media", "@supports", "@layer"):
+                rules.extend(_flatten_rules(body, context + (prelude,)))
+            # `@keyframes` bodies look like rules (`from { }`) but their
+            # selectors are percentages, not elements. `@font-face` and the
+            # rest carry declarations, not rules. Neither can match an element.
+            continue
+        for selector in prelude.split(","):
+            selector = selector.strip()
+            if selector:
+                rules.append((context, selector, _declarations(body)))
+    return rules
+
+
+class _Element:
+    """One node, reduced to what a selector can ask about."""
+
+    __slots__ = ("tag", "classes", "attrs")
+
+    def __init__(self, tag, attrs):
+        self.tag = tag.lower()
+        self.attrs = {k.lower(): (v or "") for k, v in attrs}
+        self.classes = set(self.attrs.get("class", "").split())
+
+    def __repr__(self):  # pragma: no cover - failure messages only
+        shown = {k: v for k, v in self.attrs.items() if k != "class"}
+        return f"<{self.tag}{''.join('.' + c for c in sorted(self.classes))} {shown}>"
+
+
+class _ImageChains(HTMLParser):
+    """Ancestor chains for every `<img>` in a document, in source order.
+
+    `html.parser` rather than a regex because the chain is the whole point: a
+    descendant selector needs real ancestry, and `.mkt-card:hover .mkt-media
+    img` versus `.mkt-media img` is a distinction only a tree can make.
+    """
+
+    VOID = {"img", "br", "hr", "input", "source", "meta", "link", "wbr", "area"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.stack = []
+        self.chains = []
+        self.styles = []
+        self._in_style = False
+
+    def handle_starttag(self, tag, attrs):
+        element = _Element(tag, attrs)
+        if tag.lower() == "img":
+            self.chains.append(tuple(self.stack) + (element,))
+            return
+        if tag.lower() in self.VOID:
+            return
+        if tag.lower() == "style":
+            self._in_style = True
+        self.stack.append(element)
+
+    def handle_startendtag(self, tag, attrs):
+        if tag.lower() == "img":
+            self.chains.append(tuple(self.stack) + (_Element(tag, attrs),))
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag == "style":
+            self._in_style = False
+        for position in range(len(self.stack) - 1, -1, -1):
+            if self.stack[position].tag == tag:
+                del self.stack[position:]
+                return
+
+    def handle_data(self, data):
+        if self._in_style:
+            self.styles.append(data)
+
+
+#: The simple selectors this gate understands, in match order. `[^\]]*` for an
+#: attribute is safe here because no attribute selector in this stylesheet
+#: contains a `]`.
+_SIMPLE = re.compile(
+    r"\*|\#[-\w]+|\.[-\w]+|\[[^\]]*\]|::?[-\w]+(?:\([^()]*\))?|[-\w]+"
+)
+
+#: Pseudo-classes describing a *user interaction* state. A rule guarded by one
+#: of these cannot be the default state of a freshly loaded page, which is the
+#: only state this gate is about.
+_INTERACTION = {
+    ":hover", ":focus", ":focus-visible", ":focus-within", ":active",
+    ":target", ":visited", ":checked", ":disabled", ":placeholder-shown",
+}
+
+#: Pseudo-classes whose match this gate cannot decide from the chain alone.
+#: Treated as MATCHING, because for a rule that hides something, assuming it
+#: applies is the strict direction -- it makes the gate fail and demand a human
+#: rather than wave the rule through.
+_ASSUME_MATCH = {":first-child", ":last-child", ":only-child", ":nth-child",
+                 ":nth-of-type", ":first-of-type", ":last-of-type", ":is",
+                 ":where", ":has", ":lang", ":dir", ":empty", ":any-link",
+                 ":link", ":root", ":scope", ":default", ":indeterminate",
+                 ":read-only", ":read-write", ":required", ":optional",
+                 ":valid", ":invalid", ":in-range", ":out-of-range"}
+
+
+def _compound_matches(compound, element):
+    """Does one compound selector (no combinators) match one element?
+
+    Raises `_Unsupported` for a construct it has not been taught. That is the
+    behaviour the gate depends on: a new selector form must make this test go
+    red, not make it go quiet.
+    """
+    pieces, consumed = [], 0
+    for match in _SIMPLE.finditer(compound):
+        if match.start() != consumed:
+            raise _Unsupported(f"cannot tokenise {compound!r}")
+        pieces.append(match.group(0))
+        consumed = match.end()
+    if consumed != len(compound) or not pieces:
+        raise _Unsupported(f"cannot tokenise {compound!r}")
+    for piece in pieces:
+        lowered = piece.lower()
+        if piece == "*":
+            continue
+        if piece.startswith("."):
+            if piece[1:] not in element.classes:
+                return False
+        elif piece.startswith("#"):
+            if element.attrs.get("id") != piece[1:]:
+                return False
+        elif piece.startswith("["):
+            if not _attribute_matches(piece, element):
+                return False
+        elif piece.startswith("::"):
+            # A pseudo-element is a box generated *inside* the subject. It is
+            # never the subject, so it cannot hide it.
+            return False
+        elif piece.startswith(":"):
+            name = lowered.split("(")[0]
+            if name == ":not":
+                inner = piece[piece.index("(") + 1:-1].strip()
+                for alternative in inner.split(","):
+                    if _compound_matches(alternative.strip(), element):
+                        return False
+            elif name in _INTERACTION:
+                return False
+            elif name in _ASSUME_MATCH:
+                continue
+            else:
+                raise _Unsupported(f"unknown pseudo-class {piece!r} in {compound!r}")
+        elif element.tag != lowered:
+            return False
+    return True
+
+
+def _attribute_matches(piece, element):
+    inner = piece[1:-1].strip()
+    match = re.fullmatch(r"([-\w]+)(?:([~|^$*]?=)\s*\"?([^\"]*)\"?)?", inner)
+    if not match:
+        raise _Unsupported(f"cannot parse attribute selector {piece!r}")
+    name, operator, wanted = match.group(1).lower(), match.group(2), match.group(3)
+    if name not in element.attrs:
+        return False
+    if operator is None:
+        return True
+    value = element.attrs[name]
+    if operator == "=":
+        return value == wanted
+    if operator == "~=":
+        return wanted in value.split()
+    if operator == "^=":
+        return value.startswith(wanted)
+    if operator == "$=":
+        return value.endswith(wanted)
+    if operator == "*=":
+        return wanted in value
+    raise _Unsupported(f"unsupported attribute operator {operator!r}")
+
+
+class _Unsupported(Exception):
+    """A selector construct the gate has not been taught. Must fail loudly."""
+
+
+def _split_selector(selector):
+    """`['.mkt-card', ' ', 'img:not([x])']` -- compounds and combinators.
+
+    Parenthesis-aware, so the space inside a `:not(...)` or `:is(a, b)` is not
+    read as a descendant combinator.
+    """
+    tokens, buffer, depth, index = [], "", 0, 0
+    while index < len(selector):
+        char = selector[index]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        if depth == 0 and char in " \t\n>+~":
+            combinator, scan = " ", index
+            while scan < len(selector) and selector[scan] in " \t\n>+~":
+                if selector[scan] in ">+~":
+                    combinator = selector[scan]
+                scan += 1
+            if buffer:
+                tokens.extend((buffer, combinator))
+                buffer = ""
+            index = scan
+            continue
+        buffer += char
+        index += 1
+    if buffer:
+        tokens.append(buffer)
+    return tokens
+
+
+def _selector_matches(selector, chain):
+    """Match right-to-left against an ancestor chain whose last item is the subject."""
+    tokens = _split_selector(selector)
+    compounds, combinators = tokens[0::2], tokens[1::2]
+    if not _compound_matches(compounds[-1], chain[-1]):
+        return False
+    position = len(chain) - 1
+    for step in range(len(compounds) - 2, -1, -1):
+        combinator = combinators[step]
+        if combinator == " ":
+            for ancestor in range(position - 1, -1, -1):
+                if _compound_matches(compounds[step], chain[ancestor]):
+                    position = ancestor
+                    break
+            else:
+                return False
+        elif combinator == ">":
+            if position == 0 or not _compound_matches(compounds[step], chain[position - 1]):
+                return False
+            position -= 1
+        else:
+            raise _Unsupported(f"sibling combinator {combinator!r} in {selector!r}")
+    return True
+
+
+def _specificity(selector):
+    ids = classes = elements = 0
+    for compound in _split_selector(selector)[0::2]:
+        for match in _SIMPLE.finditer(compound):
+            piece = match.group(0)
+            if piece == "*":
+                continue
+            if piece.startswith("#"):
+                ids += 1
+            elif piece.startswith("::"):
+                elements += 1
+            elif piece.startswith(":"):
+                name = piece.lower().split("(")[0]
+                if name == ":not":
+                    inner = piece[piece.index("(") + 1:-1]
+                    nested = _specificity(inner)
+                    ids += nested[0]
+                    classes += nested[1]
+                    elements += nested[2]
+                else:
+                    classes += 1
+            elif piece.startswith(".") or piece.startswith("["):
+                classes += 1
+            else:
+                elements += 1
+    return (ids, classes, elements)
+
+
+def _media_applies(at_rules, width):
+    """Does this nest of at-rules apply at `width`?
+
+    Only `min-width`/`max-width` are modelled. Every other feature -- reduced
+    motion, contrast, hover, `@supports` -- is treated as APPLYING, for the
+    same reason as `_ASSUME_MATCH`: the strict direction for a hiding rule is
+    to assume it is in force.
+    """
+    for at_rule in at_rules:
+        for feature, value in re.findall(r"\((min|max)-width:\s*(\d+)px\)", at_rule):
+            limit = int(value)
+            if feature == "min" and width < limit:
+                return False
+            if feature == "max" and width > limit:
+                return False
+    return True
+
+
+def _winning_declaration(rules, chain, width, prop):
+    """The value of `prop` that actually paints, or `None` if nothing sets it."""
+    best, best_key = None, None
+    unsupported = []
+    for at_rules, selector, declarations in rules:
+        if prop not in declarations:
+            continue
+        if not _media_applies(at_rules, width):
+            continue
+        try:
+            if not _selector_matches(selector, chain):
+                continue
+        except _Unsupported as problem:
+            unsupported.append(str(problem))
+            continue
+        value, important = declarations[prop]
+        key = (1 if important else 0,) + _specificity(selector)
+        if best_key is None or key >= best_key:
+            best, best_key = value, key
+    if unsupported:
+        raise AssertionError(
+            "the no-JavaScript gate met selector constructs it cannot evaluate, "
+            "so it cannot honestly claim anything about `" + prop + "`. Teach "
+            "`_compound_matches`/`_selector_matches` rather than deleting this "
+            "check:\n  " + "\n  ".join(sorted(set(unsupported)))
+        )
+    return best
+
+
+def _no_js_documents():
+    """The real served documents, for the four surfaces that carry product media.
+
+    Rendered through `public_document` rather than assembled from `media_box`
+    calls, because the gate has to see the *inline* base stylesheet that
+    document carries as well as the external one -- a hiding rule arriving from
+    either file is the same bug.
+    """
+    rows = [
+        listing(id=85, title="Ribbed Romper", cover_image_url=CJ_IMAGE,
+                category="Womens Clothing > Tops & Sets > Rompers"),
+        listing(id=97, title="Linen Shirt", cover_image_url="https://cdn/plain.jpg",
+                category="Womens Clothing > Tops & Sets > Shirts"),
+    ]
+    grid = sf.render_discovery(
+        listings=rows, variants_by_listing={}, filters=sf.Filters(),
+        viewer=sf.Viewer(), cart_count=0,
+    )
+    pdp = sf.render_product(
+        listing=dict(rows[0], gallery_json=json.dumps([CJ_IMAGE, "https://cdn/b.jpg"])),
+        variants=[], related=[rows[1]], cart_count=0,
+    )
+    return {
+        "grid": sf.public_document(grid),
+        "pdp": sf.public_document(pdp),
+    }
+
+
+def _media_image_chains(document):
+    parser = _ImageChains()
+    parser.feed(document)
+    with open(os.path.join(ROOT, "static/css/pulse_marketplace.css"), encoding="utf-8") as handle:
+        css = handle.read()
+    stylesheet = _strip_css_comments(css + "\n" + "\n".join(parser.styles))
+    chains = [
+        chain for chain in parser.chains
+        if any("mkt-media" in element.classes for element in chain)
+    ]
+    return chains, _flatten_rules(stylesheet)
+
+
+def _strip_css_comments(css):
+    return re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+
+def test_a_product_image_is_visible_with_no_javascript_at_all():
+    """The headline invariant, evaluated as a cascade and not as a grep.
+
+    Server-rendered `<img>` carries no `data-mkt-*` attribute -- that is the
+    whole no-JS state, and it is asserted below so this test cannot pass by
+    accidentally evaluating a scripted DOM. Every `.mkt-media img` in the grid
+    document and the PDP document is then checked at four widths for an
+    `opacity`, `display` or `visibility` that would hide it.
+
+    Measured against the implementation this replaced, by reverting the
+    stylesheet to the shipped rule and re-running: **28 of 28** (image, width)
+    pairs computed to `opacity: 0` -- 2 grid images and 5 PDP images at all four
+    widths, i.e. every product image on both documents. Nothing was partially
+    affected, which is the signature of a default state rather than a bug in one
+    rule.
+    """
+    surfaces = _no_js_documents()
+    assert surfaces, "no documents to check is a vacuous pass"
+    for name, document in surfaces.items():
+        chains, rules = _media_image_chains(document)
+        assert chains, f"{name}: found no .mkt-media images to check"
+        for chain in chains:
+            image = chain[-1]
+            assert not [key for key in image.attrs if key.startswith("data-mkt-")], (
+                f"{name}: the server emitted {image!r} with a data-mkt-* attribute. "
+                "The no-JS state is the state with none of them, so this gate would "
+                "be evaluating a DOM no crawler or JS-off reader ever sees.")
+            for width in GATE_WIDTHS:
+                opacity = _winning_declaration(rules, chain, width, "opacity")
+                assert opacity is None or float(opacity) > 0, (
+                    f"{name} at {width}px: {image!r} computes to opacity {opacity} "
+                    "before any script runs. A successfully fetched image must "
+                    "never need JavaScript's permission to be seen.")
+                display = _winning_declaration(rules, chain, width, "display")
+                assert display != "none", (
+                    f"{name} at {width}px: {image!r} is display:none before any "
+                    "script runs")
+                visibility = _winning_declaration(rules, chain, width, "visibility")
+                assert visibility not in ("hidden", "collapse"), (
+                    f"{name} at {width}px: {image!r} is visibility:{visibility} "
+                    "before any script runs")
+
+
+#: The four product-media call sites, identified by the ancestor class that is
+#: unique to each. They are four different `media_box` calls with four different
+#: `sizes`, and a gate that enumerated only grid cards would pass while a hero
+#: stayed invisible -- with nothing in its assertion text to reveal the gap.
+MEDIA_CALL_SITES = {
+    "grid card": ("mkt-section", "mkt-grid", "mkt-card"),
+    "pdp hero": ("mkt-gallery-stage", "mkt-gallery-slide"),
+    "gallery thumbnail": ("mkt-gallery-rail", "mkt-gallery-thumb"),
+    "related rail": ("mkt-related", "mkt-card"),
+}
+
+
+def test_the_no_js_gate_actually_reaches_all_four_media_call_sites():
+    """Guards the gate above against quietly checking less than it claims.
+
+    Keyed on ancestry rather than on a count, because a count passes for the
+    wrong reason the moment a fixture gains a second gallery image. The names
+    here are the classes the renderer emits, so a refactor that renames a
+    wrapper fails this test and forces the gate to be re-pointed instead of
+    silently losing a surface.
+    """
+    chains = []
+    for document in _no_js_documents().values():
+        chains.extend(_media_image_chains(document)[0])
+    ancestry = [{name for element in chain for name in element.classes} for chain in chains]
+    missing = {
+        site: required for site, required in MEDIA_CALL_SITES.items()
+        if not any(set(required) <= classes for classes in ancestry)
+    }
+    assert not missing, (
+        "the no-JavaScript gate never evaluates these product-media surfaces, so "
+        f"it proves nothing about them: {missing}")
+
+
+def test_the_gate_would_catch_the_bug_it_was_written_for():
+    """The mutation, run in-process, because a gate nobody has seen fail is a guess.
+
+    Re-introduces the shipped rule -- `.mkt-media img:not([data-mkt-loaded])
+    { opacity: 0 }` -- into the parsed stylesheet and asserts the evaluator
+    reports the images as transparent. This is what makes the test above a
+    measurement rather than a restatement of the current CSS.
+    """
+    chains, rules = _media_image_chains(_no_js_documents()["grid"])
+    assert chains
+    regression = rules + _flatten_rules(
+        ".mkt-media img:not([data-mkt-loaded]) { opacity: 0; }")
+    hidden = [
+        chain[-1] for chain in chains
+        if _winning_declaration(regression, chain, 1280, "opacity") == "0"
+    ]
+    assert len(hidden) == len(chains), (
+        "the evaluator did not see the original bug, so it cannot be trusted to "
+        f"see its return: {len(hidden)} of {len(chains)} images hidden")
+
+
+def test_the_fade_is_still_available_to_the_script():
+    """Fail-open must not mean the enhancement was deleted.
+
+    The brief's second half: JS may still transition loading -> loaded. So the
+    `data-mkt-pending` state has to remain *reachable* -- an image the script
+    has caught in flight must still compute to transparent, or the fade is gone
+    and the skeleton flashes behind a half-painted image.
+
+    Asserted as a *difference* between the two states rather than as "pending is
+    transparent", because the latter is true of the old implementation too (an
+    image with `data-mkt-pending` and no `data-mkt-loaded` matched the old
+    `:not([data-mkt-loaded])` rule as well). Only the delta distinguishes a
+    stylesheet where the mark is what hides the image from one where everything
+    is hidden and the mark is irrelevant.
+    """
+    chains, rules = _media_image_chains(_no_js_documents()["grid"])
+    assert chains
+    for chain in chains:
+        marked = _Element("img", list(chain[-1].attrs.items()) + [("data-mkt-pending", "1")])
+        in_flight = _winning_declaration(rules, chain[:-1] + (marked,), 1280, "opacity")
+        at_rest = _winning_declaration(rules, chain, 1280, "opacity")
+        assert in_flight == "0", (
+            "an image marked in-flight by the script no longer fades in; the "
+            f"enhancement path was lost rather than preserved (got {in_flight})")
+        assert at_rest is not None and float(at_rest) > 0, (
+            f"unmarked image is {at_rest}, so the mark is not what hides it")
+
+
+def test_the_broken_image_plate_is_in_the_markup_and_needs_a_class_to_show():
+    """States the limit of the fix honestly rather than overclaiming it.
+
+    `.is-broken` is applied by the script on `error`, and CSS has no `:broken`
+    selector, so with JavaScript off a genuinely dead URL renders the UA's own
+    glyph plus `alt` text -- not the styled "Image unavailable" plate. That is
+    strictly better than the previous behaviour (every image invisible, working
+    or not) but it is not the same as solved, and this test pins both halves:
+    the plate is in the markup already, and it is hidden until marked.
+    """
+    html = sf.media_box(mw.MediaItem(url=CJ_IMAGE, kind="image"), alt="Sock")
+    assert "Image unavailable" in html
+    with open(os.path.join(ROOT, "static/css/pulse_marketplace.css"), encoding="utf-8") as handle:
+        css = _strip_css_comments(handle.read())
+    assert "display: none" in (_css_block(css, ".mkt-media-fallback") or ""), (
+        "the failure plate must be hidden by default; a plate that shows "
+        "unconditionally would cover every working image")
+    assert _css_block(css, ".mkt-media.is-broken .mkt-media-fallback"), (
+        "nothing reveals the failure plate")
 
 
 def _css_block(css, selector):
@@ -1880,12 +2460,12 @@ def test_the_panel_survives_a_row_that_answers_nothing():
 #: Update these *and* the token in the same commit. See the docstring on
 #: `CSS_HREF` for why the pair has to move together.
 ASSET_DIGESTS = {
-    "static/css/pulse_marketplace.css": "862bf4222797",
-    "static/js/pulse_marketplace.js": "d2d20c58cd87",
+    "static/css/pulse_marketplace.css": "a206635e2f06",
+    "static/js/pulse_marketplace.js": "40e6cc0d1f49",
 }
 
 #: The token those digests were recorded against.
-ASSET_TOKEN = "storefront-20261002b"
+ASSET_TOKEN = "storefront-20261003a"
 
 
 def test_editing_a_storefront_asset_forces_its_cache_token_to_move():

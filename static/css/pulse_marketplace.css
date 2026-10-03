@@ -952,6 +952,11 @@ body.mkt-public .mkt {
   border: 0;
   background: transparent;
   max-height: none;
+  /* Visible unless the loader has explicitly marked this image in-flight.
+   * See the `data-mkt-pending` block below — this default is the whole
+   * no-JavaScript guarantee, so do not move it behind a selector that
+   * something has to run to satisfy. */
+  opacity: 1;
   transition: opacity var(--motion-base, 168ms) var(--motion-ease, ease),
     transform var(--motion-slow, 288ms) var(--motion-ease, ease);
 }
@@ -987,15 +992,28 @@ body.mkt-public .mkt {
   }
 }
 
-/* An image that has not decoded yet is transparent, so the skeleton
- * shows. `data-mkt-loaded` is set by the tiny inline loader script on
- * `load`; the CSS `:not()` keeps the pre-script state correct too. */
-.mkt-media img:not([data-mkt-loaded]) {
+/* Visibility fails OPEN. A successfully fetched image must never need
+ * JavaScript permission to be seen, so the default state is `opacity: 1`
+ * (set on the base rule above) and nothing has to run to reveal it.
+ *
+ * This used to be the other way round: `img:not([data-mkt-loaded])` was
+ * transparent, and the only writer of `data-mkt-loaded` is `settleImage()`
+ * in `pulse_marketplace.js` — an **external, deferred** file. (The comment
+ * that stood here called it "the tiny inline loader script". There is no
+ * inline loader; the served document links four external scripts and none of
+ * them is inlined. The description was wrong, which is part of why the risk
+ * went unnoticed.) So a 404 on the `?v=` token, a dropped request, a CSP
+ * rule or a reader with JS off produced a complete, valid, 200-everywhere
+ * page on which every product image was invisible.
+ *
+ * The fade is preserved as what it always should have been — an
+ * enhancement. `data-mkt-pending` is stamped by the script only on an image
+ * it has caught still in flight, and removed when that image loads. Marking
+ * an in-flight image transparent costs nothing visually, because an image
+ * that has not decoded paints nothing anyway; the skeleton behind it is what
+ * shows either way. No script, no mark, no invisible media. */
+.mkt-media img[data-mkt-pending] {
   opacity: 0;
-}
-
-.mkt-media img[data-mkt-loaded] {
-  opacity: 1;
 }
 
 /* Failure state. Rendered in the markup always, displayed only when the
@@ -1099,7 +1117,7 @@ body.mkt-public .mkt {
   box-shadow: var(--elevation-overlay, 0 6px 16px rgba(15, 17, 17, 0.12));
 }
 
-.mkt-card:hover .mkt-media img[data-mkt-loaded] {
+.mkt-card:hover .mkt-media img:not([data-mkt-pending]) {
   transform: scale(1.025);
 }
 
@@ -2552,7 +2570,7 @@ body.mkt-public .mkt {
     transform: none;
   }
 
-  .mkt-card:hover .mkt-media img[data-mkt-loaded] {
+  .mkt-card:hover .mkt-media img:not([data-mkt-pending]) {
     transform: none;
   }
 }

@@ -93,8 +93,22 @@ BASE_PATH = "/pulse/marketplace"
 #: browser holding the previous CSS would paint the new light-page markup with
 #: dark-page rules — white text on a white card — so this is precisely the bump
 #: the comment above exists to force.
-CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20261002b"
-JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20261002b"
+#:
+#: `20261003a` inverts the image reveal from fail-closed to fail-open: the gate
+#: moves from "hide unless the script marked this loaded" to "hide only if the
+#: script marked this in flight". Here the bump is not about a broken mixture —
+#: it is the only way the fix is *delivered at all*. The whole guarantee lives in
+#: the stylesheet, so a returning visitor still holding `20261002b` keeps the
+#: fail-closed rule and keeps a storefront whose images need JavaScript's
+#: permission to be seen, no matter what the origin now serves.
+#:
+#: A mismatched pair is survivable in both directions, which is deliberate rather
+#: than lucky: the new script still stamps `data-mkt-loaded` as well, so old CSS
+#: against new JS behaves exactly as before, and new CSS against old JS simply
+#: loses the fade (nothing writes `data-mkt-pending`, so nothing is hidden).
+#: That is the safety margin, not a reason to skip the bump.
+CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20261003a"
+JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20261003a"
 
 #: Cards per grid page. Mirrors `marketplace_web.PAGE_SIZE` so pagination maths
 #: has one source.

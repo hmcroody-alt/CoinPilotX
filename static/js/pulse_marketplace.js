@@ -28,12 +28,30 @@
   /* ------------------------------------------------------------------ *
    * Media states
    *
-   * The stylesheet keeps an image transparent until it carries
-   * `data-mkt-loaded`, which reveals the skeleton behind it. Two cases have
-   * to be handled beyond a plain `load` listener:
+   * This script ENHANCES image presentation. It must never be the thing that
+   * makes a successfully fetched image visible.
+   *
+   * The stylesheet paints `.mkt-media img` at `opacity: 1` by default and
+   * hides only an image carrying `data-mkt-pending` — a mark this file puts
+   * on an image it has caught still in flight, and takes off when that image
+   * loads. So the fade still happens for a reader running JS, and a reader
+   * who is not (JS off, CSP, a 404 on the `?v=` token, a dropped request)
+   * still sees every image that fetched successfully.
+   *
+   * It used to be the inverse: the CSS hid anything *without*
+   * `data-mkt-loaded`, and `settleImage` below was its only writer. Any
+   * failure to run this one file turned the entire catalogue transparent
+   * while every image returned 200 — a page that is valid, complete and
+   * blank. That is the failure this shape removes.
+   *
+   * Marking an in-flight image `pending` costs nothing visually: an image
+   * that has not decoded paints nothing either way, and the skeleton behind
+   * it is what shows. Two cases still need handling beyond a plain `load`
+   * listener:
    *
    *   1. The image may already be complete before this script runs (cache,
-   *      or `loading="eager"` above the fold). `img.complete` catches that.
+   *      or `loading="eager"` above the fold). `img.complete` catches that,
+   *      and such an image is never marked pending at all.
    *   2. `naturalWidth === 0` on a complete image means the decode failed.
    *      This is the only reliable way to detect a broken image that has
    *      already errored before we attached a handler — the `error` event is
@@ -43,9 +61,11 @@
   function settleImage(img) {
     var box = img.closest(".mkt-media");
     if (img.complete && img.naturalWidth === 0) {
+      img.removeAttribute("data-mkt-pending");
       if (box) box.classList.add("is-broken");
       return;
     }
+    img.removeAttribute("data-mkt-pending");
     img.setAttribute("data-mkt-loaded", "1");
     if (box) box.classList.remove("is-broken");
   }
@@ -58,10 +78,18 @@
         settleImage(img);
         return;
       }
+      /* Caught in flight, so this one is allowed to fade in. Anything
+       * already complete returned above and is left alone — marking it now
+       * would flash it out and back in. */
+      img.setAttribute("data-mkt-pending", "1");
       img.addEventListener("load", function () {
         settleImage(img);
       });
       img.addEventListener("error", function () {
+        /* Clear the mark even though `.is-broken` hides the `img` outright:
+         * it must not outlive the in-flight state it describes, or a later
+         * recovery would find the image still transparent. */
+        img.removeAttribute("data-mkt-pending");
         var box = img.closest(".mkt-media");
         if (box) box.classList.add("is-broken");
       });
