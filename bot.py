@@ -371,6 +371,7 @@ from services import (
     premium_capability_engine,
     payment_provider,
     seller_payment_onboarding,
+    stripe_mode,
     stripe_webhook_verification,
     premium_entitlement_service,
     premium_identity_engine,
@@ -108458,14 +108459,36 @@ def admin_payments_health_page():
         except Exception:
             counts[key] = 0
     conn.close()
+    # `stripe_mode.status()` rather than another prefix inference here. It is
+    # built to leak nothing -- presence booleans only, no prefixes, no lengths --
+    # and it is the only reader that notices a secret key and a publishable key
+    # naming different Stripes, which is the state this page most needs to stop
+    # describing as "ready".
+    mode_status = stripe_mode.status()
     diagnostics = {
         "stripe_key_configured": bool(STRIPE_SECRET_KEY),
         "stripe_webhook_configured": bool(STRIPE_WEBHOOK_SECRET),
         "pro_price_configured": bool(os.getenv("STRIPE_PRO_PRICE_ID") or os.getenv("STRIPE_PRICE_ID")),
         "publishable_key_configured": bool(STRIPE_PUBLISHABLE_KEY),
-        "status": "ready" if STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET else "setup_required",
+        "stripe_mode": mode_status["mode"],
+        "may_move_real_money": mode_status["may_move_real_money"],
+        "test_mode_ready": mode_status["test_mode_ready"],
+        "keys_disagree": mode_status["keys_disagree"],
+        "secret_mode": mode_status["secret_mode"],
+        "publishable_mode": mode_status["publishable_mode"],
+        "publishable_key_env_var": mode_status["publishable_key_env_var"],
+        "missing_for_test_mode": mode_status["missing_for_test_mode"],
         "counts": counts,
     }
+    # Two keys naming different Stripes is not "ready" however many variables
+    # are populated, and it is the one misconfiguration a count of set
+    # variables cannot see.
+    if mode_status["keys_disagree"]:
+        diagnostics["status"] = "keys_disagree"
+    elif STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET:
+        diagnostics["status"] = "ready"
+    else:
+        diagnostics["status"] = "setup_required"
     body = f"<h1>Payments Health</h1><p class='muted'>No secrets are exposed. Missing Stripe setup shows as setup required, never a crash.</p><section class='card'><pre>{html_escape(clean_html(json.dumps(diagnostics, indent=2, default=str)))}</pre></section>"
     return admin_page_html("Payments Health", body, admin)
 
