@@ -407,7 +407,15 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
       } else {
         // Routed by `seller_user_id` above; titled with the store. Presentation
         // and message ownership are different things and stay separate.
-        navigation.navigate("Chat", { conversationId: result.conversation_id, title: sellerStoreName(listing) });
+        //
+        // The seller id travels with the id so that a conversation the server
+        // later refuses can be resolved again from the pair, rather than
+        // retried as the same refused id.
+        navigation.navigate("Chat", {
+          conversationId: result.conversation_id,
+          peerUserId: Number(listing.seller_user_id) || undefined,
+          title: sellerStoreName(listing)
+        });
       }
     } catch (error) {
       setNotice(buyerErrorCopy(error, "Seller chat could not be opened."));

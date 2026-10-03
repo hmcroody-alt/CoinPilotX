@@ -116,6 +116,18 @@ export type RootStackParamList = {
   } | undefined;
   Chat: {
     conversationId: number;
+    /**
+     * The other party, when this screen was reached by resolving a pair rather
+     * than by picking a thread out of the inbox. Spent on one thing: when the
+     * server rejects `conversationId`, the conversation is resolved again
+     * instead of re-requesting an id that has already been refused.
+     *
+     * Safe to accept from route state because it is not an authority to reach
+     * anything. It only ever reaches `/api/pulse/messages/start`, which
+     * authorizes the pair itself — self-message, blocks, message privacy and
+     * account status are all decided there.
+     */
+    peerUserId?: number;
     roomId?: string;
     title?: string;
     avatarUrl?: string;

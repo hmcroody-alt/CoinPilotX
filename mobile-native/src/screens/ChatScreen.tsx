@@ -57,6 +57,7 @@ import {
   PULSE_AI_DISPLAY_NAME,
   reactToMessage,
   reportMessage,
+  resolveDirectConversation,
   sendConversationMessage,
   sendPulseAiMessage,
   sendTyping,
@@ -71,6 +72,13 @@ import {
   assistantConnectionDegraded,
   assistantConnectionState
 } from "../messaging/assistantConnection";
+import {
+  CONVERSATION_FAILURE_COPY,
+  ConversationFailure,
+  classifyConversationFailure,
+  conversationComposerAvailable,
+  conversationRecovery
+} from "../messaging/conversationFailure";
 import { useConversationWallpaper } from "../messaging/conversationWallpaper";
 import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
@@ -429,7 +437,14 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
-  const [error, setError] = useState("");
+  /**
+   * The load failure, classified. This used to be a bare message string, and
+   * every claim on the screen was derived from whether that string was empty —
+   * which is how a 404 on the conversation came to render "RECONNECTING" over
+   * a live composer. The kind is what decides those things now; the message is
+   * still available for the inline banner. See `messaging/conversationFailure`.
+   */
+  const [failure, setFailure] = useState<ConversationFailure | null>(null);
   const [initialFetchComplete, setInitialFetchComplete] = useState(false);
   const [usingCachedMessages, setUsingCachedMessages] = useState(false);
   /**
@@ -679,14 +694,23 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   );
   const visibleMessages = useMemo(() => [...messages].reverse(), [messages]);
   const hasMessages = messages.length > 0;
-  const showInitialLoading = loading && !hasMessages && !initialFetchComplete && !error;
-  const showFatalError = Boolean(error && !hasMessages && !loading);
-  const showEmptyConversation = Boolean(initialFetchComplete && !loading && !error && !hasMessages);
+  const error = failure?.message || "";
+  /**
+   * One failure, one story. Every claim below reads from the same posture, so
+   * the header, the status line and the panel cannot describe three different
+   * problems at once — which is what they did when each derived its own
+   * wording from whether an error string was empty.
+   */
+  const failureCopy = failure ? CONVERSATION_FAILURE_COPY[failure.posture] : null;
+  const showInitialLoading = loading && !hasMessages && !initialFetchComplete && !failure;
+  const showFatalError = Boolean(failure && !hasMessages && !loading);
+  const showEmptyConversation = Boolean(initialFetchComplete && !loading && !failure && !hasMessages);
   const showVoiceCapture = Boolean(recording) || qaChatState === "voice-recording";
-  const headerStatus = error
-    ? hasMessages
-      ? t("messaging:chat.headerReconnecting")
-      : t("messaging:chat.headerUnavailable")
+  /** What the composer may do. A thread that refuses sends gets no live one. */
+  const composerAvailable = conversationComposerAvailable(failure, hasMessages);
+  const recovery = failure ? conversationRecovery(failure, Number(route.params.peerUserId || 0) > 0) : null;
+  const headerStatus = failureCopy
+    ? t(failureCopy.header)
     : usingCachedMessages
       ? t("messaging:chat.headerCachedHistory")
       : t("messaging:chat.headerLiveChannel");
@@ -747,7 +771,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const load = useCallback(async ({ refresh = false } = {}) => {
     if (refresh) setRefreshing(true);
     else setLoading(true);
-    setError("");
+    setFailure(null);
     try {
       const data = assistantConversation
         ? await getPulseAiConversation({ limit: PAGE_SIZE })
@@ -772,11 +796,11 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         setMessages(cached);
         if (!assistantConversation) void markConversationSeen(conversationId, cached).catch(() => undefined);
         setUsingCachedMessages(true);
-        setError("");
+        setFailure(null);
         setStatusMessage(t("messaging:chat.showingCached"));
       } else {
         setUsingCachedMessages(false);
-        setError(loadError instanceof Error ? loadError.message : t("messaging:chat.loadFailed"));
+        setFailure(classifyConversationFailure(loadError, t("messaging:chat.loadFailed")));
       }
     } finally {
       setInitialFetchComplete(true);
@@ -785,27 +809,50 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
   }, [assistantConversation, conversationId, selfUserId, t]);
 
+  /**
+   * Recovery, aimed at whichever subsystem actually failed.
+   *
+   * Three things can be wrong here and only one of them is the message fetch.
+   * A room whose conversation id has drifted is repaired by resolving the room.
+   * A direct conversation the server does not recognise is repaired by
+   * resolving the *pair* — re-requesting an id the server has already refused
+   * can only be refused again, which is exactly the loop a plain Retry put
+   * someone in. Anything else is a fetch, and a fetch is retried.
+   */
   const retryLoad = useCallback(async () => {
     const roomId = route.params.roomId;
-    if (!roomId) {
+    const peerUserId = Number(route.params.peerUserId || 0);
+    const resolvePair = peerUserId > 0 && Boolean(failure?.needsResolution);
+    if (!roomId && !resolvePair) {
       await load({ refresh: true });
       return;
     }
     setRefreshing(true);
-    setError("");
+    setFailure(null);
     try {
-      const repaired = await recoverRoomConversation(roomId, conversationId);
-      if (repaired.changed) {
-        navigation.replace("Chat", { ...route.params, conversationId: repaired.conversationId, roomId });
-        return;
+      if (roomId) {
+        const repaired = await recoverRoomConversation(roomId, conversationId);
+        if (repaired.changed) {
+          navigation.replace("Chat", { ...route.params, conversationId: repaired.conversationId, roomId });
+          return;
+        }
+      } else {
+        const resolved = await resolveDirectConversation(peerUserId);
+        if (resolved && resolved !== conversationId) {
+          navigation.replace("Chat", { ...route.params, conversationId: resolved });
+          return;
+        }
       }
+      // The id the server hands back is the one already on screen, so the
+      // conversation is not the problem. Read it again and report whatever
+      // comes back rather than claiming the repair worked.
       await load({ refresh: true });
     } catch (retryError) {
-      setError(retryError instanceof Error ? retryError.message : "Messages could not load.");
+      setFailure(classifyConversationFailure(retryError, t("messaging:chat.loadFailed")));
     } finally {
       setRefreshing(false);
     }
-  }, [conversationId, load, navigation, route.params]);
+  }, [conversationId, failure, load, navigation, route.params, t]);
 
   const loadOlder = useCallback(async () => {
     if (assistantConversation) return;
@@ -817,7 +864,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         setMessages((current) => mergeMessages(data.messages || [], current));
       }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : t("messaging:chat.loadOlderFailed"));
+      setFailure(classifyConversationFailure(loadError, t("messaging:chat.loadOlderFailed")));
     } finally {
       setLoadingOlder(false);
     }
@@ -835,7 +882,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           return merged;
         });
         setUsingCachedMessages(false);
-        setError("");
+        setFailure(null);
         setStatusMessage("");
       } catch {
         if (messages.length) setStatusMessage(t("messaging:chat.undxReconnecting"));
@@ -845,7 +892,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     if (isLocalMessengerFixtureConversation(conversationId)) {
       setTyping(qaFixtureTyping(conversationId));
       setUsingCachedMessages(false);
-      setError("");
+      setFailure(null);
       setStatusMessage("");
       return;
     }
@@ -872,7 +919,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setTyping(typingSummary(data.presence));
       setPeerPresence(peerPresenceFrom(data.presence, selfUserId));
       setUsingCachedMessages(false);
-      setError("");
+      setFailure(null);
     } catch {
       setTyping("");
       // A failed sync means we no longer know whether the peer is online, so we
@@ -1750,18 +1797,35 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           </View>
         </View>
       </View>
-      {error && hasMessages ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="Retry loading messages" style={styles.errorBanner} onPress={() => retryLoad()}>
-          <Text style={styles.error}>{error}</Text>
-        </Pressable>
+      {failure && failureCopy && hasMessages ? (
+        // A banner that cannot be acted on must not look like a button. Only
+        // the postures recovery can actually address get a tappable one.
+        recovery === "back" ? (
+          <View style={styles.errorBanner}>
+            <Text style={styles.error}>{t(failureCopy.title)}</Text>
+          </View>
+        ) : (
+          <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yRetryLoad")} style={styles.errorBanner} onPress={() => retryLoad()}>
+            <Text style={styles.error}>{t(failureCopy.title)}</Text>
+          </Pressable>
+        )
       ) : null}
       {showInitialLoading ? (
         <LogiNexusStatePanel state="loading" title={t("messaging:chat.openingTitle")} body={t("messaging:chat.openingBody")} loading style={styles.loadingPanel} />
-      ) : showFatalError ? (
-        <LogiNexusStatePanel state="error" title="Messages could not load" body={error || "PulseSoc could not load this conversation. Tap retry to reconnect to the canonical message history."} style={styles.loadingPanel}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Retry loading messages" style={styles.retryStateButton} onPress={() => retryLoad()}>
-            <Text style={styles.retryStateText}>Retry</Text>
-          </Pressable>
+      ) : showFatalError && failureCopy ? (
+        // Titled and worded from the posture, not from the server's sentence.
+        // "Conversation not found." is accurate and useless: it names the
+        // server's finding instead of what the person can do about it.
+        <LogiNexusStatePanel state="error" title={t(failureCopy.title)} body={t(failureCopy.body)} style={styles.loadingPanel}>
+          {recovery === "back" ? (
+            <Pressable accessibilityRole="button" accessibilityLabel={t("common:actions.back")} style={styles.retryStateButton} onPress={onBackPress}>
+              <Text style={styles.retryStateText}>{t("common:actions.back")}</Text>
+            </Pressable>
+          ) : (
+            <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yRetryLoad")} style={styles.retryStateButton} onPress={() => retryLoad()}>
+              <Text style={styles.retryStateText}>{t("messaging:chat.retry")}</Text>
+            </Pressable>
+          )}
         </LogiNexusStatePanel>
       ) : (
         <>
@@ -2358,8 +2422,14 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       <PulseCommandPanel style={[styles.composer, { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) }, keyboardVisible && styles.composerKeyboard]}>
         <View pointerEvents="none" style={styles.composerSignalLine} />
         <View style={styles.composerMetaRow}>
-          <View style={styles.composerMetaIdentity}><LiveStatusDot warning={Boolean(error)} /><Text style={styles.composerKicker}>{t("messaging:chat.composerKicker")}</Text></View>
-          <Text style={[styles.composerState, showVoiceCapture && styles.composerStateRecording]}>{showVoiceCapture ? t("messaging:chat.stateRecording") : uploading ? t("messaging:chat.stateSendingMedia") : error ? t("messaging:chat.stateReconnecting") : assistantConversation ? t("messaging:chat.stateUndxReady") : t("messaging:chat.stateSecureReady")}</Text>
+          <View style={styles.composerMetaIdentity}><LiveStatusDot warning={connectionDegraded} /><Text style={styles.composerKicker}>{t("messaging:chat.composerKicker")}</Text></View>
+          {/* "RECONNECTING" is a claim about a transport, and this screen has
+              none — it polls. It used to be printed for any load failure, so a
+              404 on the conversation announced a reconnection that was not
+              happening to a link that does not exist. The posture decides the
+              word now, and only the one posture where PulseSoc answered and a
+              retry is meaningful still says it. */}
+          <Text style={[styles.composerState, showVoiceCapture && styles.composerStateRecording]}>{showVoiceCapture ? t("messaging:chat.stateRecording") : uploading ? t("messaging:chat.stateSendingMedia") : failureCopy ? t(failureCopy.state) : assistantConversation ? t("messaging:chat.stateUndxReady") : t("messaging:chat.stateSecureReady")}</Text>
         </View>
         {assistantConversation && marketChip ? (
           <View style={styles.marketContextChip}>
@@ -2436,20 +2506,26 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             onSend={() => toggleVoiceRecording().catch(() => undefined)}
           />
         ) : <View style={styles.inputRow}>
-          <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX attachment support unavailable" : uploading ? "Uploading attachment" : "Add attachment"} icon={uploading ? "cloud-upload-outline" : "add"} disabled={uploading || assistantConversation} size={46} onPress={() => assistantConversation ? setStatusMessage("UNDX can chat by text right now.") : setAttachmentSheetOpen(true)} />
+          {/* Every control here is gated on `composerAvailable`. A composer
+              that accepts a message the server will refuse is worse than no
+              composer: it takes the words, loses them, and leaves the person
+              believing the seller was contacted. */}
+          <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX attachment support unavailable" : uploading ? "Uploading attachment" : "Add attachment"} icon={uploading ? "cloud-upload-outline" : "add"} disabled={uploading || assistantConversation || !composerAvailable} size={46} onPress={() => assistantConversation ? setStatusMessage("UNDX can chat by text right now.") : setAttachmentSheetOpen(true)} />
           <TextInput
             multiline
+            editable={composerAvailable}
             autoFocus={qaChatState === "keyboard" || qaChatState === "reply-keyboard"}
-            placeholder={assistantConversation ? t("messaging:chat.composerPlaceholderUndx") : t("messaging:chat.composerPlaceholder")}
+            placeholder={!composerAvailable ? t("messaging:chat.composerPlaceholderUnavailable") : assistantConversation ? t("messaging:chat.composerPlaceholderUndx") : t("messaging:chat.composerPlaceholder")}
             placeholderTextColor={chatGraphite.secondaryText}
             style={styles.input}
             value={draft}
             onChangeText={notifyTyping}
+            accessibilityState={{ disabled: !composerAvailable }}
             accessibilityLabel={assistantConversation ? t("messaging:chat.a11yComposerUndx") : t("messaging:chat.a11yComposer")}
           />
-          <SignalIconButton accessibilityLabel="Add emoji" icon="happy-outline" size={42} onPress={() => setEmojiPickerOpen(true)} />
-          <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX voice messages unavailable" : "Record voice message"} icon="mic-outline" disabled={uploading || assistantConversation} size={42} onPress={() => assistantConversation ? setStatusMessage("UNDX cannot receive voice messages yet.") : toggleVoiceRecording().catch(() => undefined)} />
-          <Pressable accessibilityRole="button" accessibilityLabel={editing ? t("messaging:chat.a11ySaveEdit") : "Send message"} disabled={!draft.trim()} style={({ pressed }) => [styles.sendButton, !draft.trim() && styles.sendDisabled, pressed && styles.pressed]} onPress={submitText}>
+          <SignalIconButton accessibilityLabel="Add emoji" icon="happy-outline" disabled={!composerAvailable} size={42} onPress={() => setEmojiPickerOpen(true)} />
+          <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX voice messages unavailable" : "Record voice message"} icon="mic-outline" disabled={uploading || assistantConversation || !composerAvailable} size={42} onPress={() => assistantConversation ? setStatusMessage("UNDX cannot receive voice messages yet.") : toggleVoiceRecording().catch(() => undefined)} />
+          <Pressable accessibilityRole="button" accessibilityLabel={editing ? t("messaging:chat.a11ySaveEdit") : "Send message"} disabled={!draft.trim() || !composerAvailable} style={({ pressed }) => [styles.sendButton, (!draft.trim() || !composerAvailable) && styles.sendDisabled, pressed && styles.pressed]} onPress={submitText}>
             <Text style={styles.sendText}>➤</Text>
           </Pressable>
         </View>}
