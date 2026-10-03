@@ -55,6 +55,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence
+from urllib.parse import urlsplit
 
 from services import app_links
 from services import marketplace_listing_lifecycle
@@ -305,6 +306,72 @@ def cart_path() -> str:
 # ---------------------------------------------------------------------------
 
 
+# Hosts that answer Alibaba OSS image directives, and nothing else. Every one
+# of the 147 distinct image URLs in the public catalogue is on one of these two
+# (measured on the wire 2026-10-03 across the 42 sitemap URLs and all four grid
+# pages); none are on `cdn.coinpilotx.app`, which the paragraph this allowlist
+# replaces assumed.
+#
+# An allowlist rather than a try-everything, because a host that does not
+# understand the directive answers **400, not the original** -- verified. A
+# `srcset` candidate that 400s does not fall back to `src`; the browser shows a
+# broken image. So the rule is: emit variants only where they are known to
+# resolve, and leave every other origin exactly as it was.
+_RESIZE_HOSTS = frozenset({"cf.cjdropshipping.com", "oss-cf.cjdropshipping.com"})
+
+# The rendered box is 225-396 CSS px for a grid card, 607 for the product hero
+# and 64 for a gallery thumbnail (measured in a browser, not read off the CSS,
+# because the grid is `auto-fill minmax(230px, 1fr)` and the column width is a
+# function of the container). At DPR 3 the widest card wants ~1,188 physical px,
+# so the ladder stops at 800: the supplier originals are 750-800 px and OSS does
+# not upscale, so a larger candidate would be the original under a false width.
+# 200 is here for the thumbnail, which at DPR 3 wants 192.
+_RESIZE_WIDTHS = (200, 400, 600, 800)
+
+# Each `sizes` describes the box its call site actually renders, measured at the
+# breakpoints the stylesheet defines. Over-stating a width costs bytes;
+# under-stating it ships a blurry image, so these round *up* to the widest
+# measurement in each range.
+CARD_SIZES = "(max-width: 560px) 100vw, 272px"
+HERO_SIZES = "(max-width: 900px) 100vw, 608px"
+THUMB_SIZES = "64px"
+
+# Only formats where a resize is lossless-of-intent. A GIF may be animated and
+# would be flattened to its first frame; SVG has no pixels to resize.
+_RESIZE_SUFFIXES = (".jpg", ".jpeg", ".png")
+
+
+def _variant_srcset(url: str, *, fmt: str = "") -> str:
+    """A `srcset` of OSS-resized variants, or `""` if this URL cannot take one.
+
+    Returns empty for any URL that is not an allowlisted host over https, that
+    already carries a query string (appending a second `?` breaks it, and a
+    signed URL must not be rewritten), or whose extension is not a still raster.
+    Empty means the caller emits the markup it emitted before -- the degradation
+    path is "no change", not "a guess".
+
+    The commas in the directive are percent-encoded. OSS accepts either form
+    (verified byte-identical), and `%2C` means a reader does not have to decide
+    whether the HTML `srcset` comma-splitting rule treats `resize,w_400` as one
+    candidate or two.
+    """
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return ""
+    if parts.scheme != "https" or parts.query or parts.fragment:
+        return ""
+    if parts.hostname not in _RESIZE_HOSTS or parts.port:
+        return ""
+    if not parts.path.lower().endswith(_RESIZE_SUFFIXES):
+        return ""
+    tail = f"%2Fformat%2C{fmt}" if fmt else ""
+    return ", ".join(
+        f"{url}?x-oss-process=image%2Fresize%2Cw_{width}{tail} {width}w"
+        for width in _RESIZE_WIDTHS
+    )
+
+
 def media_box(
     item: Optional[mw.MediaItem],
     *,
@@ -312,6 +379,7 @@ def media_box(
     eager: bool = False,
     shape: str = "",
     inner_html: str = "",
+    sizes: str = "",
 ) -> str:
     """The one image component every product photo on the site goes through.
 
@@ -335,13 +403,26 @@ def media_box(
       for an already-failed cached image (`naturalWidth === 0`), which no
       `error` listener can catch.
 
-    No ``srcset``. That is a measured decision, not an omission: product images
-    are served from an R2 bucket behind ``cdn.coinpilotx.app`` with no image
-    transform service in front of it — there is no resize endpoint in the repo
-    and no Cloudflare Images binding. Emitting a ``srcset`` of URLs that do not
-    exist would break every image; emitting ``sizes`` without ``srcset`` does
-    nothing at all. When a transform origin exists, it belongs here and only
-    here.
+    ``srcset`` is emitted when — and only when — the caller names a ``sizes``
+    and the image sits on an origin that is known to resize (`_variant_srcset`).
+    That replaces a paragraph here which said no origin could: it named
+    ``cdn.coinpilotx.app``, but on 2026-10-03 **none** of the 44 distinct images
+    in the public catalogue were on it. All 44 are on the two CJ hosts, which do
+    answer OSS directives, and the page was shipping 10.8 MB of unresized
+    supplier originals (mean 257 KB) to fill boxes 225-607 px wide.
+
+    ``sizes`` is opt-in per call site for the same reason ``cart`` is in
+    ``card_html``: a `w`-descriptor ``srcset`` with no ``sizes`` means ``100vw``,
+    which over-fetches for a thumbnail by an order of magnitude. A call site that
+    has not worked out its own box width therefore gets exactly the markup it got
+    before rather than a guess — the enhancement cannot regress a caller that
+    does not know about it.
+
+    The webp candidates go in a ``<source>`` rather than on the ``<img>``,
+    because the CDN varies only on ``Origin`` and rejects ``format,auto``: the
+    browser has to do the choosing. The ``<img>`` keeps the *unmodified* original
+    as its ``src``, so the no-``srcset`` path and anything reading ``src``
+    (Google Images, the structured-data image URL) are untouched by this change.
     """
     classes = "mkt-media" + (f" {shape}" if shape else "")
     if item is None or not item.url:
@@ -361,10 +442,23 @@ def media_box(
         )
     loading = "eager" if eager else "lazy"
     priority = ' fetchpriority="high"' if eager else ""
+    variants = _variant_srcset(item.url) if sizes else ""
+    responsive = (
+        f' srcset="{esc(variants)}" sizes="{esc(sizes)}"' if variants else ""
+    )
+    img = (
+        f'<img src="{esc(item.url)}" alt="{esc(alt)}" loading="{loading}"'
+        f' decoding="async"{priority}{responsive}>'
+    )
+    if variants:
+        webp = _variant_srcset(item.url, fmt="webp")
+        img = (
+            f'<picture><source type="image/webp" srcset="{esc(webp)}"'
+            f' sizes="{esc(sizes)}">{img}</picture>'
+        )
     return (
         f'<div class="{classes}">'
-        f'<img src="{esc(item.url)}" alt="{esc(alt)}" loading="{loading}"'
-        f' decoding="async"{priority}>'
+        f"{img}"
         f'<span class="mkt-media-fallback">Image unavailable</span>'
         f"{inner_html}</div>"
     )
@@ -451,7 +545,8 @@ def product_card(
     # Alt text is the product's own name. It is the only honest description of a
     # product photograph available here, and it is what a screen-reader user
     # needs in order to tell two cards apart.
-    box = media_box(first, alt=title, eager=eager, inner_html=badges_html(badges))
+    box = media_box(first, alt=title, eager=eager, inner_html=badges_html(badges),
+                    sizes=CARD_SIZES)
 
     seller_name = mw._clean(row.get("seller_store_name")) or ""
     seller_block = ""
@@ -1142,7 +1237,7 @@ def gallery_html(media: Sequence[mw.MediaItem], *, title: str) -> str:
     if len(media) == 1:
         return (
             f'<div class="mkt-gallery"><div class="mkt-gallery-stage">'
-            f"{media_box(media[0], alt=title, eager=True)}"
+            f"{media_box(media[0], alt=title, eager=True, sizes=HERO_SIZES)}"
             f"</div></div>"
         )
 
@@ -1154,7 +1249,7 @@ def gallery_html(media: Sequence[mw.MediaItem], *, title: str) -> str:
         slides.append(
             f'<div class="mkt-gallery-slide" role="tabpanel" id="mkt-slide-{index}"'
             f' aria-labelledby="mkt-thumb-{index}"{hidden}>'
-            f"{media_box(item, alt=label, eager=(index == 0))}</div>"
+            f"{media_box(item, alt=label, eager=(index == 0), sizes=HERO_SIZES)}</div>"
         )
         selected = "true" if index == 0 else "false"
         tabindex = "0" if index == 0 else "-1"
@@ -1170,7 +1265,7 @@ def gallery_html(media: Sequence[mw.MediaItem], *, title: str) -> str:
             f'<a class="mkt-gallery-thumb{active}" role="tab" id="mkt-thumb-{index}"'
             f' href="#mkt-slide-{index}" aria-controls="mkt-slide-{index}"'
             f' aria-selected="{selected}" tabindex="{tabindex}">'
-            f"{media_box(thumb_item, alt=f'Show image {index + 1}')}</a></li>"
+            f"{media_box(thumb_item, alt=f'Show image {index + 1}', sizes=THUMB_SIZES)}</a></li>"
         )
 
     return (

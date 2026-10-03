@@ -355,15 +355,91 @@ def test_the_largest_contentful_image_is_not_lazy():
     assert 'loading="eager"' in hero and 'fetchpriority="high"' in hero
 
 
-def test_no_srcset_is_emitted_against_an_origin_that_cannot_resize():
-    """Images come from R2 with no transform service in front of it.
+CJ_IMAGE = "https://cf.cjdropshipping.com/17007840/1727919878964383744.jpg"
 
-    A `srcset` of invented `?w=480` URLs would 404 every image on the page,
-    which is strictly worse than shipping one size. `sizes` without `srcset`
-    does nothing, so it is absent too.
+
+def test_no_srcset_is_emitted_against_an_origin_that_cannot_resize():
+    """An unknown origin keeps the markup it had, with or without a `sizes`.
+
+    A host that does not understand the directive answers **400, not the
+    original** -- measured against both CJ hosts with a bogus operation. A
+    `srcset` candidate that 400s does not fall back to `src`, so a
+    try-everything would turn one heavy image into no image. `sizes` without
+    `srcset` does nothing, so it is absent too.
+
+    `https://cdn/...` is deliberately not an allowlisted host. That makes this a
+    real assertion rather than a restatement of the default -- the companion
+    test below drives the same function with a host that *is*.
     """
-    html = sf.media_box(mw.MediaItem(url="https://cdn/x.jpg", kind="image"), alt="Sock")
+    for kwargs in ({}, {"sizes": sf.CARD_SIZES}):
+        html = sf.media_box(mw.MediaItem(url="https://cdn/x.jpg", kind="image"),
+                            alt="Sock", **kwargs)
+        assert "srcset" not in html and "sizes=" not in html
+        assert "<picture" not in html
+
+
+def test_a_resizable_origin_gets_variants_and_keeps_the_original_as_src():
+    """The whole point, and the two things that must survive it.
+
+    `src` stays the unmodified supplier URL, so the no-`srcset` path and
+    anything that reads `src` rather than the candidate list -- Google Images,
+    the structured-data image URL -- see exactly what they saw before.
+    """
+    html = sf.media_box(mw.MediaItem(url=CJ_IMAGE, kind="image"),
+                        alt="Sock", sizes=sf.CARD_SIZES)
+    assert f'src="{CJ_IMAGE}"' in html, "the original must remain the fallback"
+    assert 'type="image/webp"' in html and html.count("<picture") == 1
+    assert html.count("<img") == 1, "a <source> is not a second request"
+    for width in (200, 400, 600, 800):
+        assert f"w_{width} {width}w" in html
+        assert f"w_{width}%2Fformat%2Cwebp {width}w" in html
+    assert sf.CARD_SIZES in html
+
+
+def test_a_width_descriptor_is_never_emitted_without_a_sizes():
+    """`srcset` with `w` descriptors and no `sizes` means `100vw`.
+
+    For the 64px gallery thumbnail that is a ~6x over-fetch, so the variants are
+    opt-in per call site and a caller that has not worked out its box width gets
+    the markup it got before rather than a guess.
+    """
+    html = sf.media_box(mw.MediaItem(url=CJ_IMAGE, kind="image"), alt="Sock")
     assert "srcset" not in html and "sizes=" not in html
+
+
+def test_variants_are_refused_for_anything_that_would_break_the_url():
+    """Each of these would produce a candidate that does not resolve."""
+    refused = {
+        "http": "http://cf.cjdropshipping.com/a.jpg",
+        "foreign host": "https://evil.example/a.jpg",
+        "explicit port": "https://cf.cjdropshipping.com:8443/a.jpg",
+        # A second `?` is not a query string, and a signed URL must not be
+        # rewritten even when the host is right.
+        "already has a query": "https://cf.cjdropshipping.com/a.jpg?sig=1",
+        "fragment": "https://cf.cjdropshipping.com/a.jpg#x",
+        # Animated: a resize flattens it to frame one.
+        "gif": "https://cf.cjdropshipping.com/a.gif",
+        "no pixels to resize": "https://cf.cjdropshipping.com/a.svg",
+    }
+    for why, url in refused.items():
+        assert sf._variant_srcset(url) == "", why
+    # The host comparison is case-insensitive and the extension test is too,
+    # because neither is under our control.
+    assert sf._variant_srcset("https://CF.CJDropshipping.com/a.JPG")
+
+
+def test_the_commas_in_the_directive_are_percent_encoded():
+    """Both forms are byte-identical at the CDN; one is unambiguous in HTML.
+
+    `srcset` is a comma-separated list, so a reader of `resize,w_400 400w`
+    has to know the parsing rule well enough to say whether that is one
+    candidate or two. `%2C` removes the question.
+    """
+    srcset = sf._variant_srcset(CJ_IMAGE)
+    assert "," in srcset, "candidates are still comma-separated"
+    assert "resize,w_" not in srcset and "format,webp" not in srcset
+    # One comma per gap between candidates, and none inside them.
+    assert srcset.count(",") == len(sf._RESIZE_WIDTHS) - 1
 
 
 def test_a_missing_photo_is_absence_and_a_dead_url_is_failure():
