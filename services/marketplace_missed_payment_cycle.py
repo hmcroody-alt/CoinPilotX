@@ -35,6 +35,12 @@ blind to the one case it exists for. So each examined row that was not repaired
 is written to a ledger with a next-attempt time on a doubling backoff, and a
 bounded number of attempts after which it stops being asked about.
 
+The one row that is never allowed to run out is the one Stripe already called
+``succeeded``. That row is not being retried, it is waiting on a permission, and
+a budget applied to waiting retires recoverable money — under
+``abandoned_unpaid``, the precise opposite of what Stripe said. It backs off so
+report-only does not refile it every cycle, and it keeps its place forever.
+
 **Terminal versus in-flight.** A ``canceled`` PaymentIntent is the only
 non-succeeded status Stripe never revives; it is retired on sight. A
 ``processing`` or ``requires_payment_method`` intent can still become
@@ -129,6 +135,15 @@ MAX_RETRY_MAX_SECONDS = 604800
 ADVISORY_LOCK_KEY = 620261003
 
 ATTEMPTS_TABLE = "marketplace_missed_payment_attempts"
+
+#: What the last look at a transaction concluded. Named rather than inline
+#: because one of them -- ``awaiting_repair`` -- is load-bearing in
+#: :func:`record_attempt`, where it is the single outcome exempt from the retry
+#: budget, and a typo there would silently retire recoverable money.
+OUTCOME_AWAITING_REPAIR = "awaiting_repair"
+OUTCOME_UNPAID = "unpaid"
+OUTCOME_UNREACHABLE = "unreachable"
+OUTCOME_NEEDS_ATTENTION = "needs_attention"
 
 #: Why a transaction stopped being asked about.
 EXHAUSTED_PROVIDER_CANCELED = "provider_canceled"
@@ -312,6 +327,16 @@ def record_attempt(tx_id: int, *, outcome: str, policy: Mapping[str, Any],
 
     ``terminal`` retires a row immediately regardless of its remaining budget:
     a ``canceled`` PaymentIntent has no future to wait for.
+
+    One outcome is exempt from the budget entirely. ``awaiting_repair`` means
+    Stripe said ``succeeded`` and this cycle was not permitted to act on it, so
+    the attempt count is not measuring a retry — it is counting how many times
+    the server has confirmed, correctly, that money is sitting unrecovered. A
+    budget applied there retires recoverable money, and retires it under
+    ``abandoned_unpaid``: the exact August failure, relabelled as its own
+    opposite, and reintroduced by the ledger built to prevent it. It keeps its
+    backoff so report-only does not refile every fifteen minutes, but it never
+    runs out of looks.
     """
     moment = now or _now()
     stamp = _iso(moment)
@@ -321,16 +346,20 @@ def record_attempt(tx_id: int, *, outcome: str, policy: Mapping[str, Any],
         attempts = int(existing.get("attempts") or 0) + 1
         max_attempts = max(1, int(policy.get("max_attempts") or DEFAULT_RETRY_MAX_ATTEMPTS))
 
-        if terminal:
+        if outcome == OUTCOME_AWAITING_REPAIR:
+            # Never retired. See the docstring: this row is money the provider
+            # has already confirmed, and no number of looks makes it stale.
+            exhausted_reason = ""
+        elif terminal:
             exhausted_reason = EXHAUSTED_PROVIDER_CANCELED
-        elif outcome == "needs_attention":
+        elif outcome == OUTCOME_NEEDS_ATTENTION:
             # A metadata shape this sweep does not recognise is not a transient
             # fault and asking Stripe again returns the same answer. It needs a
             # person, and the sweep has already logged it at error level.
             exhausted_reason = EXHAUSTED_NEEDS_HUMAN
         elif attempts >= max_attempts:
             exhausted_reason = (EXHAUSTED_PROVIDER_UNREACHABLE
-                                if outcome == "unreachable" else EXHAUSTED_ABANDONED_UNPAID)
+                                if outcome == OUTCOME_UNREACHABLE else EXHAUSTED_ABANDONED_UNPAID)
         else:
             exhausted_reason = ""
 
@@ -576,11 +605,15 @@ def _record_report(report: Mapping[str, Any], *, policy: Mapping[str, Any],
         clear_attempts(int(entry.get("transaction_id") or 0))
 
     # A detected-but-not-repaired row is a *finding*, not a failure to look. It
-    # keeps its budget and its backoff so the report-only cycle does not refile
-    # the same incident every fifteen minutes for the rest of the deployment.
+    # keeps its backoff so the report-only cycle does not refile the same
+    # incident every fifteen minutes for the rest of the deployment -- but it
+    # keeps its place in the queue permanently, because `record_attempt` exempts
+    # this outcome from the retry budget. Money Stripe has already confirmed
+    # does not become less recoverable for having been counted.
     pending_repair = [entry for entry in repaired if not entry.get("applied")]
     for entry in pending_repair:
-        record_attempt(int(entry.get("transaction_id") or 0), outcome="awaiting_repair",
+        record_attempt(int(entry.get("transaction_id") or 0),
+                       outcome=OUTCOME_AWAITING_REPAIR,
                        policy=policy, payment_intent_id=str(entry.get("payment_intent_id") or ""),
                        provider_status="succeeded", now=now)
 
@@ -589,18 +622,18 @@ def _record_report(report: Mapping[str, Any], *, policy: Mapping[str, Any],
     for tx_id in report.get("unpaid") or []:
         info = detail.get(int(tx_id), {})
         exhausted.append(record_attempt(
-            int(tx_id), outcome="unpaid", policy=policy,
+            int(tx_id), outcome=OUTCOME_UNPAID, policy=policy,
             payment_intent_id=str(info.get("payment_intent_id") or ""),
             provider_status=str(info.get("provider_status") or ""),
             terminal=bool(info.get("terminal")), now=now))
 
     for tx_id in report.get("unreachable") or []:
-        exhausted.append(record_attempt(int(tx_id), outcome="unreachable",
+        exhausted.append(record_attempt(int(tx_id), outcome=OUTCOME_UNREACHABLE,
                                        policy=policy, now=now))
 
     for entry in report.get("needs_attention") or []:
         exhausted.append(record_attempt(
-            int(dict(entry).get("transaction_id") or 0), outcome="needs_attention",
+            int(dict(entry).get("transaction_id") or 0), outcome=OUTCOME_NEEDS_ATTENTION,
             policy=policy, payment_intent_id=str(dict(entry).get("payment_intent_id") or ""),
             now=now))
 

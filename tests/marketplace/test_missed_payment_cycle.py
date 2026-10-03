@@ -775,6 +775,72 @@ def test_a_detected_but_unrepaired_row_is_not_refiled_every_cycle(monkeypatch):
     assert len(_incidents(tx_id)) == 1
 
 
+def test_report_only_cannot_spend_the_retry_budget_of_a_paid_transaction(monkeypatch):
+    """A row Stripe called ``succeeded`` must never run out of looks.
+
+    This is the defect the mutation run surfaced, and it is the August incident
+    rebuilt inside the thing that was supposed to prevent it. Report-only mode
+    detects a paid transaction it is not permitted to repair, and under a plain
+    retry budget each of those correct detections spends an attempt. Budget
+    exhausted, the row is retired as ``abandoned_unpaid`` -- for a payment the
+    provider confirmed -- and then permanently excluded from the candidate
+    population. The owner authorises repair the next day and the money is never
+    recovered, because the ledger has already written it off.
+
+    Two cycles here against a budget of two, which under the old behaviour was
+    exactly enough to retire it. The assertion that matters is the last one: the
+    row is still a candidate after its budget would have run out.
+    """
+    _enable(monkeypatch)
+    monkeypatch.setenv(cycle.RETRY_MAX_ATTEMPTS_ENV_VAR, "2")
+    tx_id = _transaction()
+    intent = _intent(tx_id, "succeeded")
+
+    _run({f"pi_cycle_{tx_id}": intent}, now=NOW)
+    second = _run({f"pi_cycle_{tx_id}": intent}, now=NOW + timedelta(hours=12))
+
+    assert second["detected_count"] == 1, "the row stopped being examined"
+    ledger = _ledger(tx_id)
+    assert ledger["attempts"] == 2
+    # The literal, not the constant. The exemption in `record_attempt` is keyed
+    # on this string and the value is persisted for operators to read, so a
+    # rename of the constant would otherwise satisfy both sides of the compare
+    # while changing what is in the table.
+    assert ledger["outcome"] == "awaiting_repair"
+    assert cycle.OUTCOME_AWAITING_REPAIR == "awaiting_repair"
+    assert ledger["exhausted_reason"] == "", "recoverable money was written off"
+    assert ledger["exhausted_at"] == ""
+    assert ledger["next_attempt_at"] != "", "it must still have a next look"
+    assert tx_id not in cycle.deferred_transaction_ids(NOW + timedelta(days=30))
+
+
+def test_a_repaired_transaction_keeps_no_retry_history(monkeypatch):
+    """Housekeeping, but the kind an audit reads.
+
+    A repaired row leaves the candidate population anyway once its status is
+    ``paid``, so a stale ledger entry cannot cause another look. What it can do
+    is make a later question -- "why was this transaction being deferred?" --
+    answer with a next-attempt time for a transaction that settled, which is the
+    sort of thing that costs an hour during an incident.
+    """
+    tx_id = _transaction()
+    intent = _intent(tx_id, "succeeded")
+
+    # Report-only first, so there is a retry history to forget. `_enable` alone
+    # cannot repair -- that is the whole point of the switch separation -- so
+    # this pass is genuinely report-only rather than patched into looking like it.
+    _enable(monkeypatch)
+    _run({f"pi_cycle_{tx_id}": intent}, now=NOW)
+    assert _ledger(tx_id)["attempts"] == 1
+
+    _allow_repair(monkeypatch)
+    repaired = _run({f"pi_cycle_{tx_id}": intent}, now=NOW + timedelta(hours=12))
+
+    assert repaired["repaired_count"] == 1
+    assert _status(tx_id) == "paid"
+    assert _ledger(tx_id) == {}, "a settled transaction still has a retry schedule"
+
+
 # --------------------------------------------------------------------------
 # what an operator can see
 # --------------------------------------------------------------------------
