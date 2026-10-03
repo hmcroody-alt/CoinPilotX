@@ -18848,6 +18848,14 @@ COMMS_OPS_PAGE_STYLE = (
     ".comms-dense th,.comms-dense td{padding:7px 10px;white-space:nowrap}"
     ".comms-dense th{color:var(--muted);font-size:.74rem;letter-spacing:.06em;text-transform:uppercase;font-weight:700}"
     ".comms-dense td.n{text-align:right;font-variant-numeric:tabular-nums}"
+    # nowrap above is right for ids, states and numbers, and wrong for the two
+    # columns that hold a sentence. Without this the provider table's intrinsic
+    # width is ~1397px against a content column capped at 1320px, so "Basis" --
+    # the field that says whether a state was observed or merely declared -- sat
+    # off the right edge behind a horizontal scroll at *every* desktop width,
+    # 4K included. The explanation of a health state should not be the part you
+    # have to go looking for.
+    ".comms-dense td.prose{white-space:normal;min-width:240px;max-width:560px}"
     ".comms-dense tr.is-now{background:rgba(54,229,143,.08)}"
     ".comms-note{border-left:3px solid var(--line);padding-left:12px;margin:10px 0}"
     ".comms-panel{margin-top:18px}"
@@ -19156,7 +19164,7 @@ def comms_ops_page_body(snapshot):
             f"<td>{html_escape(clean_html(str(row.get('channel') or '')))}</td>"
             f"<td>{comms_state_chip('failed' if row.get('kind') == 'failure' else 'unknown')}</td>"
             f"<td class='n'>{int(row.get('count') or 0):,}</td>"
-            f"<td>{html_escape(clean_html(str(row.get('reason') or '')))}</td>"
+            f"<td class='prose'>{html_escape(clean_html(str(row.get('reason') or '')))}</td>"
             "</tr>"
             for row in (delivery.get("reasons") or [])
         ) or "<tr><td colspan='4' class='muted'>No failed or undeliverable attempts in the last 24 hours.</td></tr>"
@@ -19190,7 +19198,7 @@ def comms_ops_page_body(snapshot):
             "<tr>"
             f"<td>{comms_state_chip(row.get('state'))}</td>"
             f"<td><strong>{html_escape(clean_html(str(row.get('label') or '')))}</strong></td>"
-            f"<td>{html_escape(clean_html(str(row.get('detail') or '')))}</td>"
+            f"<td class='prose'>{html_escape(clean_html(str(row.get('detail') or '')))}</td>"
             f"<td class='muted'>{html_escape(clean_html(str(row.get('basis') or '')))}</td>"
             "</tr>"
             for row in (providers_section.get("providers") or [])

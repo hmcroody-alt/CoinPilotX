@@ -849,7 +849,9 @@ class TestOutputIsEscaped(CommsOpsCase):
         # that matches the page's own markup rather than the attack. The cell is
         # inert text -- the sanitiser drops the element and keeps the words, so
         # the operator can still read what the provider said.
-        self.assertIn("<td>window.__pwned=1</td>", body)
+        # The class is carried in the needle so this stays an assertion about
+        # the reason cell specifically rather than about any cell on the page.
+        self.assertIn("<td class='prose'>window.__pwned=1</td>", body)
 
     def test_a_hostile_end_reason_is_not_rendered_as_markup(self):
         self._call("call-xss-0001", "failed", end_reason="<img src=x onerror=alert(1)>")
