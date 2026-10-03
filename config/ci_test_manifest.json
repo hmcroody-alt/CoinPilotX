@@ -274,6 +274,7 @@
     "tests/marketplace/test_connect_webhook_state.py",
     "tests/marketplace/test_dispute_outcome_notification.py",
     "tests/marketplace/test_dispute_won_needs_review_incident.py",
+    "tests/marketplace/test_drain_observability.py",
     "tests/marketplace/test_funds_segregation.py",
     "tests/marketplace/test_goods_policy.py",
     "tests/marketplace/test_listing_read_one_route.py",
