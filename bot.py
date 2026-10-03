@@ -64618,11 +64618,17 @@ def _marketplace_order_return(transaction_id):
     query string -- `?transaction_id=` is attacker-controlled and the only thing
     stopping this from confirming a stranger's order is the buyer check below.
 
-    Returns True only for a Marketplace product transaction whose buyer is the
-    signed-in account. Anything else -- another flow, a transaction that is not
-    the viewer's, a signed-out visitor, a malformed id, a database that will not
-    answer -- falls through to the generic wording, which has been correct for
-    every flow since before the cart existed.
+    Returns `{"status": <seller_transactions.status>}` only for a Marketplace
+    product transaction whose buyer is the signed-in account. Anything else --
+    another flow, a transaction that is not the viewer's, a signed-out visitor, a
+    malformed id, a database that will not answer -- returns False and falls
+    through to the generic wording, which has been correct for every flow since
+    before the cart existed.
+
+    The status is carried out because arriving at the success URL is not evidence
+    of payment: the buyer can reach it by navigating, and a created-but-unpaid
+    session sits at `checkout_created` indefinitely. Only the webhook writes
+    `paid`, so only the webhook can license the claim that money moved.
     """
     try:
         tx_id = int(str(transaction_id or "").strip())
@@ -64639,14 +64645,16 @@ def _marketplace_order_return(transaction_id):
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
         cur.execute(
-            "SELECT buyer_user_id, item_type FROM seller_transactions WHERE id=? LIMIT 1",
+            "SELECT buyer_user_id, item_type, status FROM seller_transactions WHERE id=? LIMIT 1",
             (tx_id,),
         )
         row = cur.fetchone()
         if not row:
             return False
-        return (int(row["buyer_user_id"] or 0) == int(viewer["user_id"])
-                and str(row["item_type"] or "") == "marketplace_product")
+        if not (int(row["buyer_user_id"] or 0) == int(viewer["user_id"])
+                and str(row["item_type"] or "") == "marketplace_product"):
+            return False
+        return {"status": str(row["status"] or "")}
     except Exception:
         # A result page that 500s after a real charge is worse than one that
         # prints the generic sentence, which is true of a Marketplace order too.
@@ -64709,7 +64717,31 @@ def _checkout_progress_html(done, pending=0):
 @webhook_app.route("/pulse/payments/success", methods=["GET"])
 @webhook_app.route("/payments/success", methods=["GET"])
 def pulse_payment_success_page():
-    if _marketplace_order_return(request.args.get("transaction_id")):
+    _return = _marketplace_order_return(request.args.get("transaction_id"))
+    if _return and _return["status"] not in ("paid", "refunded"):
+        # Reaching this URL is not a payment. `success_url` is a plain GET the
+        # buyer can navigate to, re-open from history, or land on after
+        # abandoning Stripe's page, and the transaction stays at
+        # `checkout_created` the whole time. Prod held exactly this row while
+        # this branch was being written: tx 44, session `open`, `unpaid`.
+        # So say what is actually known -- a payment was started -- and let the
+        # webhook be the only thing that upgrades the wording.
+        return pulse_social_shell(
+            "Checkout Started",
+            "We have not received your payment yet. Nothing is confirmed until Stripe tells PulseSoc it completed.",
+            "<section class='card'>"
+            # Two of four, same as the cancel page: the buyer reached Stripe and
+            # we have no confirmation. Drawing three here is the error this
+            # branch exists to prevent.
+            + _checkout_progress_html(2) +
+            "<h2>Payment not confirmed</h2>"
+            "<p>If you completed the payment, this page updates once Stripe's confirmation reaches "
+            "PulseSoc &mdash; usually within a few seconds. Reload to check.</p>"
+            "<p>If you did not complete it, nothing was charged and your cart is unchanged.</p>"
+            "<div class='actions'><a class='button primary' href='/pulse/orders'>View your orders</a>"
+            "<a class='button' href='/pulse/cart'>Back to your cart</a>"
+            "</div></section>")
+    if _return:
         # Deliberately not "your order is confirmed". Stripe has taken the
         # payment, but the order becomes an order in PulseSoc when
         # `checkout.session.completed` arrives, and the cart's own lines are
