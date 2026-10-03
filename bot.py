@@ -6825,6 +6825,12 @@ AUTH_EVENT_CLASS = {
     "verification_email_failed": "friction",
     "verification_link_rejected": "friction",
     "unverified_email_change_failed": "friction",
+    # The password was right and the sign-in still stopped, to ask about a
+    # document rewritten since this member last agreed. Friction rather than
+    # security for that reason -- and because it is keyed on distinct accounts,
+    # a spike here is the signal that a new Terms version is costing people
+    # their way in, which is exactly what the friction level is for.
+    "login_legal_acceptance_required": "friction",
     # Progress, not a problem.
     "login_success": "neutral",
     "mobile_login_success": "neutral",
