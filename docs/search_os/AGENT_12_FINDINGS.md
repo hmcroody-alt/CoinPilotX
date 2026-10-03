@@ -2,12 +2,17 @@
 
 ## Findings log (published as found, not held for the final report)
 
-Status: **OPEN — 4 material findings, 1 fleet blocker**
+Status: **OPEN — 6 material findings, 1 fleet blocker, 1 gate landed (red)**
 Branch: `search-os/agent-12-quality-sentinel`
 Measured against: `origin/main` @ `5bdf4e431`
 Method: Flask test client over `app.url_map`, against a scratch copy of the dev DB
 (serving a page writes `visitor_logs`, so probes must not touch the real DB).
-Reproduce: `.attack/probe_robots_agreement.py`, `.attack/evidence_findings_1_to_4.py`
+Reproduce: `.attack/*.py` (probes + mutation harness), and
+`tests/protection/test_every_page_agrees_with_the_robots_policy.py`
+
+Note on numbers: probes run against a populated copy of the dev DB; the gate
+under pytest runs against an empty fallback DB, because `tests/conftest.py:108`
+redirects any in-repo DSN. Counts differ between the two, and A12-06 is why.
 
 I am not the feature team for any of these. Each finding names the owning agent.
 I will verify the fix and add permanent regression coverage; I will not patch
@@ -173,6 +178,132 @@ third canonical authority, and there are already two.
 
 **Owner: Agent 2.** Notify: **Agent 6**, **Agent 8**.
 Invariant: **#7 (CANONICAL URL MUST AGREE).**
+
+---
+
+## A12-05 — 11 indexable pages send no robots directive at all
+
+Found by enumerating `url_map` rather than by suspicion, so none of these were
+on anyone's list.
+
+```
+/education   /education/optimism   /education/scam-alerts   /education/toncoin-scenarios
+/legal/payments   /legal/refunds   /legal/seller-terms
+/predictions/crypto   /quote   /roast-battle-preview   /sports-edge
+```
+
+All eleven: `200`, `meta robots = NONE`, `X-Robots-Tag = None`, policy
+`index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1`.
+
+Absence is not neutral — a crawler reads a missing directive as `index,follow`.
+So indexability is accidentally correct, and all three preview directives are
+silently lost. The three `/legal/*` pages are the marketplace's own terms,
+refund and seller policies, which is where buyer-trust snippets come from.
+
+**Owner: Agent 4.** Same single fix as A12-03: render `robots_meta(path)`.
+
+---
+
+## A12-06 — `/pulse/marketplace` picks its robots directive from the catalogue, and the sitemap does not know
+
+The storefront's directive is **not a function of its path**:
+
+```
+populated catalogue   served  index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1   (27127 bytes)
+empty catalogue       served  noindex,follow                                                             ( 8634 bytes)
+policy (either way)           index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1
+sitemap_eligible              True  <-- in BOTH states
+```
+
+The page is **right**. An empty storefront should decline indexing; that is thin
+content. `robots_meta()` cannot express "depends on how many rows there are,"
+so the page is a third, undeclared directive authority alongside the two
+canonical ones.
+
+The defect is the last line. Whenever the catalogue renders empty, we are
+submitting a sitemap URL whose page tells Google to go away — precisely the
+contradiction `tests/protection/test_sitemap_entries_are_indexable.py` exists
+to prevent, and invisible to it because every environment anyone tests in has a
+populated catalogue. Per memory, prod's marketplace is a **single seller**, so
+an empty render is not a hypothetical state.
+
+How it surfaced, which is worth recording: my gate reported this page as a
+mismatch in CI but not locally. `tests/conftest.py:108` redirects any in-repo
+`DATABASE_URL` to an empty fallback DB, so CI runs against an empty catalogue.
+I had nearly written this off as gate flakiness. **A verdict that depends on row
+counts is the Phase 100 failure mode** — it cries wolf, gets muted, and then
+protects nothing.
+
+**Owner: Agent 2** (eligibility) with **Agent 6** (sitemaps). Decide one of:
+publish the storefront only when non-empty, or stop self-noindexing and accept
+the thin page. Invariant: #4 and #7.
+
+---
+
+## Gate landed: `tests/protection/test_every_page_agrees_with_the_robots_policy.py`
+
+Implements Agent 2 §6.3. Walks all 923 parameterless GET rules, judges the 55
+that answer 200 with an HTML body. **No path is ever named** — a route leaves
+the corpus only by ceasing to be an anonymously-readable HTML document. There is
+no allowlist and there must never be one.
+
+| Assertion | Status |
+|---|---|
+| corpus is not empty (floor 40 of 55) | **PASS** |
+| corpus contains noindex-classified pages (anti-vacuity) | **PASS** |
+| no page invites indexing the table wants kept out | **PASS** — the leak direction is clean |
+| a noindex page sends a directive at all | **PASS** |
+| no page declining indexing is offered to search engines | **RED — 6** (A12-02 ×5, A12-06 ×1) |
+| pages agreeing on indexability send the same directives | **RED — 28** (A12-03, A12-05) |
+
+Two design decisions worth challenging if anyone disagrees:
+
+1. **`noindex` is normalized to `noindex,follow`** before comparison, because
+   `follow` is the crawler default and `/pulse/app` sends the bare form. Preview
+   directives are *not* defaulted — dropping `max-snippet:-1` really does change
+   Google's behaviour.
+2. **Exact path→directive agreement is not asserted** for pages whose
+   indexability differs from the table, because A12-06 proves that comparison is
+   data-dependent and would be flaky. The stronger, environment-independent
+   invariant replaces it: *a page that declines indexing must not be
+   sitemap-eligible.* That catches both A12-02 and A12-06 and names a fix rather
+   than a discrepancy.
+
+Failure messages name **which side to change**. This matters more than it
+sounds: a naive "page must equal policy" gate would have instructed an engineer
+to make `/forgot-password` indexable, and they would have been obeying it
+correctly.
+
+### Mutation proof (Phase 125)
+
+`.attack/mutate_prove_safety_gate_bites.py` — the four green assertions are
+worthless unless they fail when the defect appears, and an assertion in this
+exact area has already survived a fix-revert once before.
+
+```
+victim /login  table says: noindex,follow
+BASELINE  safety gate failures           0   (want 0)
+M1        page advertises index,follow    1   (want >0)
+M2        page sends no directive at all  1   (want >0)
+BASELINE  sitemap-contradiction failures 5   (want >0, the live defect)
+M3        sitemap_eligible forced False   0   (want 0 -- proves it reads the real fn)
+VERDICT: gate bites
+```
+
+The baseline reading 5 rather than 6 is itself the A12-06 evidence: this harness
+runs against the populated scratch DB, where the marketplace agrees.
+
+### Why this is not merged to main yet
+
+The two red assertions are red because of A12-02, A12-03, A12-05 and A12-06 —
+defects owned by Agents 2, 4 and 6. Golden Rule 1 forbids weakening a test
+because the implementation fails it, so **nothing here is allowlisted, skipped,
+or xfailed.** The file sits on this branch, fully strict, with its red output
+published above, and merges the moment the owners' fixes land. My brief's order
+is explicit: publish evidence → owner fixes root architecture → verify → *then*
+add permanent regression coverage. Merging it now would instead turn the shared
+protection suite red for twelve other agents over defects none of them
+introduced.
 
 ---
 
