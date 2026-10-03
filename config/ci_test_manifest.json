@@ -321,6 +321,7 @@
     "tests/marketplace/test_supplier_checkout_wiring.py",
     "tests/marketplace/test_supplier_ledger_authority.py",
     "tests/marketplace/test_supplier_variants.py",
+    "tests/marketplace/test_webhook_inbox_honesty.py",
     "tests/music_authority/test_client_contract.py",
     "tests/music_authority/test_lifecycle_backfill.py",
     "tests/music_authority/test_menu_actions.py",
