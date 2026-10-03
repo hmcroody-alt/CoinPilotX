@@ -51,6 +51,7 @@ from flask import Blueprint, g, jsonify, request
 
 from services import marketplace_cart_web
 from services import marketplace_cart_schema as cart_schema
+from services import marketplace_checkout_identity as checkout_identity
 from services import marketplace_guest_customer as guest_customer
 from services import marketplace_fulfillment
 from services import marketplace_order_fulfillment
@@ -110,6 +111,28 @@ def _json(payload, status: int = 200):
     response = jsonify(payload)
     response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
     return response, status
+
+
+def _status_of(response) -> int:
+    """The HTTP status of whatever a handler returned.
+
+    Both `_json` and `_error` return Flask's ``(body, status)`` tuple form
+    rather than a `Response`, so `response.status_code` does not exist and
+    `getattr(response, "status_code", 200)` silently reports every rejection as
+    a success. That is not a hypothetical: it is how the first version of the
+    claim-release wrapper left a blank claim behind on every failure, which is
+    the lockout the release exists to prevent. Both shapes are read here so a
+    future handler returning a bare `Response` is also read correctly.
+    """
+    if isinstance(response, tuple):
+        for part in response:
+            if isinstance(part, int):
+                return part
+        response = response[0] if response else None
+    try:
+        return int(getattr(response, "status_code", 200) or 200)
+    except (TypeError, ValueError):
+        return 200
 
 
 def _error(message: str, status: int = 400, *, code: str = "", **extra):
@@ -1197,22 +1220,69 @@ def cart_checkout():
     # can be created.
     native_sheet = payment_mode == "card" and str(payment_mode_raw or "").strip().lower() == "payment_sheet"
 
-    def handler(cur, conn):
-        buyer_id = int(user["user_id"])
-        if idempotency_key:
-            cur.execute(
-                "SELECT response_json FROM marketplace_cart_checkout_keys WHERE user_id=? AND idempotency_key=? LIMIT 1",
-                (buyer_id, idempotency_key),
-            )
-            stored = dict(cur.fetchone() or {})
-            if stored.get("response_json"):
-                stored_payload = json.loads(stored["response_json"])
-                stored_mode = marketplace_payment_pause.normalize_marketplace_payment_mode(
-                    stored_payload.get("payment_method") or stored_payload.get("payment_mode")
-                )
-                if stored_mode == payment_mode:
-                    return _json({**stored_payload, "replayed": True})
+    # The buyer's client key, namespaced by lane and scoped to them by the
+    # table's `UNIQUE(user_id, idempotency_key)`. One buyer cannot read or block
+    # another's attempt, and a future lane sharing this table cannot collide
+    # with the cart's keys.
+    claim_key = (f"{checkout_identity.LANE_CART}:{idempotency_key}"
+                 if idempotency_key else "")
+    #: Whether *this* request owns the claim. Read by the attempt body's failure
+    #: path and by the wrapper below; a dict because both are closures and
+    #: neither may rebind the other's local.
+    claim_state = {"owned": False}
 
+    #: The Checkout Session this attempt got Stripe to create, if it got that
+    #: far. Written immediately after the create call and read only by the
+    #: failure path, which is the only place that can know the id is about to
+    #: become unreachable.
+    created_session: dict = {}
+
+    def _expire_orphan_session(trace_id: str) -> None:
+        """Expire a session we created but can no longer deliver.
+
+        Best-effort and completely silent to the buyer. It is a *cancelling*
+        write — it can only prevent a charge, never cause one — which is why it
+        is safe to do without an owner gate on a path that has already failed.
+
+        Swallows everything: this runs inside the handler for an exception that
+        is already being reported, and a cleanup failure must not replace the
+        diagnosis of the original one with a diagnosis of itself.
+        """
+        session_id = str(created_session.get("id") or "")
+        if not session_id:
+            return
+        try:
+            bot.stripe.checkout.Session.expire(session_id)
+            LOGGER.warning("STRIPE_SESSION_EXPIRED_AFTER_FAILURE lane=cart "
+                           "session=%s trace_id=%s", session_id, trace_id)
+        except Exception:
+            # Now genuinely orphaned: open at Stripe, unreferenced by us. Logged
+            # with the id so it can be reconciled by hand, which is the only
+            # remaining way to find it.
+            LOGGER.exception("STRIPE_SESSION_ORPHANED lane=cart session=%s "
+                             "trace_id=%s", session_id, trace_id)
+
+    def _remember_answer(cur, buyer_id, response_payload) -> None:
+        """Store the answer against the claim, so a retry replays it.
+
+        This used to be an `INSERT ... ON CONFLICT DO NOTHING`, which worked
+        only because nothing wrote the row earlier. Now the claim writes it
+        first with a blank response, so the INSERT would conflict and do
+        nothing — the answer would never be stored and every retry would build
+        a second session. `remember` UPDATEs the blank row and is guarded to
+        first-writer-wins, which is the behaviour the INSERT was reaching for.
+        """
+        if not claim_key:
+            return
+        if not checkout_identity.remember(
+                cur, user_id=buyer_id, key=claim_key, payload=response_payload):
+            # Either a concurrent request already answered — fine, its answer is
+            # the buyer's — or the claim row is gone. Worth seeing, because the
+            # second case means the next retry builds a fresh session.
+            LOGGER.warning("CHECKOUT_ANSWER_NOT_RECORDED lane=cart buyer=%s", buyer_id)
+
+    def _attempt(cur, conn):
+        buyer_id = int(user["user_id"])
         lines = [l for l in _serialize_lines(bot, cur, buyer_id) if l["seller_user_id"] == seller_user_id]
         if not lines:
             return _error("No items from this seller in your cart.", 404, code="NOT_FOUND")
@@ -1466,15 +1536,7 @@ def cart_checkout():
                 seller_net_cents=seller_net,
                 commercial_quotes=line_quotes,
             )
-            if idempotency_key:
-                cur.execute(
-                    """
-                    INSERT INTO marketplace_cart_checkout_keys (user_id, idempotency_key, response_json, created_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(user_id, idempotency_key) DO NOTHING
-                    """,
-                    (buyer_id, idempotency_key, json.dumps(response_payload, default=str), now),
-                )
+            _remember_answer(cur, buyer_id, response_payload)
             return _json(response_payload)
 
         try:
@@ -1504,6 +1566,51 @@ def cart_checkout():
                 "fulfillment": ",".join(resolved_lanes),
                 "idempotency_key": idempotency_key,
             }
+
+            # The provider key, and the single most important line in this
+            # function.
+            #
+            # Stripe binds an idempotency key to the *parameters* of the first
+            # request that presents it, and holds that binding for 24 hours. A
+            # later request with the same key and different parameters is not
+            # deduplicated — it is refused, with HTTP 400
+            # `idempotency_error`, permanently, for that key.
+            #
+            # So a provider key and the provider parameters have to vary
+            # together. This one did not. It was
+            #
+            #     f"marketplace-cart:{buyer_id}:{idempotency_key or primary_tx}"
+            #
+            # where `idempotency_key` is the client's FNV-1a hash of the cart
+            # contents — deliberately identical across retries of the same cart,
+            # which is what makes it a useful key. The `or` meant that whenever
+            # the client sent one, `primary_tx` was dropped from the key. But
+            # `primary_tx` stayed in the parameters: `success_url`,
+            # `cancel_url`, `metadata.seller_transaction_ids`,
+            # `payment_intent_data.metadata` and
+            # `payment_intent_data.transfer_group` all name it, and a new
+            # `seller_transactions` row is inserted on every attempt.
+            #
+            # Content-addressed key, row-addressed parameters. The first attempt
+            # bound the key; every subsequent attempt for the same cart
+            # presented that key with a different `transaction_id` in two URLs
+            # and three metadata fields, and Stripe refused it. On 2026-10-03 a
+            # buyer hit this nine times over four hours for one $6.25 cart and
+            # was shown "Payments are temporarily unavailable" every time —
+            # which is what `IdempotencyError` classifies to — while the same
+            # screen still offered to continue to secure payment.
+            #
+            # The row id goes back in. The parameters cannot lose it instead:
+            # the success page and the settlement webhook read
+            # `transaction_id` and `seller_transaction_ids` back out, so
+            # removing it is a rewrite of checkout rather than a fix to it.
+            #
+            # What this costs: a retry no longer reaches Stripe under the
+            # original key, so the provider no longer deduplicates taps. That
+            # guarantee moves to the claim taken at the top of this request,
+            # where it belongs — a database uniqueness invariant rather than a
+            # side effect of a provider refusing malformed input.
+            provider_attempt = f"{idempotency_key or 'tx'}:{primary_tx}"
             if native_sheet:
                 # The amount is the server's, computed from the same snapshot the
                 # buyer was shown. The sheet renders it; it never supplies it.
@@ -1513,7 +1620,7 @@ def cart_checkout():
                     automatic_payment_methods={"enabled": True},
                     metadata=checkout_metadata,
                     **{k: v for k, v in payment_intent_data.items() if k != "metadata"},
-                    idempotency_key=f"marketplace-cart-sheet:{buyer_id}:{idempotency_key or primary_tx}",
+                    idempotency_key=f"marketplace-cart-sheet:{buyer_id}:{provider_attempt}",
                 )
                 intent_id = stripe_response_value(intent, "id")
                 client_secret = stripe_response_value(intent, "client_secret")
@@ -1540,16 +1647,15 @@ def cart_checkout():
                     "commercial_quotes": line_quotes,
                     "payout_state": "transfer_eligible" if connected_account_id else "ledger_pending_onboarding",
                 }
-                if idempotency_key:
-                    cur.execute(
-                        """
-                        INSERT INTO marketplace_cart_checkout_keys (user_id, idempotency_key, response_json, created_at)
-                        VALUES (?, ?, ?, ?)
-                        ON CONFLICT(user_id, idempotency_key) DO NOTHING
-                        """,
-                        (buyer_id, idempotency_key, json.dumps(response_payload, default=str), now),
-                    )
+                _remember_answer(cur, buyer_id, response_payload)
                 return _json(response_payload)
+            # Captured so the failure path below can expire whatever Stripe
+            # committed to before we failed. In the production incident
+            # `Session.create` *succeeded* and the very next line raised, so the
+            # buyer was shown a failure for a $6.25 session that existed, was
+            # payable, and whose transaction had already been marked
+            # `checkout_failed` with its stock hold handed back.
+            created_session.clear()
             session_obj = bot.stripe.checkout.Session.create(
                 mode="payment",
                 line_items=[
@@ -1563,7 +1669,7 @@ def cart_checkout():
                 cancel_url=f"{base}/pulse/payments/cancel?transaction_id={primary_tx}",
                 payment_intent_data=payment_intent_data,
                 metadata=checkout_metadata,
-                idempotency_key=f"marketplace-cart:{buyer_id}:{idempotency_key or primary_tx}",
+                idempotency_key=f"marketplace-cart:{buyer_id}:{provider_attempt}",
                 # Resolved lanes, not raw ones: a buyer who chose pickup is never
                 # asked for a delivery address.
                 # Stripe is only asked for an address PulseSoc does not already
@@ -1580,6 +1686,14 @@ def cart_checkout():
             # stored in production: 39 seller_transactions, 14 with an intent,
             # 0 with a session.
             session_id = stripe_response_value(session_obj, "id")
+            # Recorded before anything else can raise — including the `url` read
+            # on the next line, which is a second access to the same provider
+            # resource and so is a second chance at the `AttributeError` that
+            # started this incident. Read only by the failure path, and the
+            # single reason an orphan is recoverable at all: the id lives
+            # nowhere else until the UPDATE below runs.
+            if session_id:
+                created_session["id"] = session_id
             checkout_url = stripe_response_value(session_obj, "url")
             for tx_id in tx_ids:
                 cur.execute(
@@ -1598,15 +1712,7 @@ def cart_checkout():
                 "commercial_quotes": line_quotes,
                 "payout_state": "transfer_eligible" if connected_account_id else "ledger_pending_onboarding",
             }
-            if idempotency_key:
-                cur.execute(
-                    """
-                    INSERT INTO marketplace_cart_checkout_keys (user_id, idempotency_key, response_json, created_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(user_id, idempotency_key) DO NOTHING
-                    """,
-                    (buyer_id, idempotency_key, json.dumps(response_payload, default=str), now),
-                )
+            _remember_answer(cur, buyer_id, response_payload)
             return _json(response_payload)
         except Exception as exc:
             trace_id = secrets.token_hex(6)
@@ -1616,6 +1722,14 @@ def cart_checkout():
             # the owner sees the provider fingerprint (type/code/param) on the
             # response itself, not only in a Railway log.
             classified = classify_provider_exception(exc)
+            # Stripe may already have committed to a payable session before we
+            # failed — that is exactly what happened in the incident. Expired
+            # here, because every other record of its id is about to be
+            # abandoned: the transaction goes `checkout_failed` without the id
+            # ever being written, and the URL was never returned to the client.
+            # Leaving it open means a live, payable $6.25 session pointing at a
+            # failed order with no stock held behind it.
+            _expire_orphan_session(trace_id)
             # The cart's own checkout-create failure takes the same shared path
             # as the webhook branches and the two other checkout lanes. It is
             # the caller nearest the service — which is exactly why it was easy
@@ -1631,6 +1745,85 @@ def cart_checkout():
             return _error(classified["message"], classified["status"],
                           code=classified["code"], trace_id=trace_id, transaction_ids=tx_ids,
                           provider_error=classified["provider_error"])
+
+    def handler(cur, conn):
+        """Run one attempt, and make sure a failed one leaves nothing behind.
+
+        The claim is taken and released here rather than inside `_attempt`
+        because `_attempt` has around twenty early returns — sold out, price
+        changed, address missing, lane not chosen, seller not payable — and a
+        claim surviving any one of them would refuse the buyer's *corrected*
+        request for the whole TTL. The buyer who fixes their address must not be
+        told their checkout is already in flight.
+
+        So ownership is decided once, before any side effect, and given back on
+        every outcome that is not an answer the buyer can act on.
+        """
+        buyer_id = int(user["user_id"])
+        if claim_key:
+            checkout_identity.ensure_schema(cur)
+            # Claimed before a transaction row or a stock decrement exists,
+            # because those are the side effects a double tap must not produce
+            # twice. The previous code read this table for a *completed* answer
+            # and fell straight through on a miss, so two concurrent taps both
+            # missed, both inserted transactions, both decremented stock and
+            # both called Stripe. What stopped the second session reaching the
+            # buyer was not this check — it was the provider refusing a reused
+            # key, which refused every legitimate retry too and reported the
+            # refusal to the buyer as an outage.
+            outcome = checkout_identity.claim(
+                cur, user_id=buyer_id, key=claim_key, now=_now())
+            state = outcome.get("state")
+            if state == checkout_identity.REPLAY:
+                stored_payload = outcome.get("payload") or {}
+                stored_mode = marketplace_payment_pause.normalize_marketplace_payment_mode(
+                    stored_payload.get("payment_method") or stored_payload.get("payment_mode")
+                )
+                if stored_mode == payment_mode:
+                    LOGGER.info("CHECKOUT_IDEMPOTENCY_REUSED lane=cart buyer=%s", buyer_id)
+                    return _json({**stored_payload, "replayed": True})
+                # A stored answer for a *different* payment mode is not this
+                # buyer's answer. Falling through is the pre-existing behaviour
+                # and is kept deliberately: the key belongs to a completed
+                # attempt, so this request owns no claim and must not release
+                # one.
+            elif state == checkout_identity.IN_PROGRESS:
+                LOGGER.info("CHECKOUT_IN_PROGRESS lane=cart buyer=%s", buyer_id)
+                return _error(checkout_identity.IN_PROGRESS_MESSAGE, 409,
+                              code=checkout_identity.IN_PROGRESS_CODE)
+            elif state == checkout_identity.CLAIMED:
+                claim_state["owned"] = True
+                LOGGER.info("CHECKOUT_IDEMPOTENCY_CLAIMED lane=cart buyer=%s detail=%s",
+                            buyer_id, outcome.get("detail") or "")
+
+        def _release():
+            """Give the key back, so a failure is not a lockout (§9).
+
+            Only releases a claim this request took, and `release` is itself
+            scoped to a blank response — so a completed attempt is never
+            deleted by a late failure, and a concurrent request's claim is
+            never stolen.
+            """
+            if not (claim_key and claim_state["owned"]):
+                return
+            try:
+                if checkout_identity.release(cur, user_id=buyer_id, key=claim_key):
+                    LOGGER.info("CHECKOUT_IDEMPOTENCY_RELEASED lane=cart buyer=%s", buyer_id)
+            except Exception:
+                # A failure to release must not replace the error the buyer is
+                # being told about. The TTL takeover in `claim` is the backstop.
+                LOGGER.exception("CHECKOUT_IDEMPOTENCY_RELEASE_FAILED buyer=%s", buyer_id)
+
+        try:
+            response = _attempt(cur, conn)
+        except Exception:
+            # `_attempt` catches around its own provider call, so reaching here
+            # is a failure outside that — and it still must not strand the key.
+            _release()
+            raise
+        if _status_of(response) >= 400:
+            _release()
+        return response
 
     return _with_db(handler)
 

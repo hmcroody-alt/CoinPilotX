@@ -17,6 +17,21 @@ units of a real seller's stock.
 The lane had no replay cache at all, unlike cart and buy-now, which have had one
 since they shipped.
 
+What was wrong with the first fix
+---------------------------------
+The repair above over-corrected: it made the provider key *stable* across
+attempts while leaving the provider parameters addressed by row. Stripe binds a
+key to the parameters of the first request that used it, so that arrangement
+turns every retry into a permanent HTTP 400 — which is the October 2026 cart
+incident, mirror-imaged, and this file asserted it as the contract. See
+``test_23b``, which replaces a test that had the rule backwards and would have
+failed the correct fix.
+
+The key now co-varies with the row the parameters name, and the deduplication it
+used to be credited with is where it always belonged: the database claim, taken
+before the ``seller_transactions`` INSERT, which deduplicates the row and the
+stock hold as well as the payment.
+
 How it is fixed
 ---------------
 ``services/marketplace_checkout_identity`` derives the identity of the *logical
@@ -210,8 +225,16 @@ def test_07_the_key_is_lane_namespaced_and_fits_the_column():
     assert len(identity.stripe_idempotency_key(key)) < 255
 
 
-def test_08_the_provider_key_is_derived_from_the_attempt_only():
-    """Stable across taps, and recognisable in the Stripe dashboard."""
+def test_08_the_provider_key_derivation_is_pure_and_namespaced():
+    """A property of the helper, not of the route's choice of argument.
+
+    ``stripe_idempotency_key`` is a pure namespacing function: same input, same
+    output, recognisable prefix. What the *route* feeds it is a separate
+    question, and the answer is "the attempt plus the row the parameters name"
+    — see ``test_23b``. This test deliberately stops at the helper, because the
+    file used to conflate the two and concluded that a route-level stable key
+    was the contract.
+    """
     key = identity.attempt_key(**ATTEMPT)
     provider = identity.stripe_idempotency_key(key)
     assert provider == identity.stripe_idempotency_key(identity.attempt_key(**ATTEMPT))
@@ -289,9 +312,21 @@ def test_13_releasing_an_unanswered_claim_lets_the_buyer_retry():
     """Server error or Stripe failure before anything chargeable existed.
 
     The buyer must not be permanently locked out of an offer they are entitled
-    to buy. This is only safe because the provider key is attempt-derived: if
-    the failed try did reach Stripe, the retry presents the same key and Stripe
-    returns the original session instead of creating a second one.
+    to buy.
+
+    This docstring used to go on: "only safe because the provider key is
+    attempt-derived: if the failed try did reach Stripe, the retry presents the
+    same key and Stripe returns the original session instead of creating a
+    second one." Not true. Stripe compares parameters, and this lane's
+    parameters name the ``seller_transactions`` row — so the retry presented a
+    burned key and got a permanent 400 rather than the original session. The
+    release was the trigger for the lockout it was written to prevent.
+
+    What makes it safe now is reachability. The key co-varies with the
+    parameters (``test_23b``), so a retry does mint a second session — and the
+    first one's url was never stored, never logged and never returned in any
+    response, because the only path that could have returned it is the path
+    that failed. The failure handler expires it outright as well.
     """
     conn, cur = _db()
     key = identity.attempt_key(**ATTEMPT)
@@ -579,13 +614,19 @@ def test_22_the_claim_is_taken_before_the_transaction_row_is_written():
     assert claims[0] < min(inserts)
 
 
-def test_23_the_stripe_key_is_never_derived_from_the_row_id():
-    """The defect, pinned by its shape rather than by its old text.
+def test_23_the_stripe_key_goes_through_the_shared_derivation():
+    """Every provider key in this module comes from one place.
 
-    Every ``idempotency_key=`` passed to Stripe in this module must come through
-    ``checkout_identity.stripe_idempotency_key``. Asserted over the keyword
-    arguments on the syntax tree, so an f-string reintroducing ``tx_id`` fails
-    here even if it is spelled differently from the original.
+    The original defect was each lane spelling its own key inline, so the rule
+    lived in three files and was wrong in all three. Asserted over the keyword
+    arguments on the syntax tree, so a new f-string fails here however it is
+    spelled.
+
+    This test used to additionally forbid ``tx_id`` from appearing inside the
+    argument, under the heading "the stripe key is never derived from the row
+    id". That ban was wrong, and it was wrong in the most expensive direction:
+    it demanded precisely the arrangement that produced the October 2026
+    incident. See ``test_23b``.
     """
     fn = _handler_fn()
     keyword_values = []
@@ -602,10 +643,59 @@ def test_23_the_stripe_key_is_never_derived_from_the_row_id():
         f = value.func
         assert isinstance(f, ast.Attribute)
         assert f.attr == "stripe_idempotency_key"
-        # and nothing row-derived may appear inside the argument
-        inner = ast.dump(value)
-        for banned in ("tx_id", "lastrowid", "primary_tx"):
-            assert banned not in inner, f"{banned} is back in the provider key"
+
+
+def test_23b_the_stripe_key_covaries_with_the_row_the_parameters_name():
+    """The contract this file previously had backwards.
+
+    Stripe binds an idempotency key to the *parameters* of the first request
+    that used it, for 24 hours; the same key presented with different
+    parameters is answered with HTTP 400 ``idempotency_error`` for the rest of
+    the window. So "stable key" is only a replay when the parameters are stable
+    too — and in this lane they never are. ``success_url``, ``cancel_url``,
+    ``transfer_group`` and ``metadata.seller_transaction_id`` all name ``tx_id``,
+    which is a fresh ``lastrowid`` on every attempt.
+
+    This lane therefore held the cart's bug with the halves swapped, and the
+    release at the bottom of the failure path was its trigger: hand the claim
+    back, let attempt 2 through, and attempt 2 presents the burned key. It never
+    fired only because the lane has no UI callers.
+
+    Which means the previous version of ``test_23`` was not merely inert — it
+    was a green gate holding the defect in place, and it would have failed the
+    fix. It passed after the fix only because the row id now arrives through a
+    variable named ``provider_attempt``, i.e. by one accident of naming.
+
+    So the assertion is inverted to match the contract: the key must name the
+    row, and it is read through the assignment rather than off the call site,
+    because an indirection is exactly what the old spelling check could not
+    see.
+    """
+    fn = _handler_fn()
+
+    bound = {}
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 \
+                and isinstance(node.targets[0], ast.Name):
+            bound[node.targets[0].id] = ast.dump(node.value)
+
+    row_sources = ("tx_id", "lastrowid")
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        for kw in node.keywords:
+            if kw.arg != "idempotency_key":
+                continue
+            # The argument as written, plus the definition of any local name it
+            # mentions — one level is enough and more would stop being readable.
+            text = ast.dump(kw.value)
+            for name in sorted(bound):
+                if f"id='{name}'" in text:
+                    text += " || " + bound[name]
+            assert any(src in text for src in row_sources), (
+                "a provider key is sent that does not name the transaction its "
+                "success_url, cancel_url, transfer_group and metadata are all "
+                f"derived from. Stripe will refuse the retry: {text}")
 
 
 def test_24_every_successful_exit_records_its_response():

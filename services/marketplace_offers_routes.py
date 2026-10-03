@@ -46,6 +46,7 @@ from services.marketplace_cart_routes import (
     stripe_shipping_checkout_params,
 )
 from services import marketplace_reservation_policy as reservation_policy
+from services import marketplace_reservation_schema as reservation_schema
 from services import marketplace_checkout_identity as checkout_identity
 from services import marketplace_fulfillment
 from services import marketplace_order_fulfillment
@@ -169,6 +170,21 @@ def _ensure_schema(cur) -> None:
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_marketplace_offers_seller ON marketplace_offers(seller_user_id, state)"
     )
+    # This lane takes inventory holds, so it owns the requirement that the hold
+    # columns exist. Its reservation INSERT names `reserved_at` and
+    # `expires_at`, which `bot.init_db()` does not create — they are added by
+    # `marketplace_reservation_schema`, and the only caller was
+    # `marketplace_cart_routes._ensure_schema`. So an offer checkout against a
+    # physical listing raised `OperationalError: no column named reserved_at`
+    # unless some earlier request in the same database had happened to serve a
+    # cart. `_with_db` rolls back, so nothing was corrupted and nothing was
+    # charged; the buyer got an opaque 500 instead of the purchase.
+    #
+    # Exactly the failure `marketplace_reservation_schema` exists to record,
+    # repeated one lane over: schema a money path depends on, reachable only
+    # through a *different* money path. Declared here rather than relying on
+    # call order.
+    reservation_schema.ensure_reservation_schema(cur)
     _SCHEMA_READY = True
 
 
@@ -712,8 +728,43 @@ def offer_checkout(offer_id: int):
                                        payload=cash_payload)
             return _json(cash_payload)
 
+        # Populated the moment Stripe hands back an id, so the failure path can
+        # expire a payable surface this attempt created but could not deliver.
+        # Until this is written the id exists only inside the provider's
+        # response object. Declared outside the `try` so the handler below can
+        # read it however early the raise came.
+        created_payment_surface: dict = {}
         try:
             base = (bot.APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
+            # The provider key names the row it was sent with. Stripe binds an
+            # idempotency key to the *parameters* of the first request that used
+            # it, for 24 hours; a later request presenting the same key with
+            # different parameters is rejected with HTTP 400
+            # `idempotency_error`, and is rejected for good.
+            #
+            # This lane held the mirror image of the defect that took down the
+            # cart on 2026-10-02. There the key carried a per-attempt row id and
+            # the parameters were stable; here the key was stable (`attempt`,
+            # which is content-addressed over buyer/offer/price/qty and so is
+            # identical on every tap) while the parameters below are addressed by
+            # row: `success_url`, `cancel_url`, `transfer_group` and
+            # `metadata.seller_transaction_id` all name `tx_id`, and `tx_id` is a
+            # fresh `lastrowid` on every attempt. Either arrangement violates the
+            # same contract. The comment that used to sit on the key claimed a
+            # retry "presents the same key, so Stripe returns the original
+            # intent" — that is only true when the parameters are also the same,
+            # which they never were. What a retry actually got was a permanent
+            # 400, i.e. the buyer locked out of an offer they had been granted.
+            #
+            # Latent rather than live only because this lane has no UI callers
+            # yet. It would have become live the first time the failure path
+            # below released the claim and let a second attempt through.
+            #
+            # Deduplication is not weakened by making the key vary, because it
+            # was never the provider's job here: the DB claim at the top of this
+            # handler is what collapses a double tap, and it does so before the
+            # `seller_transactions` INSERT rather than at the last step.
+            provider_attempt = f"{attempt}:{tx_id}"
             checkout_metadata = {"seller_transaction_id": str(tx_id), "offer_id": str(offer_id),
                                  "item_type": "marketplace_product", "item_id": str(listing_id),
                                  "buyer_user_id": str(buyer_id), "seller_user_id": str(seller_id),
@@ -740,19 +791,24 @@ def offer_checkout(offer_id: int):
                 # Server-authoritative amount: the accepted offer price times qty,
                 # the same number the review screen was given. The sheet renders
                 # it, it never supplies it.
+                created_payment_surface.clear()
                 intent = bot.stripe.PaymentIntent.create(
                     amount=amount,
                     currency=currency.lower(),
                     automatic_payment_methods={"enabled": True},
                     metadata=checkout_metadata,
                     **{k: v for k, v in payment_intent_data.items() if k != "metadata"},
-                    # Derived from the logical attempt, not from `tx_id`. A retry
-                    # presents the same key, so Stripe returns the original
-                    # intent instead of minting a second payable one.
+                    # Co-varies with the parameters: see `provider_attempt`.
                     idempotency_key=checkout_identity.stripe_idempotency_key(
-                        f"{attempt}:sheet"),
+                        f"{provider_attempt}:sheet"),
                 )
                 intent_id = stripe_response_value(intent, "id")
+                # Recorded before anything else can raise — including the
+                # `client_secret` read on the next line, which is a second
+                # access to the same provider resource and so is a second
+                # chance at the `AttributeError` that started this incident.
+                if intent_id:
+                    created_payment_surface.update({"kind": "payment_intent", "id": intent_id})
                 client_secret = stripe_response_value(intent, "client_secret")
                 cur.execute(
                     "UPDATE seller_transactions SET stripe_payment_intent_id=?, status='checkout_created', updated_at=? WHERE id=?",
@@ -777,6 +833,7 @@ def offer_checkout(offer_id: int):
                 checkout_identity.remember(cur, user_id=buyer_id, key=attempt,
                                            payload=sheet_payload)
                 return _json(sheet_payload)
+            created_payment_surface.clear()
             session_obj = bot.stripe.checkout.Session.create(
                 mode="payment",
                 line_items=[{"price_data": {"currency": currency.lower(),
@@ -787,7 +844,10 @@ def offer_checkout(offer_id: int):
                 cancel_url=f"{base}/pulse/payments/cancel?transaction_id={tx_id}",
                 payment_intent_data=payment_intent_data,
                 metadata=checkout_metadata,
-                idempotency_key=checkout_identity.stripe_idempotency_key(attempt),
+                # Co-varies with `success_url`, `cancel_url`, `transfer_group`
+                # and `metadata.seller_transaction_id`, all of which name
+                # `tx_id`: see `provider_attempt`.
+                idempotency_key=checkout_identity.stripe_idempotency_key(provider_attempt),
                 # A pickup-only offer is never asked for a delivery address, and
                 # neither is one whose address PulseSoc already collected.
                 **({} if stripe_shipping_object
@@ -799,6 +859,10 @@ def offer_checkout(offer_id: int):
             # and is already payable. See the PaymentIntent branch above, which
             # has used the helper since the SDK bump.
             session_id = stripe_response_value(session_obj, "id")
+            # Before the `url` read below, which is the second access to this
+            # resource and the one that raised in production.
+            if session_id:
+                created_payment_surface.update({"kind": "checkout_session", "id": session_id})
             cur.execute(
                 "UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?",
                 (session_id, now, tx_id),
@@ -820,6 +884,29 @@ def offer_checkout(offer_id: int):
             trace_id = secrets.token_hex(6)
             LOGGER.exception("OFFER_CHECKOUT_CREATE_FAILED trace_id=%s offer_id=%s", trace_id, offer_id)
             classified = classify_provider_exception(exc)
+            # If Stripe did hand back a payable surface before this attempt
+            # died, it is cancelled now. Nothing ever published its url — the
+            # response that would have carried it is the one that failed, and
+            # the DB write that would have stored it is below the raise — so
+            # the buyer cannot reach it. Expiring it anyway means the retry's
+            # second surface is the only one that exists, instead of merely the
+            # only one that is reachable.
+            orphan_kind = str(created_payment_surface.get("kind") or "")
+            orphan_id = str(created_payment_surface.get("id") or "")
+            if orphan_id:
+                try:
+                    if orphan_kind == "payment_intent":
+                        bot.stripe.PaymentIntent.cancel(orphan_id)
+                    else:
+                        bot.stripe.checkout.Session.expire(orphan_id)
+                    LOGGER.warning("STRIPE_SESSION_EXPIRED_AFTER_FAILURE lane=offer "
+                                   "kind=%s id=%s trace_id=%s", orphan_kind, orphan_id, trace_id)
+                except Exception:
+                    # Reported, not raised: the buyer is owed the original
+                    # diagnosis, and a surface they cannot reach is not an
+                    # emergency.
+                    LOGGER.exception("STRIPE_SESSION_ORPHANED lane=offer kind=%s id=%s "
+                                     "trace_id=%s", orphan_kind, orphan_id, trace_id)
             # The accepted-offer lane was the last one still pairing its own
             # release with its own status write — an unguarded `WHERE id=?` and
             # a release carrying no reason, which the service normalises to
@@ -834,12 +921,20 @@ def offer_checkout(offer_id: int):
             # The transaction is settled and the hold released, so this attempt
             # produced nothing chargeable that PulseSoc knows about. Handing the
             # claim back lets the buyer retry an offer they are entitled to buy.
+            # §9: a failed pre-charge attempt must not permanently poison the
+            # retry, so the release is not optional.
             #
-            # Safe only because the provider key is derived from the attempt and
-            # not from `tx_id`: if the create call did reach Stripe before dying,
-            # the retry presents the identical key and Stripe returns the original
-            # session instead of building a second payable page. Under the old
-            # `lastrowid` key this same delete would have manufactured duplicates.
+            # This used to carry the reasoning that the release was safe
+            # "because the provider key is derived from the attempt and not from
+            # `tx_id`", so a retry would be handed back the original session.
+            # That was wrong twice over. Stripe keys bind to parameters, and the
+            # parameters here are addressed by row, so the retry would not have
+            # been handed the original session — it would have been handed a
+            # permanent 400. And the key now co-varies deliberately, so a retry
+            # really can mint a second session. What makes that safe is
+            # reachability, not key reuse: the first session's url was never
+            # written to the DB, never logged and never returned in any
+            # response, and the handler above expires it outright.
             checkout_identity.release(cur, user_id=buyer_id, key=attempt)
             return _error(classified["message"], classified["status"],
                           code=classified["code"], trace_id=trace_id, transaction_id=tx_id,
