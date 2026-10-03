@@ -989,19 +989,24 @@ def test_the_four_panels_are_mutually_exclusive_in_the_script():
 # 5. The Stripe return pages
 # ---------------------------------------------------------------------------
 
-def _transaction(buyer_user_id, item_type="marketplace_product"):
+def _transaction(buyer_user_id, item_type="marketplace_product", status="created"):
     """A `seller_transactions` row, written the way `cart_checkout` writes one.
 
-    `item_type` and `buyer_user_id` are the two columns `_marketplace_order_return`
-    reads, and they are the point of every test below; the rest are here so the
-    row is a plausible one rather than a stub the real lookup would reject.
+    `item_type`, `buyer_user_id` and `status` are the three columns
+    `_marketplace_order_return` reads, and they are the point of every test below;
+    the rest are here so the row is a plausible one rather than a stub the real
+    lookup would reject.
+
+    `status` defaults to what `cart_checkout` actually writes -- `created`, which
+    is *before* any money moves. A test that wants the paid copy has to ask for
+    `paid` explicitly, because only the webhook writes it.
     """
     conn = bot.db()
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO seller_transactions (seller_user_id, buyer_user_id, seller_type, "
         "item_type, item_id, amount_cents, currency, status) VALUES (?,?,?,?,?,?,?,?)",
-        (1, buyer_user_id, "merchant", item_type, 1, 1999, "USD", "created"))
+        (1, buyer_user_id, "merchant", item_type, 1, 1999, "USD", status))
     tx_id = cur.lastrowid
     conn.commit()
     return tx_id
@@ -1016,11 +1021,18 @@ def test_the_success_page_tells_a_marketplace_buyer_where_the_order_went(buyer):
     Stripe *received* the payment rather than that the order is confirmed,
     because the order becomes an order when `checkout.session.completed` arrives
     and this page has not been told that it has.
+
+    Seeded `paid` deliberately. This test used the helper's default, `created`,
+    and so asserted that an *unpaid* buyer is told Stripe took their money --
+    which is the thing
+    `test_the_success_page_will_not_say_a_payment_arrived_before_the_webhook_says_so`
+    now forbids. The copy under test here is the post-webhook copy, so the row
+    has to be post-webhook.
     """
     client, _listing_id, _seller_id = buyer
     with client.session_transaction() as session:
         buyer_id = session["account_user_id"]
-    tx_id = _transaction(buyer_id)
+    tx_id = _transaction(buyer_id, status="paid")
 
     body = client.get(f"/pulse/payments/success?transaction_id={tx_id}",
                       headers=HTTPS).get_data(as_text=True)
@@ -1937,3 +1949,54 @@ def test_mutation_the_cta_state_machine_assertions_can_fail():
     assert _DISABLED_SUBMIT in overcorrected["retryable"], "mutation 5 did not take effect"
     assert "Next: secure payment" not in overcorrected["retryable"], (
         "mutation 5 did not take effect")
+
+
+def test_the_success_page_will_not_say_a_payment_arrived_before_the_webhook_says_so(buyer):
+    """`success_url` is a GET. Arriving at it is not evidence that money moved.
+
+    `/payments/success?transaction_id=N` was specialised for Marketplace returns
+    on three facts: the row exists, the viewer is its buyer, and `item_type` is
+    `marketplace_product`. None of the three is a payment. The page then told the
+    buyer "Stripe has taken your payment" -- a claim it had not been told and
+    could not check, reachable by typing the URL, re-opening it from history, or
+    backing out of Stripe's page and landing on it.
+
+    Production held precisely that row while this was written: `seller_transactions`
+    id 44, a real Checkout Session at `status=open`, `payment_status=unpaid`,
+    nothing charged. Only the webhook writes `paid` (bot.py's
+    `checkout.session.completed` handler), so only the webhook may license the
+    claim.
+
+    Asserted in both directions against the same row, because a page that never
+    confirms anything would pass the first half on its own.
+    """
+    client, _listing_id, _seller_id = buyer
+    with client.session_transaction() as session:
+        buyer_id = session["account_user_id"]
+    tx_id = _transaction(buyer_id, status="checkout_created")
+
+    unpaid = client.get(f"/payments/success?transaction_id={tx_id}", headers=HTTPS)
+    assert unpaid.status_code == 200, unpaid.get_data(as_text=True)
+    body = unpaid.get_data(as_text=True)
+    assert "has taken your payment" not in body, (
+        "the success page told a buyer with an unpaid transaction (%s) that "
+        "Stripe had taken their payment" % tx_id)
+    assert "Stripe received your payment" not in body, body[:400]
+    assert "not received your payment" in body, (
+        "the unpaid return neither withheld the claim nor said what is true; "
+        "page said: %s" % body[:400])
+
+    # The other direction. Same row, same URL, one column changed -- so a page
+    # that simply never confirms cannot pass this.
+    conn = bot.db()
+    cur = conn.cursor()
+    cur.execute("UPDATE seller_transactions SET status='paid' WHERE id=?", (tx_id,))
+    conn.commit()
+
+    paid = client.get(f"/payments/success?transaction_id={tx_id}", headers=HTTPS)
+    assert paid.status_code == 200, paid.get_data(as_text=True)
+    paid_body = paid.get_data(as_text=True)
+    assert "has taken your payment" in paid_body, (
+        "a paid transaction was not confirmed to its buyer; page said: %s"
+        % paid_body[:400])
+    assert "not received your payment" not in paid_body, paid_body[:400]
