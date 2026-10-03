@@ -464,8 +464,336 @@ is a larger change than this mission.
 | 11 | Cross-origin resource timing is blind here (no `Timing-Allow-Origin`); byte telemetry must come from the server side. |
 | 12 | §6.2's mutation result is the proof the new tests bite. §8's P3 blocks whole-suite runs. |
 
+A second mission ran on this surface after the above. Its handoffs — including new rows for Agents
+6 and 12 and a retraction addressed to Agent 9 — are in **§14**, which extends this table rather
+than replacing it.
+
 ## 10. Status
 
 `ffb88a1ca` is committed on `search-os/agent-04-rendering-performance` and **not merged, not
 deployed**. Production still serves the unresized originals. The change is verified against
 production's CSS and CDN, but "verified" is not "live".
+
+---
+
+# Continuation mission — storefront media resilience + cache privacy contract
+
+Sections 11–15 are a second mission on the same surface and the same branch. §14 extends the
+handoffs table in §9; it does not replace it.
+
+## 11. JavaScript is no longer a visibility requirement
+
+### 11.1 The defect
+
+The invariant the brief names — `NO JAVASCRIPT + SUCCESSFUL IMAGE FETCH = VISIBLE PRODUCT IMAGE` —
+was false. `static/css/pulse_marketplace.css` shipped
+
+```css
+.mkt-media img:not([data-mkt-loaded]) { opacity: 0; }
+```
+
+and the server renders **no** `data-mkt-*` attribute. The attribute is written by
+`static/js/pulse_marketplace.js` on the image's `load` event. So the default state was
+transparent and script was what granted permission to be seen: fail-closed. Every product photo on
+both documents was `opacity: 0` to a JS-off reader, and the catalogue text rendered around the
+holes — which is why no screenshot of a *working* browser ever showed it.
+
+§1 of this document says the renderer was never the defect, and that still holds. The HTML was
+always complete. The stylesheet was the client-side dependency.
+
+### 11.2 The fix, and the half of it that is easy to get wrong
+
+Inverted to fail open: the default state paints, and the script's attribute now drives a
+*transition into* the loaded state rather than out of a hidden one. Committed in `eda74b9ed`,
+with the asset `?v=` token moved to `storefront-20261003a` — editing a `static/` file without
+bumping its token ships an undeliverable fix, and `test_editing_a_storefront_asset_forces_its_cache_token_to_move`
+pins the two file digests so that cannot happen silently.
+
+The brief's warning ("do not solve one by breaking the other") describes two real regressions, and
+both are now held by their own test:
+
+| Must keep working | Test |
+| --- | --- |
+| JS may still transition loading → loaded | `test_the_fade_is_still_available_to_the_script` |
+| A broken image still shows a controlled plate, not a blank box | `test_the_broken_image_plate_is_in_the_markup_and_needs_a_class_to_show` |
+
+The fallback plate is worth stating precisely, because its markup reads alarming: the
+`<span class="mkt-media-fallback">Image unavailable</span>` is emitted **unconditionally** on every
+media box. It is invisible until a class is added, and nothing but a failed fetch adds it. A
+crawler therefore sees the string "Image unavailable" in the raw HTML of every card that is
+working fine. That is not a bug, but it is a trap for anyone grepping served HTML for broken media.
+
+### 11.3 The gate
+
+`test_a_product_image_is_visible_with_no_javascript_at_all` renders the two real documents through
+`public_document()`, parses out every `.mkt-media img` with its full ancestor chain, and then
+**evaluates the CSS cascade** — specificity, `!important`, and `@media` nesting — for `opacity`,
+`display` and `visibility` at four widths. A substring check would not have caught this bug and
+would not catch its return.
+
+Three properties make it a measurement rather than a restatement of the current stylesheet:
+
+- It asserts the parsed `<img>` carries **no** `data-mkt-*` attribute, so it cannot pass by
+  accidentally evaluating a scripted DOM.
+- `test_the_no_js_gate_actually_reaches_all_four_media_call_sites` keys on emitted ancestry
+  (`mkt-grid`/`mkt-card`, `mkt-gallery-stage`, `mkt-gallery-rail`, `mkt-related`) rather than on a
+  count — grid, PDP hero, gallery thumbnail and related rail, at mobile and desktop widths. A
+  count passes for the wrong reason the moment a fixture gains a second gallery image.
+- `test_the_gate_would_catch_the_bug_it_was_written_for` re-injects the shipped rule into the
+  parsed stylesheet in-process and asserts the evaluator reports the images transparent.
+
+Measured against the implementation it replaced: **28 of 28** (image, width) pairs computed to
+`opacity: 0` — 2 grid images and 5 PDP images at all four widths. Nothing was partially affected,
+which is the signature of a default state rather than one broken rule. The brief required a test
+that fails before remediation and passes after; this is that test, and the pre-fix number is the
+proof.
+
+Where the evaluator meets a selector construct it cannot model, it **raises** rather than skipping:
+"a gate that cannot parse the rule it guards is not a gate." Unknown media features other than
+width are treated as *applying*, which is the strict direction for a hiding rule.
+
+### 11.4 The srcset path is preserved, and one real defect in it is fixed
+
+Everything the brief asked be frozen is unchanged and still held by the tests listed in §6:
+the CJ host allowlist, `UNKNOWN HOST → ORIGINAL URL ONLY`, the original URL surviving as `src`,
+`w`-descriptor candidates with no upscaling, valid `<picture>` markup, and
+`schema.org` image truth taken from `img[src]` and never from a `srcset` candidate.
+
+`_variant_srcset()` refuses to transform on anything but an exact host match. It does not infer
+support from file extension, hostname substring, query-string support or supplier identity — it
+also refuses non-`https`, any existing query or fragment, an explicit port, and a non-raster
+suffix. This matters more than it looks: **a failing `srcset` candidate does not fall back to
+`src`**. The allowlist is a reliability boundary, not an optimisation. And CJ's own transform
+service returns **400 on an unknown operation rather than the original**, so a guessed directive
+is a broken image, not a slow one.
+
+The defect fixed in `db13425db`: a card's `sizes` declared `100vw` on its phone branch while the
+stylesheet lays the grid out as `repeat(2, minmax(0, 1fr))` under the same `max-width: 560px`.
+At a 390px viewport `100vw` resolves to 390 CSS px and a DPR-2 browser picks `w_800` (51,846 B)
+where the correct `50vw` resolution of 195px picks `w_400` (13,258 B) and is already sharp for the
+~161px box the grid renders. Across a 24-card grid that is ~0.88 MB, charged to exactly the device
+class the resizing exists for. The two constants are now tied together:
+`test_the_card_sizes_phone_branch_tracks_the_stylesheet_column_count` parses the real
+`grid-template-columns` repeat count out of the stylesheet for both `.mkt-grid` and
+`.mkt-related .mkt-grid` and asserts it equals `MKT_PHONE_GRID_COLUMNS`, from which `CARD_SIZES`
+is derived. The hero's `100vw` is *not* the same mistake; that element really is full-bleed.
+
+**Two measurement traps, recorded because an earlier reading of this same defect was an artifact of
+one of them.** Both make a browser report the wrong `srcset` candidate:
+
+1. A **width-constrained iframe** selects its candidate at preload-scan time, before the frame has
+   a width, and reports the *smallest* candidate regardless of `sizes`. A cold iframe probe
+   returned `w_200` for both `50vw` and `100vw` — which no `sizes` bug can explain.
+2. A URL **already in the HTTP cache at a larger candidate of the same `srcset`** gets that one
+   reused, so a warm page reports the *largest*.
+
+The numbers above were taken on cold, top-level documents whose `sizes` was the already-resolved
+`195px` / `390px`, one unfetched URL each. The vw → px step is arithmetic and is not claimed as
+measured. The test docstrings, the Python comment and the commit message all separate measured from
+derived, for the next person. Note also that `resize_window` is inert in this environment: it
+reports success while `innerWidth` does not move, which is what pushes you toward the iframe
+shortcut in the first place.
+
+## 12. The cache privacy contract, measured
+
+The brief's instruction was to measure deployment topology rather than infer it. The topology turns
+out to invert the question: **almost nothing honors the 5-minute TTL**, so the privacy exposure is
+much smaller than the header implies and the performance benefit is close to zero.
+
+### 12.1 There is no CDN
+
+`pulsesoc.com` CNAMEs to `5nkht5ni.up.railway.app` → `69.46.46.14`, which ARIN reports as
+`RLWY-HIKARI-01`, owned by Railway. Responses carry `server: railway-hikari` and
+`x-railway-edge: sjc1`. The `static.cloudflareinsights.com` entry in the CSP is a client-side
+analytics beacon; it proxies nothing. No `cf-cache-status`, no `via`, no `x-cache`, no `age` header
+ever appears.
+
+So there is no surrogate-key layer, no tag-based purge, and no cache to purge — not because they
+are unconfigured, but because the component that would hold them does not exist in the path.
+
+### 12.2 Railway's edge does not cache HTTP responses
+
+Measured with the origin telemetry the app already emits (`x-trace-id`, `x-railway-request-id`,
+`x-db-query-count`, `x-response-time-ms`), which is usable as a shared-cache detector: a cached
+response cannot produce a fresh trace id or a non-zero query count.
+
+- 6 rapid hits on `/pulse/marketplace`: 6 distinct `x-trace-id` + `x-railway-request-id`, each with
+  `x-db-query-count: 4`. Every request reached the origin.
+- Stronger, because it removes `Vary: Cookie` as the explanation: a `/static/` asset served
+  `public, max-age=31536000, immutable` **also reached the origin on 3 of 3 hits**. A proxy that
+  will not cache a year-immutable static file is not caching anything.
+
+### 12.3 The site's own service worker defeats the TTL for every repeat human visitor
+
+`static/sw.js` holds scope `/` (`CACHE_NAME = "pulsesoc-cache-v28-single-worker"`) and forces
+`fetch(request, { cache: "no-store" })` on **every navigation** and on every `/pulse/*` request.
+The public storefront itself loads `static/js/pulse_pwa_install.js`, which registers that worker
+unconditionally on `load`.
+
+Verified on production: `navigator.serviceWorker.controller.scriptURL` is `https://pulsesoc.com/sw.js`,
+and three consecutive navigations inside ~15s each reported `transferSize: 58287`,
+`deliveryType: ""` and `workerStart > 0` — full transfers, from the network, through the worker, well
+inside a 300s TTL.
+
+The population that can honor `max-age=300` is therefore: clients with no service worker, and
+crawlers. Both are cookieless, so **the 5-minute window is precisely and only the window a crawler
+sees**. That sharpens §8's P1 rather than contradicting it.
+
+One asymmetry worth owning: the worker caches same-origin *static* assets cache-first and
+effectively forever, gated on `response.ok`. Product photos do **not** enter it — every one is
+cross-origin on CJ, and an opaque cross-origin response has `ok === false`. I started to raise
+persistent media caching as an Agent 9 privacy item and retracted it on that evidence.
+
+### 12.4 Lifecycle already produces an uncacheable representation
+
+Scanning listing ids 1–120 on production: **41 × `200` with `public, max-age=300`**, **79 × `404`
+with `no-store, max-age=0`**. A listing that stops being public answers an uncacheable 404, which is
+the right shape — the stale window cannot be *extended* by the removal itself. `410` is never used
+anywhere. `?opt_option1=…` and `?page=2` are also `public, max-age=300` + `Vary: Cookie`.
+`/pulse/marketplace/` is a 404, not a redirect.
+
+The one genuinely wrong answer: `http://` → `301` is sent with **no `Cache-Control` at all**, so it
+is heuristically cacheable by a browser more or less indefinitely. It is a redirect to the canonical
+host and carries no listing state, so it is low severity, but it is the only representation on this
+surface with an unbounded lifetime and it should be given an explicit policy.
+
+### 12.5 Where the privacy gate actually is
+
+Two independent layers, both in `bot.py`:
+
+1. The route. `_marketplace_member_storefront_reply` sets `private, no-store`;
+   `_marketplace_public_storefront_reply` sets `g.pulse_public_cacheable = True` and
+   `public, max-age=300`. Both set `Vary: Cookie`. The unavailable/load-error paths set `no-store` +
+   `Retry-After: 120` and explicitly clear the flag. The cart route never sets it.
+2. `add_pwa_headers`, an `after_request` **default-deny** gate: anything under `/pulse` is **hard
+   assigned** `no-store, max-age=0` unless the per-response opt-in flag is set, in which case it
+   `setdefault`s `public, max-age=300`. The comment in the source says why it is not a `setdefault`:
+   "a view that forgot is the case the rule exists for."
+
+Measured: sending garbage cookies returns the byte-identical 18,878-byte anonymous document, so
+`Vary: Cookie` partitions on the axis it claims to.
+
+### 12.6 Q1–Q17
+
+Wording condensed from the brief; every answer is measured against production on 2026-10-03 or read
+out of the source, and says which.
+
+| # | Question | Answer |
+| --- | --- | --- |
+| 1 | Who honors `public, max-age=300`? | Effectively only cookieless crawlers and SW-less browsers. §12.2, §12.3 |
+| 2 | Is there a CDN in front of the origin? | No. Railway-owned IP via CNAME; no CDN headers ever. §12.1 |
+| 3 | Does the Railway proxy cache? | No. 6/6 origin hits on HTML, 3/3 on a year-`immutable` asset. §12.2 |
+| 4 | Does the browser HTTP cache honor it? | Not for any SW-controlled client — the worker forces `no-store` on navigations. §12.3 |
+| 5 | Does `Vary: Cookie` partition correctly? | Yes, measured. But **no test holds it** — see §12.7. |
+| 6 | Can authenticated HTML enter a shared cache? | No. Two layers (§12.5), and neither alone is held by a test. |
+| 7 | What happens at logout? | The request becomes cookieless and gets the anonymous document. No stale member document is possible — it was `no-store`, so it was never stored. |
+| 8 | Is a held/unpublished listing still retrievable? | For up to 300s, from any cache that stored it. Given Q1 that population is crawlers and SW-less browsers; the removal's own 404 is `no-store`. §12.4 |
+| 9 | Is a deleted / privacy-transitioned URL purgeable? | No. There is no purge primitive except bumping `CACHE_NAME` in `static/sw.js` — client-side, all-or-nothing, and reliable only because `/sw.js` is itself served `no-store`. |
+| 10 | Is there an existing purge API? | No. No cache-purge route exists in `bot.py` or `services/`. |
+| 11 | Surrogate keys / cache tags? | None, and nowhere to put them (Q2). |
+| 12 | Are 404s cached? | No — `no-store, max-age=0`. §12.4 |
+| 13 | Is 410 used? | Never. Zero occurrences on this surface. |
+| 14 | Are redirects cached? | `http://` → 301 carries **no** `Cache-Control` → heuristically cacheable indefinitely. The one unbounded representation. §12.4 |
+| 15 | Does `stale-while-revalidate` extend visibility? | Not in any HTTP response. The repo's only `stale-while-revalidate` is `services/delivery/cache.py`, a **server-side value cache** over `services.cache_engine`, keyed on corridor/route (supplier, countries, mode, variant, quantity, warehouse) — country-level, no PII. It also already forbids list surfaces from triggering a fetch and refuses to serve a stale *negative*. |
+| 16 | Does the service worker extend visibility? | HTML: no (`no-store` navigations). Product media: no (cross-origin, `response.ok === false`). Same-origin CSS/JS: yes, indefinitely. §12.3 |
+| 17 | Required privacy-removal SLA? | **BLOCKED.** Not Agent 4's to choose — §12.8. |
+
+### 12.7 What the tests actually hold — two mutations worth knowing about
+
+Run with a `/tmp` backup each time and a verified byte-clean restore afterwards (`git diff --quiet bot.py`).
+
+**`Vary: Cookie` is unheld.** Deleting all three `response.headers["Vary"] = "Cookie"` assignments
+leaves **351 passed** across `test_marketplace_public_pages.py`, `test_marketplace_seo.py`,
+`test_marketplace_storefront.py`, `test_marketplace_pagination_canonical.py` and
+`test_sitemap_integrity.py`. Nothing in the suite holds the one header that keeps the anonymous and
+member documents from being crossed in a shared cache. That no shared cache currently exists (§12.1)
+is why this is a latent gap and not an incident — but it means the day a CDN is introduced, the
+header protecting that introduction is unprotected.
+
+**The member document's `no-store` is double-covered, not vacuous.** Mutating the route header to
+`public, max-age=300`: **263 passed**. Mutating `add_pwa_headers`' opt-in gate to `if True:` (fail
+open): **263 passed**. Mutating **both**: **2 failed** —
+`test_a_signed_in_member_on_the_same_url_still_gets_no_store` and
+`test_a_signed_in_member_on_the_same_url_gets_the_member_grid_and_no_store`. Each layer masks the
+other's single-point mutation. Defence in depth is the correct architecture here, so the finding is
+not "remove a layer" — it is that single-layer regressions are invisible, which is exactly the shape
+a real regression takes.
+
+### 12.8 The privacy-removal SLA is BLOCKED
+
+No privacy-removal or unpublish SLA exists anywhere in the repo — checked `docs/`,
+`docs/web-rebuild/` and `docs/privacy/pulse_privacy_architecture.md`. The brief is explicit that
+Agent 4 must not independently choose it, and I have not.
+
+**Status: BLOCKED pending Agent 0, Agent 2 and the privacy owner.** What they need in order to
+answer, and what follows from each answer:
+
+| If the SLA is | Then |
+| --- | --- |
+| ≥ 5 minutes | Nothing to build. Today's `max-age=300` + uncacheable 404 already satisfies it. |
+| < 5 minutes | Lower the TTL. That is sufficient *because* no shared cache exists — there is nothing to purge. |
+| Near-zero | Needs an `ETag` + conditional revalidation, or `no-store` on the public document, which costs the crawler-facing TTL. |
+
+Do **not** specify a CDN purge integration to satisfy this. There is no CDN; a purge call would be a
+no-op that reads as a control. If a CDN is later added, the invalidation event source should be
+Agent 6's material-change contract (§14), not a second bus.
+
+## 13. Mutations for Agent 12 — ten that must fail
+
+Nine of these ten do fail today; the tenth is listed because it **survives**, and that is the
+finding. Each names the file to touch and the test that should go red.
+
+| # | Mutation | Expected | Observed |
+| --- | --- | --- | --- |
+| 1 | Restore `.mkt-media img:not([data-mkt-loaded]) { opacity: 0 }` in the stylesheet | `test_a_product_image_is_visible_with_no_javascript_at_all` | fails, 28/28 pairs transparent |
+| 2 | Delete the loaded-state transition rule | `test_the_fade_is_still_available_to_the_script` | fails |
+| 3 | Make `.mkt-media-fallback` unconditionally visible | `test_the_broken_image_plate_is_in_the_markup_and_needs_a_class_to_show` | fails |
+| 4 | Re-point the no-JS gate at `media_box` output instead of `public_document` | `test_the_no_js_gate_actually_reaches_all_four_media_call_sites` | fails — loses the inline stylesheet and the hero/thumb/rail surfaces |
+| 5 | Set `CARD_SIZES`' phone branch to `100vw` | `test_a_phone_card_asks_for_the_candidate_it_can_actually_use` | fails |
+| 6 | Set `MKT_PHONE_GRID_COLUMNS = 1`, stylesheet untouched | `test_the_card_sizes_phone_branch_tracks_the_stylesheet_column_count` | fails |
+| 7 | Change the stylesheet's phone grid to `repeat(3, …)`, constant untouched | same test, from the CSS side | fails |
+| 8 | Drop the host check in `_variant_srcset()` so any host is transformed | `test_no_srcset_is_emitted_against_an_origin_that_cannot_resize` | fails |
+| 9 | Edit `static/css/pulse_marketplace.css` without moving the `?v=` token | `test_editing_a_storefront_asset_forces_its_cache_token_to_move` | fails |
+| 10 | **Delete all three `response.headers["Vary"] = "Cookie"`** | should fail | **351 passed — nothing holds it.** §12.7 |
+
+Two further results, as context rather than as items: a single-layer mutation of the member
+document's `no-store` survives 263 tests from either layer, and only the pair fails (§12.7); and
+the four `sizes` mutations above were each run individually, not as a batch.
+
+Pre-existing, not caused by this work: 9 failures in `tests/test_marketplace_listing_detail.py` when
+the marketplace suites run in one process. Verified by stashing — 433 passed with my changes
+stashed vs 435 with them, a delta of exactly my 2 new tests, and the same 9 failed both times. They
+pass in isolation. Cross-file process contamination, §8 P3's neighbour.
+
+## 14. Continuation handoffs
+
+| Agent | What they need from me |
+| --- | --- |
+| 0 | §12.8. The privacy-removal SLA is the one decision this mission could not make, and three different architectures follow from it. Also §12.1: there is no CDN, so any plan that assumes an edge cache or a purge API is planning for a component that does not exist. |
+| 2 | A lifecycle transition **already** produces the corresponding HTTP representation: a non-public listing answers `404` with `no-store` (41 public / 79 404 across ids 1–120, §12.4). The exposure window is bounded by `max-age=300` and, per §12.3, is only ever seen by a cookieless crawler. What is still yours: (a) the SLA in §12.8; (b) `410` is never used, so a permanent removal is indistinguishable from a transient one; (c) the `http://` → 301 with no `Cache-Control` (§12.4). |
+| 6 | If a shared cache is ever introduced, your material-change contract is the correct invalidation event source and I have not built a second one. The requirements it would have to meet: emit on publish, unpublish, hold, price change and media change; carry the listing id and the canonical URL; be ordered or idempotent per listing, since a late unpublish behind a late publish re-exposes the listing. Today there is nothing to invalidate, so this is a requirement, not a request. |
+| 9 | Two retractions in your favour and one real item. Retracted: product photos do **not** persist in the service-worker cache — `cache.put` is gated on `response.ok`, which is `false` for the opaque cross-origin responses every CJ image returns (§12.3). Also retracted: the storefront does not host or proxy media, so there is no origin copy to purge. Real: §8 P2 stands, and it is now deeper — the page depends on CJ's *transform* service as well as its storage, and CJ returns **400 on an unknown operation rather than the original**, while a failing `srcset` candidate does not fall back to `src`. |
+| 12 | §13's ten mutations, nine of which are already observed red. Item 10 is the one to action: `Vary: Cookie` is unheld by 351 tests. §12.7's double mutation is the other shape worth a gate — two layers that each mask the other's failure. |
+
+**Out of scope, deliberately untouched:** the related-products rail keyed on the leaf category
+(§8, Agents 3/10) and turning variant GET forms into indexable URLs (§8, Agent 2). This mission
+documented form-based reachability only and changed neither.
+
+## 15. Continuation status
+
+Two commits on `search-os/agent-04-rendering-performance`:
+
+- `eda74b9ed` — stop requiring JavaScript to see a product photo (the fail-closed → fail-open
+  inversion, asset token + digest bump, the cascade-evaluating no-JS gate).
+- `db13425db` — tie a card's `sizes` to the column count that lays it out.
+
+`tests/test_marketplace_storefront.py`: **127 passed**. `test_environment_contract` +
+`test_every_test_file_is_run_by_ci`: 23 passed. The realtime-audio change gate reports no protected
+path touched.
+
+**Nothing in §12 is implemented.** It is a measurement and a set of requirements; the brief
+forbids building the cache architecture before the topology and the lifecycle SLA are settled, and
+§12.8 is unsettled. `bot.py` was mutated four times during this work and restored byte-clean each
+time — `git diff` on it is empty.
+
+**Not merged, not deployed.** The image optimisation from §1 is still unshipped, by instruction.
