@@ -1,10 +1,10 @@
 {
   "version": 1,
   "algorithm": "sha256",
-  "fingerprint": "632fde54ac75a00a15c6b18fd5e813804dbf57391597bd817c98353d0c058cec",
+  "fingerprint": "d737321fffd07e9d329cef92979cc731e75391c6ba2fa7453cca253a32fd02e4",
   "file_count": 15,
   "files": {
-    "web/index.html": "4fdddfe6e710c9729e02361905bfbcb16aa83b09608061b783ba3c8f87dad0ca",
+    "web/index.html": "5d1d456ddf47e49d0f72f3e264682e173cd1d1b01c8fade089830fbe80de3376",
     "web/package-lock.json": "290b2606abb7f824a19dbc604305bbd1458e67add256a531e0210fe4a64d1d33",
     "web/package.json": "1499001e04ef89de6e879bba7eed511ccf23aa222f9e5c2da54100f70992049f",
     "web/scripts/fingerprint.mjs": "cddda7430b5966b5345e7c1b6a59176c9be23eb21a21415cd0efadd6496d3c8e",

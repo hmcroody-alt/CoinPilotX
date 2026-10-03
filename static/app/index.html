@@ -6,8 +6,22 @@
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#050910" />
     <!-- The product surface sits behind a login wall and has no SEO value. The
-         crawlable surface is the server-rendered Jinja marketing site. -->
-    <meta name="robots" content="noindex" />
+         crawlable surface is the server-rendered Jinja marketing site.
+
+         This is the one robots directive in the product that cannot read
+         `services.search_visibility`: Vite copies this head into
+         `static/app/index.html` at build time and Flask serves those bytes
+         verbatim, so there is no render to interpolate into. It is therefore a
+         literal on purpose -- and it must be the *exact* string the table
+         declares for `/pulse`, because the sweep in
+         `tests/protection/test_sitemap_entries_are_indexable.py` compares them
+         token for token and has no allowlist entry for this path.
+
+         `follow` is not decoration. It is what keeps `/pulse/app` out of the
+         `Disallow` list that `robots_disallow_patterns()` builds from the
+         nofollow prefixes -- a Disallow here would block the shell that every
+         `/pulse/app/*` deep link resolves through. -->
+    <meta name="robots" content="noindex,follow" />
     <title>PulseSoc</title>
     <script type="module" crossorigin src="/static/app/assets/index.C8Cu-1xZ.js"></script>
     <link rel="stylesheet" crossorigin href="/static/app/assets/index.-fyedDO5.css">

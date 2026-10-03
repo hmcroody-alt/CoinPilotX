@@ -6,7 +6,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Help Center | PulseSoc</title>
   <meta name="description" content="PulseSoc Help Center for account help, safety reports, Messenger, notifications, Premium, privacy, and support tickets." />
-  <meta name="robots" content="index, follow, max-image-preview:large" />
+  {# From `services.search_visibility`, via the `inject_search_policy` context
+     processor, so this page and the policy table cannot disagree. The literal
+     that was here said `index, follow, max-image-preview:large` and omitted
+     `max-snippet:-1, max-video-preview:-1`, which capped snippets and video
+     previews on all four paths this template answers. #}
+  <meta name="robots" content="{{ policy_robots }}" />
   <link rel="canonical" href="https://pulsesoc.com/help" />
   <meta property="og:title" content="PulseSoc Help Center" />
   <meta property="og:description" content="Fast support, safety guidance, report and block help, notifications, Messenger, Premium, privacy, and ticket creation." />
