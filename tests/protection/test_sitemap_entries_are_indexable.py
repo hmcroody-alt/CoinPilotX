@@ -680,5 +680,221 @@ class ARenderedPageDeliversTheDeclaredDirective(unittest.TestCase):
                 )
 
 
+class EveryRenderableRouteDeliversTheDeclaredDirective(unittest.TestCase):
+    """The same question as the class above, asked of every route instead of eleven.
+
+    `ARenderedPageDeliversTheDeclaredDirective` names its paths. That corpus was
+    assembled one path at a time, after each defect shipped, and it only ever
+    grew when somebody noticed: three separate templates had the identical bug
+    and each one had to be found by hand first. A hand-written corpus catches the
+    defect it was written for and nothing else.
+
+    So this enumerates `url_map` instead. Every static GET route Googlebot could
+    fetch gets requested through the test client, and the `<meta name="robots">`
+    it sends is compared against `search_visibility.robots_meta()` for its own
+    path. Nothing is listed by name except the exemptions.
+
+    Measured before it was written, which is the only reason it is here: the
+    first run over 519 static GET routes found 55 that render HTML to an
+    anonymous client and **29 of them contradicted the table** -- 18 sending a
+    different directive and 11 sending none at all. Search Console had reported
+    none of the 18, because it does not know most of those URLs exist. Fourteen
+    of the 29 turned out to be three shared render shells (`trust_public_page`
+    covering seven pages, `education_shell` four, `legal_money_page` three),
+    which is the argument for a sweep in one line: the blast radius of a literal
+    in a shared shell is invisible from any one page.
+
+    What it cannot see, stated so the coverage is not overread: routes with a URL
+    parameter (the corpus is static paths only), routes that 302 anonymously
+    (392 of them -- their directive is real but Googlebot never reads it), and
+    anything whose directive depends on a database row, which is what the
+    exemptions below are.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        bot.webhook_app.config["TESTING"] = True
+        cls.client = bot.webhook_app.test_client()
+
+    #: Paths whose served directive is allowed to differ from the table, each
+    #: mapped to the *specific* other directive tolerated and why. Not a list of
+    #: paths to skip: an exempt path is still fetched, still parsed, and still
+    #: has to send one of two named directives. A fourth value fails.
+    #:
+    #: Written this way, rather than as "these paths may diverge", because the
+    #: two `legal/` entries are somebody else's open work. An exemption that
+    #: accepts only today's wrong answer goes red the moment that work lands,
+    #: which on a branch taking ~60 commits a day means a test that breaks main
+    #: for an agent who has never read it. Accepting both the current literal and
+    #: the declared value means the fix lands green and the exemption can then be
+    #: deleted at leisure -- while a regression to any *third* directive still
+    #: fails.
+    ALLOWED = {
+        "/pulse/marketplace": (
+            "noindex,follow",
+            "Content-dependent, and permanent. The hub is indexable once it has "
+            "published listings and deliberately `noindex,follow` when it does "
+            "not, so an empty catalogue is not a thin page asking to be ranked. "
+            "The test database has no listings, so the test client always sees "
+            "the empty branch, while production serves the indexable one. "
+            "`classify()` is path-shaped and cannot express a row count, which "
+            "is why this divergence is documented rather than fixed -- the "
+            "sibling class above carves the same path out by name in "
+            "`NOINDEX_ALLOWED` for the same reason.",
+        ),
+        "/terms": (
+            "index, follow, max-image-preview:large",
+            "`templates/terms.html` holds the literal. The template is owned by "
+            "an open PR rewriting its content, so it is deliberately not edited "
+            "here. The directive agrees with the table's direction and drops "
+            "`max-snippet:-1` and `max-video-preview:-1`, so the page caps its "
+            "own snippet -- real, but cosmetic next to a wrong direction.",
+        ),
+        "/privacy": (
+            "index, follow, max-image-preview:large",
+            "Same literal, same open PR, same reasoning as `/terms`: "
+            "`templates/privacy.html`.",
+        ),
+    }
+
+    #: Routes that answer 200 with HTML anonymously. Below this, the corpus has
+    #: collapsed -- a blanket `before_request` redirect would otherwise empty it
+    #: and leave the test passing over nothing at all. 55 when written.
+    MINIMUM_CORPUS = 45
+
+    @classmethod
+    def _corpus(cls):
+        """Static GET routes, minus the three families that cannot answer this.
+
+        `/api/` and `/webhook` are JSON and `/static/` is files; none of them
+        carry a robots meta and none are pages. They are excluded by prefix
+        rather than by the content-type check below so that a JSON endpoint
+        which starts returning HTML is a finding rather than a silent skip.
+        """
+        return sorted({
+            r.rule
+            for r in bot.webhook_app.url_map.iter_rules()
+            if "<" not in r.rule
+            and "GET" in (r.methods or ())
+            and not r.rule.startswith(("/api/", "/static/", "/webhook"))
+        })
+
+    @staticmethod
+    def _tokens(directive):
+        """Compare by token set, not by spelling.
+
+        `index, follow, max-image-preview:large` and
+        `index,follow,max-image-preview:large` are one instruction to Google.
+        Only a difference in the tokens themselves is a defect.
+        """
+        return frozenset(t.strip() for t in (directive or "").split(",") if t.strip())
+
+    def _rendered(self):
+        """Every corpus path that actually hands an anonymous client HTML.
+
+        A 302, a 401 or a JSON body proves nothing about a template, so those are
+        dropped here rather than asserted on. `MINIMUM_CORPUS` is what stops that
+        leniency from swallowing the whole suite.
+        """
+        pages = {}
+        for path in self._corpus():
+            resp = self.client.get(path, follow_redirects=False)
+            if resp.status_code != 200:
+                continue
+            if "html" not in (resp.headers.get("Content-Type") or "").lower():
+                continue
+            pages[path] = resp.get_data(as_text=True)
+        return pages
+
+    def test_no_renderable_route_contradicts_the_policy_table(self):
+        pages = self._rendered()
+        self.assertGreaterEqual(
+            len(pages), self.MINIMUM_CORPUS,
+            f"only {len(pages)} static routes rendered HTML, down from 55. "
+            f"Either a redirect now covers most of the site or the corpus query "
+            f"is broken; in both cases this test is no longer checking anything",
+        )
+
+        missing, multiple, wrong = [], [], []
+        for path, body in sorted(pages.items()):
+            found = re.findall(
+                r"""<meta\s+name=["']robots["']\s+content=["']([^"']*)["']""",
+                body, re.I,
+            )
+            declared = search_visibility.robots_meta(path)
+            if not found:
+                # Not a lesser defect than a wrong one. A page with no directive
+                # is `index,follow` by default, so every `noindex` page in this
+                # bucket is fully crawlable and rankable.
+                missing.append(f"{path} sends no robots meta; table says {declared!r}")
+                continue
+            if len(found) > 1:
+                multiple.append(f"{path} sends {len(found)}: {found}")
+                continue
+            allowed = {self._tokens(declared)}
+            if path in self.ALLOWED:
+                allowed.add(self._tokens(self.ALLOWED[path][0]))
+            if self._tokens(found[0]) not in allowed:
+                wrong.append(f"{path} sends {found[0]!r}, table says {declared!r}")
+
+        self.assertEqual(
+            [], missing,
+            "pages with no robots meta at all, which means index,follow by "
+            "default:\n  " + "\n  ".join(missing),
+        )
+        self.assertEqual(
+            [], multiple,
+            "pages sending more than one robots meta, which can disagree with "
+            "each other:\n  " + "\n  ".join(multiple),
+        )
+        self.assertEqual(
+            [], wrong,
+            "pages whose served directive the policy table did not choose. Ask "
+            "`search_visibility.robots_meta()` -- in Jinja via the "
+            "`policy_robots` context variable, in an f-string via "
+            "`bot.current_robots_directive()` -- rather than writing a literal, "
+            "or add a documented entry to ALLOWED if the directive genuinely "
+            "depends on data:\n  " + "\n  ".join(wrong),
+        )
+
+    def test_the_corpus_constrains_in_both_directions(self):
+        """Anti-vacuity. A corpus of one direction passes against a template
+        hardcoding that direction, which is the bug mirrored.
+
+        Checked against the *measured* paths rather than the route table,
+        because what matters is that both kinds of page actually rendered.
+        """
+        directions = {
+            search_visibility.classify(path).indexable
+            for path in self._rendered()
+            if path not in self.ALLOWED
+        }
+        self.assertEqual(
+            {True, False}, directions,
+            "the rendering corpus is all one direction, so a template "
+            "hardcoding that direction would pass",
+        )
+
+    def test_every_exemption_is_still_a_live_route(self):
+        """An allowlist nobody prunes stops being an allowlist.
+
+        Deliberately weaker than "must still diverge": see the note on
+        `ALLOWED`. This catches the rot that matters -- an entry for a path that
+        no longer renders at all, which is an exemption granted to nothing.
+        """
+        rendered = self._rendered()
+        for path, (_, reason) in sorted(self.ALLOWED.items()):
+            with self.subTest(path=path):
+                self.assertIn(
+                    path, rendered,
+                    f"{path} is exempt but no longer renders HTML anonymously, "
+                    f"so the exemption covers nothing and should be deleted",
+                )
+                self.assertGreater(
+                    len(reason), 80,
+                    f"{path} is exempt without a reason anyone can evaluate",
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
