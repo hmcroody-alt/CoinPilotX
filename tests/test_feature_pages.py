@@ -313,13 +313,23 @@ def test_the_marketplace_page_states_the_card_position_per_seller(bodies):
     That is the same dead end the original test was written to prevent, so the
     intent is unchanged and only the direction has moved.
 
-    What this test cannot see is the production value of the flag. That is an
-    environment variable rather than a repo fact, and in this process it is
-    unset and fails closed by design, so asserting against it here would check
-    the test rig instead of the deployment. If the rail is ever paused again
-    this test will not notice: `.env.example` documents the switch, and
-    `GET /api/pulse/marketplace/cart/checkout-options?seller_id=<id>` is the
-    live answer the checkout form itself is built from.
+    There is a third authority besides the flag and the seller, and it is the
+    reason the scope assertions below exist rather than just the qualifier one.
+    The checkout screen in the App Store build that shipped before 2026-09-19
+    holds its own hard-coded `MARKETPLACE_CARD_PAYMENTS_PAUSED = true`, so a
+    buyer on an installed copy of it is offered cash whatever the server says.
+    `main` has deleted that constant and the screen reads the per-seller verdict
+    now, but shipping a fix does not uninstall the old binary, so a flat "you
+    can pay by card" is an overclaim for as long as that build is in use.
+
+    What this test cannot see is any of that deployment state -- not the
+    production value of the flag, and not which build a reader has installed.
+    The flag is an environment variable rather than a repo fact, and in this
+    process it is unset and fails closed by design, so asserting against it
+    here would check the test rig instead of the deployment. If the rail is
+    ever paused again this test will not notice: `.env.example` documents the
+    switch, and `GET /api/pulse/marketplace/cart/checkout-options?seller_id=<id>`
+    is the live answer both checkout forms are built from.
     """
 
     text = _visible(bodies["/features/marketplace"]).lower()
@@ -342,6 +352,21 @@ def test_the_marketplace_page_states_the_card_position_per_seller(bodies):
         text, "pay by card", ("once", "when", "whose", "completed", "finished"),
     )
     assert ok, f"the marketplace page promises a card unconditionally: ...{context}..."
+
+    # The scope has to be stated outright, not left to be inferred from that
+    # qualifier. A reader who skims "pay by card once the seller has finished
+    # payment setup" can still come away expecting one on every listing they
+    # see, and the first draft of this page read exactly that way.
+    assert "not on every listing" in text, (
+        "the page does not say the card option is absent from some listings"
+    )
+
+    # Cash carries no condition on any authority, so it is the one method the
+    # page may state flatly -- and has to, because it is the fallback for a
+    # buyer who finds no card option on the listing in front of them.
+    assert "work on every listing" in text, (
+        "the page does not state the method that is always available"
+    )
 
     assert "stripe" not in text, (
         "the page describes what a buyer and seller do; the processor is an "

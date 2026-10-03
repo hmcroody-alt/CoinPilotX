@@ -37,10 +37,16 @@ content on the page:
   not an explicit yes), and that only says the rail exists:
   `services/marketplace_card_capability.py` then checks the seller's own
   Connect state — `charges_enabled`, `payouts_enabled`, outstanding
-  requirements — and any one of them still refuses. So the honest sentence is
-  that a card works once the seller has finished payment setup, never that
-  every listing takes one. Cash, local pickup and in-person settlement are open
-  either way and carry no commission.
+  requirements — and any one of them still refuses. There is a third authority
+  the first draft of this page missed: the client. The checkout screen in the
+  App Store build that shipped before 2026-09-19 carries its own hard-coded
+  pause, so a buyer on it is offered cash only, whatever the server says. That
+  copy of the constant is gone from `main` and the screen now reads the
+  server's per-seller verdict, but a page cannot promise what is already
+  installed on someone's phone. So the honest sentence is that a card appears
+  once the seller has finished payment setup, never that every listing takes
+  one. Cash, local pickup and in-person settlement are open on all three
+  authorities and carry no commission.
 * Profiles have no story-highlight surface.
 
 If one of those becomes false, the fix is to change the sentence here, not to
@@ -521,19 +527,19 @@ FEATURES = (
     {
         "slug": "marketplace",
         "card_title": "Marketplace",
-        "card_summary": "List something for sale and settle it by card, in cash, or on local pickup.",
+        "card_summary": "List something for sale and settle it in cash, on local pickup, or by card.",
         "breadcrumb": "Marketplace",
         "h1": "Marketplace",
         "title": "PulseSoc Marketplace — list and sell from the app",
         "description": (
-            "List an item in the PulseSoc Marketplace and take payment by card once your "
-            "payment setup is complete, or settle in cash on local pickup. The checkout shows "
-            "which methods a listing accepts before you enter any details."
+            "List an item in the PulseSoc Marketplace and settle it in cash on local pickup, or "
+            "by card once the seller's payment setup is complete. The checkout shows which "
+            "methods a listing accepts before you enter any details."
         ),
         "lede": (
-            "You can list, sell, and take a card for it. Which methods a listing accepts "
-            "depends on the seller's own payment setup, and the checkout tells you that before "
-            "you commit rather than after."
+            "You can list something and sell it. Cash and local pickup work on any listing, a "
+            "card option appears where the seller's payment setup is done, and the checkout "
+            "tells you which applies before you commit rather than after."
         ),
         "sections": [
             {
@@ -548,24 +554,24 @@ FEATURES = (
             {
                 "heading": "How a sale settles",
                 "body": [
-                    "Card checkout is open. A buyer can pay by card once the seller has "
-                    "finished payment setup — registering as a seller is what lets you list, "
-                    "and payment setup is the separate step that turns the card option on for "
-                    "your own listings.",
-                    "Cash, local pickup and payment in person stay open either way, and they "
-                    "carry no commission because the platform is not moving that money. No "
-                    "Marketplace sale carries one today on any method.",
-                    "Which of those a listing accepts is decided per seller rather than per "
-                    "site, and the checkout form is built from that answer. So a card option "
-                    "you can see is one you can finish, rather than one that fails after you "
-                    "have committed to paying.",
+                    "Cash, local pickup and payment in person work on every listing. They "
+                    "carry no commission because the platform is not moving that money — and "
+                    "no Marketplace sale carries one today, on any method.",
+                    "Card checkout is open too, but not on every listing. A buyer can pay by "
+                    "card once the seller has finished payment setup: registering as a seller "
+                    "is what lets you list, and payment setup is the separate step that turns "
+                    "the card option on for your own listings.",
+                    "Whichever applies, the checkout form is built from that answer before you "
+                    "enter any details — and it is built per listing rather than per site, so "
+                    "a payment option you can see is one you can finish rather than one that "
+                    "fails after you have committed to paying.",
                 ],
             },
         ],
         "faqs": [
             {
                 "question": "Can I pay for a Marketplace item by card?",
-                "answer": "Yes, when the seller has completed their payment setup. The checkout shows which methods a listing accepts before you enter any details, and cash, local pickup and in-person payment are available too.",
+                "answer": "On some listings, but not all of them. A card option appears once the seller has completed their payment setup, and the checkout shows which methods a listing accepts before you enter any details — so you will not start a card payment that cannot finish. Cash, local pickup and in-person payment work on every listing.",
             },
             {
                 "question": "Is there a fee on a Marketplace sale?",
