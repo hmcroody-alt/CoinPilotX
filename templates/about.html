@@ -19,6 +19,13 @@
   redirect a logged-out visitor to /login, so where this page wants to say more
   about one it links the public `/features/<slug>` page instead of the in-product
   tab. Checked on production, not inferred from the handlers.
+
+  The marketplace payment sentence is deliberately hedged. Two authorities
+  disagree: `MARKETPLACE_CARD_PAYMENTS_ENABLED` is `true` in production and
+  `services/marketplace_payment_pause.py` reads it per call, so the card rail is
+  open -- while /features/marketplace still tells the public card checkout is
+  temporarily unavailable. One of those is stale and it is not this page's job
+  to decide which in public. What is written here is true either way.
 #}
 {% extends "_public_shell.html" %}
 {% from "_app_link_cta.html" import app_store_badge with context %}
@@ -189,9 +196,10 @@
     <p>
       Sellers list and publish products into that same catalogue and reach
       buyers through the network rather than through a separate storefront
-      nobody visits. Orders can settle by card, or in cash on local pickup where
-      a seller offers it. <a href="/features/marketplace">More about the
-      marketplace</a>.
+      nobody visits. Which payment methods a listing accepts is shown at
+      checkout, and cash on local pickup is one of them.
+      <a href="/features/marketplace">More about the marketplace</a> covers
+      payment in detail.
     </p>
     <p>
       Some of what you see in the feed is surfaced by <strong>PulseDrop</strong>,
