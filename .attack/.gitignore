@@ -1,0 +1,4 @@
+scratch.db
+scratch.db-journal
+scratch.db-wal
+scratch.db-shm
