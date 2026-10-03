@@ -1,7 +1,13 @@
 # Structured data: state, findings, and open escalations
 
 Agent 5 (structured data + search entity engine), 2026-10-03.
-Branch `search-os/agent-05-structured-data`, four commits on top of `5bdf4e431`.
+Branch `search-os/agent-05-structured-data`, on top of `5bdf4e431`.
+
+Companion documents in this directory: `01_merchant_center_feed.md` (the feed,
+which already existed), `03_agent_05_final_report.md` (the fleet-facing
+summary), `04_premium_price_authority.md` (the price escalation, which is the
+most important thing on this branch), `05_agent_12_required_mutations.md` (the
+eighteen mutations that must fail).
 
 Production was at `5bdf4e431` when every "live" claim below was measured
 (`GET /api/service/health`, `commit` field). That is this branch's base, so
@@ -78,15 +84,47 @@ now dead — after this branch it has zero readers in the repo, and it never
 rendered on a page. It is listed here rather than deleted because it is a
 pricing constant, not a schema one.
 
+### The frozen invariant
+
+> **UNKNOWN OR CONTRADICTORY PRICE TRUTH → NO PRICE STRUCTURED-DATA CLAIM.**
+
+Substituting 999, or 1900, or whatever `PULSE_PREMIUM_PRICE_CENTS` holds, or
+"starting at", or a number converted from one of those, does not satisfy it.
+Those are all the same move — choosing between disagreeing authorities — and
+the disagreement is the finding. Recorded in-tree at `seo/schema.py:407` so the
+next person does not re-derive it, and enforced structurally rather than by
+blocklist: `tests/test_app_schema.py` asserts `"offers" not in node` for every
+node in those graphs, so **any** substituted number fails, including one nobody
+has thought of yet.
+
 ### Escalation — owner of Premium pricing
 
-Three numbers disagree and this layer cannot choose between them. What is
-needed is one answer to "what does PulseSoc Premium cost", written once where
-both the checkout and any future `Offer` can read it. Until that exists, the
-correct structured data is no `Offer` at all, which is what the branch ships.
+**Escalated in full in `04_premium_price_authority.md`, and it got worse on
+inspection.** The summary above says three numbers disagree. Tracing the full
+chain — product identity → entitlement identity → display price → checkout
+price → charged price → receipt → search projection — found **four**, and the
+authoritative one is not in this repository:
 
-Note the consumer-facing half of this is not a schema problem and does not go
-away when the node does: the catalog says 999 and the charge is 1900.
+- `999` / `9999` — the version-controlled entitlement catalog. Nothing that
+  charges money reads it.
+- `1900` — `PULSE_PREMIUM_PRICE_CENTS`, read by
+  `/api/payments/checkout/premium/<plan_key>` (`bot.py:104826`), which charges
+  it for **every** plan including the annual one.
+- **unknown** — `/api/premium/checkout` (`bot.py:14760`) is the lane every
+  Premium button in the product actually calls, and it builds its Stripe
+  session from `STRIPE_PRICE_ID`, a **Price object id** (`bot.py:14619`). The
+  amount lives in the Stripe dashboard. No test, gate or review in this repo
+  can see it, and it can change without a commit.
+
+And the display stage is **empty**: `/pricing` answers 200 with no dollar amount
+at all, and `/pulse/premium` answers **302** to an unauthenticated request. So
+no logged-out reader and no crawler has ever been shown a Premium price.
+
+That makes the fail-closed deletion not merely the conservative choice but the
+only available one. A structured-data layer cannot project a price that the
+repository does not contain and no page displays.
+
+The consumer-facing half does not go away when the node does.
 
 ---
 
@@ -103,7 +141,7 @@ earlier note from this agent called it live stored XSS. That was wrong, and the
 correction is published here deliberately:
 
 - The live product page is rendered by `marketplace_web` /
-  `marketplace_storefront`, which already escaped (`services/marketplace_storefront.py:2029`).
+  `marketplace_storefront`, which already escaped (`services/marketplace_storefront.py:2031`).
   Confirmed against production rather than by reading: the live Product node
   carries `sku: "pulsesoc-listing-163"` and `additionalProperty`, which only
   `services/marketplace_web.py:1424` emits and `marketplace_seo` never does.
@@ -130,24 +168,49 @@ terminates; enumerating from the source does not tell you when you are done.
 
 Nine non-test elements carry an `ld+json` block. Eleven emitters produce the
 strings that go into them, because `templates/index.html` builds one block from
-three. Every emitter is now one of three things:
+three. **Every emitter is now the same one thing**, which is the state the
+inventory was opened to reach:
 
 | Count | Kind | Where |
 |---|---|---|
-| 8 | `serialise_graph(...)` | `seo/schema.py:187`, `:215`, `:251`, `:415`; `services/marketplace_seo.py:581`, `:697`; `bot.py:1808`, `:32862` |
+| 9 | `serialise_graph(...)` | `seo/schema.py:241`, `:269`, `:305`, `:469`; `services/marketplace_seo.py:581`, `:697`; `bot.py:1808`, `:32868`; `services/marketplace_storefront.py:2030` |
 | 2 | `serialise_graph(..., indent=2)` | `bot.py:2149` `organization_ld`, `bot.py:2160` `mobile_app_ld` |
-| 1 | `marketplace_storefront`'s own escaper | `services/marketplace_storefront.py:2029` |
 
 Plus **two** hand-written literals with no interpolation at all, safe by
-construction: `bot.py:34045` (the crypto-predictions `WebPage`) and
+construction: `bot.py:34051` (the crypto-predictions `WebPage`) and
 `templates/index.html:56` (a `WebApplication` node sitting in the same `@graph`
 array as `organization_ld` and `mobile_app_ld`). An earlier draft of this table
 said "one"; the second was found by the sink enumeration above, which is the
 argument for having done it.
 
+The third row this table used to have is gone.
+`services/marketplace_storefront.py` held its own escaper — an independently
+written, **correct** copy of the same `<`-replacement. It was consolidated onto
+`serialise_graph` in `5f74ddec9` for a reason that is not about correctness: a
+security property with two implementations has two chances to be dropped by a
+refactor, and only one of them is the one anybody re-reads. The storefront's one
+distinguishing property, `ensure_ascii=True`, is preserved as an argument rather
+than silently taken away.
+
 All eleven were verified byte-identical before and after, by rendering each
-affected page on both revisions and diffing the extracted blocks. Of the four
-code commits, only `fdb337296` changes any output.
+affected page on both revisions and diffing the extracted blocks. Of the code
+commits, only `fdb337296` and `32f7f4d5b` change any output.
+
+### The serialiser contract, frozen
+
+`seo/schema.py:26` is the only sanctioned way to turn a graph into page output,
+and its docstring now states the contract as seven checkable points rather than
+as prose. In summary: the output is valid JSON that parses to **exactly** the
+payload it was given; it is safe in the raw-text `script` context; `<` cannot
+appear literally in it; non-ASCII survives in both `ensure_ascii` modes; nothing
+is escaped twice; no caller passes pre-serialised markup through it; and the
+rendered page still parses, asserted per page family.
+
+Deliberately **defence in depth**, not a bet on upstream sanitisation. Nothing
+strips `<` from a listing title on the way in or out — see the last entry under
+"Open" — so this escaping is the only control on that path. But the contract
+holds regardless of whether that stays true, because a serialiser that trusts
+its input is one refactor away from being the hole.
 
 One thing the sink enumeration ruled out that is worth stating, because the
 failure mode is silent: `templates/index.html`, `privacy.html` and `terms.html`
@@ -160,26 +223,70 @@ three parse, yielding `[Organization, MobileApplication, WebApplication]` on
 
 ---
 
-## Live today: what production actually publishes
+## The marketplace verdict — measured, and frozen
 
-Measured against `5bdf4e431`.
+This is the finding the lane was pointed at, and it is a pass. Every number
+below is from an unauthenticated `GET` against production at `5bdf4e431`, not
+from reading source.
+
+**Coverage.** All 42 URLs in `/sitemap-products.xml` fetched. 41 of 41 product
+pages carry a `Product` node; the 42nd URL is the collection page, which
+correctly carries `CollectionPage` + `ItemList` instead and no `Product`. One
+URL initially reported a TLS handshake failure and succeeded on retry — a
+transient blip, not a page defect, and recorded because an unexplained
+FETCH_FAIL in a census is indistinguishable from a missing node.
+
+| Measured across 41 live product pages | Result |
+|---|---|
+| Carry a `Product` node | 41 / 41 |
+| Single `Offer` | 38 |
+| `AggregateOffer` (range-priced) | 3 |
+| `availability: InStock` | 40 |
+| `availability` omitted (stock genuinely unknown) | 2 |
+| **Pages where the schema price is absent from the visible text** | **0** |
+| Pages carrying `brand`, `gtin`, `mpn`, `review` or `aggregateRating` | 0 |
 
 `/pulse/marketplace` — one block, `@graph` of Organization, WebSite,
 CollectionPage, ItemList (`numberOfItems` 23), BreadcrumbList.
 
-`/pulse/marketplace/163` — one block, `@graph` of Organization, WebSite,
-WebPage, Product, BreadcrumbList. The Product node is sound, and worth saying so
-explicitly since most of this document is defects:
+A representative product page, `/pulse/marketplace/163` — `@graph` of
+Organization, WebSite, WebPage, Product, BreadcrumbList, with `offers.price`
+`"30.50"` matching the `$30.50` visible on the page and being the only dollar
+amount on it.
 
-- No `brand`, no `review`, no `aggregateRating`, no `gtin`/`mpn`. The column and
-  the table do not exist, and the builder's docstring says that is why.
-- `availability` is only set when stock is actually known
-  (`services/marketplace_web.py:1445`, `if in_stock is not None`) — it fails closed to
-  omission rather than to `InStock`.
-- `offers.price` `"30.50"` matches the `$30.50` visible on the page, and is the
-  only dollar amount on it.
+**What makes the zero in that table the important row.** It is the one measured
+fact that the policy "structured data must be a true representation of the page
+content" actually turns on, and it is the opposite of the `$14.99` defect this
+document opens with. Every price claim the marketplace makes to Google is a
+price a reader can see.
 
-That is the standard the rest of the domain's structured data should be held to.
+**Availability fails closed.** `services/marketplace_web.py:1445` sets
+`availability` only `if in_stock is not None`. The two pages without it are not
+a gap — they are the guard working. `availability` is *recommended*, never
+required, so the omission costs no eligibility, whereas asserting `InStock`
+about unknown stock costs a buyer an order that cannot ship.
+
+**`AggregateOffer` where catalog state requires it, and the cost of that.** The
+three range-priced listings get `AggregateOffer` with `lowPrice`/`highPrice`
+(`services/marketplace_web.py:384` `PriceView.as_schema_offer`). `AggregateOffer`
+has **no `price` property**, so those three cannot satisfy the Merchant-listing
+required `offers.price` and are excluded from the feed. That is correct and
+deliberate: the alternative is publishing the low price as *the* price, which
+would add three feed items and be a misrepresentation. Noted explicitly because
+"three products missing from the feed" reads like a bug in a coverage report.
+
+**Provenance-sensitive seller properties.** `seller` is emitted only when
+`seller_store_name` exists; `sku` is `pulsesoc-listing-<id>`, PulseSoc's own
+identifier for its own record, which claims nothing about a manufacturer;
+`additionalProperty` is capped at 12. `brand`/`gtin`/`mpn` are structurally
+absent because the columns do not exist across all 20,247 supplier snapshots.
+
+### Frozen: do not add recommended fields for richness
+
+The verdict above is the target state, not a baseline to improve on. Everything
+absent from these nodes is *recommended only* — verified property-by-property
+against Google's current docs — so adding it buys no eligibility and every
+available value would have to be invented. More schema is not better search.
 
 ---
 
@@ -215,27 +322,115 @@ this layer because the data does not exist.
 
 ---
 
+## Closed on this branch: the app's `price: "0"`
+
+Found by turning the policy I had just cited against my own remaining nodes,
+which is the test that section should have to pass. The `MobileApplication` node
+carried an `Offer` of `price "0"` onto pages that never printed the claim.
+
+**Still not a second P0, and preserving that distinction matters.** The `$14.99`
+node was invisible *and* wrong *and* contradicted by the checkout *and* pointed
+nowhere. This was invisible and otherwise **true** — the app is genuinely free
+to download, checkable against Apple's listing, and nothing contradicts it. So
+the defect here is a *contract* defect, not a truthfulness one: the number is
+right and the page does not say it.
+
+Resolved by restricting the Offer-bearing node to the pages where the claim is
+visibly represented, rather than by changing `0` or by adding copy. Measured
+first, because the whole point is visibility:
+
+| Surface | Prints the free-download claim | Carries the `Offer` |
+|---|---|---|
+| `/app` | yes — `templates/app_landing.html:26`, 7 visible hits | yes |
+| `/features/<slug>` (all 8) | yes — `templates/feature_page.html:58`, unconditional | yes |
+| `/` | no | **no** |
+| `/features` hub | no | **no** |
+| `/pricing` and the ~87 `schema_graph` landing pages | no | **no** |
+
+Implemented as `mobile_app_schema(free_download_visible=False)` — a flag that
+**defaults to no Offer**, so a new route that forgets it fails closed to the
+truthful state rather than inheriting a claim. `bot.py` passes `True` at the two
+route call sites whose templates print the line; the `/features` hub is left
+alone deliberately, because the hub does not print it even though its children
+do.
+
+Two things made this the smallest correct solution rather than a judgement call:
+
+- **The near-miss that rules out the landing family.**
+  `templates/seo_page.html:111` says "Launch PulseSoc Free". That is a free
+  *account* claim about the web product — a different claim about a different
+  entity — and a reviewer grepping for "free" would wrongly call those pages
+  covered.
+- **It costs zero eligibility.** Google's software-app rich result requires
+  `name`, `offers.price` **and** one of `aggregateRating`/`review`. These nodes
+  deliberately carry neither a rating nor a review, so they were never eligible
+  for that result. Removing the Offer where it is invisible forfeits nothing,
+  and keeping it where it is visible forfeits nothing either.
+
+Held by `tests/test_app_schema.py::test_the_app_price_is_claimed_only_where_a_reader_can_read_it`,
+parametrized over seven routes and asserting both halves — that the claim is
+printed where expected, and that the `Offer` is present **iff** printed. A test
+that only checked the second half would pass if the visible copy were deleted.
+
+---
+
+## Agent 3's catalog contract: adopted as the authority, not force-wired
+
+Agent 3 owns catalog semantics and provenance — brand, GTIN, MPN, variant
+identity, option semantics, confidence and where each came from. Agent 5 adopts
+that as the authority for every future enrichment of these nodes. Concretely:
+**any later addition of brand, identifiers, variant identity or option meaning
+must consume Agent 3's semantics rather than independently derive them.** This
+layer has no business re-deriving a fact about a product from a column it can
+see.
+
+What this does **not** mean, and the restraint is deliberate:
+`services/business_os/catalog_semantics.py` is **not** force-wired through the
+schema builders on this branch. Agent 0 owns integration sequencing, and
+threading a new dependency through the live product renderer to achieve
+identical output is blast radius without a behaviour change. The duplicated
+fail-closed behaviour — Agent 3 refusing to assert a brand, and
+`marketplace_web.product_jsonld` structurally omitting one — stays, because both
+are truthful and the duplication costs nothing while they agree. It becomes
+worth consolidating the moment Agent 3 can supply a value, which is the point at
+which the two would otherwise diverge.
+
+---
+
+## `ProductGroup` and variants: on hold, and the hold is the decision
+
+Variants exist — 3,797 rows — and that is **not** a reason to emit
+`ProductGroup`/`hasVariant`. Doing so because the data is present is the
+"more schema" failure in its purest form, and it would require inventing most of
+what the markup asserts.
+
+Seven things have to be answered authoritatively first, and none of them is
+Agent 5's to answer:
+
+1. **Public variant identity.** `variant_key` is not a variant id: 2,571
+   distinct values across 3,797 rows, not URL-safe, and it embeds option text.
+2. **Stable grouping identity.** `item_group_id` must be stable across a
+   re-sync. Nothing today guarantees that.
+3. **Variant URL strategy.** Marketplace variant params are `opt_`-prefixed.
+   Whether a variant has its own crawlable URL is Agent 2's canonical question.
+4. **Option semantics.** Every production option is **positional** — `option1`,
+   `option2` — and PulseSoc invents the display label. Nothing establishes that
+   `option1` is colour; on some listings it is size, on others a bundle count.
+   Agent 3 owns this.
+5. **Merchant `item_group_id`** has to agree with whatever (2) resolves to.
+6. **Variant-specific availability, price and media.** A listing has two price
+   authorities already (see the Agent 11 handoff); per-variant claims multiply
+   that.
+7. **Canonical behaviour** under a variant selection — Agent 2.
+
+Until those exist, the truthful representation of a range-priced listing is one
+`Product` with an `AggregateOffer`, which is what ships. Keep it.
+
+---
+
 ## Open, not addressed on this branch
 
-- **`mobile_app_schema`'s `price: "0"` is not visible on `/`.** Found by turning
-  the policy I had just cited against my own remaining nodes, which is the test
-  that section should have to pass. The `MobileApplication` node carries an
-  `Offer` of `price "0"`, and it renders on two pages: `/app`, whose visible
-  copy says "PulseSoc is a free iPhone app", and `/`, where the word *free*
-  does not appear in the rendered text at all.
-
-  Deliberately **not** treated as a second P0, and the reasoning is the part
-  worth keeping. The `$14.99` node was invisible *and* wrong *and* contradicted
-  by the checkout *and* pointed nowhere. This is invisible and otherwise true:
-  the app is genuinely free to download, which is checkable against Apple's
-  listing, and nothing anywhere contradicts it. The policy exists to stop
-  markup from telling crawlers things the product does not do; a free app
-  described as free is not that. Worth a sentence of visible copy on the
-  homepage, not a node deletion — and that is a copy decision, not this
-  layer's.
-
-  Flagged rather than fixed because the fix is on the page, not in the schema.
-- **`bot.py:34045`** hand-writes a `WebPage` node with no `@id`, bypassing
+- **`bot.py:34051`** hand-writes a `WebPage` node with no `@id`, bypassing
   `seo/schema.py` entirely. It joins nothing in the entity graph. Low value to
   fix; recorded so it is not mistaken for a `seo.schema` output.
 - **BreadcrumbList carries no `@id`** on the live product page. Consolidation
@@ -310,14 +505,49 @@ the feed writes `<g:price>30.50 USD</g:price>` where the JSON-LD writes
 `price: "30.50"` plus `priceCurrency: "USD"`, which is the same claim in the
 two formats each surface requires.
 
+**The correction, stated permanently so it cannot drift back: THE MERCHANT FEED
+ALREADY EXISTS.** It is live, it is certified, and it is fail-closed. Your lane
+consumes Agent 3's semantics, Agent 5's structured truth, and the existing feed
+architecture. It does not build a feed.
+
+**Price and availability agreement, measured end to end.** All 36 live feed
+items checked against their own product page's `Product` node:
+
+```
+feed items: 36    price + currency agree with the page's Offer: 36
+price mismatches: 0
+availability mismatches: 0
+```
+
+**The exclusions are correct and you should preserve them.** 41 product pages,
+36 feed items, so five listings are excluded. Three (`/112`, `/89`, `/15`) are
+range-priced: `AggregateOffer` has no `price`, Merchant listings require one,
+and the feed refuses rather than publishing the low price. The others are caught
+by `marketplace_seo.price_label_contradicts_variants` — listing 36 advertised
+$38.00 against a $2.29 variant, so the row leaves the feed and keeps its
+ranking rather than both surfaces going quiet over one stale label. `/35` is
+excluded for a reason this lane did not individually pin down; it is recorded as
+unpinned rather than guessed at.
+
+**Do not increase feed coverage by lying.** Each of those five exclusions is a
+product you could add by weakening one refusal. Three of them would require
+asserting a single price for a ranged listing; the others would require
+advertising a price the buyer will not be charged.
+
 So the only live things left for you are:
 
-- Do not submit a Premium offer. There is no agreed price (999 / 1900 /
-  $14.99) and the offer URL does not resolve. The feed does not carry it today
-  — checked: no `14.99` and no "PulseSoc Premium" anywhere in it.
+- Do not submit a Premium offer. See `04_premium_price_authority.md`: there is
+  no agreed price, the display price does not exist publicly, and the charged
+  amount is a Stripe Price object this repo cannot read. The feed does not carry
+  it today — checked: no `14.99` and no "PulseSoc Premium" anywhere in it.
+- Keep `g:identifier_exists=no`. Brand, GTIN and MPN are absent from all 20,247
+  supplier snapshots, so that declaration is the truthful one and there is
+  nothing to backfill.
 - `image` is a **required** merchant-listing property, and all 36 feed images
   are on `cjdropshipping.com`, none on a PulseSoc domain (see Agent 9). The
   feed inherits that dependency and cannot detect it breaking.
+- Refuse variants. See the `ProductGroup` hold above: `item_group_id` has no
+  stable source yet.
 
 **Agent 9 (media).** `Product.image` is every URL that
 `gallery_items` (`services/marketplace_web.py:1231`) collected whose kind is
@@ -341,14 +571,77 @@ That is worth your attention because `image` is a **required** property for
 merchant listing experiences (see the readiness section). If CJ rotates a path
 or drops an asset, the node does not degrade — it fails a required property,
 and this layer will keep emitting the dead URL because it has no way to know.
-Whether product imagery should be mirrored to PulseSoc-controlled storage is
-your call, not this layer's; I am telling you the dependency exists and that
-structured data is one of the things that breaks when it does.
 
-**Agents 0, 1, 3, 8, 10–12.** Two things are worth knowing regardless of lane.
+**To be explicit, because an earlier draft of this handoff could be read as
+asking for one: this is not a request to migrate the images.** The imagery is
+crawlable today — the asset I fetched returns 200 `image/jpeg` with
+`max-age=31536000`, nothing is signature- or expiry-shaped, and "third-party
+hosted" is not by itself a defect. Media crawlability and lifecycle are your
+lane and your call. Agent 5's lane is narrower and is the only thing being
+asserted here: **whether structured data truthfully references the canonical
+visible image.**
+
+The invariant Agent 5 owns one third of:
+
+> **VISIBLE PDP HERO IMAGE = OG/TWITTER IMAGE WHERE THE CONTRACT REQUIRES IT =
+> `Product.image` STRUCTURED-DATA REFERENCE**
+
+Today that holds by construction, because all three read the same
+`gallery_items` output, and a video is filtered out rather than offered to
+schema as a product image
+(`tests/test_marketplace_storefront.py::test_a_video_is_not_offered_to_schema_as_a_product_image`).
+It would break the moment a media surface starts choosing its hero
+independently — which is a change in your lane that would silently falsify a
+claim in mine. That is the whole content of this handoff.
+
+**Agent 11 (drift detection).** You measure; do not build a second schema
+engine here. Agent 5's nodes are the reference, and the drift classes worth
+watching, in descending order of how badly they fail:
+
+| Drift | Detectable from | Status today |
+|---|---|---|
+| Visible price ≠ JSON-LD price | rendered HTML vs its own node | **no gate.** Measured true on 41/41 pages — a snapshot, not an invariant |
+| JSON-LD price ≠ Merchant feed price | page vs feed | guarded, see below |
+| Schema `url`/`mainEntityOfPage` ≠ HTML canonical | page | agrees today |
+| Structured image ≠ visible hero | page | agrees by construction (above) |
+| A private or deleted product still projecting `Product` | page | 404s before reaching the renderer |
+| Unsupported `brand` or `aggregateRating` appearing | node | gated, both renderers, as of this branch |
+| Premium price reappearing | node | gated structurally |
+
+The one that needs your attention most is the **two price authorities**, and the
+precise shape matters because it is easy to get wrong in both directions. The
+page node prices through `marketplace_web.derive_price` (variants first, then
+`price_label`); the feed prices through `marketplace_seo.parse_price`
+(`price_label` only). Those are genuinely different authorities, and on
+2026-09-29 across 123 production listings they disagreed on **85** — 82 with an
+empty label displaying a real variant price, 3 differing by up to $35.71.
+
+They nonetheless agree across all 36 live feed rows, and **that agreement is by
+design, not by luck**: `marketplace_seo.eligibility` refuses a row whose label
+does not parse *and* a row whose label contradicts its variants
+(`price_label_contradicts_variants`, `services/marketplace_seo.py:290`). The
+feed-eligible set is precisely the subset where the two authorities concur. So
+do not report the two-authority split as an open defect — it is a contained one.
+Monitor the containment: the 36/36 agreement becomes meaningless if either
+refusal is relaxed, and `price_label_contradicts_variants` fails **open** for
+callers that do not load variants, which is a deliberate choice documented in
+its own docstring.
+
+Checkout, for completeness, is **not** a third authority:
+`services/marketplace_price_authority.py` resolves checkout through
+`derive_price` for exactly this reason, and refuses rather than guessing when
+variants span a range.
+
+**Agent 12 (adversarial).** `05_agent_12_required_mutations.md` is yours:
+eighteen mutations, each of which must fail, with the four that currently have
+**no gate** named as such. Writing that list is how the live renderer's missing
+GTIN/MPN assertion was found.
+
+**Agents 0, 1, 3, 8, 10.** Two things are worth knowing regardless of lane.
 First, `seo.schema.serialise_graph` is the only sanctioned way to turn a graph
 into page output; adding a twelfth emitter with `json.dumps` reopens a property
-four commits just closed. Second, the two
+these commits just closed, and
+`tests/test_structured_data_sinks.py` will turn red when you do. Second, the two
 `bot._marketplace_public_*_response` helpers are dead rollback code — if your
 lane touches the public marketplace, check whether that rollback is still wanted
 before trusting what those functions say the page looks like.
@@ -357,15 +650,38 @@ before trusting what those functions say the page looks like.
 
 ## Gates
 
-Full protection suite: 785 checks across 57 suites, passing. Realtime-audio
-change gate: no protected path touched. No new test files, so the CI manifest is
-unchanged. Suites re-run green: `test_app_schema` (29), `test_marketplace_seo`
-(50), `test_marketplace_public_pages` (93), `test_site_identity` (7),
-`test_about_page` (15), `test_feature_pages` (119), `test_commerce_policy_pages`
-(41), `test_legal_documents_describe_the_real_product` (52),
-`protection/test_route_auth` (12), `protection/test_environment_contract` (14),
-`protection/test_sitemap_entries_are_indexable` (16).
+Full protection suite: **785 checks across 57 suites, passing.** Realtime-audio
+change gate: no protected path changed, 11 files inspected.
 
-The two tests added to `test_app_schema.py` inject a hostile value upstream
-rather than through a request, because no request can carry one into those two
-graphs. They fail on the parent commit; that is what makes them worth having.
+Structured-data suites, re-run at the branch tip: `test_structured_data_sinks`,
+`test_app_schema`, `test_marketplace_storefront`, `test_marketplace_seo`,
+`test_merchant_center_feed` — **255 passed, 44 subtests.** Page suites:
+`test_marketplace_public_pages`, `test_site_identity`, `test_feature_pages`,
+`test_app_promotion`, `test_marketplace_light_parity` — **322 passed, 15
+subtests.** Protection gates run individually: `test_route_auth`,
+`test_environment_contract`, `test_sitemap_entries_are_indexable` — 42 passed,
+45 subtests; `test_every_test_file_is_run_by_ci` — 9 passed, which is the gate
+that required declaring the new sink sentinel in `config/ci_test_manifest.json`.
+
+Run them with `/Users/hmcherie/Desktop/CoinPilotX/.venv/bin/python -m pytest`.
+System `python3` lacks the dependencies and will fake a pass by collecting
+nothing.
+
+### Falsifiability, which is the part that matters
+
+A test that cannot fail is documentation with a green tick, and three of the
+assertions on this branch guard byte-identical output. So each was proven
+against the mutation it exists to catch:
+
+- **The sink sentinel** goes red on a newly added `application/ld+json`
+  element — proven by adding and then removing `templates/_sink_probe.html`.
+- **The live renderer's identifier assertion** fails when a `gtin13` is
+  injected into `marketplace_web.product_jsonld` — proven by patching the
+  function and re-running the single test. This is the one that found a real
+  gap: before it, that mutation shipped green.
+- **The two `test_app_schema` escaping tests** inject a hostile value upstream
+  rather than through a request, because no reachable request can carry one into
+  those two graphs. They fail on the parent commit.
+- **The app-Offer visibility test** asserts both halves — claim printed where
+  expected, and `Offer` present **iff** printed — so deleting the visible copy
+  also turns it red.
