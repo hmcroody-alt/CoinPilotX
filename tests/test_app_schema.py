@@ -135,6 +135,20 @@ def test_the_app_is_advertised_at_the_price_apple_charges_for_it(graph):
 SUBSCRIPTION_PRODUCT_PAGES = ("/portfolio-intelligence", "/ai-market-analysis",
                               "/telegram-crypto-bot", "/pricing")
 
+# Every number that has been proposed as PulseSoc Premium's price, in the format
+# structured data would carry it in. The test below forbids all of them rather
+# than only the one that was live, because the failure mode it guards is not
+# "14.99 came back" -- it is someone resolving the contradiction by picking a
+# side. 9.99 is the entitlement catalogue's 999, 19.00 is the charge
+# `PULSE_PREMIUM_PRICE_CENTS` actually takes, and 14.99 is the crypto product's
+# plan that was published under the social product's name.
+#
+# The bare cent integers are deliberately not listed. Three digits collide with
+# too much -- ids, versions, pixel widths -- and a cents value is not a shape any
+# of these pages could publish as a price anyway. The structural half of this
+# test, which rejects an `offers` key outright, is what catches a malformed one.
+SUBSTITUTIONS_THAT_ARE_NOT_FIXES = ("14.99", "9.99", "19.00")
+
 
 @pytest.mark.parametrize("path", SUBSCRIPTION_PRODUCT_PAGES)
 def test_no_page_publishes_a_subscription_price_it_does_not_show_a_reader(client, path):
@@ -168,7 +182,13 @@ def test_no_page_publishes_a_subscription_price_it_does_not_show_a_reader(client
         for node in json.loads(blob).get("@graph", []):
             assert node["@type"] != "Product", \
                 f"{path} publishes a Product node; no price on this page is visible to a reader"
-        assert "14.99" not in blob, f"{path} still asserts 14.99 to a crawler"
+            assert "offers" not in node, (
+                f"{path} publishes an {node['@type']} offer; no price on this page "
+                "is visible to a reader"
+            )
+        for candidate in SUBSTITUTIONS_THAT_ARE_NOT_FIXES:
+            assert candidate not in blob, \
+                f"{path} asserts {candidate} to a crawler and to no reader"
 
 
 def test_no_rating_review_or_download_count_is_asserted_anywhere(landing):
@@ -387,6 +407,65 @@ def test_a_hostile_value_cannot_close_the_block_it_is_written_into(client, path,
     assert BREAKOUT in json.dumps(json.loads(blocks[0])), (
         f"{path} escaped the value into something other than what it was given"
     )
+
+
+def _visible_text(body):
+    stripped = re.sub(r"<script.*?</script>|<style.*?</style>", " ", body, flags=re.S)
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", stripped))
+
+
+def _app_offer(body):
+    for blob in _ld_blocks(body):
+        payload = json.loads(blob)
+        for node in payload.get("@graph", [payload]):
+            if isinstance(node, dict) and node.get("@type") == "MobileApplication":
+                return node.get("offers")
+    return None
+
+
+@pytest.mark.parametrize(
+    "path, claim_is_printed",
+    [
+        ("/app", True),
+        ("/features/calls", True),
+        ("/features/marketplace", True),
+        ("/", False),
+        ("/features", False),
+        ("/pricing", False),
+        ("/portfolio-intelligence", False),
+    ],
+)
+def test_the_app_price_is_claimed_only_where_a_reader_can_read_it(client, path, claim_is_printed):
+    """The `MobileApplication` node travels further than the claim it carries.
+
+    `price: "0"` is true, and unlike the subscription price it is checkable
+    against Apple. That is why it is not a defect of the same kind, and why the
+    fix is not to change the number. But Google's quality guidelines say "Don't
+    mark up content that is not visible to readers of the page", and on `/`,
+    `/features` and the ~87 pages `schema_graph` builds, nothing printed on the
+    page makes this offer. Those pages do print "Launch PulseSoc Free" -- a free
+    *account* on the web product, which is a different claim about a different
+    entity and the reason this cannot be decided by grepping for "free".
+
+    Both halves are asserted together on purpose. A test that only checked the
+    absence would pass if the node lost its `Offer` everywhere, which throws away
+    a true claim on the two page families that do print it.
+    """
+
+    body = client.get(path).get_data(as_text=True)
+    offer = _app_offer(body)
+    printed = "free to download" in _visible_text(body).lower()
+
+    assert printed is claim_is_printed, (
+        f"{path} now {'prints' if printed else 'does not print'} the free-download "
+        "claim; the schema flag for this route has to move with the copy"
+    )
+    if claim_is_printed:
+        assert offer and offer["price"] == "0" and offer["priceCurrency"] == "USD", \
+            f"{path} prints the claim but withholds it from the schema"
+    else:
+        assert offer is None, \
+            f"{path} offers the app at a price no reader of this page is shown"
 
 
 if __name__ == "__main__":

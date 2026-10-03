@@ -13709,7 +13709,9 @@ def app_landing_page():
         "app_landing.html",
         page=page,
         robots=search_visibility.robots_meta("/app"),
-        schema_json=seo_schema.app_page_graph(page),
+        # This page prints "Free to download" and "The app is free to download
+        # and use" in its own copy, so the schema may say price 0 too.
+        schema_json=seo_schema.app_page_graph(page, free_download_visible=True),
         screenshots=APP_LANDING_SCREENSHOTS,
         features=seo_features.cards(search_visibility.canonical_url),
     ))
@@ -13773,7 +13775,11 @@ def feature_detail_page(slug):
         "feature_page.html",
         page=page,
         robots=search_visibility.robots_meta(f"/features/{slug}"),
-        schema_json=seo_schema.app_page_graph(page, trail=_FEATURES_TRAIL),
+        # `feature_page.html` prints "Free to download, iOS 15.1 or later"
+        # unconditionally, so every slug shows the claim the Offer makes. The
+        # `/features` hub above does not, and does not get one.
+        schema_json=seo_schema.app_page_graph(page, trail=_FEATURES_TRAIL,
+                                              free_download_visible=True),
         siblings=seo_features.siblings(slug, search_visibility.canonical_url),
     ))
     response.headers["Cache-Control"] = "public, max-age=600"

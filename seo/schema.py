@@ -23,7 +23,7 @@ APP_FIRST_RELEASED = "2026-07-01"
 APP_CONTENT_RATING = "4+"
 
 
-def serialise_graph(payload, indent=None):
+def serialise_graph(payload, indent=None, ensure_ascii=False):
     """The one place a graph becomes the string a template writes out.
 
     Every caller's output lands in a raw-text ``script`` element through
@@ -35,17 +35,43 @@ def serialise_graph(payload, indent=None):
     be the one serialiser that forgot.
 
     ``\\u003c`` is ordinary JSON decoding to the same character, so a consumer
-    reads the identical string. ``ensure_ascii=False`` is kept: these graphs
-    restate text that is also visible on the page, and escaping its typographic
-    punctuation would leave the structured copy subtly different from the visible
-    one.
+    reads the identical string. The default ``ensure_ascii=False`` is deliberate:
+    these graphs restate text that is also visible on the page, and escaping its
+    typographic punctuation would leave the structured copy subtly different from
+    the visible one.
+
+    The contract this function is the sole implementation of, so that a reviewer
+    can check a change against it rather than against taste:
+
+    1. the output is valid JSON, and parses to exactly the payload given;
+    2. it is safe in the raw-text ``script`` context every caller writes into;
+    3. ``<`` cannot appear literally, so the element cannot be closed early;
+    4. non-ASCII text survives, as itself or as an escape, in both modes;
+    5. nothing is escaped twice -- a value is escaped here and nowhere else;
+    6. no caller passes pre-serialised markup through: the parameter is a Python
+       object and the only string this returns is one it built;
+    7. the rendered page still parses, which is a property of the page rather
+       than of this function and is asserted per page family in the tests.
+
+    Point 3 is defence in depth on purpose. Nothing strips ``<`` from a supplier
+    or seller title on the way into the database or on the way out of it, so this
+    is the only control standing between a hostile value and the page -- but even
+    if an upstream filter existed, this would still escape, because a serialiser
+    that trusts its input is one refactor away from being the hole.
 
     ``indent`` exists so the two node renderers that pretty-print into a page's
     own ``@graph`` can use this instead of keeping a second serialiser for the
     sake of whitespace.
+
+    ``ensure_ascii=True`` is what the marketplace storefront asks for, and it is
+    the one caller that does. It additionally escapes U+2028 and U+2029, which
+    are legal inside a JSON string and are line terminators in JavaScript. This
+    element is ``application/ld+json`` rather than executable script, so that is
+    not a vulnerability it closes -- it is a property that caller had and that
+    collapsing two serialisers into one must not silently take away.
     """
 
-    return json.dumps(payload, ensure_ascii=False, indent=indent).replace("<", "\\u003c")
+    return json.dumps(payload, ensure_ascii=ensure_ascii, indent=indent).replace("<", "\\u003c")
 
 
 def organization_schema():
@@ -108,7 +134,7 @@ def website_schema():
     }
 
 
-def mobile_app_schema():
+def mobile_app_schema(free_download_visible=False):
     """The iPhone app, described the way Apple records it.
 
     What this replaces was wrong in every field that mattered: it declared
@@ -131,9 +157,28 @@ def mobile_app_schema():
     Apple's listing. It says nothing about what a subscription costs, and no node
     in this module says that any more -- see the note where `product_schema` used
     to be for why the site publishes no subscription price at all.
+
+    `free_download_visible` is the caller's statement that the page being built
+    prints that claim where a reader can see it, and it is what gates the `Offer`.
+    The node itself travels to far more pages than the claim does: measured
+    against production on 2026-10-03, `/app` says "The app is free to download
+    and use" and each `/features/<slug>` says "Free to download, iOS 15.1 or
+    later", while `/`, `/features` and the ~87 pages built by `schema_graph` say
+    nothing of the kind. The nearest thing those pages do print, "Launch PulseSoc
+    Free", is a free *account* offer on the web product -- a different claim about
+    a different entity, which is exactly the resemblance that makes it unsafe to
+    count.
+
+    So the default is no `Offer`, and a caller has to assert the visibility to get
+    one. This costs no eligibility: Google's software-app rich result requires
+    `offers.price` *and* `aggregateRating` or `review`, and this node deliberately
+    carries neither rating nor review (see the omissions above), so no page on
+    this domain qualifies with or without the `Offer`. The price claim was
+    therefore being made only to a crawler, on pages where no reader could
+    contradict it, for nothing.
     """
 
-    return {
+    schema = {
         "@type": "MobileApplication",
         "@id": f"{SITE_URL}/#app",
         "name": "PulseSoc",
@@ -148,16 +193,18 @@ def mobile_app_schema():
         "image": SHARE_IMAGE_URL,
         "publisher": {"@id": f"{SITE_URL}/#organization"},
         "description": "PulseSoc for iPhone: posts, reels, live video, direct messages, calls, creator profiles, and a marketplace, with reporting, blocking and moderation built in.",
-        "offers": {
+    }
+    if free_download_visible:
+        schema["offers"] = {
             "@type": "Offer",
             "price": "0",
             "priceCurrency": "USD",
             "availability": "https://schema.org/InStock",
-        },
-    }
+        }
+    return schema
 
 
-def app_page_graph(page, trail=()):
+def app_page_graph(page, trail=(), free_download_visible=False):
     """The graph for the app pages, composed by hand rather than through
     `schema_graph`.
 
@@ -169,12 +216,19 @@ def app_page_graph(page, trail=()):
     `trail` is the breadcrumb between the home page and this one, so a feature
     page can say it sits under /app. Passing it explicitly rather than deriving
     it from the URL keeps the crumb honest when the two disagree.
+
+    `free_download_visible` is passed on to `mobile_app_schema` and is not
+    inferred from `trail`, even though the three current callers happen to be
+    distinguishable by it. Two of the pages this builds print the free-download
+    claim and one (`/features`) does not; a flag that reads the breadcrumb would
+    tie a claim about copy to a claim about hierarchy and silently re-enable the
+    `Offer` the next time a page is added under an existing trail.
     """
 
     graph = [
         organization_schema(),
         website_schema(),
-        mobile_app_schema(),
+        mobile_app_schema(free_download_visible=free_download_visible),
         webpage_schema(page),
         breadcrumb_schema([
             ("Home", SITE_URL + "/"),
