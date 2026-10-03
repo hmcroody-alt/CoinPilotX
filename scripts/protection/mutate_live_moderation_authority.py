@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fourteen ways to break the live-ban authority. Each must turn the suite red.
+"""Sixteen ways to break the live-ban authority. Each must turn the suite red.
 
 A green suite proves nothing on its own. This table shipped with six
 authorization readers, zero rows, and a passing test suite for its entire
@@ -18,6 +18,10 @@ Three of them attack the observability rather than the decision, because an
 authority nobody can prove fired is only half built -- and one of those three
 attacks it from the other side, firing the ban event for every audience miss.
 An event that is emitted for all denials identifies none of them.
+
+Two attack the audit trail, which is the part most likely to rot unnoticed:
+nothing in the product reads it back, so dropping the write or widening it to
+carry the private moderator note both leave every user-visible behaviour intact.
 
 The last one is not an attack on this branch's code at all. It makes the global
 abuse limiter key its buckets on the moderator instead of the request path --
@@ -139,6 +143,24 @@ MUTATIONS = [
         "Every audience miss is logged as a moderation ban. An event that fires "
         "for all denials identifies none of them, and it invents bans that a "
         "moderator never issued.",
+    ),
+    (
+        "the_ban_stops_being_audited",
+        BOT,
+        '            pulse_live_audit(\n                cur, live_id, actor_user_id,\n                "viewer_ban_already_active" if already else "viewer_ban",\n                target_user_id=target_user_id,\n                metadata={"has_reason": bool(reason)},\n            )\n',
+        "",
+        "Bans still work and nothing user-visible changes, so this is the one "
+        "mutation that could ship unnoticed -- and it leaves no record of who "
+        "removed whom, which is the whole point of a moderation audit trail.",
+    ),
+    (
+        "the_audit_row_carries_the_private_note",
+        BOT,
+        '                metadata={"has_reason": bool(reason)},',
+        '                metadata={"has_reason": bool(reason), "reason": reason},',
+        "The natural thing to put in audit metadata is the reason itself. That "
+        "copies a private trust & safety note into a second table and into every "
+        "log line that renders the audit row.",
     ),
     (
         "the_abuse_limiter_is_keyed_on_the_moderator",

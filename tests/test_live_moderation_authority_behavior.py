@@ -29,6 +29,7 @@ Three things are asserted that are easy to get wrong in the other direction:
 Runs against a temp sqlite file so nothing touches coinpilotx.db.
 """
 
+import json
 import logging
 import os
 import sqlite3
@@ -826,6 +827,96 @@ class RateLimiterCase(unittest.TestCase):
         _clear_bans()
         self.assertEqual(_post(self.client, HOST, VIEWER, "ban").status_code, 429)
         self.assertEqual(_rows(), [], "a throttled request must not reach the table")
+
+
+# =========================================================================
+# 9. The audit trail
+# =========================================================================
+
+class ModerationAuditCase(unittest.TestCase):
+    """Every decision leaves a row naming who did what to whom.
+
+    This was the last untested promise in the mission, and it was untested in
+    the way that matters: the route calls ``pulse_live_audit`` and that call
+    *looked* right, which is precisely the condition that let six authorization
+    readers ship over an empty table for the lifetime of this feature. A write
+    nobody reads back is indistinguishable from a write that silently does
+    nothing.
+
+    The audit row is also the one place the private moderator note could leak
+    by accident, because the natural thing to put in metadata is the reason
+    itself. It must carry only whether a reason was given.
+    """
+
+    def setUp(self):
+        self.client = bot.webhook_app.test_client()
+        _clear_bans()
+        _reset_rate_limits()
+        self._clear_audit()
+
+    def tearDown(self):
+        _clear_bans()
+        self._clear_audit()
+
+    def _clear_audit(self):
+        conn = _conn()
+        conn.execute("DELETE FROM pulse_live_audit_logs WHERE live_id IN (?,?)", (LIVE_A, LIVE_B))
+        conn.commit()
+        conn.close()
+
+    def _audit(self):
+        conn = _conn()
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM pulse_live_audit_logs WHERE live_id=? ORDER BY id", (LIVE_A,)
+        )]
+        conn.close()
+        return rows
+
+    def test_a_ban_is_recorded_with_actor_target_and_action(self):
+        _post(self.client, HOST, VIEWER, "ban")
+        rows = [r for r in self._audit() if r["action"] == "viewer_ban"]
+        self.assertEqual(len(rows), 1, f"a ban must leave exactly one audit row: {self._audit()}")
+        self.assertEqual(rows[0]["actor_user_id"], HOST)
+        self.assertEqual(rows[0]["target_user_id"], VIEWER)
+
+    def test_an_unban_is_recorded_as_its_own_action(self):
+        _post(self.client, HOST, VIEWER, "ban")
+        _post(self.client, HOST, VIEWER, "unban")
+        actions = [r["action"] for r in self._audit()]
+        self.assertIn("viewer_unban", actions)
+        # Reversal must not erase the ban that preceded it. An audit trail that
+        # only shows the current state cannot answer "was this person ever
+        # banned, and by whom", which is the question it exists for.
+        self.assertIn("viewer_ban", actions)
+
+    def test_a_repeat_ban_is_recorded_distinguishably(self):
+        """The second press is idempotent in the table but still a real act by a
+        real moderator, so it is recorded -- under its own action name, so that
+        counting bans does not count retries."""
+        _post(self.client, HOST, VIEWER, "ban")
+        _post(self.client, HOST, VIEWER, "ban")
+        actions = [r["action"] for r in self._audit()]
+        self.assertEqual(actions.count("viewer_ban"), 1)
+        self.assertEqual(actions.count("viewer_ban_already_active"), 1)
+
+    def test_the_audit_row_does_not_carry_the_private_note(self):
+        secret = "do-not-log-this-private-note"
+        _post(self.client, HOST, VIEWER, "ban", body={"reason": secret})
+        rows = self._audit()
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertNotIn(secret, json.dumps(row, default=str))
+        # It records *that* a reason was given, which is the auditable fact,
+        # without reproducing the reason anywhere outside the moderation table.
+        self.assertIn('"has_reason": true', rows[0]["metadata_json"].replace("'", '"').lower())
+
+    def test_a_denied_attempt_writes_no_audit_row_and_no_ban(self):
+        """A refusal is logged (LIVE_MODERATION_DENIED) but must not enter the
+        Live's audit trail as if a moderation action had occurred."""
+        response = _post(self.client, GUEST, VIEWER, "ban")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self._audit(), [])
+        self.assertEqual(_rows(), [])
 
 
 if __name__ == "__main__":
