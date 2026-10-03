@@ -22,7 +22,6 @@ helpers in `bot.py`. The shell helpers, by route count:
 | `render_template` | 27 |
 | `render_account_page` | 21 |
 | `arena_simple_page` | 17 |
-| `render_seo_landing` | 10 |
 | `pulse_page_html` | 10 |
 | `pulse_gateway_card_html` | 9 |
 | `dashboard_creator_subsystem_page` | 8 |
@@ -30,12 +29,14 @@ helpers in `bot.py`. The shell helpers, by route count:
 | `dashboard_creator_shell` | 7 |
 | `pulse_security_settings_page` | 7 |
 | `trust_public_page` | 7 |
+| `_registry_page_or_404` | 6 |
 | `dashboard_account_shell` | 6 |
 | `_verification_admin_shell` | 5 |
 | `render_ads_landing_page` | 4 |
 | `search_pages` | 4 |
 | `education_shell` | 4 |
 | `education_feature_page` | 4 |
+| `render_seo_landing` | 4 |
 
 ## Jinja templates
 

@@ -25,6 +25,16 @@ HTML_HELPERS = {
     "dashboard_account_shell", "render_ads_landing_page", "education_shell",
     "education_feature_page", "dashboard_creator_subsystem_page", "render_template",
     "_verification_admin_shell", "search_pages", "pulse_gateway_card_html",
+    # `_registry_page_or_404` wraps `render_seo_landing` behind a registry
+    # lookup for the six `/markets`, `/country-intelligence`, `/sports-edge`
+    # and `/intel` slug routes. It belongs here for the same reason
+    # `render_ads_landing_page` does: this set is read as "names that mean a
+    # route renders HTML", and it is matched against each handler's *direct*
+    # calls, so one level of indirection is enough to hide a page from it.
+    # Omitting it did not make the count stale, it made it wrong -- the six
+    # routes still served 200s with full HTML while the document recorded
+    # them as rendering nothing at all.
+    "_registry_page_or_404",
 }
 
 BANNER = (
