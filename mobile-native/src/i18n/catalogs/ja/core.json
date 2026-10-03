@@ -428,7 +428,8 @@
       "biometricFailedTitle": "生体認証ログインに失敗しました",
       "biometricFailedBody": "本人確認ができませんでした。もう一度お試しいただくか、手動でログインしてください。",
       "enableBiometricLabel": "{{method}}を有効にする",
-      "signInWithBiometric": "{{method}}でログイン"
+      "signInWithBiometric": "{{method}}でログイン",
+      "federatedDivider": "または次で続行"
     },
     "signUp": {
       "title": "アカウントを作成",
@@ -555,6 +556,18 @@
       "tagline": "あなたのネットワークが待っています。",
       "loginLogoA11y": "PulseSocのロゴ。ネイティブアクセス。あなたのネットワークが待っています。",
       "signupLogoA11y": "PulseSoc。ネイティブアクセス。"
+    },
+    "federatedSignup": {
+      "title": "あと一歩です",
+      "subtitle": "{{provider}} が本人確認を完了しました。アカウント作成の前に 2 つだけ確認させてください。",
+      "verifiedEmail": "{{provider}} が確認済み",
+      "ageConfirm": "13 歳以上です",
+      "termsAccept": "利用規約とプライバシーポリシーに同意します",
+      "emailOptIn": "PulseSoc のお知らせと最新情報を受け取る",
+      "optional": "(任意)",
+      "countryLabel": "国",
+      "countryPlaceholder": "お住まいの国",
+      "submit": "アカウントを作成"
     }
   },
   "errors": {
@@ -584,7 +597,12 @@
       "challengeRequired": "セキュリティのため、確認を完了してサインインを続けてください。",
       "emailNotConfirmed": "サインインする前にメールアドレスを確認してください。",
       "accountRestricted": "このアカウントは現在サインインできません。support@pulsesoc.com までご連絡ください。",
-      "nonProductionBackend": "このビルドは {{environment}}（{{host}}）に接続しており、アカウントは別管理です。"
+      "nonProductionBackend": "このビルドは {{environment}}（{{host}}）に接続しており、アカウントは別管理です。",
+      "providerUnavailable": "このサインイン方法は現在このデバイスでは利用できません。",
+      "providerConfigError": "PulseSoc はまだこのサインイン方法に対応していません。",
+      "invalidProviderResponse": "このサインインを確認できませんでした。もう一度お試しください。",
+      "providerLinkRequired": "そのメールアドレスは既に別のアカウントで使われています。そのアカウントにサインインして、この連携を追加してください。",
+      "federatedTicketExpired": "サインインに時間がかかりすぎました。もう一度プロバイダのボタンをタップしてください。"
     },
     "media": {
       "uploadFailed": "アップロードが完了しませんでした。もう一度お試しください。",

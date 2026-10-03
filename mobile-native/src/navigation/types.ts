@@ -1,6 +1,7 @@
 import { NavigatorScreenParams } from "@react-navigation/native";
 
 import type { BusinessOsSectionKey } from "../api/businessOs";
+import type { FederatedSignupTicket } from "../api/auth";
 import type { MarketplaceListing } from "../api/marketplace";
 import type { MarketplaceFulfillmentKind } from "../api/marketplaceFulfillment";
 
@@ -54,6 +55,16 @@ export type AuthStackParamList = {
    * were refused.
    */
   AccountRecovery: { email?: string; intent?: "password" | "verification" } | undefined;
+  /**
+   * The consent step after a provider verified somebody PulseSoc has never
+   * seen. `ticket` is the server's signed proof of that verification and the
+   * only thing that can complete the signup.
+   *
+   * It is a route param rather than stored state on purpose: it is short-lived,
+   * single-use, and belongs to exactly one attempt. Parking it anywhere
+   * persistent would create a second place a half-finished identity can live.
+   */
+  FederatedSignup: { ticket: FederatedSignupTicket };
 };
 
 export type AppTabParamList = {

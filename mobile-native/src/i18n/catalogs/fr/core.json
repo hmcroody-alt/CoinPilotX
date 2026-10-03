@@ -428,7 +428,8 @@
       "biometricFailedTitle": "Échec de la connexion biométrique",
       "biometricFailedBody": "Nous n'avons pas pu vous identifier. Réessayez ou connectez-vous manuellement.",
       "enableBiometricLabel": "Activer {{method}}",
-      "signInWithBiometric": "Se connecter avec {{method}}"
+      "signInWithBiometric": "Se connecter avec {{method}}",
+      "federatedDivider": "ou continuer avec"
     },
     "signUp": {
       "title": "Créez votre compte",
@@ -555,6 +556,18 @@
       "tagline": "Votre réseau est prêt.",
       "loginLogoA11y": "Logo PulseSoc. Accès natif. Votre réseau est prêt.",
       "signupLogoA11y": "PulseSoc. Accès natif."
+    },
+    "federatedSignup": {
+      "title": "Encore une étape",
+      "subtitle": "{{provider}} a vérifié votre identité. PulseSoc a besoin de deux réponses avant de créer votre compte.",
+      "verifiedEmail": "Vérifié par {{provider}}",
+      "ageConfirm": "J'ai 13 ans ou plus",
+      "termsAccept": "J'accepte les Conditions d'utilisation et la Politique de confidentialité",
+      "emailOptIn": "M'envoyer les actualités et nouveautés PulseSoc",
+      "optional": "(facultatif)",
+      "countryLabel": "Pays",
+      "countryPlaceholder": "Où vous résidez",
+      "submit": "Créer mon compte"
     }
   },
   "errors": {
@@ -584,7 +597,12 @@
       "challengeRequired": "Par sécurité, complétez la vérification pour continuer.",
       "emailNotConfirmed": "Confirmez votre adresse e-mail avant de vous connecter.",
       "accountRestricted": "Ce compte ne peut pas se connecter pour le moment. Contactez support@pulsesoc.com.",
-      "nonProductionBackend": "Cette version est connectée à {{environment}} ({{host}}), qui possède ses propres comptes."
+      "nonProductionBackend": "Cette version est connectée à {{environment}} ({{host}}), qui possède ses propres comptes.",
+      "providerUnavailable": "Cette option de connexion n'est pas disponible sur cet appareil pour le moment.",
+      "providerConfigError": "PulseSoc n'est pas encore configuré pour cette option de connexion.",
+      "invalidProviderResponse": "Cette connexion n'a pas pu être vérifiée. Veuillez réessayer.",
+      "providerLinkRequired": "Un compte utilise déjà cette adresse e-mail. Connectez-vous à ce compte pour associer ce fournisseur.",
+      "federatedTicketExpired": "Cette connexion a pris trop de temps. Veuillez retoucher le bouton du fournisseur."
     },
     "media": {
       "uploadFailed": "L'importation n'a pas abouti. Réessayez.",

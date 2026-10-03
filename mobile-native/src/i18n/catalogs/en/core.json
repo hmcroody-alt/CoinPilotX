@@ -428,7 +428,8 @@
       "biometricFailedTitle": "Biometric sign-in failed",
       "biometricFailedBody": "We couldn't verify you. Please try again or sign in manually.",
       "enableBiometricLabel": "Enable {{method}}",
-      "signInWithBiometric": "Sign in with {{method}}"
+      "signInWithBiometric": "Sign in with {{method}}",
+      "federatedDivider": "or continue with"
     },
     "signUp": {
       "title": "Create your account",
@@ -555,6 +556,18 @@
       "tagline": "Your network is ready.",
       "loginLogoA11y": "PulseSoc logo. Native access. Your network is ready.",
       "signupLogoA11y": "PulseSoc. Native access."
+    },
+    "federatedSignup": {
+      "title": "One more step",
+      "subtitle": "{{provider}} verified who you are. PulseSoc needs two answers before creating your account.",
+      "verifiedEmail": "Verified by {{provider}}",
+      "ageConfirm": "I am 13 or older",
+      "termsAccept": "I agree to the Terms of Service and Privacy Policy",
+      "emailOptIn": "Send me PulseSoc news and updates",
+      "optional": "(optional)",
+      "countryLabel": "Country",
+      "countryPlaceholder": "Where you are based",
+      "submit": "Create my account"
     }
   },
   "errors": {
@@ -584,7 +597,12 @@
       "challengeRequired": "For your security, confirm the challenge to continue signing in.",
       "emailNotConfirmed": "Confirm your email address before signing in.",
       "accountRestricted": "This account can't sign in right now. Contact support@pulsesoc.com.",
-      "nonProductionBackend": "This build is signed in to {{environment}} ({{host}}), which has its own separate accounts."
+      "nonProductionBackend": "This build is signed in to {{environment}} ({{host}}), which has its own separate accounts.",
+      "providerUnavailable": "That sign-in option is not available on this device right now.",
+      "providerConfigError": "PulseSoc is not set up for that sign-in option yet.",
+      "invalidProviderResponse": "That sign-in could not be verified. Please try again.",
+      "providerLinkRequired": "An account already uses that email address. Sign in to it to connect this provider.",
+      "federatedTicketExpired": "That sign-in took too long. Please tap the provider button again."
     },
     "media": {
       "uploadFailed": "That upload didn't finish. Try again.",

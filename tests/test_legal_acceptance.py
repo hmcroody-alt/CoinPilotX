@@ -224,8 +224,12 @@ def test_the_stored_source_says_which_surface_asked():
     assert set(legal_acceptance.SOURCES) == {
         "web_signup",
         "web_login",
+        "web_apple",
+        "web_google",
         "mobile_register",
         "mobile_login",
+        "mobile_apple",
+        "mobile_google",
     }, (
         "A surface was added to or removed from SOURCES. That is reviewable, not "
         "forbidden -- but the column only answers 'what was this member shown' "

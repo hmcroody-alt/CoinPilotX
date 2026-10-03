@@ -428,7 +428,8 @@
       "biometricFailedTitle": "No se pudo iniciar sesión con datos biométricos",
       "biometricFailedBody": "No pudimos verificarte. Inténtalo de nuevo o inicia sesión manualmente.",
       "enableBiometricLabel": "Activar {{method}}",
-      "signInWithBiometric": "Iniciar sesión con {{method}}"
+      "signInWithBiometric": "Iniciar sesión con {{method}}",
+      "federatedDivider": "o continúa con"
     },
     "signUp": {
       "title": "Crea tu cuenta",
@@ -555,6 +556,18 @@
       "tagline": "Tu red está lista.",
       "loginLogoA11y": "Logo de PulseSoc. Acceso nativo. Tu red está lista.",
       "signupLogoA11y": "PulseSoc. Acceso nativo."
+    },
+    "federatedSignup": {
+      "title": "Un paso más",
+      "subtitle": "{{provider}} verificó tu identidad. PulseSoc necesita dos respuestas antes de crear tu cuenta.",
+      "verifiedEmail": "Verificado por {{provider}}",
+      "ageConfirm": "Tengo 13 años o más",
+      "termsAccept": "Acepto las Condiciones del servicio y la Política de privacidad",
+      "emailOptIn": "Enviarme novedades y actualizaciones de PulseSoc",
+      "optional": "(opcional)",
+      "countryLabel": "País",
+      "countryPlaceholder": "Dónde resides",
+      "submit": "Crear mi cuenta"
     }
   },
   "errors": {
@@ -584,7 +597,12 @@
       "challengeRequired": "Por seguridad, completa la verificación para continuar.",
       "emailNotConfirmed": "Confirma tu correo electrónico antes de iniciar sesión.",
       "accountRestricted": "Esta cuenta no puede iniciar sesión ahora. Escribe a support@pulsesoc.com.",
-      "nonProductionBackend": "Esta versión se conecta a {{environment}} ({{host}}), que tiene sus propias cuentas."
+      "nonProductionBackend": "Esta versión se conecta a {{environment}} ({{host}}), que tiene sus propias cuentas.",
+      "providerUnavailable": "Esa opción de inicio de sesión no está disponible en este dispositivo en este momento.",
+      "providerConfigError": "PulseSoc aún no está configurado para esa opción de inicio de sesión.",
+      "invalidProviderResponse": "No se pudo verificar ese inicio de sesión. Inténtalo de nuevo.",
+      "providerLinkRequired": "Ya hay una cuenta que usa ese correo electrónico. Inicia sesión en ella para conectar este proveedor.",
+      "federatedTicketExpired": "Ese inicio de sesión tardó demasiado. Vuelve a tocar el botón del proveedor."
     },
     "media": {
       "uploadFailed": "Esa subida no se completó. Inténtalo de nuevo.",

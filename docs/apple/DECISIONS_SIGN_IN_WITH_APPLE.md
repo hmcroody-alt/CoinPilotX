@@ -12,6 +12,41 @@ can check it rather than trust it.
 
 ---
 
+## SUPERSEDED IN PART — read this first (2026-10-03)
+
+This is now implemented, and **two of the decisions below were reversed during
+implementation.** The document is kept because its reasoning is the record of
+why, but it must not be used as a specification:
+
+1. **Decision 3 is reversed.** It mandates auto-linking a provider identity onto
+   an existing account when the provider asserts a verified, non-relay email
+   that matches it. That is the account-takeover branch, it is now forbidden
+   absolutely, and the shipped code refuses it with `account_link_required`.
+   The argument that overturns it is in Decision 3 itself, below.
+2. **Decision 1 is superseded in form, not in substance.** It argued for a route
+   separate from `/api/mobile/auth/login`, which was right; it proposed
+   `/api/mobile/auth/apple`, which was not. The shipped route is
+   `POST /api/mobile/auth/federated` (`bot.py:10301`), provider-generic, because
+   Google arrived immediately afterwards and a per-provider route would have
+   meant two copies of the restriction, legal-acceptance and session logic --
+   which is how the two providers drift into two different security postures.
+
+3. **One thing this document does not cover at all: replay.** It treats a
+   verified token as a safe credential, and a verified token is a *bearer*
+   credential whose signature, issuer, audience and expiry stay valid on every
+   presentation. The nonce does not close that gap on either provider, and on
+   native Google it cannot: `@react-native-google-signin` v16.1.5 has no nonce
+   field at all. The defence, the measurements behind it, and the reason there
+   must be exactly one of them are in
+   **`docs/identity/native_credential_replay.md`** -- read that before adding
+   any single-use or idempotency mechanism to a sign-in path.
+
+Everything else -- the separate identity table with `UNIQUE (provider,
+provider_subject)`, server-side token verification, "resolve by `sub` first,
+always", the account outliving the email -- was built as written here.
+
+---
+
 ## The starting position: greenfield, and that is unusual
 
 There is **no Apple sign-in code anywhere** — no `expo-apple-authentication` in
@@ -143,7 +178,55 @@ here.
 
 ---
 
-## Decision 3 — link to an existing account **only** on a verified, non-relay email match
+## Decision 3 — ~~link to an existing account on a verified, non-relay email match~~ REVERSED
+
+> **REVERSED 2026-10-03, during implementation.** The table below says to link a
+> provider identity onto an existing PulseSoc account when Apple asserts a
+> verified, non-relay address matching it. The shipped code refuses that, on both
+> surfaces, with `account_link_required`
+> (`bot.py:10349`, `services/external_identity.py:430`).
+>
+> **What the decision got wrong.** Its justification is that "Apple is the
+> authority for the address it is asserting and it tells you whether it verified
+> it." That is true and it is not the question. Apple verifying the address
+> establishes one fact -- that whoever just authorised controls that mailbox
+> *today*. Linking requires a different fact: that they are the person who
+> registered the PulseSoc account carrying it. The decision treats those as the
+> same fact.
+>
+> They come apart because **PulseSoc never proves the email on an account.**
+> `account_login_restriction_message` (`bot.py:5350`) gates login on
+> `account_status`, `login_enabled` and `access_enabled` -- and nothing else. No
+> email-verification state is consulted anywhere on the login path, and
+> `users.email` has no UNIQUE constraint (noted below). So any address can be
+> typed into a PulseSoc registration by anyone, and the resulting account works
+> fully, forever, unverified.
+>
+> That makes the collision case concrete rather than theoretical. An attacker
+> registers a PulseSoc account using someone else's address -- unverified,
+> because nothing asks -- and keeps the password. The real owner of that mailbox
+> later taps Continue with Apple. Under the reversed-away policy, Apple's
+> verification is accepted as proof and their identity is bound into **the
+> attacker's** account. The attacker still holds the password, so the result is
+> not a takeover of the victim's data; it is worse-shaped than that. The victim
+> is placed inside an account somebody else controls and continues using it,
+> posting into it, and attaching payment details to it, while the attacker reads
+> everything. Nothing about the flow looks wrong to either party.
+>
+> The relay row was reasoned correctly for exactly this reason -- "an existing
+> account already holding one is far more likely to be an attacker who registered
+> it than a coincidence" -- and the mistake was failing to see that the argument
+> does not depend on the address being a relay. It depends on PulseSoc's copy of
+> the address being unproven, which is true of every address it stores.
+>
+> The shipped behaviour on a collision is to refuse and tell the member to sign in
+> with their password and connect the provider from Account Settings. That path
+> proves both halves: the password proves the PulseSoc account, the provider
+> assertion proves the provider account, and the same human demonstrably held
+> both. It is one extra step for a genuine member and a wall for everyone else.
+>
+> `docs/parity` and the surviving half of this document still apply. The rest of
+> this section is kept as written for the record.
 
 This is the one-way door and the only genuine security decision in the set.
 
