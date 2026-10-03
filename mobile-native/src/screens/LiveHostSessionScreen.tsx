@@ -22,6 +22,7 @@ import * as Haptics from "expo-haptics";
 import {
   endLive,
   confirmHostLivePublish,
+  banViewer,
   getLiveRtcToken,
   getLiveState,
   liveWebUrl,
@@ -429,14 +430,59 @@ export function LiveHostSessionScreen({ route, navigation }: NativeStackScreenPr
     [liveId]
   );
 
+  /**
+   * Take someone off stage and stop them coming back.
+   *
+   * Remove and ban are genuinely different, so they are offered as separate
+   * choices rather than one button that quietly does both. Remove ends the
+   * guest slot; nothing stops the person asking to come back on, which is the
+   * right behaviour for a slip of the tongue. Ban additionally writes a
+   * decision the server's own entry checks consult, so the next token mint,
+   * join, co-host request and invite are all refused.
+   *
+   * The copy says "can't rejoin", not "removed instantly", because that is
+   * what the stack can actually do: a realtime token already in the viewer's
+   * hands stays valid until it expires and there is no kick API here. A
+   * confirmation promising immediate ejection would be a promise the product
+   * cannot keep, and the host would read the delay as the ban having failed.
+   */
+  const banGuest = useCallback(
+    async (guest: LiveGuest) => {
+      setBusyGuestId(guest.guestId);
+      try {
+        await removeGuest(liveId, guest.guestId);
+        await banViewer(liveId, guest.userId);
+        setActiveGuests((current) => current.filter((item) => item.guestId !== guest.guestId));
+      } catch (error) {
+        Alert.alert("Could not ban", error instanceof Error ? error.message : "Please try again.");
+      } finally {
+        setBusyGuestId(0);
+      }
+    },
+    [liveId]
+  );
+
   const confirmRemoveGuest = useCallback(
     (guest: LiveGuest) => {
       Alert.alert("Remove guest?", `Remove ${guest.displayName} from the broadcast? They stop publishing immediately.`, [
         { text: "Cancel", style: "cancel" },
-        { text: "Remove", style: "destructive", onPress: () => moderateGuest(guest, "remove").catch(() => undefined) }
+        { text: "Remove", style: "destructive", onPress: () => moderateGuest(guest, "remove").catch(() => undefined) },
+        {
+          text: "Remove & ban",
+          style: "destructive",
+          onPress: () =>
+            Alert.alert(
+              "Ban from this live?",
+              `${guest.displayName} can't rejoin this broadcast. It only applies to this live — it isn't a block, and it doesn't carry over to your next one.`,
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Ban", style: "destructive", onPress: () => banGuest(guest).catch(() => undefined) }
+              ]
+            )
+        }
       ]);
     },
-    [moderateGuest]
+    [moderateGuest, banGuest]
   );
 
   const toggleMic = useCallback(() => {
