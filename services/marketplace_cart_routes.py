@@ -1404,6 +1404,7 @@ def cart_checkout():
         if below_minimum:
             return _error(below_minimum["message"], below_minimum["status"],
                           code=below_minimum["code"], total_cents=total_minor,
+                          retryable=below_minimum["retryable"], cta=below_minimum["cta"],
                           minimum_charge_cents=below_minimum["minimum_minor"])
 
         # §22. The last point at which refusing is still free. `_line_state` above
@@ -1742,8 +1743,14 @@ def cart_checkout():
                 metadata_json=json.dumps({"error": str(exc), "trace_id": trace_id,
                                           "provider_error": classified["provider_error"]}, default=str),
             )
+            # `retryable`/`cta` ride alongside the code rather than replacing it.
+            # The code is a closed union on the native client, so a failure whose
+            # retryability differs from its code-mates — an idempotency burn and
+            # a malformed request are both PAYMENT_CONFIGURATION_ERROR and are
+            # opposites — can only be told apart by a separate field.
             return _error(classified["message"], classified["status"],
                           code=classified["code"], trace_id=trace_id, transaction_ids=tx_ids,
+                          retryable=classified["retryable"], cta=classified["cta"],
                           provider_error=classified["provider_error"])
 
     def handler(cur, conn):

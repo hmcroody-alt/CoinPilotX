@@ -599,6 +599,7 @@ def offer_checkout(offer_id: int):
         if below_minimum:
             return _error(below_minimum["message"], below_minimum["status"],
                           code=below_minimum["code"], amount_cents=amount,
+                          retryable=below_minimum["retryable"], cta=below_minimum["cta"],
                           minimum_charge_cents=below_minimum["minimum_minor"])
 
         details_ok, details = marketplace_fulfillment.validate_details(
@@ -938,6 +939,7 @@ def offer_checkout(offer_id: int):
             checkout_identity.release(cur, user_id=buyer_id, key=attempt)
             return _error(classified["message"], classified["status"],
                           code=classified["code"], trace_id=trace_id, transaction_id=tx_id,
+                          retryable=classified["retryable"], cta=classified["cta"],
                           provider_error=classified["provider_error"])
 
     return _with_db(handler)

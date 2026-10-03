@@ -8,15 +8,28 @@ only in a server log the app owner cannot easily read. When the live key is
 misconfigured, or a transfer is routed to an account Stripe will not accept, the
 buyer and the owner saw the same dead end and no next move.
 
-This module turns the caught exception into a stable, machine-readable triple:
+This module turns the caught exception into a stable, machine-readable
+descriptor:
 
     - ``code``    canonical error code the native client already maps to copy
                   (PAYMENT_CONFIGURATION_ERROR, PAYMENT_FAILED, NETWORK_ERROR,
                   PAYMENT_UNAVAILABLE)
     - ``status``  the HTTP status that matches that class of failure
+    - ``message`` buyer-facing copy, honest about whether retrying can work
+    - ``retryable`` whether the buyer's next identical tap could succeed
+    - ``cta``     what a buyer-facing surface may do with the refusal:
+                  ``CTA_RETRY`` (keep offering payment) or ``CTA_BLOCKED``
+                  (stop offering it)
     - ``provider_error``  a *non-sensitive* {type, code, param} fingerprint of
                   the Stripe error, safe to return to the client so the failing
                   stage is visible on the next tap without a log dive
+
+``retryable``/``cta`` were added after the October 2026 incident, in which the
+first three fields were not enough. A buyer saw a refusal and an active
+"Continue to secure payment" button on the same screen, because the server never
+said which of the two it meant and the client defaulted to "offer payment
+again". A refusal that does not carry its own verdict gets one invented at the
+far end.
 
 It never returns the provider's raw message or any secret. Stripe is detected by
 duck-typing (class name + attributes) so this module has no import dependency on
@@ -36,30 +49,96 @@ from typing import Any
 
 # Canonical, buyer-facing copy. Every message ends by reassuring the buyer that
 # nothing was charged, because a failed checkout must never read like a charge.
-_CONFIG_MESSAGE = "Payments are temporarily unavailable. No card was charged."
+#
+# That reassurance is only sayable here because every failure this module
+# classifies is raised *while opening* a payment surface — a Checkout Session or
+# a PaymentIntent — and neither is a charge. A failure after a payment has
+# succeeded is not this module's to describe, and must never borrow this copy:
+# the webhook is the authority on a completed payment, not an exception handler.
 _DECLINE_MESSAGE = "Your card could not be charged. No card was charged."
 _NETWORK_MESSAGE = "We couldn't reach the payment network. No card was charged."
 _GENERIC_MESSAGE = "Checkout could not be created. No card was charged."
 
-# Stripe error class name -> (code, http_status, message). Matched on
-# ``type(exc).__name__`` so no import of ``stripe`` is required here.
-_STRIPE_CLASS_MAP: dict[str, tuple[str, int, str]] = {
+# "Payments are temporarily unavailable. No card was charged." used to answer
+# every one of the four configuration-shaped failures below. It is the string a
+# real buyer read nine times across five hours in October 2026 while payments
+# were, in fact, entirely available — Stripe was healthy, the seller was
+# chargeable, the card rail was live, and the only thing wrong was that our own
+# idempotency key had been burned against different parameters.
+#
+# Two separate dishonesties, which is why it is now two strings:
+#
+# "temporarily" invited a retry that could never succeed, for the failures where
+# retrying genuinely cannot help. "payments are unavailable" blamed the rail for
+# a fault in one order's setup. A buyer cannot act on either, and the first one
+# actively cost this buyer five hours.
+_SETUP_RETRY_MESSAGE = (
+    "We couldn't open secure payment. No card was charged. Please try again."
+)
+_SETUP_BLOCKED_MESSAGE = (
+    "We couldn't open secure payment for this order, and trying again will not "
+    "help. No card was charged. We've been notified and are looking into it."
+)
+
+#: The two things a buyer-facing surface may do with a refusal.
+#:
+#: Deliberately not the longer vocabulary §18 suggests. The states that belong
+#: on a *button* are only the ones that change what the button does, and nothing
+#: here distinguishes OUT_OF_STOCK from DESTINATION_UNAVAILABLE in that respect
+#: — both are "this will not work, stop offering it". The richer domain states
+#: already exist upstream, as the pre-flight verdicts the cart renders per line
+#: and per group; duplicating them in this module would be a second, lesser
+#: implementation of a decision already made somewhere better.
+CTA_RETRY = "retry"
+CTA_BLOCKED = "blocked"
+
+# Stripe error class name -> (code, http_status, message, retryable, cta).
+# Matched on ``type(exc).__name__`` so no import of ``stripe`` is required here.
+#
+# ``retryable`` hangs off the *cause*, not off ``code``, and it has to.
+# ``IdempotencyError`` and ``InvalidRequestError`` are both
+# PAYMENT_CONFIGURATION_ERROR and they are opposites: the first is our own key
+# management and clears on the next attempt, the second is a request Stripe will
+# refuse identically forever. A retryability lookup keyed on the code could not
+# tell them apart, and would have to be wrong about one of them. This is §26's
+# chain read in the order it actually flows — internal cause, then domain error,
+# then retryable? — rather than treating the code as the primary key.
+#
+# The codes themselves are deliberately unchanged. They are a closed union in
+# `mobile-native/src/api/marketplaceErrors.ts` with a copy map beside it, so a
+# new code would fall outside the union and lose its copy on a client that
+# cannot be updated in step with the server. PAYMENT_CONFIGURATION_ERROR is
+# therefore a slightly wrong *name* for the idempotency case, kept because it is
+# the right *wire value*; `retryable` carries the meaning the name does not.
+_STRIPE_CLASS_MAP: dict[str, tuple[str, int, str, bool, str]] = {
     # Bad / missing / wrong-mode API key — the classic "live key not wired" case.
-    "AuthenticationError": ("PAYMENT_CONFIGURATION_ERROR", 503, _CONFIG_MESSAGE),
+    # Nobody's thumb fixes a secret key.
+    "AuthenticationError": (
+        "PAYMENT_CONFIGURATION_ERROR", 503, _SETUP_BLOCKED_MESSAGE, False, CTA_BLOCKED),
     # Key lacks permission for the account (e.g. Connect on_behalf_of).
-    "PermissionError": ("PAYMENT_CONFIGURATION_ERROR", 503, _CONFIG_MESSAGE),
+    "PermissionError": (
+        "PAYMENT_CONFIGURATION_ERROR", 503, _SETUP_BLOCKED_MESSAGE, False, CTA_BLOCKED),
     # Malformed request: e.g. transfer_data.destination to a non-chargeable
-    # account, or an amount/currency the account cannot accept.
-    "InvalidRequestError": ("PAYMENT_CONFIGURATION_ERROR", 400, _CONFIG_MESSAGE),
-    "IdempotencyError": ("PAYMENT_CONFIGURATION_ERROR", 400, _CONFIG_MESSAGE),
-    # An actual card decline surfaced at intent/session creation.
-    "CardError": ("PAYMENT_FAILED", 402, _DECLINE_MESSAGE),
+    # account, or an amount/currency the account cannot accept. The same request
+    # will be refused the same way every time.
+    "InvalidRequestError": (
+        "PAYMENT_CONFIGURATION_ERROR", 400, _SETUP_BLOCKED_MESSAGE, False, CTA_BLOCKED),
+    # Our own key reused against changed parameters — the October 2026 incident.
+    # Entirely retryable, and the one failure in this table that was *caused* by
+    # being described as un-retryable: the buyer was told to wait for payments to
+    # come back while the only broken thing was a key they could have stepped
+    # past immediately.
+    "IdempotencyError": (
+        "PAYMENT_CONFIGURATION_ERROR", 400, _SETUP_RETRY_MESSAGE, True, CTA_RETRY),
+    # An actual card decline surfaced at intent/session creation. Another card,
+    # or the same card once the issuer is satisfied, is a real next move.
+    "CardError": ("PAYMENT_FAILED", 402, _DECLINE_MESSAGE, True, CTA_RETRY),
     # Transient reachability / throttling — a retry is reasonable.
-    "APIConnectionError": ("NETWORK_ERROR", 503, _NETWORK_MESSAGE),
-    "RateLimitError": ("NETWORK_ERROR", 503, _NETWORK_MESSAGE),
+    "APIConnectionError": ("NETWORK_ERROR", 503, _NETWORK_MESSAGE, True, CTA_RETRY),
+    "RateLimitError": ("NETWORK_ERROR", 503, _NETWORK_MESSAGE, True, CTA_RETRY),
     # Base class / anything else Stripe-shaped we didn't name explicitly.
-    "StripeError": ("PAYMENT_UNAVAILABLE", 502, _GENERIC_MESSAGE),
-    "APIError": ("PAYMENT_UNAVAILABLE", 502, _GENERIC_MESSAGE),
+    "StripeError": ("PAYMENT_UNAVAILABLE", 502, _GENERIC_MESSAGE, True, CTA_RETRY),
+    "APIError": ("PAYMENT_UNAVAILABLE", 502, _GENERIC_MESSAGE, True, CTA_RETRY),
 }
 
 
@@ -116,7 +195,8 @@ def below_minimum_charge_error(amount_minor: Any, currency: str) -> dict[str, An
     """``None`` when the total is chargeable, else a buyer-safe descriptor.
 
     Shaped like :func:`classify_provider_exception` — ``code``/``status``/
-    ``message`` — so the three checkout lanes answer both failures the same way.
+    ``message``/``retryable``/``cta`` — so the three checkout lanes answer both
+    failures the same way.
     """
     floor = minimum_charge_minor(currency)
     amount = int(amount_minor or 0)
@@ -129,6 +209,13 @@ def below_minimum_charge_error(amount_minor: Any, currency: str) -> dict[str, An
             f"This order total is below {format_minor(floor, currency)}, the smallest "
             "amount card payments accept. No card was charged."
         ),
+        # The clearest non-retryable case in the module, and the one the
+        # docstring above already described in prose before anything acted on
+        # it: the same tap fails forever, because the floor is the card
+        # networks' and not ours. A buyer whose only route forward is to add
+        # another item must not be handed a button that re-asks the question.
+        "retryable": False,
+        "cta": CTA_BLOCKED,
         "minimum_minor": floor,
         "amount_minor": amount,
         "currency": str(currency or "USD").upper(),
@@ -201,7 +288,7 @@ def _mro_names(exc: Exception) -> list[str]:
     return [cls.__name__ for cls in type(exc).__mro__]
 
 
-def _match_stripe_class(exc: Exception) -> tuple[str, int, str] | None:
+def _match_stripe_class(exc: Exception) -> tuple[str, int, str, bool, str] | None:
     """First named Stripe class in the MRO, so a subclass of ``CardError`` is
     still treated as a card error rather than falling through to generic."""
     for name in _mro_names(exc):
@@ -228,22 +315,40 @@ def _looks_like_stripe_error(exc: Exception) -> bool:
 def classify_provider_exception(exc: Exception) -> dict[str, Any]:
     """Map a caught checkout exception to a buyer-safe error descriptor.
 
-    Returns a dict with ``code``, ``status``, ``message`` and ``provider_error``.
-    ``provider_error`` is ``{type, code, param}`` and never includes the raw
-    message or any credential.
+    Returns ``code``, ``status``, ``message``, ``retryable``, ``cta`` and
+    ``provider_error``. ``provider_error`` is ``{type, code, param}`` and never
+    includes the raw message or any credential.
+
+    ``retryable``/``cta`` exist because without them the client had to infer
+    retryability from the copy, and inferred wrongly: a buyer-facing surface read
+    "Payments are temporarily unavailable" and kept an active payment CTA beside
+    it for a failure that could not succeed. The verdict is the server's to make
+    — it is the only party that knows which stage failed — so it now travels on
+    the wire instead of being guessed at the far end.
     """
     name = type(exc).__name__
     mapped = _match_stripe_class(exc)
-    code, status, message = mapped if mapped else ("", 0, "")
+    code, status, message, retryable, cta = (
+        mapped if mapped else ("", 0, "", True, CTA_RETRY))
 
     if not code:
         if _looks_like_stripe_error(exc):
             # Stripe-shaped but an unnamed subclass — treat as a provider outage.
             code, status, message = "PAYMENT_UNAVAILABLE", 502, _GENERIC_MESSAGE
+            retryable, cta = True, CTA_RETRY
         else:
             # Not a provider error at all (a bug in our own code path). Preserve
             # the prior contract: opaque 500, PAYMENT_UNAVAILABLE.
+            #
+            # Retryable, which is not the obvious answer for "we crashed" but is
+            # the correct one, and the incident is the proof. Its first cause was
+            # exactly this branch — an `AttributeError` reading `.get` off a
+            # Stripe resource — and the buyer's next tap was capable of
+            # succeeding every single time. What stopped it was a second defect,
+            # not this one. Calling our own crash non-retryable would take the
+            # one move that worked away from the next buyer it happens to.
             code, status, message = "PAYMENT_UNAVAILABLE", 500, _GENERIC_MESSAGE
+            retryable, cta = True, CTA_RETRY
 
     provider_error = {
         "type": name,
@@ -254,5 +359,7 @@ def classify_provider_exception(exc: Exception) -> dict[str, Any]:
         "code": code,
         "status": status,
         "message": message,
+        "retryable": retryable,
+        "cta": cta,
         "provider_error": provider_error,
     }

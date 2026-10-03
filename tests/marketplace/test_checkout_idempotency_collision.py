@@ -900,6 +900,49 @@ def test_a_refused_expiry_still_reports_the_original_failure_to_the_buyer(buyer)
     assert "no such checkout" not in str(body.get("message") or "").lower()
 
 
+def test_the_no_charge_reassurance_is_made_true_by_the_path_that_says_it(buyer):
+    """§21. The sentence is only sayable because the same path enforces it.
+
+    Every buyer message in the taxonomy ends "No card was charged." At the
+    moment that sentence is composed, Stripe may already hold a payable session
+    for this order. That is not hypothetical — it is tx 33: session
+    ``cs_live_a1VRI9H7…`` was created, the very next line raised, and the buyer
+    was told nothing had been charged. The claim was true when written and is
+    still true today, but *only because nobody ever opened the URL*.
+
+    "Nobody found it" is not a guarantee a server gets to offer. So the claim
+    and its enforcement are asserted together: if the response tells this buyer
+    no card was charged, the same request must have expired the session capable
+    of making that false. Either both or neither — a reassurance whose
+    enforcement has been removed is the §21 defect, and it is invisible to every
+    other test in this file, each of which checks only one of the two halves.
+    """
+    client, listing_id, seller_id, buyer_id, physical_listing_id = buyer
+    _forget_claims(buyer_id)
+    _seed_one_line(client, listing_id)
+
+    stub = IdempotentStripeStub()
+    with card_rail(stub), provider_read_fails_on("url"):
+        failed = _checkout(client, seller_id)
+
+    assert failed.status_code >= 400, "the injected failure did not fail the attempt"
+    # Without a created session this test would pass vacuously on the
+    # no-orphan path, proving nothing about the pairing it is named for.
+    assert len(stub.created) == 1, "the fixture did not get a session created"
+    orphan = stub.created[0]["id"]
+
+    message = str((failed.get_json() or {}).get("message") or "")
+    claims_no_charge = "no card was charged" in message.lower()
+    assert claims_no_charge, (
+        "the post-create failure no longer tells the buyer whether their money "
+        f"moved, which is the only question they have; message={message!r}")
+    assert stub.expired == [orphan], (
+        f"the buyer was told {message!r} while session {orphan} was left "
+        f"payable at Stripe, so the reassurance is a claim this server cannot "
+        f"honour -- anyone reaching that URL could still pay a failed order "
+        f"holding no stock; expired={stub.expired}")
+
+
 # --------------------------------------------------------------------------
 # The accepted-offer lane — the same defect, mirror-imaged
 # --------------------------------------------------------------------------
@@ -1254,23 +1297,38 @@ def test_mutation_the_stub_ignores_the_key_when_comparing_parameters():
            _canonical({"idempotency_key": "b", "mode": "payment"})
 
 
-def test_mutation_an_idempotency_error_really_classifies_as_the_incident_copy():
-    """Pins the message the buyer actually saw to the exception that caused it.
+def test_an_idempotency_error_is_no_longer_reported_as_a_payments_outage():
+    """The incident's copy, pinned to the exception that produced it.
 
-    This is what makes the taxonomy work (handled separately) a change with a
-    test behind it rather than a copy edit: today an ``IdempotencyError`` — our
-    own key-management bug, entirely retryable — is reported as a provider
-    outage.
+    Written in the root-cause commit asserting the *old* string, deliberately,
+    so that the taxonomy change which followed would be a change with a test
+    behind it rather than a copy edit. This is that change: the assertion is now
+    inverted, and the old string is pinned as the thing that must never come
+    back.
+
+    Nine times across five hours this exception answered a healthy Stripe, a
+    chargeable seller and a live card rail with "payments are temporarily
+    unavailable". Both halves were false and the buyer could act on neither.
     """
     from services.marketplace_payment_errors import classify_provider_exception
 
     classified = classify_provider_exception(
         stripe.error.IdempotencyError("Keys for idempotent requests ..."))
 
+    # The wire value is unchanged on purpose — it is a closed union on the
+    # native client, so a new code would arrive with no copy behind it.
     assert classified["code"] == "PAYMENT_CONFIGURATION_ERROR"
-    assert classified["message"] == (
-        "Payments are temporarily unavailable. No card was charged.")
     assert classified["provider_error"]["type"] == "IdempotencyError"
+
+    assert classified["message"] != (
+        "Payments are temporarily unavailable. No card was charged.")
+    assert "temporarily unavailable" not in classified["message"]
+
+    # The substance, not the wording: this is our own key management failing,
+    # and the buyer's very next tap could have succeeded every single time.
+    assert classified["retryable"] is True
+    assert classified["cta"] == "retry"
+    assert "No card was charged." in classified["message"]
 
 
 # --------------------------------------------------------------------------

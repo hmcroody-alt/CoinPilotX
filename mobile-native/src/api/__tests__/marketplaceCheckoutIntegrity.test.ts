@@ -3,7 +3,8 @@ import {
   marketplaceListingFulfillment,
   marketplaceListingPriceMinor
 } from "../marketplaceBuyerPresentation";
-import { buyerErrorCopy } from "../marketplaceErrors";
+import { buyerCanRetry, buyerErrorCopy } from "../marketplaceErrors";
+import type { MarketplaceErrorCode } from "../marketplaceErrors";
 import { PulseApiError } from "../pulseApi";
 import type { MarketplaceListing } from "../marketplace";
 import parity from "./fixtures/priceLabelParity.json";
@@ -103,14 +104,81 @@ describe("checkout failures name the buyer's next move", () => {
     );
   });
 
-  it("separates a card decline from the platform being misconfigured", () => {
-    // Both used to arrive as one hard-coded 500 from Buy Now. They call for
-    // opposite moves: try another card, versus wait — so they must not share
-    // a sentence.
+  it("separates a card decline from a payment surface that would not open", () => {
+    // Both used to arrive as one hard-coded 500 from Buy Now, and they call for
+    // different moves — try another card, versus nothing the buyer can do — so
+    // they must not share a sentence.
     const declined = new PulseApiError("Your card could not be charged.", 402, "PAYMENT_FAILED");
-    const misconfigured = new PulseApiError("Payments are temporarily unavailable.", 400, "PAYMENT_CONFIGURATION_ERROR");
+    const misconfigured = new PulseApiError("...", 400, "PAYMENT_CONFIGURATION_ERROR");
 
     expect(buyerErrorCopy(declined, "fallback")).toBe("Your card could not be charged. No card was charged.");
-    expect(buyerErrorCopy(misconfigured, "fallback")).toBe("Payments are temporarily unavailable. No card was charged.");
+    expect(buyerErrorCopy(misconfigured, "fallback")).toBe(
+      "We couldn't open secure payment for this order. No card was charged."
+    );
+  });
+
+  it("never tells a buyer that payments are temporarily unavailable", () => {
+    // The exact string a real buyer read nine times across five hours in
+    // October 2026, while Stripe was healthy, the seller was chargeable and the
+    // card rail was live. Both halves were false: payments were available, and
+    // the fault was not temporary — our idempotency key had been burned against
+    // changed parameters and would refuse that buyer for 24 hours.
+    //
+    // Pinned across every code rather than just the one that carried it,
+    // because the sentence's appeal is that it is vague enough to fit anywhere.
+    const codes: MarketplaceErrorCode[] = [
+      "PAYMENT_UNAVAILABLE",
+      "PAYMENT_CONFIGURATION_ERROR",
+      "PAYMENT_FAILED",
+      "ORDER_TOTAL_BELOW_MINIMUM",
+      "NETWORK_ERROR"
+    ];
+    for (const code of codes) {
+      const copy = buyerErrorCopy(new PulseApiError("...", 400, code), "fallback");
+      expect(copy).not.toMatch(/temporarily/i);
+    }
+  });
+
+  describe("buyerCanRetry", () => {
+    // §20. The verdict is the server's; this only asks that the client reads it
+    // rather than inferring it from prose. Inferring it from prose is what
+    // produced the incident screenshot — a refusal rendered beside an active
+    // "Continue to secure payment" button.
+    it("keeps the CTA for a failure the server calls retryable", () => {
+      const burned = new PulseApiError("...", 400, "PAYMENT_CONFIGURATION_ERROR", {
+        retryable: true,
+        cta: "retry"
+      });
+      expect(buyerCanRetry(burned)).toBe(true);
+    });
+
+    it("removes the CTA for a failure the server calls blocked", () => {
+      // Same code as the case above, opposite verdict. That pair is the whole
+      // reason the verdict is a separate field: PAYMENT_CONFIGURATION_ERROR
+      // covers both our own burned key (retryable) and a bad API key (not), and
+      // no amount of reading the code can separate them.
+      const misconfigured = new PulseApiError("...", 503, "PAYMENT_CONFIGURATION_ERROR", {
+        retryable: false,
+        cta: "blocked"
+      });
+      expect(buyerCanRetry(misconfigured)).toBe(false);
+    });
+
+    it("falls back to offering a retry when the server sends no verdict", () => {
+      // An older deployment, or a failure raised outside the checkout lanes.
+      // Defaulting to `true` means this function can only ever remove a CTA
+      // that should not have been offered, never withhold a legitimate one.
+      expect(buyerCanRetry(new PulseApiError("...", 500, "PAYMENT_UNAVAILABLE"))).toBe(true);
+      expect(buyerCanRetry(new Error("boom"))).toBe(true);
+      expect(buyerCanRetry(undefined)).toBe(true);
+    });
+
+    it("reads cta when retryable is absent, and ignores a non-boolean verdict", () => {
+      // `details` is whatever JSON the server sent, so neither field is
+      // guaranteed to have the type it should.
+      expect(buyerCanRetry(new PulseApiError("...", 400, "PAYMENT_FAILED", { cta: "blocked" }))).toBe(false);
+      expect(buyerCanRetry(new PulseApiError("...", 400, "PAYMENT_FAILED", { cta: "retry" }))).toBe(true);
+      expect(buyerCanRetry(new PulseApiError("...", 400, "PAYMENT_FAILED", { retryable: "no" }))).toBe(true);
+    });
   });
 });

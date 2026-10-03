@@ -68,6 +68,8 @@ import contextlib
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -1339,9 +1341,11 @@ def test_a_failed_session_restores_the_form_and_never_reports_a_failed_payment()
     # Without this the helper could sit in the window unreferenced while the
     # catch path emitted a bare `err.message`, and every assertion below would
     # pass by reading copy that never reaches a buyer.
-    assert "groupError(sellerId, handoffFailureMessage(err))" in handler, (
+    assert "groupError(sellerId, handoffFailureMessage(err), err && err.cta)" in handler, (
         "the rejected-request path no longer routes through "
-        "handoffFailureMessage, so the sentences asserted below are dead copy")
+        "handoffFailureMessage *and* the server's cta verdict, so either the "
+        "sentences asserted below are dead copy or the CTA state machine is "
+        "being driven by something other than the server's answer")
 
     # And it never says the payment failed, because no payment was attempted.
     for claim in ("payment failed", "payment was declined", "your card was",
@@ -1571,7 +1575,7 @@ def test_a_refusal_message_survives_the_redraw_that_immediately_follows_it():
         "`ui` has no per-seller error store, so a refusal has nowhere to live "
         "across the redraw that follows it")
 
-    writer = source[source.index("  function groupError(sellerId, message)"):]
+    writer = source[source.index("  function groupError(sellerId, message, cta)"):]
     writer = writer[:writer.index("\n  function ")]
     assert "ui.error[sellerId] = message" in writer, (
         "groupError paints the element without recording the message, so the "
@@ -1584,11 +1588,12 @@ def test_a_refusal_message_survives_the_redraw_that_immediately_follows_it():
         "no-element branch returns without recording it")
 
     # And the renderer reads it back, un-hidden, rather than always emitting an
-    # empty hidden slot.
+    # empty hidden slot. Read through `heldError`, the single reader of the
+    # store now that it holds a {message, cta} pair rather than a bare string.
     renderer = source[source.index("  function checkoutFormHtml("):]
     renderer = renderer[:renderer.index("\n  function ")]
-    assert "ui.error[sellerId]" in renderer, (
-        "checkoutFormHtml ignores the held message, so storing it changes "
+    assert "heldError(sellerId)" in renderer, (
+        "checkoutFormHtml ignores the held refusal, so storing it changes "
         "nothing that reaches the buyer")
     slot = renderer[renderer.index("data-group-error"):]
     slot = slot[:slot.index("</div>") + 6]
@@ -1600,10 +1605,10 @@ def test_a_refusal_message_survives_the_redraw_that_immediately_follows_it():
     # screen next to a button that says it is working.
     handler = source[source.index("  function checkout(sellerId)"):]
     handler = handler[:handler.index("\n  // ---")]
-    assert 'ui.error[sellerId] = "";' in handler, (
+    assert "ui.error[sellerId] = null;" in handler, (
         "a retry leaves the previous refusal on screen while the new attempt "
         "is in flight")
-    assert handler.index('ui.error[sellerId] = "";') < handler.index("ui.busy = true;"), (
+    assert handler.index("ui.error[sellerId] = null;") < handler.index("ui.busy = true;"), (
         "the clear runs after the busy claim rather than before it")
 
 
@@ -1615,8 +1620,14 @@ def test_mutation_the_held_refusal_message_is_actually_checked():
     """
     source = CART_JS.read_text(encoding="utf-8")
 
-    no_store = source.replace("ui.error[sellerId] = message || \"\";", "", 1)
-    writer = no_store[no_store.index("  function groupError(sellerId, message)"):]
+    store_write = ("    ui.error[sellerId] = message\n"
+                   "      ? { message: message, cta: cta === \"blocked\" ? \"blocked\" : \"retry\" }\n"
+                   "      : null;")
+    assert store_write in source, (
+        "`groupError` no longer writes the store in the shape this mutation "
+        "removes, so the mutation below deletes nothing and proves nothing")
+    no_store = source.replace(store_write, "", 1)
+    writer = no_store[no_store.index("  function groupError(sellerId, message, cta)"):]
     writer = writer[:writer.index("\n  function ")]
     assert "ui.error[sellerId] = message" not in writer
 
@@ -1625,7 +1636,304 @@ def test_mutation_the_held_refusal_message_is_actually_checked():
     slot = renderer[renderer.index("data-group-error"):]
     slot = slot[:slot.index("</div>") + 6]
     blanked = slot.replace("(held ? \"\" : \" hidden\")", "\" hidden\"")
-    blanked = blanked.replace("(held ? groupErrorHtml(held) : \"\")", "\"\"")
+    blanked = blanked.replace("(held ? groupErrorHtml(held.message) : \"\")", "\"\"")
     assert "held" not in blanked, (
         "the mutation did not actually remove the held-message read, so the "
         "assertion it is meant to break was never exercised")
+
+
+# ==========================================================================
+# §17-§21 -- the CTA state machine, executed rather than grepped
+# ==========================================================================
+#
+# What a real buyer saw on 2 October 2026, on one screen, at the same time:
+#
+#     "Payments are temporarily unavailable. No card was charged.
+#      You can try again."
+#     NEXT: SECURE PAYMENT
+#     [ Continue to secure payment -> ]        <- enabled
+#     "You will continue to Stripe's secure payment page to pay $6.25."
+#
+# Four statements, of which the first contradicted the other three. The refusal
+# was real and, for its cause, permanent for 24 hours; the invitation beside it
+# was live and could not work. They tapped it nine times across five hours.
+#
+# The cause in this file was narrow and is worth naming exactly: the error slot
+# was gated on the held refusal, and the three payment statements were gated on
+# `pending` -- an unanswered fulfilment question, a different condition
+# entirely. Two guards, one screen, no relationship between them. So a refusal
+# could not switch off the thing it contradicted, because nothing connected
+# them.
+#
+# The tests below execute `pulsesoc_cart.js` under a DOM stub and read the HTML
+# it actually produces. Every other JS assertion in this file is a source grep,
+# for the reason the sibling suite `tests/pulse_ads/test_web_portal_absent_states`
+# states plainly: there is no JS test harness in this repository and no jsdom
+# reachable from a Python test. A grep was not good enough here. The defect was
+# *two guards disagreeing*, and the way a grep catches that is by naming both
+# guards -- which pins the variable names and goes green the moment someone
+# renames one, exactly the trap `test_23` fell into earlier in this incident.
+# Running the file is the only thing that reads the relationship instead of the
+# spelling.
+#
+# `node` only: no jsdom, no bundler, no network. The stub is ~40 lines and the
+# precedent is `tests/pulse_commerce/test_commerce_card_parity.py`, which runs
+# the shipped commerce renderer the same way.
+
+#: Drives the real `pulsesoc_cart.js` through: initial load, open the checkout
+#: form, submit it, have the server refuse. Prints the cart's rendered HTML for
+#: three scenarios. Scenario names are the keys of the JSON on stdout.
+_CTA_DRIVER = r"""
+const fs = require("fs");
+
+const SELLER = 7;
+const CART = {
+  lines: [{ id: 1, seller_user_id: SELLER, title: "Thing", state: "available",
+            quantity: 1, unit_price_minor: 625, currency: "USD" }],
+  // One digital line, so `forms[""]` resolves with no fields to fill and
+  // `checkout()` reaches the POST instead of stopping on a missing address.
+  groups: [{ seller_user_id: SELLER, seller_name: "A Seller", checkoutable: true,
+             item_count: 1, subtotal_minor: 625, currency: "USD",
+             lane_question: null, forms: { "": { kind: "digital", fields: [] } } }],
+};
+
+function makeEl(tag, attrs, parent) {
+  return {
+    tagName: tag, _attrs: attrs || {}, dataset: {}, parentNode: parent || null,
+    innerHTML: "", textContent: "", hidden: false, disabled: false,
+    getAttribute(n) { return n in this._attrs ? this._attrs[n] : null; },
+    setAttribute(n, v) { this._attrs[n] = v; },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    addEventListener(type, fn) { (this._handlers = this._handlers || {})[type] = fn; },
+    focus() {},
+    // Enough of `closest` for the handlers: walk up looking for the attribute
+    // the selector names.
+    closest(sel) {
+      let at = this;
+      while (at) {
+        if (sel.replace(/^\[|\]$/g, "").split("=")[0] in at._attrs) return at;
+        at = at.parentNode;
+      }
+      return null;
+    },
+  };
+}
+
+const root = makeEl("div", { "data-cart-root": "1" });
+const panels = {};
+root.querySelector = (sel) => (panels[sel] = panels[sel] || makeEl("div", { sel }, root));
+
+global.document = {
+  querySelector: (sel) => (sel === "[data-cart-root]" ? root : null),
+  addEventListener() {}, getElementById: () => null,
+  createElement: (t) => makeEl(t, {}), body: makeEl("body", {}),
+};
+global.window = { location: { href: "" }, addEventListener() {} };
+global.toast = () => {};
+
+let checkoutAnswer = null;
+global.pulseApi = function (url) {
+  if (url.indexOf("checkout-options") >= 0) return Promise.resolve({ ok: true });
+  if (url.indexOf("/cart/checkout") >= 0) return checkoutAnswer();
+  if (url.indexOf("/api/pulse/marketplace/cart") >= 0) return Promise.resolve(CART);
+  return Promise.resolve({});
+};
+global.window.pulseApi = global.pulseApi;
+
+new Function(fs.readFileSync(process.argv[2], "utf8"))();
+
+function fire(type, node) { root._handlers[type]({ target: node, preventDefault() {} }); }
+const lines = () => panels["[data-cart-lines]"].innerHTML;
+
+function openForm() {
+  const opener = makeEl("button", { "data-open-checkout": String(SELLER) }, root);
+  opener.dataset.openCheckout = String(SELLER);
+  fire("click", opener);
+}
+function submit() {
+  const form = makeEl("form", { "data-checkout": String(SELLER) }, root);
+  form.dataset.checkout = String(SELLER);
+  fire("submit", form);
+}
+// `checkout()` rejects, calls groupError, then load() -- two more promise hops.
+const settle = () => new Promise((r) => setImmediate(() => setImmediate(() => setImmediate(r))));
+
+// How `pulseApi` rejects: an Error with the response body assigned onto it,
+// which is literally what static/js/pulse_runtime.js does.
+function refusal(message, extra) {
+  return () => Promise.reject(Object.assign(new Error(message), extra));
+}
+
+(async () => {
+  const out = {};
+  await settle();
+  openForm();
+  out.clean = lines();
+
+  checkoutAnswer = refusal(
+    "We couldn't open secure payment for this order, and trying again will not help. No card was charged.",
+    { error_code: "PAYMENT_CONFIGURATION_ERROR", retryable: false, cta: "blocked" });
+  submit();
+  await settle();
+  out.blocked = lines();
+
+  checkoutAnswer = refusal(
+    "We couldn't open secure payment. No card was charged. Please try again.",
+    { error_code: "PAYMENT_CONFIGURATION_ERROR", retryable: true, cta: "retry" });
+  submit();
+  await settle();
+  out.retryable = lines();
+
+  // An older server, or any failure from outside the checkout lanes: no verdict
+  // on the wire at all.
+  checkoutAnswer = refusal("Something went wrong.", { error_code: "PAYMENT_UNAVAILABLE" });
+  submit();
+  await settle();
+  out.no_verdict = lines();
+
+  process.stdout.write(JSON.stringify(out));
+})();
+"""
+
+#: The three statements that together constitute "payment is being offered".
+#: Each was rendered unconditionally before this change.
+_ACTIVE_CTA_MARKERS = (
+    "Next: secure payment",
+    "continue to Stripe's secure payment page to pay",
+)
+_DISABLED_SUBMIT = "<button type='submit' class='button primary' disabled>"
+_ENABLED_SUBMIT = "<button type='submit' class='button primary'>"
+
+
+def _render_cta_states(source: str | None = None) -> dict[str, str]:
+    """Run the cart script under node and return {scenario: rendered html}."""
+    script = source if source is not None else CART_JS.read_text(encoding="utf-8")
+    with tempfile.TemporaryDirectory() as workdir:
+        driver = Path(workdir) / "driver.js"
+        target = Path(workdir) / "cart.js"
+        driver.write_text(_CTA_DRIVER, encoding="utf-8")
+        target.write_text(script, encoding="utf-8")
+        result = subprocess.run(
+            ["node", str(driver), str(target)],
+            capture_output=True, text=True, timeout=60,
+        )
+    assert result.returncode == 0, f"driver failed: {result.stderr}"
+    rendered = json.loads(result.stdout)
+    # Anti-vacuity: a stub that silently rendered nothing would pass every
+    # absence assertion below.
+    for name, html in rendered.items():
+        assert "Continue to secure payment" in html, (
+            f"the {name!r} scenario rendered no checkout form at all, so every "
+            f"assertion about it is vacuous: {html[:200]!r}")
+    return rendered
+
+
+needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+
+
+@needs_node
+def test_an_unrefused_checkout_offers_payment_in_full():
+    """The baseline, so the two tests after it are not passing by rendering nothing."""
+    clean = _render_cta_states()["clean"]
+    assert _ENABLED_SUBMIT in clean, "the pay button is disabled with nothing wrong"
+    for marker in _ACTIVE_CTA_MARKERS:
+        assert marker in clean, f"a clean checkout form is missing {marker!r}"
+    assert "class='fail'" not in clean, "a clean checkout form is showing a refusal"
+
+
+@needs_node
+def test_a_blocked_refusal_cannot_co_render_with_an_active_payment_cta():
+    """§17/§20. The screenshot, asserted as a thing that must not happen again.
+
+    All four of the statements the buyer saw are checked, not just the button,
+    because the button was never the whole lie. "NEXT: SECURE PAYMENT" and "You
+    will continue to Stripe's secure payment page to pay $6.25" are both claims
+    about what happens next, and next to a refusal that cannot be retried they
+    are simply false -- the second one especially, since it names an amount and
+    a destination for a payment that will not occur.
+    """
+    blocked = _render_cta_states()["blocked"]
+
+    assert "class='fail'" in blocked, "the refusal is not on screen at all"
+    assert _DISABLED_SUBMIT in blocked, (
+        "a refusal the server marked unretryable is rendered beside an enabled "
+        "'Continue to secure payment' button -- this is the incident")
+    for marker in _ACTIVE_CTA_MARKERS:
+        assert marker not in blocked, (
+            f"a blocked refusal still promises {marker!r}, which is a statement "
+            "about a payment that cannot happen")
+
+    # §22. The label survives: the button is disabled, not relabelled and not
+    # removed. A control that vanishes leaves the buyer unable to tell a broken
+    # order from a finished one.
+    assert "Continue to secure payment" in blocked
+
+
+@needs_node
+def test_a_retryable_refusal_keeps_the_payment_cta_live():
+    """§19, and the half that is easy to get wrong in the other direction.
+
+    This is the incident's own failure -- our idempotency key burned against
+    changed parameters. It is entirely retryable, and the buyer's very next tap
+    could have succeeded. Hiding the CTA here would answer a five-hour lockout
+    with a permanent one.
+    """
+    retryable = _render_cta_states()["retryable"]
+
+    assert "class='fail'" in retryable, "the refusal is not on screen at all"
+    assert _ENABLED_SUBMIT in retryable, (
+        "a retryable refusal disabled the pay button, which strands a buyer "
+        "whose next tap would have worked")
+    for marker in _ACTIVE_CTA_MARKERS:
+        assert marker in retryable, (
+            f"a retryable refusal dropped {marker!r}, so the buyer is offered a "
+            "button with no account of what it does")
+
+
+@needs_node
+def test_a_refusal_with_no_verdict_still_offers_a_retry():
+    """The compatibility direction, which decides which way an absence fails.
+
+    A server that sends no `cta` -- an older deployment, or a failure raised
+    outside the three checkout lanes -- must not silently disable checkout.
+    Defaulting to "offer payment" means this change can only ever remove a CTA
+    the server explicitly refused, never withhold a legitimate one, and that is
+    the only default under which a partial rollout is safe.
+    """
+    no_verdict = _render_cta_states()["no_verdict"]
+    assert _ENABLED_SUBMIT in no_verdict, (
+        "a refusal carrying no verdict disabled checkout, so any endpoint not "
+        "yet threading `cta` silently breaks the buyer's ability to pay")
+
+
+@needs_node
+def test_mutation_the_cta_state_machine_assertions_can_fail():
+    """§29, mutations 4 and 5. Both directions, against the executed renderer.
+
+    Mutation 4 -- CTA REMAINS ACTIVE FOR NONRETRYABLE FAILURE -- is the literal
+    pre-fix code: gate the payment statements on `pending` alone, as they were
+    for the buyer in the incident. Mutation 5 -- CTA DISAPPEARS FOR RETRYABLE
+    FAILURE -- is the overcorrection, blocking on any held refusal at all.
+
+    Applied to the source text and re-executed, so this proves the *tests*
+    discriminate, not merely that two strings differ.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    guard = "    var offerPayment = !pending && !blocked;"
+    assert guard in source, (
+        "the single guard this mutation rewrites is gone, so neither mutation "
+        "below reintroduces the defect and this test proves nothing")
+
+    # Mutation 4: the guard forgets the refusal. Exactly the shipped defect.
+    regressed = _render_cta_states(
+        source.replace(guard, "    var offerPayment = !pending;", 1))
+    assert _ENABLED_SUBMIT in regressed["blocked"], "mutation 4 did not take effect"
+    assert "Next: secure payment" in regressed["blocked"], "mutation 4 did not take effect"
+
+    # Mutation 5: the guard forgets to ask *which* refusal.
+    overcorrected = _render_cta_states(
+        source.replace(guard, "    var offerPayment = !pending && !held;", 1))
+    assert _DISABLED_SUBMIT in overcorrected["retryable"], "mutation 5 did not take effect"
+    assert "Next: secure payment" not in overcorrected["retryable"], (
+        "mutation 5 did not take effect")

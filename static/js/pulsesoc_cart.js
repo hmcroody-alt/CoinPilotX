@@ -348,7 +348,19 @@
     var fields = (form && form.fields) || [];
     var pending = group.lane_question && group.lane_question.kind && !form;
     var copy = detailCopy(form);
-    var held = ui.error[sellerId] || "";
+    var held = heldError(sellerId);
+    // §17/§20. The screenshot that opened this incident showed a refusal and an
+    // active "Continue to secure payment" button on the same screen, under a
+    // line reading "NEXT: SECURE PAYMENT" and above one promising to take the
+    // buyer to Stripe to pay $6.25. Every one of those four was rendered
+    // unconditionally; only `pending` -- an unanswered fulfilment question --
+    // could ever disable the button. So a refusal the server knew was
+    // unrecoverable was presented beside a working invitation to recover.
+    //
+    // `blocked` is the server's verdict, not this file's guess. A client that
+    // infers retryability from copy is the defect, not the fix.
+    var blocked = !!held && held.cta === "blocked";
+    var offerPayment = !pending && !blocked;
 
     var body =
       laneHtml(sellerId, group.lane_question, ui.lane[sellerId]) +
@@ -366,26 +378,41 @@
       // Re-emitted with whatever the last refusal said, because the redraw that
       // produces this element is the same redraw that would otherwise erase it.
       "<div data-group-error='" + esc(sellerId) + "'" + (held ? "" : " hidden") + ">" +
-        (held ? groupErrorHtml(held) : "") + "</div>" +
+        (held ? groupErrorHtml(held.message) : "") + "</div>" +
       // Above the button, because it is what the button does and a buyer reading
-      // downwards must meet it before the click rather than after it.
-      "<p class='next'>Next: secure payment</p>" +
+      // downwards must meet it before the click rather than after it. Which is
+      // also why it goes when the button goes: "Next: secure payment" above a
+      // dead button is a worse sentence than no sentence.
+      (offerPayment ? "<p class='next'>Next: secure payment</p>" : "") +
       "<div class='pay'>" +
         // Not "Pay". This button creates a Stripe Checkout Session and sends the
         // browser to Stripe's hosted page; no card is entered on this origin and
         // no charge is authorised by this click. Labelling a navigation as a
         // payment is how a buyer ends up believing they have paid while the
         // amount is still only reserved -- and how a real customer did.
-        "<button type='submit' class='button primary'" + (pending ? " disabled" : "") + ">" +
+        //
+        // §22: the label survives a blocked refusal. The button is disabled,
+        // not relabelled and not removed -- a control that vanishes leaves the
+        // buyer unable to tell a broken order from a finished one, and the
+        // refusal directly above it is already the explanation.
+        "<button type='submit' class='button primary'" + (offerPayment ? "" : " disabled") + ">" +
           "Continue to secure payment &rarr;</button> " +
         "<button type='button' class='ghost' data-close-checkout='" + esc(sellerId) + "'>Back to cart</button>" +
       "</div>" +
       // The amount stays on the subtotal row above and on Stripe's page, which
       // are the two places it is authoritative. Repeating it inside the button
       // was what made the button read as a charge.
-      "<p class='note'>You will continue to Stripe's secure payment page to pay " +
-      esc(money(group.subtotal_minor, group.currency)) + ". Your card details are " +
-      "never typed on PulseSoc and never reach our servers.</p>" +
+      //
+      // Withheld for a blocked refusal for a narrower reason than the rest: it
+      // is a statement of fact about what happens next ("You will continue to
+      // Stripe's secure payment page to pay $6.25"), and next to a refusal that
+      // cannot be retried it is simply untrue. The buyer in the incident read
+      // this sentence nine times.
+      (offerPayment
+        ? "<p class='note'>You will continue to Stripe's secure payment page to pay " +
+          esc(money(group.subtotal_minor, group.currency)) + ". Your card details are " +
+          "never typed on PulseSoc and never reach our servers.</p>"
+        : "") +
       "</form>";
   }
 
@@ -626,12 +653,32 @@
   // was not working.
   //
   // `ui.typed` is module-scoped for the same reason; this joins it.
-  function groupError(sellerId, message) {
-    ui.error[sellerId] = message || "";
+  //
+  // Stores a {message, cta} pair rather than a bare string, because the string
+  // alone was not enough to render the form correctly and the previous code
+  // proved it: with only a sentence to go on, `checkoutFormHtml` could do
+  // nothing but keep offering payment. `cta` defaults to "retry" -- the prior
+  // behaviour -- so the refusals raised locally in `checkout()` below, a lane
+  // not chosen or a required field left empty, still invite the buyer onward.
+  // Those really are retryable: the buyer fixes the field and continues.
+  function groupError(sellerId, message, cta) {
+    ui.error[sellerId] = message
+      ? { message: message, cta: cta === "blocked" ? "blocked" : "retry" }
+      : null;
     var slot = els.lines.querySelector("[data-group-error='" + sellerId + "']");
     if (!slot) { toast(message); return; }
     slot.innerHTML = groupErrorHtml(message);
     slot.hidden = false;
+  }
+
+  // One reader for the stored pair, so the shape lives in exactly two places.
+  // Tolerates a bare string: `ui` survives across redraws and a message written
+  // by an older bundle still in memory must not render as "[object Object]".
+  function heldError(sellerId) {
+    var held = ui.error[sellerId];
+    if (!held) return null;
+    if (typeof held === "string") return { message: held, cta: "retry" };
+    return held.message ? held : null;
   }
 
   // The buyer has exactly one question when an attempt is refused -- did my
@@ -642,15 +689,32 @@
   //
   // The answer is the same for every refusal on this path, and it is safe to
   // state unconditionally: this request creates a Stripe Checkout session, and
-  // a session is not a charge. Even the ambiguous case -- a timeout where the
-  // session may well have been created server-side -- has not charged anybody,
-  // and the idempotency key means the retry this invites resolves to that same
-  // session instead of minting a second one.
+  // a session is not a charge.
+  //
+  // This comment used to continue "...and the idempotency key means the retry
+  // this invites resolves to that same session instead of minting a second
+  // one." That was wrong, and it was wrong in the direction that caused the
+  // incident. Stripe binds an idempotency key to the parameters of the first
+  // request that used it, so a key replayed with changed parameters is not
+  // handed back the original session -- it is refused with a 400, permanently,
+  // for 24 hours. The retry this function invites was being *refused* rather
+  // than deduplicated, nine times, and reported to the buyer as an outage.
+  //
+  // Post-fix the key co-varies with its parameters, so a retry does mint a
+  // second session. What makes that safe is reachability, not reuse: the first
+  // session's url is never written to the DB, never logged and never returned
+  // in any response, and all three server failure paths expire it outright.
   //
   // Appended, never substituted: a server message that already explains itself
-  // ("Payments are temporarily unavailable") is the more useful half and is not
-  // thrown away for a generic one.
+  // is the more useful half and is not thrown away for a generic one.
+  //
+  // `cta` decides whether a remedy is offered at all. Without it this function
+  // appended "You can try again." to every refusal it did not recognise as
+  // already carrying a remedy -- including, before the taxonomy change above,
+  // the configuration failures where trying again could never work. That one
+  // appended sentence is the exact text the buyer acted on for five hours.
   function handoffFailureMessage(err) {
+    var blocked = err && err.cta === "blocked";
     var message = String((err && err.message) || "").trim();
     if (!message) return "We could not start checkout. Nothing has been charged.";
     if (!/[.!?]$/.test(message)) message += ".";
@@ -661,7 +725,7 @@
     // "try again" appended a vaguer instruction to a specific one -- measured,
     // not supposed: four of the six refusal paths read "...Try a different
     // delivery address. ... You can try again."
-    if (!/\btry\b|retry|choose|pick|select|change/i.test(message)) {
+    if (!blocked && !/\btry\b|retry|choose|pick|select|change/i.test(message)) {
       message += " You can try again.";
     }
     return message;
@@ -708,7 +772,7 @@
     // This attempt's own verdict replaces the last one; leaving a stale
     // refusal on screen while a new attempt is in flight states something
     // that is no longer being claimed.
-    ui.error[sellerId] = "";
+    ui.error[sellerId] = null;
     ui.busy = true;
     var button = els.lines.querySelector("[data-checkout='" + sellerId + "'] button[type='submit']");
     var label = button ? button.innerHTML : "";
@@ -749,7 +813,12 @@
         // Never "payment failed": no payment was attempted. The session could
         // not be created, which is a different sentence with a different remedy,
         // and the cart is not cleared either way.
-        groupError(sellerId, handoffFailureMessage(err));
+        // The verdict rides from the server's classifier straight to the
+        // button. `pulseApi` does `Object.assign(err, body)`, so `err.cta` is
+        // whatever `classify_provider_exception` decided; an older server that
+        // sends no verdict falls through to "retry", which is what this screen
+        // already did.
+        groupError(sellerId, handoffFailureMessage(err), err && err.cta);
         // The refusals are all about cart state -- a line went sold, a price
         // moved -- so the list is refetched to show the buyer the thing that
         // changed rather than only the sentence about it.

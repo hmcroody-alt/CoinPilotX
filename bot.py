@@ -103083,6 +103083,7 @@ def api_pulse_payments_checkout():
         conn.close()
         return api_error(below_minimum["message"], below_minimum["status"],
                          error_code=below_minimum["code"],
+                         retryable=below_minimum["retryable"], cta=below_minimum["cta"],
                          minimum_charge_cents=below_minimum["minimum_minor"],
                          amount_cents=amount_cents, currency=currency)
 
@@ -103487,6 +103488,7 @@ def api_pulse_payments_checkout():
         # free-text message does not, so nothing can echo account or key detail.
         return api_error(classified["message"], classified["status"], trace_id,
                          error_code=classified["code"], provider_error=classified["provider_error"],
+                         retryable=classified["retryable"], cta=classified["cta"],
                          transaction_id=tx_id)
 
 
