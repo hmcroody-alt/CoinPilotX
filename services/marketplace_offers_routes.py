@@ -46,6 +46,7 @@ from services.marketplace_cart_routes import (
     stripe_shipping_checkout_params,
 )
 from services import marketplace_reservation_policy as reservation_policy
+from services import marketplace_checkout_identity as checkout_identity
 from services import marketplace_fulfillment
 from services import marketplace_order_fulfillment
 from services.marketplace_payment_errors import (
@@ -604,6 +605,31 @@ def offer_checkout(offer_id: int):
             return _error(refusal["message"], 409,
                           code=supplier_checkout.refusal_code(refusal))
 
+        # The logical payment attempt is claimed before the first write. Every
+        # component of its identity is server-side truth that is already settled
+        # by this line — the accepted price, the offer, the buyer's session, the
+        # resolved lane — so no client token takes part and a repeated tap cannot
+        # vary it. Claiming here rather than after the INSERT is the whole point:
+        # below this line sit a `seller_transactions` row, a stock decrement and
+        # a Stripe session, and five taps used to produce five of each.
+        checkout_identity.ensure_schema(cur)
+        attempt = checkout_identity.attempt_key(
+            lane=checkout_identity.LANE_OFFER,
+            buyer_user_id=buyer_id, offer_id=offer_id, listing_id=listing_id,
+            seller_user_id=seller_id, amount_minor=amount, currency=currency,
+            quantity=qty, fulfillment=fulfillment_kind, payment_mode=payment_mode,
+        )
+        claimed = checkout_identity.claim(cur, user_id=buyer_id, key=attempt, now=now)
+        if claimed["state"] == checkout_identity.REPLAY:
+            # The buyer already has an answer for exactly this attempt. Hand back
+            # the same one — the same session, so the same payable page — rather
+            # than building a second.
+            return _json({**claimed["payload"], "replayed": True})
+        if claimed["state"] == checkout_identity.IN_PROGRESS:
+            return _error(checkout_identity.IN_PROGRESS_MESSAGE, 409,
+                          code=checkout_identity.IN_PROGRESS_CODE,
+                          error_code=checkout_identity.IN_PROGRESS_CODE)
+
         initial_status = "cash_pending" if cash_payment else "created"
         payout_state = "cash_collect_in_person" if cash_payment else "pending_checkout"
         cur.execute(
@@ -635,6 +661,10 @@ def offer_checkout(offer_id: int):
 
         if not cash_payment and not bot.STRIPE_SECRET_KEY:
             cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
+            # Nothing chargeable was built, so the claim is handed back. A
+            # misconfiguration must not leave the buyer permanently unable to
+            # retry an offer they are entitled to buy.
+            checkout_identity.release(cur, user_id=buyer_id, key=attempt)
             return _error("Stripe checkout is not configured yet. No card was charged.", 503,
                           code="PAYMENT_UNAVAILABLE", transaction_id=tx_id)
 
@@ -648,24 +678,39 @@ def offer_checkout(offer_id: int):
             )
             if not cur.rowcount:
                 cur.execute("UPDATE seller_transactions SET status='out_of_stock', updated_at=? WHERE id=?", (now, tx_id))
+                checkout_identity.release(cur, user_id=buyer_id, key=attempt)
                 return _error("This item sold out before checkout. No card was charged.", 409,
                               code="OUT_OF_STOCK", transaction_id=tx_id)
+            # `reserved_at` and `expires_at` are what make this hold collectable.
+            # Without them the row is NULL-deadlined, and the sweeper selects on
+            # `expires_at IS NOT NULL AND expires_at <= cutoff` — so every hold
+            # this lane took was invisible to the only thing that returns stock.
+            # Measured in production 2026-10-02: 4 held reservations, all four
+            # with no deadline, the oldest stranded since 2026-08-13.
             cur.execute(
                 """INSERT INTO marketplace_inventory_reservations
-                (seller_transaction_id,buyer_user_id,listing_id,quantity,status,created_at,updated_at)
-                VALUES (?,?,?,?, 'held',?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
-                (tx_id, buyer_id, listing_id, qty, now, now),
+                (seller_transaction_id,buyer_user_id,listing_id,quantity,status,
+                 created_at,updated_at,reserved_at,expires_at)
+                VALUES (?,?,?,?, 'held',?,?,?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
+                (tx_id, buyer_id, listing_id, qty, now, now,
+                 now, reservation_policy.expires_at_for(now)),
             )
 
         if cash_payment:
-            return _json(marketplace_payment_pause.cash_checkout_payload(
+            cash_payload = marketplace_payment_pause.cash_checkout_payload(
                 ok=True,
                 transaction_id=tx_id,
                 amount_cents=amount,
                 currency=currency,
                 seller_net_cents=commercial_quote["seller_earnings_minor"],
                 commercial_quote=commercial_quote,
-            ))
+            )
+            # Cash takes no card, but it does take stock and open a fulfilment
+            # record, so a repeated tap is just as wrong here as on the card
+            # path and is deduplicated by the same claim.
+            checkout_identity.remember(cur, user_id=buyer_id, key=attempt,
+                                       payload=cash_payload)
+            return _json(cash_payload)
 
         try:
             base = (bot.APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
@@ -701,7 +746,11 @@ def offer_checkout(offer_id: int):
                     automatic_payment_methods={"enabled": True},
                     metadata=checkout_metadata,
                     **{k: v for k, v in payment_intent_data.items() if k != "metadata"},
-                    idempotency_key=f"marketplace-offer-sheet:{buyer_id}:{tx_id}",
+                    # Derived from the logical attempt, not from `tx_id`. A retry
+                    # presents the same key, so Stripe returns the original
+                    # intent instead of minting a second payable one.
+                    idempotency_key=checkout_identity.stripe_idempotency_key(
+                        f"{attempt}:sheet"),
                 )
                 intent_id = stripe_response_value(intent, "id")
                 client_secret = stripe_response_value(intent, "client_secret")
@@ -709,7 +758,7 @@ def offer_checkout(offer_id: int):
                     "UPDATE seller_transactions SET stripe_payment_intent_id=?, status='checkout_created', updated_at=? WHERE id=?",
                     (intent_id, now, tx_id),
                 )
-                return _json({
+                sheet_payload = {
                     "ok": True,
                     "payment_intent_client_secret": client_secret,
                     "payment_intent_id": intent_id,
@@ -724,7 +773,10 @@ def offer_checkout(offer_id: int):
                     "seller_net_cents": commercial_quote["seller_earnings_minor"],
                     "commercial_quote": commercial_quote,
                     "payout_state": payout_state,
-                })
+                }
+                checkout_identity.remember(cur, user_id=buyer_id, key=attempt,
+                                           payload=sheet_payload)
+                return _json(sheet_payload)
             session_obj = bot.stripe.checkout.Session.create(
                 mode="payment",
                 line_items=[{"price_data": {"currency": currency.lower(),
@@ -735,7 +787,7 @@ def offer_checkout(offer_id: int):
                 cancel_url=f"{base}/pulse/payments/cancel?transaction_id={tx_id}",
                 payment_intent_data=payment_intent_data,
                 metadata=checkout_metadata,
-                idempotency_key=f"marketplace-offer:{buyer_id}:{tx_id}",
+                idempotency_key=checkout_identity.stripe_idempotency_key(attempt),
                 # A pickup-only offer is never asked for a delivery address, and
                 # neither is one whose address PulseSoc already collected.
                 **({} if stripe_shipping_object
@@ -745,12 +797,18 @@ def offer_checkout(offer_id: int):
                 "UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?",
                 (session_obj.get("id"), now, tx_id),
             )
-            return _json({"ok": True, "checkout_url": session_obj.get("url"),
-                          "transaction_id": tx_id, "amount_cents": amount,
-                          "platform_fee_cents": platform_fee,
-                          "seller_net_cents": commercial_quote["seller_earnings_minor"],
-                          "commercial_quote": commercial_quote,
-                          "payout_state": payout_state})
+            session_payload = {"ok": True, "checkout_url": session_obj.get("url"),
+                               "transaction_id": tx_id, "amount_cents": amount,
+                               "platform_fee_cents": platform_fee,
+                               "seller_net_cents": commercial_quote["seller_earnings_minor"],
+                               "commercial_quote": commercial_quote,
+                               "payout_state": payout_state}
+            # Recorded before returning, so a buyer whose response is lost in
+            # transit replays this exact session rather than being handed a
+            # second payable page for the same offer.
+            checkout_identity.remember(cur, user_id=buyer_id, key=attempt,
+                                       payload=session_payload)
+            return _json(session_payload)
         except Exception as exc:
             trace_id = secrets.token_hex(6)
             LOGGER.exception("OFFER_CHECKOUT_CREATE_FAILED trace_id=%s offer_id=%s", trace_id, offer_id)
@@ -766,6 +824,16 @@ def offer_checkout(offer_id: int):
                 metadata_json=json.dumps({"error": str(exc), "trace_id": trace_id,
                                           "provider_error": classified["provider_error"]}, default=str),
             )
+            # The transaction is settled and the hold released, so this attempt
+            # produced nothing chargeable that PulseSoc knows about. Handing the
+            # claim back lets the buyer retry an offer they are entitled to buy.
+            #
+            # Safe only because the provider key is derived from the attempt and
+            # not from `tx_id`: if the create call did reach Stripe before dying,
+            # the retry presents the identical key and Stripe returns the original
+            # session instead of building a second payable page. Under the old
+            # `lastrowid` key this same delete would have manufactured duplicates.
+            checkout_identity.release(cur, user_id=buyer_id, key=attempt)
             return _error(classified["message"], classified["status"],
                           code=classified["code"], trace_id=trace_id, transaction_id=tx_id,
                           provider_error=classified["provider_error"])

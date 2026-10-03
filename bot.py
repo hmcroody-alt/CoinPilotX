@@ -102359,11 +102359,27 @@ def api_pulse_payments_checkout():
                 cur.execute("UPDATE seller_transactions SET status='checkout_failed', updated_at=? WHERE id=?", (now, tx_id))
                 conn.commit(); conn.close()
                 return api_error("This item is no longer available. No card was charged.", 409, transaction_id=tx_id)
+            # `reserved_at` and `expires_at` are what make this hold
+            # collectable. The sweeper selects on `expires_at IS NOT NULL AND
+            # expires_at <= cutoff`, so a hold written without a deadline is
+            # not collected late — it is invisible forever, and the units this
+            # statement just took off the shelf never come back. Stripe fires
+            # no webhook for a dismissed Apple Pay sheet, which is the common
+            # way this lane abandons, so nothing else would ever notice.
+            #
+            # This was the third of three writers of this table and the last
+            # one still missing the columns; Cart and Offers already wrote
+            # them. Measured in production 2026-10-02: all 11 reservation rows
+            # had no deadline, 4 still `held`, the oldest since 2026-08-13 —
+            # and this lane is the live one, so it was still minting more.
+            from services import marketplace_reservation_policy as marketplace_reservation_policy_service
             cur.execute(
                 """INSERT INTO marketplace_inventory_reservations
-                (seller_transaction_id,buyer_user_id,listing_id,quantity,status,created_at,updated_at)
-                VALUES (?,?,?,?, 'held',?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
-                (tx_id, int(buyer["user_id"]), item_id, buy_quantity, now, now),
+                (seller_transaction_id,buyer_user_id,listing_id,quantity,status,
+                 created_at,updated_at,reserved_at,expires_at)
+                VALUES (?,?,?,?, 'held',?,?,?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
+                (tx_id, int(buyer["user_id"]), item_id, buy_quantity, now, now,
+                 now, marketplace_reservation_policy_service.expires_at_for(now)),
             )
     if marketplace_cash_payment and marketplace_payment_pause is not None:
         response_payload = marketplace_payment_pause.cash_checkout_payload(

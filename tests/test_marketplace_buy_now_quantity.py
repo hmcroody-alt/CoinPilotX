@@ -36,6 +36,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_DB}"
 
 import bot  # noqa: E402
 from services import marketplace_cart_routes as cart  # noqa: E402
+from services import marketplace_reservation_policy as policy  # noqa: E402
 
 SELLER, BUYER = 99801, 99802
 NOW = "2026-09-11T00:00:00"
@@ -151,6 +152,17 @@ def _reserved(tx_id):
     return row["quantity"] if row else None
 
 
+def _hold(tx_id):
+    """The whole reservation row, not just its quantity."""
+    conn = _db()
+    row = conn.execute(
+        "SELECT * FROM marketplace_inventory_reservations "
+        "WHERE seller_transaction_id=?", (tx_id,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else {}
+
+
 # ---------------------------------------------------------------------------
 # The money, the shelf and the hold
 # ---------------------------------------------------------------------------
@@ -183,6 +195,45 @@ def test_the_hold_covers_every_unit_the_buyer_paid_for():
     listing_id = _listing(stock=10)
     assert _buy(listing_id, 3).status_code == 200
     assert _reserved(_latest_tx()["id"]) == 3
+
+
+def test_the_hold_carries_a_deadline_the_sweeper_can_collect():
+    """A hold with no ``expires_at`` destroys the stock it took.
+
+    The sweeper's candidate predicate is ``status='held' AND expires_at IS NOT
+    NULL AND expires_at <= cutoff``. That ``IS NOT NULL`` term is correct —
+    inventing a retroactive deadline would release stock under an order that
+    may still settle — but it means a hold written without one is never
+    collected *at all*, not merely collected late. The units come off the
+    shelf and never return.
+
+    Nothing reports that. Stripe fires no webhook for a dismissed Apple Pay
+    sheet, which is how this lane most often abandons, so the row simply sits
+    at ``held`` forever while the listing's quantity stays short.
+
+    This lane was the last of three writers of that table still omitting the
+    columns, and it is the live one — the one the iOS app actually calls.
+    Measured in production on 2026-10-02: every one of the 11 reservation rows
+    had a NULL deadline, 4 of them still ``held``, the oldest stranded since
+    2026-08-13. The structural counterpart to this test
+    (``tests/marketplace/test_reservation_writers_are_collectable.py``) holds
+    *every* lane to the contract so a fourth one cannot reintroduce it; this
+    one proves the write actually reaches the column at runtime.
+    """
+    listing_id = _listing(stock=10)
+    assert _buy(listing_id, 3).status_code == 200
+    hold = _hold(_latest_tx()["id"])
+
+    assert hold["status"] == "held"
+    assert hold["expires_at"], "the hold has no deadline and can never be collected"
+    assert hold["reserved_at"], "the hold has no start time, so its age is unmeasurable"
+    # Forward-going, and derived from the policy rather than a local literal:
+    # a deadline at or before the reservation instant would be collected on the
+    # sweeper's very next cycle, cancelling an order seconds after it started.
+    assert hold["expires_at"] > hold["reserved_at"]
+    assert hold["expires_at"] == policy.expires_at_for(hold["reserved_at"])
+    # And the sweeper agrees it is not yet collectable, grace period included.
+    assert not policy.is_expired(hold["expires_at"], now=hold["reserved_at"])
 
 
 def test_a_failed_payment_returns_every_unit_it_held():
