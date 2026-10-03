@@ -18,6 +18,8 @@ friendship. Anything richer belongs to the subsystem that owns it.
 
 from __future__ import annotations
 
+from services import message_privacy
+
 # Deny-by-default. Every consumer starts here and opens flags explicitly, so a
 # new key added to this dict is invisible to visitors until someone decides it
 # should not be.
@@ -134,7 +136,12 @@ def viewer_permissions(cur, target_user_id, viewer_user_id, account=None):
             permissions["can_view_follower_content"] = True
             for flag in PUBLIC_CONTENT_FLAGS:
                 permissions[flag] = True
-        permissions["can_message"] = bool(friends)
+        # Being accepted by a private account is necessary but not sufficient:
+        # the owner's inbox preference still applies. A private account that
+        # set DMs to "nobody" meant it, and friendship does not override it.
+        permissions["can_message"] = bool(friends) and _can_message(
+            cur, target_user_id, viewer_user_id, follows, friends
+        )
         return permissions
 
     permissions["can_view_public_profile"] = True
@@ -143,24 +150,31 @@ def viewer_permissions(cur, target_user_id, viewer_user_id, account=None):
     for flag in PUBLIC_CONTENT_FLAGS:
         permissions[flag] = True
 
-    permissions["can_message"] = _can_message(account, follows, friends)
+    permissions["can_message"] = _can_message(
+        cur, target_user_id, viewer_user_id, follows, friends
+    )
     return permissions
 
 
-def _can_message(account, follows, friends):
-    """Honour the owner's inbox preference when the column exists.
+def _can_message(cur, target_user_id, viewer_user_id, follows, friends):
+    """Honour the owner's inbox preference.
 
-    ``everyone`` is the default because that is the historical behaviour; the
-    stricter values only bite for accounts that opted into them.
+    This used to read ``account.get("message_privacy")`` / ``dm_privacy`` and
+    fall back to ``everyone``. Neither column has ever existed — not in
+    ``init_db()``, not in production — so the fallback was the only branch that
+    could run, and the preference denied nothing. The real control lives in
+    ``user_settings`` under two keys written by two different settings screens;
+    ``services/message_privacy`` resolves them and takes the stricter.
+
+    This flag is a *hint*: it tells the client whether to offer a Message
+    button. Per this module's own docstring a hidden button is not access
+    control, so the same resolver is called again by the code that actually
+    opens a conversation. Both sides share one function so the button and the
+    gate cannot drift apart.
     """
-    preference = str(account.get("message_privacy") or account.get("dm_privacy") or "everyone").strip().lower()
-    if preference in {"nobody", "none", "off"}:
-        return False
-    if preference in {"friends", "friends_only"}:
-        return bool(friends)
-    if preference in {"followers", "following"}:
-        return bool(follows or friends)
-    return True
+    return message_privacy.may_message(
+        cur, target_user_id, viewer_user_id, follows=follows, friends=friends
+    )
 
 
 def _fetch_account(cur, target_user_id):

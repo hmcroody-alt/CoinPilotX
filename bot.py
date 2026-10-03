@@ -48555,6 +48555,15 @@ def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_p
     if thread:
         thread_id = int(thread.get("id"))
     else:
+        # New thread only, mirroring the comm_v2 gate: the recipient's
+        # "Message requests" preference decides who may open a conversation,
+        # not who may continue one. This path carries far less traffic than
+        # comm_v2 but is still routed, so leaving it out would make
+        # /api/pulse/messages/start a way around the setting.
+        from services import message_privacy
+
+        if not message_privacy.may_message(cur, target_user_id, current_user_id):
+            return {"ok": False, "message": "This member is not accepting new messages."}, 403
         try:
             cur.execute(
                 "INSERT INTO pulse_message_threads (user_one_id, user_two_id, source_context, status, created_at, updated_at) VALUES (?, ?, 'pulse', 'active', ?, ?)",
