@@ -46,8 +46,9 @@ migration debt hiding behind the missing account — see the policy section of
 
 3. **Configure account-level shipping.** Shipping is mandatory for free listings
    in the US and the feed deliberately omits `g:shipping` on every item. This is
-   blocker 2 in the companion document and it is the single most likely cause of
-   mass disapproval if skipped. Set a real rate, and set it to match what
+   blocker 2 in the companion document and it is the most likely cause of mass
+   disapproval *that you can actually fix from a console* — see item 7 for the
+   larger one you cannot. Set a real rate, and set it to match what
    checkout actually charges the buyer — buyer-facing shipping is currently free,
    so a non-zero rate here would be its own misrepresentation.
    Console: Merchant Center → Shipping and returns → Shipping services.
@@ -71,6 +72,25 @@ migration debt hiding behind the missing account — see the policy section of
    not a placeholder. The reasoning, including why Google's "use your store name
    as the brand" guidance does **not** apply to resold goods, is in
    `01_merchant_center_feed.md`.
+
+7. **Expect apparel problems on about three quarters of the catalogue, and know
+   that nobody can clear them from a console.** For US free listings Google
+   requires `color`, `age_group` and `gender` on every `Apparel & Accessories`
+   item, plus `size` for clothing and shoes. **27 of the 36 live items are
+   apparel** and the feed sends none of the four. Unlike the missing identifiers,
+   there is no truthful way to declare these absent — Google provides
+   `identifier_exists: no` for identifiers and nothing equivalent here.
+
+   This is the one item on this list that is a genuine open question rather than a
+   task. It cannot be fixed by typing into Merchant Center, and it should not be
+   fixed by reading the variant axes, because those axes are positional: position 1
+   on listing 90 is `"Gray Flat Feet"` and on listing 209 it is `"Picture Color"`.
+   Publishing those as colours is exactly the misrepresentation the rest of this
+   document is trying to avoid. The full argument is in `01_merchant_center_feed.md`.
+
+   What the owner actually has to decide: whether to pursue named option axes from
+   CJ, or to author and own a PulseSoc mapping. Until one of those happens, assume
+   the apparel share of the feed underperforms or does not serve.
 
 ## Do not turn this on before the order tail is proven
 
@@ -98,9 +118,11 @@ exactly 500×500, id 105), so there is no action now — but:
 - Nothing in this codebase enforces the floor. There is no dimension check in
   `services/merchant_center_feed.py`, none at upload, and none in the eligibility
   verdict.
-- The images are not ours. All 36 are hosted on `cf.cjdropshipping.com`. A
+- The images are not ours. All 36 are supplier-hosted, split across two CJ CDN
+  hosts — 31 on `cf.cjdropshipping.com`, 5 on `oss-cf.cjdropshipping.com`. A
   supplier that re-encodes thumbnails smaller moves the catalogue into
-  disapproval with no local signal at all.
+  disapproval with no local signal at all. (Two hosts is not a defect: every
+  item's feed image is the same URL its own product page renders.)
 
 Worth a calendar entry and, if anyone wants a code task out of this document,
 worth a width/height check in the eligibility gate before then.

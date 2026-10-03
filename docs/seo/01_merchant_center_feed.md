@@ -276,10 +276,19 @@ catalogue is currently measured against.
 Status: **currently compliant, structurally unguarded.** All 36 live items were
 fetched 2026-10-03 and every one is ≥500×500 (smallest 500×500, id 105). But
 nothing in this codebase enforces that floor — there is no dimension check in
-`merchant_center_feed`, no check at upload, and the images are not ours: all 36
-are hosted on `cf.cjdropshipping.com`. A supplier that re-encodes its thumbnails
-smaller puts the catalogue under disapproval on 2027-01-31 with no local signal.
-That is the one dated risk worth a calendar entry.
+`merchant_center_feed`, no check at upload, and the images are not ours: the 36
+split across two supplier CDN hosts, 31 on `cf.cjdropshipping.com` and 5 on
+`oss-cf.cjdropshipping.com` (ids 51, 70, 85, 102, 163). A supplier that re-encodes
+its thumbnails smaller puts the catalogue under disapproval on 2027-01-31 with no
+local signal. That is the one dated risk worth a calendar entry.
+
+The two hosts are **not** a parity defect, and it is worth writing down why,
+because the shape invites the wrong conclusion. Each item's `g:image_link` matches
+the `<img>` its own product page renders — checked on 2026-10-03 against listing
+163, where feed and page both serve the identical `oss-cf` URL. The catalogue
+simply has two upstream hosts; no item disagrees with its own landing page. A
+measurement that collects hosts feed-wide and page-wide and then compares the two
+*sets* will report a disagreement that does not exist at the item level.
 
 Related and minor: 22 of the 36 images are served with the nonstandard MIME type
 `image/jpg` (rather than `image/jpeg`). Google fetches them fine today; it is
@@ -295,6 +304,74 @@ cannot be cleared in code — see the reasoning there for why an item-level
 
 So the policy pages (blocker 1) matter for the *landing page* requirements and for
 buyer trust, not as a feed-level gate.
+
+### Apparel attributes: three quarters of the feed is short, and the obvious fix is forbidden
+
+This is the largest *correctness* gap in the feed and it was missed until Agent 1
+raised it on 2026-10-03. It is not the same kind of gap as the missing identifiers,
+and the difference is the whole point.
+
+Google's product data specification (fetched 2026-10-03) requires, for free listings
+in the US, `color`, `age_group` and `gender` on **every** `Apparel & Accessories`
+(category 166) product, plus `size` for the `Clothing` (1604) and `Shoes` (187)
+subcategories. The feed emits none of the four.
+
+Measured against production on 2026-10-03, classifying the 36 live items by their
+supplier breadcrumb:
+
+| class | count | attributes Google requires |
+|---|---|---|
+| Clothing | 23 | color, size, gender, age_group |
+| Shoes | 2 (45, 98) | color, size, gender, age_group |
+| Other Apparel & Accessories (jewelry) | 2 (21, 37) | color, gender, age_group |
+| Not apparel | 9 | — |
+
+**27 of 36 live items are apparel.** Omitting `g:google_product_category` does not
+dodge this: Google assigns a category itself when the feed does not supply one, and
+the requirement keys on the category Google assigned — which it may assign wrongly,
+and which we would then have no way to see.
+
+On severity, Google's own documentation is genuinely ambiguous and it should not be
+reported as settled either way. The attribute-specific help page says both "Missing
+required attributes lower your product's data quality. This can reduce your offer's
+performance in search results" (a demotion) and "You must specify these for your
+offers to show" (a refusal to serve). Expect something between demotion and
+non-serving on roughly three quarters of the catalogue; do not promise which.
+
+**The obvious fix — read the variant axes — would publish false data.** Variants do
+carry two axes, and on apparel rows they look exactly like colour and size:
+`option1 = "Rose Red"`, `option2 = "XS"`. That resemblance is the trap. The axis
+*names* are positional (`option1`, `option2`) on all 516 apparel variant rows
+sampled; nothing in the data says what position 1 means. Agent 3 settled this
+catalogue-wide and found the counterexample that ends the argument: listing 209's
+`option1` is `"Picture Color"` (supplier boilerplate), `option2` is `"4GB 32GB"`
+(memory), `option3` is `"AU"` (a plug standard). Even inside the apparel subset the
+values are not clean — listing 90's position 1 is `"Gray Flat Feet"` and listing
+17's is `"Navy Blue Sparkling Style"`. Emitting those as `g:color` asserts colours
+that are not colours, on the exact attribute Google cross-checks against the page.
+
+The other three are no better:
+
+- **`age_group` cannot be defaulted.** "Adult" is wrong for at least one live item —
+  id 111 is `Toys， Kids & Baby > Boys Clothing > Outerwear & Coats`. A blanket
+  default is a misrepresentation on a real row, not a hypothetical one.
+- **`gender` is only derivable from the supplier breadcrumb** ("Women's Clothing",
+  "Men's Clothing", "Boys Clothing"). Per Agent 3 that breadcrumb is
+  `SUPPLIER_ASSERTED` pass-through, so deriving from it republishes a supplier claim
+  as our own. That same id-111 string contains a fullwidth comma (`Toys， Kids`),
+  which is a useful reminder of whose data it is.
+- **No backing column exists.** A scan of every column in production on 2026-10-03
+  found no `color`, `size`, `gender` or `age_group` field anywhere; the 14 near
+  matches are all `file_size` or UI theme colours.
+
+The sharpest contrast with the identifier gap: for identifiers Google *provides* a
+truthful way to say "we don't have this" — `identifier_exists: no`, which this feed
+already sends. **For apparel attributes there is no equivalent escape hatch**, and
+Google's documentation offers no guidance for a merchant that genuinely lacks the
+data. So this cannot be closed honestly by a feed change alone. Closing it requires
+real option semantics upstream — either CJ supplying named axes, or a deliberate
+PulseSoc-authored mapping that someone owns and can defend. That is a data decision,
+not a feed decision, and it is why this section recommends no code change.
 
 ## Turning it on
 
