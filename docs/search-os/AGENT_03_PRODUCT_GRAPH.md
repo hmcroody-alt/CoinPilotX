@@ -65,13 +65,31 @@ mutation matrix that make the refusals enforceable. It is deliberately not a rew
 | **PUBLIC** | **44** | ...AND `quantity > 0` |
 | MERCHANT ELIGIBLE | 39 | ...AND feed-required fields present |
 
-**152 published, approved listings are invisible on a stock technicality alone** — 148
-have `quantity IS NULL` and 4 have `quantity <= 0`, while all 3,797 of their variants
-report `IN_STOCK` from the supplier. The listing-level `quantity` column is simply never
-populated for dropship rows; stock lives at the variant level.
+**152 published, approved listings are excluded by `quantity`** — 148 `NULL`, 4 `<= 0` —
+while all 3,797 of their variants report `IN_STOCK` from the supplier.
+
+**That is not an import gap, and the first version of this document got it wrong.** The
+cross-tab settles it:
+
+| supplier-bound | `quantity > 0` | count |
+|---|---|---|
+| no | no | 152 |
+| no | **yes** | **1** (listing 35 — a known defect) |
+| yes | yes | 43 |
+| **yes** | **no** | **0** |
+
+`quantity > 0` ⟺ bound, with exactly one exception. **Every bound listing already has a
+quantity.** So nothing failed to populate: the NULL means *no supplier variant has been
+chosen yet*, which is a commercial decision nobody has made, not a denormalized
+aggregate that got dropped. `importer._create_draft_listing` leaves it NULL on purpose —
+`0` is not "unknown", it is a merchant asserting they have none — and `drafts.publish`
+fills it at publish time from the bound variant. The 152 never passed `drafts.publish`;
+they reached `published`+`approved` through the admin bulk-approve path, which validates
+nothing.
 
 Any agent sizing an index, a sitemap, a feed, or a crawl budget off "196 products" is
-sizing it off 4.5× the real exposed catalogue.
+sizing it off 4.5× the real exposed catalogue. The number is 44 — really 43 plus one
+defect.
 
 ### Identifiers: brand, GTIN and MPN are permanently absent
 
@@ -227,25 +245,28 @@ Three contract rules that are not obvious from the signatures:
 
 > ### THE 152 ARE NOT A BACKLOG OF PUBLISHABLE PRODUCTS
 >
-> I measured a disagreement. I did **not** establish which side of it is correct, and
-> nothing in this mission licenses resolving it by filling in the column.
+> **Deriving `quantity` from variant stock would create 152 live, chargeable,
+> unfulfillable products.** Marketplace card payments are LIVE in production. All 152
+> are supplier-unbound, so `fulfillment.create_intent` → `gateway.get_product_binding`
+> raises `product_binding_required` and **no supplier order can ever be placed**. The
+> money would move and nothing would ship — that is strictly worse than leaving them
+> hidden. It is the listing-35 defect, 152 times over.
 >
-> **Do not** interpret `quantity IS NULL` as in-stock because variants have inventory.
-> **Do not** bulk-set quantity, bulk publish, bulk reprice, index them, feed them to
-> Merchant, or push them through IndexNow. **Do not** run
-> `quantity = SUM(variants)`, `MAX(variants)`, or `1`.
+> `_apply_stock` already refuses the same idea in a comment: summing the siblings
+> "would offer a buyer stock of a colour they cannot choose and nobody will ship."
 >
-> A listing whose supplier variants are stocked is **not** thereby safe to publish.
-> Any remediation must first reconcile with the Catalog Safety Gate, the variant
-> bridge, exact-variant binding, supplier binding, negative-margin controls, shipping
-> readiness and publication lifecycle.
+> **Do not** run `quantity = SUM(variants)`, `MAX(variants)`, or `1`. **Do not** bulk
+> publish, bulk reprice, index them, feed them to Merchant, or push them through
+> IndexNow. **Do not** fill `provider_variant_id` by picking a variant —
+> `importer.py:510` refuses to break that tie on purpose, because every variant is
+> `IN_STOCK` and active, so there is a genuine choice no code may invent.
 >
-> The open question is **what the NULL means**, and it has at least eight candidate
-> answers: independent inventory truth; a denormalized aggregate that failed to
-> populate; a stale import artifact; a publication gate; a seller-controlled field;
-> derived incorrectly; deliberately NULL until an exact supplier-variant decision is
-> made; or another lifecycle state entirely. Prove the intended business semantics
-> before writing a single row.
+> The honest blocker is **the missing bind, and it is a commercial decision**. The only
+> defensible *code* change is tightening, and it belongs at the pre-money checkout gate
+> (`marketplace_supplier_checkout.evaluate`), **not** in `public_sql` — adding a binding
+> `EXISTS` there would couple all seven call sites plus PulseDrop eligibility to a table
+> created inside a deliberately non-fatal `try/except`, letting one supplier-schema
+> failure hide the entire marketplace.
 
 ### → Agents 0, 5, 7, 12 (structured data, Merchant, feeds)
 

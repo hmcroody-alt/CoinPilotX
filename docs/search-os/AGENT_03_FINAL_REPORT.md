@@ -195,16 +195,41 @@ you may do with it. Eligibility belongs to the surface that owns the decision, a
 | **PUBLIC** | **44** |
 | MERCHANT ELIGIBLE | 39 |
 
-**152 published, approved listings are invisible on a stock technicality alone** — 148
-with `quantity IS NULL`, 4 with `quantity <= 0` — while all 3,797 of their variants
-report `IN_STOCK` from the supplier. Listing-level `quantity` is simply never populated
-for dropship rows; stock lives at the variant level.
+152 published, approved listings are excluded by `quantity` — 148 `NULL`, 4 `<= 0` —
+while all 3,797 of their variants report `IN_STOCK`.
 
-This is the single highest-leverage finding in the mission and it is **not mine to fix** —
-it belongs to listing lifecycle / import. Raised to Agent 0 for assignment.
+**My first reading of this was wrong, and the way it was wrong is the most useful thing
+in this report.** I called it "a one-column data gap on the import path" and briefed the
+follow-up as "derive listing stock from variant stock". The cross-tab refutes it:
+
+| supplier-bound | `quantity > 0` | count |
+|---|---|---|
+| no | no | 152 |
+| no | **yes** | **1** (listing 35, a known defect) |
+| yes | yes | 43 |
+| **yes** | **no** | **0** |
+
+`quantity > 0` ⟺ bound. **Zero** bound listings fail the stock gate, so nothing failed
+to populate. `importer._create_draft_listing` leaves the column NULL deliberately — `0`
+is a count, a merchant's assertion they have none, which nobody made — and
+`drafts.publish` fills it from the bound variant at publish time. These 152 never passed
+`drafts.publish`; its `_validate` refuses them with `SUPPLIER_VARIANT_UNBOUND`. They are
+`published`+`approved` because the admin bulk-approve path validates nothing.
+
+And the fix I briefed would have been actively harmful. All 152 are unbound, so
+`fulfillment.create_intent` raises `product_binding_required` and no supplier order can
+ever be placed — while marketplace card payments are LIVE in prod. Deriving the quantity
+would have produced 152 chargeable, unfulfillable listings. `_apply_stock` already
+refuses the same idea in a comment: it "would offer a buyer stock of a colour they
+cannot choose and nobody will ship."
+
+The real blocker is a **missing commercial decision** — which variant ships — and
+`importer.py:510` declines to invent it because every variant is in stock and active, so
+the tie is genuine. Still not mine to fix, but the ask has changed shape: it is not an
+import bug, it is 152 unmade decisions.
 
 Any agent sizing an index, sitemap, feed or crawl budget off "196 products" is off by
-4.5×. The number is 44.
+4.5×. The number is 44 — 43 plus one defect.
 
 ---
 
@@ -323,7 +348,8 @@ quantified; privacy enforced twice and verified catalogue-wide; contracts frozen
 published; 63 tests green; 20 mutations killed; CI registration done; prod-reachability
 gate green; branch pushed.
 
-**Not done, and not mine:** the `quantity` gap that hides 152 listings; populating a
+**Not done, and not mine:** the 152 unmade variant-binding decisions behind the
+`quantity` NULLs (a commercial call, not a code fix — see §18); populating a
 variant image column; adopting the layer inside `marketplace_seo` and
 `merchant_center_feed`; any PulseSoc taxonomy. Each is named above with an owner or an
 ask to Agent 0.
