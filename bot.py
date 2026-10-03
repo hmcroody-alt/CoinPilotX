@@ -116708,6 +116708,17 @@ def stripe_webhook():
         logging.warning("Stripe webhook invalid event payload event_id=%s event_type=%s", event.get("id"), event_type)
         return "Invalid", 400
 
+    # An event with no id cannot be deduplicated, and the failure is silent
+    # rather than loud. `payment_webhook_events.provider_event_id` is UNIQUE and
+    # `event.get("id", "")` yields "" rather than NULL, so every id-less event
+    # collapses onto one inbox row: the first is recorded, and each later one is
+    # reported as a duplicate and answered 200 -- discarded without a trace.
+    # Stripe always sends an id, so refusing here costs nothing real and turns a
+    # silent discard into a logged refusal.
+    if not str(event.get("id") or "").strip():
+        logging.error("STRIPE_WEBHOOK_EVENT_HAS_NO_ID event_type=%s", event_type)
+        return "Invalid: event has no id", 400
+
     logging.info("STRIPE_EVENT_RECEIVED event_type=%s event_id=%s", event_type, event.get("id"))
     logging.info("STRIPE_EVENT_TYPE event_type=%s event_id=%s", event_type, event.get("id"))
     logging.info("stripe webhook received event_type=%s event_id=%s", event_type, event.get("id"))
@@ -116737,6 +116748,17 @@ def stripe_webhook():
     if webhook_record.get("duplicate"):
         logging.info("Payment webhook duplicate skipped provider_event_id=%s event_type=%s", event_id, event_type)
         return "OK", 200
+    if not webhook_record.get("ok"):
+        # The inbox could not record this event's identity. Nothing below is
+        # safe to run: without a committed row there is no dedupe record, so
+        # processing now and letting Stripe redeliver later would double-apply
+        # the handler. A 5xx is the only honest answer -- it keeps Stripe
+        # retrying with the same event id until the identity lands.
+        logging.error(
+            "PAYMENT_WEBHOOK_NOT_RECORDED event_id=%s event_type=%s error=%s",
+            event_id, event_type, str(webhook_record.get("error"))[:300],
+        )
+        return "Webhook inbox unavailable", 500
     if stripe_event_processed(event_id):
         logging.info("Stripe webhook duplicate skipped event_id=%s event_type=%s", event_id, event.get("type"))
         creator_economy_service.update_webhook_event(event_id, "skipped", "legacy stripe_events already processed")
