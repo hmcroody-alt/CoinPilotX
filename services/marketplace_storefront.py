@@ -1037,12 +1037,43 @@ def render_discovery(
     )
     robots_extra = "" if indexable else "noindex,follow"
 
+    # `page.page`, not `filters.page`: the canonical names the page that was
+    # actually served. `paginate` clamps, so `?page=999999` renders the real last
+    # page, and a canonical built from the *request* would advertise an
+    # out-of-range URL as a distinct document -- the soft-404-at-scale pattern.
+    # Clamping instead folds every out-of-range request onto the one real URL.
+    #
+    # This is deliberately decoupled from `indexable` above, which still keys on
+    # the *requested* page. The two answer different questions: "which URL is
+    # this document?" (clamped) and "may this request be indexed?" (as asked).
+    # Keeping the latter on `filters.page` means no URL that is noindex today
+    # becomes indexable, so the fix cannot move the index baseline -- it only
+    # stops page 2 claiming to be page 1.
+    #
+    # `page` joins the canonical only for the canonical ordering. A sorted or
+    # searched view is not a distinct document -- `sort` and `q` are excluded
+    # from the canonical precisely because they reorder or subset the same
+    # catalogue -- so pointing `?page=2&sort=newest` at `?page=2` would invent a
+    # cross-URL canonical between two genuinely different product sets. The
+    # clean parent stays the honest answer for those.
+    canonical_page = (
+        page.page if (not filters.q and filters.sort == mw.DEFAULT_SORT) else 1
+    )
+
     return RenderedPage(
         title=(f"{heading} · PulseSoc Marketplace" if filters.category else "PulseSoc Marketplace"),
         meta_description=description[:300],
         body_html=body,
+        # `build_query_string` drops `page=1` and sorts its pairs, so page one
+        # canonicalises to the clean parent and every canonical has one
+        # deterministic spelling.
         canonical_path=BASE_PATH
-        + mw.build_query_string({"category": filters.category if known_category else ""}),
+        + mw.build_query_string(
+            {
+                "category": filters.category if known_category else "",
+                "page": canonical_page,
+            }
+        ),
         indexable=indexable,
         robots_extra=robots_extra,
         jsonld=tuple(

@@ -515,6 +515,7 @@
     "tests/test_marketplace_order_lane.py",
     "tests/test_marketplace_light_parity.py",
     "tests/test_marketplace_price_label_parity.py",
+    "tests/test_marketplace_pagination_canonical.py",
     "tests/test_marketplace_public_pages.py",
     "tests/test_marketplace_reachability_is_shared.py",
     "tests/test_marketplace_seo.py",
