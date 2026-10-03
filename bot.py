@@ -309,6 +309,10 @@ from services import (
     realtime_service,
     telegram_text_router,
     legal_acceptance,
+    apple_identity,
+    google_identity,
+    external_identity,
+    oauth_login_state,
     live_market_service,
     live_archive_service,
     live_archive_share_service,
@@ -8229,7 +8233,7 @@ def pending_legal_acceptance_user_id():
     return user_id
 
 
-def complete_web_login(user, preferred_language=""):
+def complete_web_login(user, preferred_language="", login_source="web_login"):
     """Everything that happens once a web sign-in is fully authorised.
 
     Shared by the ordinary path and by the acceptance step below so the two
@@ -8237,8 +8241,19 @@ def complete_web_login(user, preferred_language=""):
     same session, the same login notifications and the same tokens as one who
     did not. A second copy of this would be how one of those silently stops
     firing for the members who went the long way round.
+
+    `login_source` names the surface and is the *only* thing a federated
+    sign-in changes about this function. Apple and Google sign-ins land here
+    too, deliberately: they get the same session cookie, the same bearer and
+    refresh tokens, the same owner escalation, the same login and new-device
+    notifications, and the same deletion cancellation. A separate, lighter
+    "social session" is the shortcut that produces a session the rest of the
+    platform does not fully recognise -- and the notifications nobody notices
+    stopped firing are the ones that tell a member their account was accessed.
     """
 
+    if login_source not in legal_acceptance.SOURCES:
+        raise ValueError(f"unknown login source {login_source!r}")
     email = user.get("email") or ""
     session.pop(PENDING_LEGAL_SESSION_KEY, None)
     session.permanent = True
@@ -8255,7 +8270,7 @@ def complete_web_login(user, preferred_language=""):
     # comes on file at the current one. Already on file is a no-op, not a second
     # row -- so this is also the write that makes the question above stop being
     # asked.
-    legal_acceptance.record(cur, user["user_id"], source="web_login")
+    legal_acceptance.record(cur, user["user_id"], source=login_source)
     cancel_scheduled_account_deletion(cur, user["user_id"])
     notify_user(
         cur,
@@ -123436,6 +123451,15 @@ def _init_db_impl():
     # cannot come into existence without a record of what it agreed to, and a
     # swallowed failure here would quietly restore exactly the defect it replaces.
     legal_acceptance.ensure_schema(conn)
+
+    # Same placement and the same reason: the federated sign-in routes write a
+    # handshake row and an identity row from inside their own open transaction,
+    # so building these on demand would block on a lock the route still holds.
+    # Unguarded for the same reason too -- a swallowed failure here leaves the
+    # Apple and Google buttons live with nowhere to record who signed in, which
+    # fails open into "create a fresh account every time".
+    oauth_login_state.ensure_schema(conn)
+    external_identity.ensure_schema(conn)
 
     # Here as well as in `create_account`, so the invariant exists from boot
     # rather than from whenever somebody next signs up. Safe at this line for the

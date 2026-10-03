@@ -69,7 +69,19 @@ UNVERSIONED_DOCUMENTS = {
 #: Where an acceptance came from. Closed set because "which surface asked" is the
 #: part of this record a reviewer will question, and a free-text column fills up
 #: with three spellings of the same answer.
-SOURCES = ("web_signup", "web_login", "mobile_register", "mobile_login")
+#:
+#: `web_apple` and `web_google` are federated sign-in. Separate entries rather
+#: than folded into `web_login` because a federated member may never have seen
+#: the web login form at all -- the account was created from a provider
+#: assertion -- and "which surface asked" has to stay answerable for that case.
+SOURCES = (
+    "web_signup",
+    "web_login",
+    "web_apple",
+    "web_google",
+    "mobile_register",
+    "mobile_login",
+)
 
 #: Where a member reads each document. Site-relative so one deployment's host is
 #: not baked into a record or a mobile build; callers that need an absolute URL

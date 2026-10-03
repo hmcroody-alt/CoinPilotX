@@ -224,6 +224,8 @@ def test_the_stored_source_says_which_surface_asked():
     assert set(legal_acceptance.SOURCES) == {
         "web_signup",
         "web_login",
+        "web_apple",
+        "web_google",
         "mobile_register",
         "mobile_login",
     }, (
