@@ -187,6 +187,30 @@ def capacity_projection(product_count: int, *, tick_limit: int = DEPLOYED_TICK_L
                         intents_per_tick: int = 0) -> dict:
     """What a catalogue of ``product_count`` products costs the reconciler.
 
+    ``product_count`` is a **demand** population: how many products the
+    reconciler owes recurring work for. It is *not* the number of listings a
+    buyer can see. Use :func:`catalogue_demand_population` to obtain it, or
+    :func:`measured_capacity` to avoid choosing at all.
+
+    This distinction is the whole reason the paragraph exists, because the
+    wrong denominator does not produce an obviously broken answer — it produces
+    a *reassuring* one. On 2026-10-03 production held 44 purchasable drop-ship
+    listings and 196 sourced products. Those are different populations
+    measuring different things: 44 is the gate's **exposure** denominator, the
+    one :func:`snapshot` divides its rates by, and it counts only listings that
+    are published, in stock and priced. The reconciler does not care about any
+    of that — it refreshes every sourced product, purchasable or not.
+
+    Passing the exposure count in anyway returns ``keeps_up=True`` at 0.92×
+    oversubscription, i.e. "the worker is comfortably ahead". The demand count
+    returns ``keeps_up=False`` at 4.08× and a 5880s full sweep. The second is
+    the truth, and it is corroborated twice over by measurement that does not
+    share the model's assumptions: :func:`snapshot` observed a p95 confirmation
+    age of 8400s in production, and the job table's own oldest-overdue spread
+    was 8778s and 11454s. A reader who reached for ``snapshot()["applicable"]``
+    because it was the integer closest to hand would have had every reason to
+    believe the queue was healthy while 277 of 395 jobs sat overdue.
+
     Every number is derived from :data:`CADENCE` — imported, not restated — so a
     cadence change moves this projection instead of silently invalidating it.
     Nothing here proposes a larger ``tick_limit``: the brief is explicit that
@@ -248,6 +272,75 @@ def break_even_product_count(*, tick_limit: int = DEPLOYED_TICK_LIMIT,
     capacity_per_second = budget / float(tick_seconds)
     per_product = sum(1.0 / float(CADENCE[kind]) for kind in PER_PRODUCT_JOB_KINDS)
     return int(capacity_per_second / per_product) if per_product else 0
+
+
+#: The reconciler's own queue. Stated here as a literal because
+#: ``services.business_os.suppliers.worker`` inlines it too and exports no
+#: constant to import — so this is a second mention, not a second authority. If
+#: the table is ever renamed, :func:`catalogue_demand_population` returns
+#: ``None`` rather than a wrong number, and the tests below say so.
+SYNC_JOBS_TABLE = "business_os_supplier_sync_jobs"
+
+
+def catalogue_demand_population(cur) -> int | None:
+    """How many products the reconciler owes recurring work for. SELECT only.
+
+    This is the denominator :func:`capacity_projection` wants, read from the
+    queue the worker actually services rather than inferred from anything
+    buyer-facing. Counting distinct ``resource_id`` over
+    :data:`PER_PRODUCT_JOB_KINDS` ties the number to the same constant the
+    projection multiplies by, so the two cannot drift apart: add a third
+    per-product kind and both move together.
+
+    Returns ``None`` — not ``0`` — when the table is absent or unreadable.
+    Zero is a real and reportable answer ("no sourced products"), and
+    collapsing "I cannot see the queue" onto it would tell an owner the
+    reconciler has nothing to do at the exact moment nobody can tell. The same
+    inversion the drain states exist to keep apart.
+    """
+    placeholders = ",".join("?" for _ in PER_PRODUCT_JOB_KINDS)
+    try:
+        cur.execute(
+            f"SELECT COUNT(DISTINCT resource_id) AS n FROM {SYNC_JOBS_TABLE} "
+            f"WHERE kind IN ({placeholders})",
+            tuple(PER_PRODUCT_JOB_KINDS),
+        )
+        row = cur.fetchone()
+    except Exception:
+        return None
+    if row is None:
+        return None
+    # dict(row), never iteration: a row yields VALUES on SQLite and NAMES on
+    # PostgreSQL, so `list(row)[0]` would return the string "n" in production.
+    try:
+        return int(dict(row)["n"] or 0)
+    except Exception:
+        return None
+
+
+def measured_capacity(cur, *, intents_per_tick: int = 0) -> dict:
+    """:func:`capacity_projection` over the population actually in the queue.
+
+    Exists so that the common case requires no choice of denominator. A caller
+    that wants "is the reconciler keeping up with what we have?" should reach
+    for this; ``capacity_projection`` stays available for the hypotheticals the
+    brief asks for (200/500/1k/5k/10k), which are by definition not measured.
+
+    When the population cannot be read, the projection is omitted rather than
+    computed from a substituted zero — ``capacity_projection(0)`` reports
+    ``keeps_up=True``, which is exactly the false reassurance this module is
+    trying to stop emitting.
+    """
+    products = catalogue_demand_population(cur)
+    if products is None:
+        return {
+            "product_count": None,
+            "measured": False,
+            "reason": f"{SYNC_JOBS_TABLE} absent or unreadable",
+        }
+    projection = capacity_projection(products, intents_per_tick=intents_per_tick)
+    projection["measured"] = True
+    return projection
 
 
 # --------------------------------------------------------------------------
