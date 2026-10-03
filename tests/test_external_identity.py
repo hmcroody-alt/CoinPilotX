@@ -29,6 +29,7 @@ import os
 import tempfile
 import time
 import unittest
+from urllib.parse import parse_qs, urlsplit
 
 # Must precede the first `services.db` import: ENGINE_URL is resolved at module
 # scope, so a later assignment would be read after the engine already exists and
@@ -41,6 +42,7 @@ from cryptography.hazmat.primitives import serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric import ec, rsa  # noqa: E402
 
 from services import (  # noqa: E402
+    account_email_uniqueness,
     apple_identity,
     db,
     external_identity,
@@ -427,6 +429,67 @@ class StateHandshakeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             oauth_login_state.create("facebook")
 
+    def test_the_parked_claims_survive_the_handoff_being_burned(self):
+        """`load()` exists for the step after the binding has already passed.
+
+        A brand new federated account still has to be asked its age and shown
+        the agreements, and that answer arrives on a later request with the
+        state spent and the handoff burned. If the claims were only readable
+        through `claim_handoff` the only way to serve that request would be to
+        re-open a handshake -- a second trip to the provider for a question the
+        provider cannot answer.
+        """
+
+        opened = oauth_login_state.create("google")
+        spent = oauth_login_state.consume_by_nonce(opened["nonce"], "google")
+        oauth_login_state.attach_profile(spent["id"], {"subject": "g-77", "email": "x@test"})
+        oauth_login_state.claim_handoff(spent["handoff_token"], opened["binding_secret"])
+
+        again = oauth_login_state.load(spent["id"])
+        self.assertEqual(again["profile"]["subject"], "g-77")
+        self.assertEqual(again["provider"], "google")
+
+    def test_load_spends_nothing_so_it_can_be_called_twice(self):
+        """It is a read. A read that burned its row would break a page reload."""
+
+        opened = oauth_login_state.create("apple")
+        spent = oauth_login_state.consume(opened["state"], "apple")
+        oauth_login_state.attach_profile(spent["id"], {"subject": "a-1"})
+        self.assertEqual(oauth_login_state.load(spent["id"])["profile"]["subject"], "a-1")
+        self.assertEqual(oauth_login_state.load(spent["id"])["profile"]["subject"], "a-1")
+
+    def test_load_refuses_an_expired_row(self):
+        """The TTL is not waived just because the binding was checked earlier.
+
+        Otherwise a handshake would become immortal the moment it was spent, and
+        an abandoned half-finished signup would stay completable indefinitely.
+        """
+
+        opened = oauth_login_state.create("apple")
+        spent = oauth_login_state.consume(opened["state"], "apple")
+        conn = db.connect()
+        try:
+            conn.execute(
+                "UPDATE oauth_login_states SET expires_at='2000-01-01T00:00:00.000000Z' WHERE id=?",
+                (spent["id"],),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        with self.assertRaises(oauth_login_state.StateError) as caught:
+            oauth_login_state.load(spent["id"])
+        self.assertEqual(caught.exception.reason, "expired_state")
+
+    def test_load_refuses_an_id_that_was_never_real(self):
+        with self.assertRaises(oauth_login_state.StateError) as caught:
+            oauth_login_state.load(987654321)
+        self.assertEqual(caught.exception.reason, "unknown_or_spent_state")
+
+    def test_load_refuses_a_missing_id_rather_than_reading_row_zero(self):
+        with self.assertRaises(oauth_login_state.StateError) as caught:
+            oauth_login_state.load(0)
+        self.assertEqual(caught.exception.reason, "missing_state")
+
 
 class IdentityResolutionTests(unittest.TestCase):
     """Who a verified assertion means, and what must never be inferred."""
@@ -544,6 +607,34 @@ class IdentityResolutionTests(unittest.TestCase):
         self.assertEqual(decision["decision"], "link_required")
 
     def test_several_accounts_on_one_address_still_refuse_to_pick_one(self):
+        """Defence in depth, and deliberately kept after the index landed.
+
+        `services/account_email_uniqueness.py` now holds a live partial unique
+        index on `lower(trim(email))`, so the two rows below are a state
+        production refuses to create -- this exact pair, differing only in case,
+        is what that index was built to stop. The resolver branch is kept and
+        tested anyway for two reasons: the index is installed by
+        `run_once_per_process`, so a DB that has not yet been visited by a worker
+        does not have it; and the alternative to a `link_required` refusal is
+        *picking one of two accounts by email*, which is the takeover this whole
+        module exists to prevent. A safety net that only works while a
+        constraint holds is not a safety net.
+
+        The index is dropped here rather than worked around, because the state
+        under test is the one where it is absent.
+        """
+
+        conn = db.connect()
+        try:
+            conn.execute(f"DROP INDEX IF EXISTS {account_email_uniqueness.INDEX_NAME}")
+            conn.commit()
+        except Exception:
+            # Never created in this test's own minimal `users` table. That is the
+            # normal case when this file runs in its own process, as CI runs it.
+            pass
+        finally:
+            conn.close()
+
         self._member("duplicate@example.test")
         self._member("Duplicate@example.test")
         decision = external_identity.resolve(
@@ -836,6 +927,109 @@ class GoogleAdapterTests(unittest.TestCase):
         token = jwt.encode({"nonce": "handshake-7", "sub": "g"}, KEYS.pem, algorithm="RS256")
         self.assertEqual(google_identity.unverified_nonce(token), "handshake-7")
         self.assertEqual(google_identity.unverified_nonce("garbage"), "")
+
+    def test_the_authorization_url_asks_for_an_id_token_and_not_a_code(self):
+        """The one assertion that keeps this an identity flow.
+
+        `response_type=code` here would not break anything visibly -- sign-in
+        would still work -- but it would start requiring a client secret and
+        start receiving access and refresh tokens this product has no use for.
+        The failure of that drift is silent, so it is pinned here.
+        """
+
+        url = google_identity.authorization_url(
+            state="st-1", nonce="no-1", redirect_uri="https://pulsesoc.com/auth/google/callback"
+        )
+        query = parse_qs(urlsplit(url).query)
+        self.assertEqual(query["response_type"], ["id_token"])
+        self.assertEqual(query["response_mode"], ["form_post"])
+        self.assertNotIn("code", query.get("response_type", []))
+        self.assertNotIn("access_type", query)
+        self.assertEqual(query["scope"], ["openid email profile"])
+        self.assertEqual(query["nonce"], ["no-1"])
+        self.assertEqual(query["state"], ["st-1"])
+
+    def test_the_response_mode_keeps_the_token_out_of_the_url(self):
+        """`query` would put a signed identity assertion in the address bar.
+
+        From there it reaches access logs, the `Referer` header of the next
+        request, and browser history -- three places it is replayable from.
+        """
+
+        url = google_identity.authorization_url(
+            state="s", nonce="n", redirect_uri="https://pulsesoc.com/auth/google/callback"
+        )
+        self.assertIn("response_mode=form_post", url)
+
+    def test_the_member_is_always_asked_which_account(self):
+        """On a shared machine the account the browser holds is someone else's."""
+
+        url = google_identity.authorization_url(
+            state="s", nonce="n", redirect_uri="https://pulsesoc.com/auth/google/callback"
+        )
+        self.assertEqual(parse_qs(urlsplit(url).query)["prompt"], ["select_account"])
+
+    def test_a_handshake_is_required_before_a_member_is_sent_anywhere(self):
+        for missing in ({"state": "", "nonce": "n"}, {"state": "s", "nonce": ""}):
+            with self.assertRaises(google_identity.GoogleIdentityError) as caught:
+                google_identity.authorization_url(
+                    redirect_uri="https://pulsesoc.com/auth/google/callback", **missing
+                )
+            self.assertEqual(caught.exception.reason, "google_missing_handshake")
+
+    def test_an_unconfigured_provider_refuses_to_build_a_url(self):
+        os.environ.pop("GOOGLE_SIGNIN_CLIENT_ID", None)
+        with self.assertRaises(google_identity.GoogleIdentityError) as caught:
+            google_identity.authorization_url(
+                state="s", nonce="n", redirect_uri="https://pulsesoc.com/auth/google/callback"
+            )
+        self.assertEqual(caught.exception.reason, "google_not_configured")
+
+    def test_either_field_name_delivers_the_token_to_the_same_verifier(self):
+        """`id_token` is the redirect flow's spelling, `credential` is GIS's.
+
+        Reconciling them here rather than in the route is what keeps a fallback
+        to the in-page button a template change instead of a second flow.
+        """
+
+        self.assertEqual(google_identity.assertion_from_form({"id_token": "T"}), "T")
+        self.assertEqual(google_identity.assertion_from_form({"credential": "T"}), "T")
+        self.assertEqual(
+            google_identity.assertion_from_form({"id_token": "first", "credential": "second"}),
+            "first",
+        )
+        self.assertEqual(google_identity.assertion_from_form({}), "")
+        self.assertEqual(google_identity.assertion_from_form(None), "")
+        self.assertEqual(google_identity.assertion_from_form({"id_token": "   "}), "")
+
+    def test_a_token_minted_for_another_relying_party_is_refused(self):
+        """Google signs for every site on the internet with the same keys.
+
+        So a valid signature proves Google issued it, never that it was issued
+        for PulseSoc. Without the audience check, any site with Google sign-in
+        could hand its own members' tokens here and be believed.
+        """
+
+        token = jwt.encode(
+            {
+                "iss": "https://accounts.google.com",
+                "aud": "someone-else.apps.googleusercontent.com",
+                "sub": "g-9",
+                "exp": int(time.time()) + 600,
+                "iat": int(time.time()),
+            },
+            KEYS.pem,
+            algorithm="RS256",
+            headers={"kid": KEY_ID},
+        )
+        real_get = oidc_tokens.requests.get
+        oidc_tokens.requests.get = _JwksServer(KEYS.document())
+        try:
+            with self.assertRaises(google_identity.GoogleIdentityError) as caught:
+                google_identity.verify_assertion(token)
+        finally:
+            oidc_tokens.requests.get = real_get
+        self.assertEqual(caught.exception.reason, "google_wrong_audience")
 
 
 if __name__ == "__main__":
