@@ -66,7 +66,7 @@
   // been typed into it. Held here because every mutation re-reads (rule 3), and
   // a re-render that dropped a half-typed address would make the cart unusable
   // the moment an unrelated quantity changed.
-  var ui = { open: 0, lane: {}, typed: {}, busy: false };
+  var ui = { open: 0, lane: {}, typed: {}, error: {}, busy: false };
 
   // The one place panel visibility is decided, so two of them cannot be shown
   // at once by a later edit that only remembered to turn one on.
@@ -125,6 +125,96 @@
 
   function stateOf(name) {
     return STATES[name] || { word: String(name || "Unavailable"), tone: "gone", buys: false };
+  }
+
+  // ----------------------------------------------------------------------
+  // The four steps this checkout actually has
+  // ----------------------------------------------------------------------
+  // Every one of these is a real stage with a real authority behind it, not a
+  // wizard invented to look like one: this page collects the details, Stripe's
+  // hosted page takes the payment, and the confirmation is written by the
+  // webhook. The page does not advance the indicator itself past the step it is
+  // on -- "Payment" lights up when the buyer is on Stripe's page, and nothing
+  // here may draw "Confirmation" as reached, because this origin never learns
+  // that a card was charged.
+  //
+  // It exists because the previous form ended in a button that said "Pay", which
+  // promised a charge that this origin cannot and does not perform. Telling the
+  // buyer there are two more stages after this one is the honest version of that
+  // button.
+  var STEPS = ["Cart", "Details", "Payment", "Confirmation"];
+
+  // Step two is named after what the group's own form asks for. "Delivery" over
+  // a pickup form is a false statement about where the order is going, and this
+  // cart serves nine fulfilment kinds, not one. `details_kind` is the server's
+  // word -- services/marketplace_fulfillment decides it -- and a kind this table
+  // has never heard of falls through to the neutral noun rather than being
+  // guessed at, the same rule `stateOf` above keeps for line states.
+  var DETAIL_COPY = {
+    shipping: {
+      step: "Delivery", cta: "Proceed to delivery", title: "Delivery details",
+      lede: "Where should this order go? The seller ships to the address you give here."
+    },
+    pickup: {
+      step: "Pickup", cta: "Proceed to pickup details", title: "Pickup details",
+      lede: "Who is collecting this, and how can the seller reach them?"
+    },
+    // `details_kind_for` answers "" for a group it asks nothing of -- an
+    // all-digital basket -- and "" is a key like any other here rather than a
+    // falsy value that falls through to the generic "the seller needs these",
+    // which would be asking for details on a form that has none.
+    "": {
+      step: "Details", cta: "Continue to checkout", title: "Nothing to deliver",
+      lede: "This order needs no delivery details. Continue when you are ready."
+    },
+    service_remote: {
+      step: "Booking", cta: "Proceed to booking details", title: "Booking details",
+      lede: "When would you like this, and how should the seller reach you?"
+    },
+    service_in_person: {
+      step: "Booking", cta: "Proceed to booking details", title: "Booking details",
+      lede: "When and where should the seller come to you?"
+    },
+    booking_remote: {
+      step: "Booking", cta: "Proceed to booking details", title: "Booking details",
+      lede: "When would you like this, and how should the seller reach you?"
+    },
+    booking_in_person: {
+      step: "Booking", cta: "Proceed to booking details", title: "Booking details",
+      lede: "When and where should the seller come to you?"
+    },
+    event_online: {
+      step: "Attendee", cta: "Proceed to attendee details", title: "Attendee details",
+      lede: "Who is attending? The ticket is issued in this name."
+    },
+    event_in_person: {
+      step: "Attendee", cta: "Proceed to attendee details", title: "Attendee details",
+      lede: "Who is attending? The ticket is issued in this name."
+    }
+  };
+  var DETAIL_FALLBACK = {
+    step: "Details", cta: "Proceed to details", title: "Your details",
+    lede: "The seller needs these before this order can go ahead."
+  };
+
+  function detailCopy(form) {
+    return DETAIL_COPY[form && form.details_kind] || DETAIL_FALLBACK;
+  }
+
+  // `active` is one-based and is never greater than 2 from this page, because 3
+  // and 4 belong to Stripe and to the webhook.
+  function stepsHtml(active, detailWord) {
+    var names = [STEPS[0], detailWord || STEPS[1], STEPS[2], STEPS[3]];
+    return "<ol class='steps' aria-label='Checkout progress'>" +
+      names.map(function (name, index) {
+        var position = index + 1;
+        var tone = position < active ? "done" : (position === active ? "now" : "next");
+        return "<li class='" + tone + "'" + (position === active ? " aria-current='step'" : "") + ">" +
+          "<span class='dot' aria-hidden='true'>" +
+            (position < active ? "&#10003;" : position) + "</span>" +
+          "<span class='name'>" + esc(name) + "</span>" +
+        "</li>";
+      }).join("") + "</ol>";
   }
 
   function lineHtml(line) {
@@ -257,6 +347,8 @@
     var countries = (options && options.shipping_countries) || [];
     var fields = (form && form.fields) || [];
     var pending = group.lane_question && group.lane_question.kind && !form;
+    var copy = detailCopy(form);
+    var held = ui.error[sellerId] || "";
 
     var body =
       laneHtml(sellerId, group.lane_question, ui.lane[sellerId]) +
@@ -267,18 +359,33 @@
           }).join(""));
 
     return "<form class='checkout' data-checkout='" + esc(sellerId) + "' novalidate>" +
-      "<h4>Checkout &mdash; " + esc(group.seller_store_name) + "</h4>" +
+      stepsHtml(2, copy.step) +
+      "<h4>" + esc(copy.title) + "</h4>" +
+      (pending ? "" : "<p class='step-lede'>" + esc(copy.lede) + "</p>") +
       body +
-      "<div data-group-error='" + esc(sellerId) + "' hidden></div>" +
+      // Re-emitted with whatever the last refusal said, because the redraw that
+      // produces this element is the same redraw that would otherwise erase it.
+      "<div data-group-error='" + esc(sellerId) + "'" + (held ? "" : " hidden") + ">" +
+        (held ? groupErrorHtml(held) : "") + "</div>" +
+      // Above the button, because it is what the button does and a buyer reading
+      // downwards must meet it before the click rather than after it.
+      "<p class='next'>Next: secure payment</p>" +
       "<div class='pay'>" +
+        // Not "Pay". This button creates a Stripe Checkout Session and sends the
+        // browser to Stripe's hosted page; no card is entered on this origin and
+        // no charge is authorised by this click. Labelling a navigation as a
+        // payment is how a buyer ends up believing they have paid while the
+        // amount is still only reserved -- and how a real customer did.
         "<button type='submit' class='button primary'" + (pending ? " disabled" : "") + ">" +
-          "Pay " + esc(money(group.subtotal_minor, group.currency)) + "</button> " +
-        "<button type='button' class='ghost' data-close-checkout='" + esc(sellerId) + "'>Cancel</button>" +
+          "Continue to secure payment &rarr;</button> " +
+        "<button type='button' class='ghost' data-close-checkout='" + esc(sellerId) + "'>Back to cart</button>" +
       "</div>" +
-      // Said on the form itself rather than in a footnote, because it is the
-      // answer to the question a buyer has while looking at it.
-      "<p class='note'>You will finish on Stripe's secure payment page. Your card " +
-      "details are never typed on PulseSoc and never reach our servers.</p>" +
+      // The amount stays on the subtotal row above and on Stripe's page, which
+      // are the two places it is authoritative. Repeating it inside the button
+      // was what made the button read as a charge.
+      "<p class='note'>You will continue to Stripe's secure payment page to pay " +
+      esc(money(group.subtotal_minor, group.currency)) + ". Your card details are " +
+      "never typed on PulseSoc and never reach our servers.</p>" +
       "</form>";
   }
 
@@ -337,9 +444,17 @@
         checkoutFormHtml(group, options) + "</div>";
     }
 
+    // Closed, so the buyer is still on step one. The copy is the next step's
+    // name rather than "Check out", which said nothing about whether the click
+    // charged anything.
+    var copy = detailCopy(formFor(group));
     return "<div class='group-foot'>" + subtotalRow(group) +
+      stepsHtml(1, copy.step) +
       "<div class='pay'><button class='button primary' data-open-checkout='" + esc(sellerId) + "'>" +
-      "Check out with " + esc(group.seller_store_name) + "</button></div></div>";
+      esc(copy.cta) + " &rarr;</button>" +
+      "<p class='note'>No payment is taken yet &mdash; you will review and pay on " +
+      "Stripe's secure page at the end.</p>" +
+      "</div></div>";
   }
 
   function subtotalRow(group) {
@@ -491,11 +606,65 @@
             "-" + fingerprint(JSON.stringify(body))).slice(0, 120);
   }
 
+  function groupErrorHtml(message) {
+    return "<div class='fail'><p>" + esc(message) + "</p></div>";
+  }
+
+  // Remembered in `ui`, not only painted into the DOM.
+  //
+  // Both of the paths that refuse an attempt call `load()` on the line after
+  // this one, to show the buyer the cart state that changed rather than only a
+  // sentence about it -- and `load()` redraws the lines, which re-emits
+  // `[data-group-error]` empty and hidden. So a message written straight to the
+  // element was erased within the same tick it was written.
+  //
+  // Measured in a browser rather than reasoned about: after a refused session
+  // the form came back with everything still typed in it, the button restored,
+  // the cart intact -- and no sentence anywhere saying what had happened. That
+  // is the shape of the incident this whole change exists to answer, where a
+  // buyer tapped a button six times because nothing on screen told them why it
+  // was not working.
+  //
+  // `ui.typed` is module-scoped for the same reason; this joins it.
   function groupError(sellerId, message) {
+    ui.error[sellerId] = message || "";
     var slot = els.lines.querySelector("[data-group-error='" + sellerId + "']");
     if (!slot) { toast(message); return; }
-    slot.innerHTML = "<div class='fail'><p>" + esc(message) + "</p></div>";
+    slot.innerHTML = groupErrorHtml(message);
     slot.hidden = false;
+  }
+
+  // The buyer has exactly one question when an attempt is refused -- did my
+  // money move -- and the raw error is often incapable of answering it.
+  // `pulseApi` surfaces its own read-deadline as "Request timed out", which is
+  // accurate and tells a buyer nothing; the customer in the original incident
+  // read silence as "it did not work, tap it again".
+  //
+  // The answer is the same for every refusal on this path, and it is safe to
+  // state unconditionally: this request creates a Stripe Checkout session, and
+  // a session is not a charge. Even the ambiguous case -- a timeout where the
+  // session may well have been created server-side -- has not charged anybody,
+  // and the idempotency key means the retry this invites resolves to that same
+  // session instead of minting a second one.
+  //
+  // Appended, never substituted: a server message that already explains itself
+  // ("Payments are temporarily unavailable") is the more useful half and is not
+  // thrown away for a generic one.
+  function handoffFailureMessage(err) {
+    var message = String((err && err.message) || "").trim();
+    if (!message) return "We could not start checkout. Nothing has been charged.";
+    if (!/[.!?]$/.test(message)) message += ".";
+    if (!/charg/i.test(message)) message += " Nothing has been charged.";
+    // The remedy clause is skipped whenever the message already carries one, in
+    // any of the forms the route emits: "Try a different delivery address",
+    // "Choose an option for every item", "Please try again". Matching only
+    // "try again" appended a vaguer instruction to a specific one -- measured,
+    // not supposed: four of the six refusal paths read "...Try a different
+    // delivery address. ... You can try again."
+    if (!/\btry\b|retry|choose|pick|select|change/i.test(message)) {
+      message += " You can try again.";
+    }
+    return message;
   }
 
   function findGroup(sellerId) {
@@ -519,7 +688,10 @@
       // not, nor skip one it does.
       else if (field.required && !missing) missing = field.label;
     });
-    if (missing) { groupError(sellerId, missing + " is required before you can pay."); return; }
+    if (missing) {
+      groupError(sellerId, missing + " is required before you can continue to payment.");
+      return;
+    }
 
     var body = {
       seller_user_id: group.seller_user_id,
@@ -528,27 +700,56 @@
     };
     body.idempotency_key = idempotencyKey(group, body);
 
+    // `ui.busy` is the real double-submit guard -- `checkout()` returns early
+    // above while it is set, and it is set before anything awaits, so a second
+    // tap that lands between the click and the paint cannot reach the POST. The
+    // `disabled` below is the visible half of the same statement, not the
+    // enforcement; a disabled attribute alone is lost to the next re-render.
+    // This attempt's own verdict replaces the last one; leaving a stale
+    // refusal on screen while a new attempt is in flight states something
+    // that is no longer being claimed.
+    ui.error[sellerId] = "";
     ui.busy = true;
     var button = els.lines.querySelector("[data-checkout='" + sellerId + "'] button[type='submit']");
-    if (button) { button.disabled = true; button.textContent = "Starting checkout…"; }
+    var label = button ? button.innerHTML : "";
+    // Says what is happening, which is a page being opened and not a card being
+    // charged. The old "Starting checkout…" was vague in the one direction that
+    // matters: a buyer reading it under a button that said "Pay" had every
+    // reason to think the money was moving.
+    if (button) { button.disabled = true; button.textContent = "Opening secure payment…"; }
+
+    // Restores the form the buyer is looking at, with everything they typed
+    // still in it -- `ui.typed` is module-scoped for exactly this, so a refused
+    // attempt costs them a sentence to read and nothing to retype.
+    function restore() {
+      ui.busy = false;
+      if (button) { button.disabled = false; button.innerHTML = label; }
+    }
 
     pulseApi("/api/pulse/marketplace/cart/checkout", { method: "POST", body: JSON.stringify(body) })
       .then(function (answer) {
         if (answer && answer.checkout_url) {
           // Stripe's own page from here. The lines stay in the cart until the
           // webhook confirms payment, so an abandoned session leaves the buyer
-          // exactly where they were.
+          // exactly where they were. `ui.busy` is deliberately left set: the
+          // navigation is already committed and clearing it would re-arm the
+          // button for the moment before the browser leaves.
           window.location.href = answer.checkout_url;
           return;
         }
         // A success with nowhere to go is not a success the buyer can act on.
-        ui.busy = false;
-        groupError(sellerId, "Checkout started but no payment page was returned. Nothing was charged.");
+        restore();
+        groupError(sellerId,
+          "We could not open the secure payment page. No payment was attempted and " +
+          "nothing has been charged. Your details are still here — try again.");
         load();
       })
       .catch(function (err) {
-        ui.busy = false;
-        groupError(sellerId, (err && err.message) || "Checkout could not be started.");
+        restore();
+        // Never "payment failed": no payment was attempted. The session could
+        // not be created, which is a different sentence with a different remedy,
+        // and the cart is not cleared either way.
+        groupError(sellerId, handoffFailureMessage(err));
         // The refusals are all about cart state -- a line went sold, a price
         // moved -- so the list is refetched to show the buyer the thing that
         // changed rather than only the sentence about it.

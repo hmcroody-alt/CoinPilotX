@@ -64173,6 +64173,52 @@ def _marketplace_order_return(transaction_id):
                 pass
 
 
+#: The four stages of a Marketplace checkout, in the order a buyer meets them.
+#: `static/js/pulsesoc_cart.js` draws the first two on `/pulse/cart`; these two
+#: return pages draw the last two, so the strip a buyer saw before leaving for
+#: Stripe is the same strip that greets them coming back.
+_CHECKOUT_STEPS = ("Cart", "Details", "Payment", "Confirmation")
+
+
+def _checkout_progress_html(done, pending=0):
+    """`done` steps struck through, one optional `pending` step marked waiting.
+
+    Inline-styled because these pages are built as HTML strings inside
+    `pulse_social_shell` and have no stylesheet of their own to extend.
+
+    `pending` exists so the success page can say that confirmation is *in
+    flight* without saying it has arrived. Drawing step four as reached would be
+    this page asserting something only `checkout.session.completed` knows, which
+    is the same claim the copy below it carefully declines to make.
+
+    The colours are token names, not hex. bot.py is under a ratchet
+    (`tests/web_parity/test_design_tokens.py::test_hardcoded_colour_budget_in_bot_py`)
+    that counts distinct `#rrggbb` and refuses any growth while the Phase 3
+    cleanup is outstanding -- and its regex counts the fallback inside
+    `var(--x, #abc123)` just the same, so a "safe" fallback is not on offer.
+    A bare `var()` resolves because `pulsesoc-tokens.css` is loaded by the
+    shell these pages render inside, which is the same reason the inline
+    styling is acceptable in the first place.
+    """
+    cells = []
+    for index, name in enumerate(_CHECKOUT_STEPS, start=1):
+        if index <= done:
+            mark, colour = "&#10003;", "var(--status-success)"
+        elif index == pending:
+            mark, colour = "&hellip;", "var(--status-warning)"
+        else:
+            mark, colour = str(index), "var(--text-secondary)"
+        cells.append(
+            f"<li style='display:flex;align-items:center;gap:6px;color:{colour};white-space:nowrap'>"
+            f"<span style='width:17px;height:17px;border-radius:50%;border:1px solid {colour};"
+            f"display:inline-flex;align-items:center;justify-content:center;font-size:10px'>{mark}</span>"
+            f"{name}</li>"
+        )
+    return ("<ol aria-label='Checkout progress' style='display:flex;flex-wrap:wrap;gap:6px 14px;"
+            "list-style:none;margin:0 0 16px;padding:0;font-size:11px;letter-spacing:.06em;"
+            "text-transform:uppercase'>" + "".join(cells) + "</ol>")
+
+
 @webhook_app.route("/pulse/payments/success", methods=["GET"])
 @webhook_app.route("/payments/success", methods=["GET"])
 def pulse_payment_success_page():
@@ -64185,7 +64231,11 @@ def pulse_payment_success_page():
         return pulse_social_shell(
             "Payment Complete",
             "Stripe received your payment. Your order appears in your orders once the confirmation reaches PulseSoc.",
-            "<section class='card'><h2>Payment received</h2>"
+            "<section class='card'>"
+            # Three of four: Stripe is done, PulseSoc's confirmation is not. The
+            # fourth dot is drawn as waiting, never as reached.
+            + _checkout_progress_html(3, pending=4) +
+            "<h2>Payment received</h2>"
             "<p>Stripe has taken your payment. Your order shows up in your orders as soon as "
             "the confirmation reaches PulseSoc &mdash; usually within a few seconds. The seller "
             "is notified at the same time.</p>"
@@ -64212,7 +64262,12 @@ def pulse_payment_cancel_page():
         return pulse_social_shell(
             "Checkout Canceled",
             "No card was charged and your cart is exactly as you left it.",
-            "<section class='card'><h2>Checkout canceled</h2>"
+            "<section class='card'>"
+            # Two of four. The buyer reached Stripe's page and came back without
+            # paying, so step three is not done and is not drawn as waiting
+            # either -- there is nothing in flight.
+            + _checkout_progress_html(2) +
+            "<h2>Checkout canceled</h2>"
             "<p>No payment was taken. Everything is still in your cart &mdash; nothing was removed "
             "and nothing was charged.</p>"
             "<div class='actions'><a class='button primary' href='/pulse/cart'>Back to your cart</a>"
@@ -102453,8 +102508,17 @@ def api_pulse_payments_checkout():
                 **{k: v for k, v in payment_intent_data.items() if k != "metadata"},
                 idempotency_key=f"marketplace-buy-now-sheet:{int(buyer['user_id'])}:{idempotency_key or tx_id}",
             )
-            intent_id = marketplace_cart_service.stripe_response_value(intent, "id")
-            client_secret = marketplace_cart_service.stripe_response_value(intent, "client_secret")
+            # Same unconditional import as the Session branch below. This read
+            # happens to be safe today -- `native_sheet` is only ever true when
+            # `item_type == "marketplace_product"`, which is also what binds the
+            # `marketplace_cart_service` alias -- but that is a value-level
+            # implication between two separately-maintained expressions, not a
+            # guarantee. Widening `native_sheet` to another item_type would turn
+            # this into a NameError thrown after the PaymentIntent is already
+            # created and chargeable.
+            from services.marketplace_payment_errors import stripe_response_value
+            intent_id = stripe_response_value(intent, "id")
+            client_secret = stripe_response_value(intent, "client_secret")
             cur.execute("UPDATE seller_transactions SET stripe_payment_intent_id=?, status='checkout_created', updated_at=? WHERE id=?",
                         (intent_id, now, tx_id))
             pulse_emit_payment_checkout_event(
@@ -102501,16 +102565,34 @@ def api_pulse_payments_checkout():
             idempotency_key=f"marketplace-buy-now:{int(buyer['user_id'])}:{idempotency_key or tx_id}",
             **shipping_checkout_params,
         )
-        cur.execute("UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?", (session_obj.get("id"), now, tx_id))
+        # Read once, through the helper. A stripe 15 `checkout.Session` is a
+        # generated resource and not a Mapping, so `session_obj.get("id")`
+        # raises `AttributeError: get` after the session is already created and
+        # payable — the request 500s while a real payable page exists at Stripe
+        # that nothing here recorded. The native-sheet branch above already
+        # reads its PaymentIntent through the same helper.
+        #
+        # Imported here rather than reached for through `marketplace_cart_service`:
+        # that alias is bound at the top of this function under
+        # `if item_type == "marketplace_product"`, but the Session above is
+        # created for every item_type this route accepts ("course", "lesson",
+        # "live_class" and the empty default all reach this line). Going through
+        # the alias would turn three of the four lanes into `NameError` — the
+        # same 500-after-a-payable-Session-exists failure, wearing a different
+        # exception name.
+        from services.marketplace_payment_errors import stripe_response_value
+        session_id = stripe_response_value(session_obj, "id")
+        checkout_url = stripe_response_value(session_obj, "url")
+        cur.execute("UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?", (session_id, now, tx_id))
         pulse_emit_payment_checkout_event(
             cur,
-            {**tx_event, "status": "checkout_created", "stripe_checkout_session_id": session_obj.get("id") or ""},
+            {**tx_event, "status": "checkout_created", "stripe_checkout_session_id": session_id or ""},
             "checkout_created",
             status="checkout_created",
             actor_user_id=buyer["user_id"],
-            extra={"stripe_checkout_session_id": session_obj.get("id") or ""},
+            extra={"stripe_checkout_session_id": session_id or ""},
         )
-        response_payload = {"ok": True, "checkout_url": session_obj.get("url"), "transaction_id": tx_id,
+        response_payload = {"ok": True, "checkout_url": checkout_url, "transaction_id": tx_id,
                             "platform_fee_cents": platform_fee, "seller_net_cents": seller_net,
                             "payout_state": payout_state, "commercial_quote": commercial_quote}
         if item_type == "marketplace_product" and idempotency_key:
