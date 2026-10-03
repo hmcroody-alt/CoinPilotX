@@ -314,6 +314,7 @@ from services import (
     google_identity,
     external_identity,
     oauth_login_state,
+    federated_replay,
     live_market_service,
     live_archive_service,
     live_archive_share_service,
@@ -10239,9 +10240,35 @@ def federated_native_profile(provider, payload):
     refused -- fail-closed, and the reason enabling this on the phone is a
     configuration step rather than a deploy.
 
-    The assertion is the only thing trusted. The client also sends a nonce, and
-    it is passed through to be compared against the one inside the signed token;
-    a client that omits it gets a token whose nonce cannot match anything.
+    The assertion is the only thing trusted.
+
+    ## The nonce, which differs by provider because the SDKs differ
+
+    This used to claim the client's nonce was compared against the token's and
+    that omitting it failed closed. Both halves were wrong, and measuring it is
+    what showed that:
+
+      * Omitting it does not fail closed. `oidc_tokens.py` guards the comparison
+        with `if nonce:`, so an absent nonce skips the check entirely.
+      * Supplying it proves nothing about freshness. The nonce is chosen by the
+        client, so a replayer holding a stolen token reads its nonce claim and
+        presents that same value back. Both sides of the comparison are
+        attacker-controlled.
+
+    Worse for Google specifically: `@react-native-google-signin` v16.1.5 has no
+    nonce field anywhere in its typings, so the SDK never puts one in the token
+    -- while the app still posts an invented one. That combination takes the
+    `if nonce:` branch with nothing to match and raises `missing_nonce`, which
+    means native Google sign-in refuses *every* attempt. It is invisible today
+    only because the audience check above answers 503 first while
+    `GOOGLE_SIGNIN_NATIVE_CLIENT_IDS` is unset in production.
+
+    So the nonce is passed for Apple, whose sheet does bind it into the token
+    (`expo-apple-authentication` exposes `nonce?: string`), where it still earns
+    its place catching an SDK or configuration mismatch. It is not passed for
+    Google, where it cannot exist. Neither is the replay defence; that is
+    `federated_replay.consume` below, which is server-minted by construction
+    because the server is the only party in it.
     """
 
     adapter = federated_adapter(provider)
@@ -10274,7 +10301,12 @@ def federated_native_profile(provider, payload):
                 claims, str(payload.get("user") or "")
             )
         else:
-            claims = google_identity.verify_assertion(assertion, nonce=nonce)
+            # Deliberately not `nonce=nonce`. The Google SDK cannot put a nonce
+            # in the token, so the app's invented one can only ever fail to
+            # match -- see the docstring. Dropped here, server-side, rather than
+            # in the app, because a phone running an older build will keep
+            # sending one and this must not depend on which build is installed.
+            claims = google_identity.verify_assertion(assertion, nonce="")
             profile = google_identity.profile_from_claims(claims)
     except Exception as exc:
         # Never the provider's message and never the token. `exc.reason` on our
@@ -10297,6 +10329,35 @@ def federated_native_profile(provider, payload):
         # become one shared identity row that every later tokenless sign-in
         # resolves onto.
         return None, federated_native_error("invalid_provider_response", 401)
+
+    # Spent exactly here: after the signature, issuer, audience and expiry have
+    # all been checked, and before `resolve` can turn this into a session.
+    #
+    # After, because writing a row for every unverified blob would let anybody
+    # with the URL fill the table. Before, because every outcome below this
+    # point -- sign_in, create, link_required -- is an answer the holder of a
+    # replayed token must not get a second time.
+    #
+    # Failing closed on a storage error is the deliberate choice: if the ledger
+    # cannot say whether this credential was already honoured, admitting it is
+    # the one answer that cannot be taken back.
+    try:
+        federated_replay.consume(
+            provider, assertion, expires_at_epoch=claims.get("exp"),
+        )
+    except federated_replay.ReplayError as exc:
+        # The digest is never logged. It identifies the credential precisely
+        # enough to replay it for anyone who can read the log.
+        logging.warning(
+            "FEDERATED_NATIVE_REPLAY_REFUSED provider=%s reason=%s", provider, exc.reason
+        )
+        log_auth_event(
+            FEDERATED_REFUSED_EVENT, "", 0, status="blocked",
+            details={"provider": provider, "surface": "ios", "reason": exc.reason,
+                     "db_engine": db_service.ENGINE_NAME},
+        )
+        return None, federated_native_error("invalid_provider_response", 401)
+
     return profile, None
 
 
@@ -126345,6 +126406,12 @@ def _init_db_impl():
     # fails open into "create a fresh account every time".
     oauth_login_state.ensure_schema(conn)
     external_identity.ensure_schema(conn)
+    # The native replay ledger, here for the same reason and with the same
+    # consequence if it is missing: the native sign-in route consumes a
+    # credential from inside its own transaction, and a table that does not
+    # exist fails that sign-in rather than silently admitting a replay --
+    # `consume` raises, it does not swallow.
+    federated_replay.ensure_schema(conn)
 
     # Here as well as in `create_account`, so the invariant exists from boot
     # rather than from whenever somebody next signs up. Safe at this line for the

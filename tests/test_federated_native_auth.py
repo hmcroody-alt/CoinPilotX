@@ -51,6 +51,7 @@ os.environ.pop("GOOGLE_SIGNIN_ENABLED", None)
 
 import bot  # noqa: E402
 from services import (  # noqa: E402
+    apple_identity,
     cache_engine,
     external_identity,
     google_identity,
@@ -117,15 +118,23 @@ def _reset_limiters():
 
 
 class _NativeGoogle:
-    """Stands in for Google's signature check, still enforcing the nonce.
+    """Stands in for Google's signature check, and pins that no nonce is asked for.
 
-    The token string *is* the nonce, so the route's own nonce argument is
-    compared against something that can genuinely differ -- dropping that would
-    make the replay and mismatch tests below pass for the wrong reason.
+    This fake used to enforce a nonce -- `if nonce and nonce != credential` --
+    which made the mismatch test below pass against a Google that does not
+    exist. `@react-native-google-signin` v16.1.5 has no nonce field anywhere in
+    its typings, so a real Google native token carries no nonce claim at all.
+    Modelling one meant the suite was green on behaviour production could never
+    produce, and hid a defect that refused *every* native Google sign-in:
+    the app posted an invented nonce, `oidc_tokens.py` took its `if nonce:`
+    branch, found nothing in the token, and raised `missing_nonce`.
+
+    So the expectation is inverted on purpose. Asking for a nonce here is now
+    the failure, because for this provider it is the bug.
     """
 
     def __init__(self, subject, email, *, verified=True, name="Native Member",
-                 audience=NATIVE_AUD):
+                 audience=NATIVE_AUD, expires_in=600):
         self.claims = {
             "iss": "https://accounts.google.com",
             "aud": audience,
@@ -133,6 +142,10 @@ class _NativeGoogle:
             "email": email,
             "email_verified": verified,
             "name": name,
+            # Real tokens carry `exp`, and the replay ledger reads it to bound
+            # how long the credential is remembered. Omitting it would silently
+            # exercise the fallback instead of the normal path.
+            "exp": int(time.time()) + expires_in,
         }
         self._real = None
 
@@ -140,8 +153,11 @@ class _NativeGoogle:
         self._real = google_identity.verify_assertion
 
         def fake(credential, *, nonce=""):
-            if nonce and nonce != credential:
-                raise google_identity.GoogleIdentityError("google_wrong_nonce")
+            if nonce:
+                raise AssertionError(
+                    "the route passed a nonce for Google; the native SDK cannot "
+                    "bind one, so any expectation here can only ever fail"
+                )
             if self.claims["aud"] not in google_identity.audiences():
                 raise google_identity.GoogleIdentityError("google_wrong_audience")
             return dict(self.claims)
@@ -154,6 +170,58 @@ class _NativeGoogle:
         return False
 
 
+class _NativeApple:
+    """Apple's sheet, which *does* bind a nonce -- so here it is enforced.
+
+    `expo-apple-authentication` exposes `nonce?: string` on its request options
+    and Apple puts it in the token, which is the whole reason the nonce argument
+    survives for this provider and not the other. It still is not replay
+    protection -- the client chooses the value, so a replayer presents the same
+    one back -- but it does catch an SDK or configuration mismatch, and a test
+    that proves it is enforced belongs against the provider that can enforce it.
+    """
+
+    def __init__(self, subject, email, *, verified=True, expires_in=600):
+        self.claims = {
+            "iss": "https://appleid.apple.com",
+            "sub": subject,
+            "email": email,
+            "email_verified": verified,
+            "exp": int(time.time()) + expires_in,
+        }
+        self._real = None
+
+    def __enter__(self):
+        self._real = apple_identity.verify_id_token
+        self._real_configured = apple_identity.configured
+        self._real_clients = apple_identity.native_client_ids
+
+        def fake(credential, *, nonce=""):
+            # The token string is the nonce Apple was handed, so a mismatch is
+            # expressible: the test posts a different one.
+            if nonce and nonce != credential:
+                raise apple_identity.AppleIdentityError("apple_wrong_nonce")
+            return dict(self.claims)
+
+        # Stubbed rather than driven from the environment, because
+        # `apple_identity.configured()` requires a private key and inventing
+        # `.p8`-shaped material in a fixture is not something this test needs in
+        # order to say what it says. Whether an unconfigured build is refused is
+        # a different question, and
+        # `test_a_build_with_no_native_audience_configured_refuses_everything`
+        # already asks it.
+        apple_identity.verify_id_token = fake
+        apple_identity.configured = lambda: True
+        apple_identity.native_client_ids = lambda: ("com.pulsesoc.app",)
+        return self
+
+    def __exit__(self, *exc):
+        apple_identity.verify_id_token = self._real
+        apple_identity.configured = self._real_configured
+        apple_identity.native_client_ids = self._real_clients
+        return False
+
+
 class NativeFederatedCase(unittest.TestCase):
     def setUp(self):
         _use_module_database()
@@ -163,8 +231,19 @@ class NativeFederatedCase(unittest.TestCase):
 
     # -- drivers ------------------------------------------------------------
 
-    def _native(self, *, subject, email, nonce="native-nonce", **extra):
-        payload = {"provider": "google", "id_token": nonce, "nonce": nonce}
+    def _native(self, *, subject, email, nonce="native-nonce", credential=None, **extra):
+        """One completed sheet. A fresh credential unless one is named.
+
+        Every real sheet completion mints a *new* token, so a constant string
+        here would make the second sign-in in any test byte-identical to the
+        first -- and the replay ledger would refuse it, correctly but for a
+        reason none of those tests are about. The default is therefore unique
+        per call, and a test that genuinely means "this same credential again"
+        says so by passing `credential=`.
+        """
+
+        credential = credential or f"token-{secrets.token_hex(8)}"
+        payload = {"provider": "google", "id_token": credential, "nonce": nonce}
         payload.update(extra)
         with _NativeGoogle(subject, email):
             return self.client.post("/api/mobile/auth/federated", json=payload)
@@ -228,7 +307,18 @@ class NativeFederatedCase(unittest.TestCase):
         finally:
             conn.close()
 
-    def _make_password_member(self, email, *, status="active", accept_legal=True):
+    def _make_password_member(self, email, *, status="active", accept_legal=True,
+                              login_enabled=1, access_enabled=1):
+        """`login_enabled`/`access_enabled` are separate from `account_status`.
+
+        `account_login_restriction_message` refuses on three independent
+        conditions and they are not interchangeable: a suspended account fails
+        the `account_status != "active"` branch, while a *disabled* one is still
+        `active` and fails on the flags. Testing only `suspended` would leave
+        the flag branch unexercised, which is the branch an admin action and the
+        pre-launch gate both use.
+        """
+
         now = bot.datetime.now().isoformat()
         conn = db_service.connect()
         cur = conn.cursor()
@@ -237,10 +327,11 @@ class NativeFederatedCase(unittest.TestCase):
             INSERT INTO users
             (username, display_name, full_name, email, password_hash, email_verified,
              account_status, login_enabled, access_enabled, signup_time, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 1, ?, 1, 1, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
             """,
             (f"member_{secrets.token_hex(4)}", "Password Member", "Password Member",
-             email, bot.generate_password_hash(PASSWORD), status, now, now, now),
+             email, bot.generate_password_hash(PASSWORD), status,
+             login_enabled, access_enabled, now, now, now),
         )
         user_id = int(cur.lastrowid)
         if accept_legal:
@@ -338,6 +429,52 @@ class AMatchingEmailIsStillNotAnAuthorisation(NativeFederatedCase):
 
 
 class TheGatesAreNotOptionalOnAPhone(NativeFederatedCase):
+    def _link(self, user_id, subject, email, provider="google"):
+        conn = db_service.connect()
+        cur = conn.cursor()
+        external_identity.link(cur, user_id, provider=provider, subject=subject,
+                               email=email, email_verified=True,
+                               display_name="Linked", source="web")
+        conn.commit()
+        conn.close()
+
+    def test_a_disabled_account_is_refused_a_native_session(self):
+        """`login_enabled = 0` on an account whose status is still `active`.
+
+        A different branch of `account_login_restriction_message` from the
+        suspended case below, and the one an admin disable actually sets. Both
+        answer `account_restricted`, which is deliberate -- the refusal must not
+        tell a caller *which* gate stopped them -- so the branch has to be
+        driven separately or it is never covered at all.
+        """
+
+        email = "disabled@example.com"
+        user_id = self._make_password_member(email, login_enabled=0)
+        self._link(user_id, "sub-disabled", email)
+        response = self._native(subject="sub-disabled", email=email)
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual((response.get_json() or {}).get("error_code"), "account_restricted")
+        with self.client.session_transaction() as sess:
+            self.assertIsNone(sess.get("account_user_id"))
+
+    def test_an_access_revoked_account_is_refused_a_native_session(self):
+        """The third flag, for the same reason: `access_enabled = 0` alone."""
+
+        email = "noaccess@example.com"
+        user_id = self._make_password_member(email, access_enabled=0)
+        self._link(user_id, "sub-noaccess", email)
+        response = self._native(subject="sub-noaccess", email=email)
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual((response.get_json() or {}).get("error_code"), "account_restricted")
+
+    def test_a_restricted_account_is_refused_a_native_session(self):
+        email = "restricted@example.com"
+        user_id = self._make_password_member(email, status="restricted")
+        self._link(user_id, "sub-restricted", email)
+        response = self._native(subject="sub-restricted", email=email)
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual((response.get_json() or {}).get("error_code"), "account_restricted")
+
     def test_a_suspended_account_is_refused_a_native_session(self):
         email = "suspended@example.com"
         user_id = self._make_password_member(email, status="suspended")
@@ -394,14 +531,47 @@ class TheGatesAreNotOptionalOnAPhone(NativeFederatedCase):
 
 
 class TheAssertionIsTheOnlyThingTrusted(NativeFederatedCase):
-    def test_a_token_whose_nonce_does_not_match_is_refused(self):
-        with _NativeGoogle("sub-nonce", "nonce@example.com"):
+    def test_an_apple_token_whose_nonce_does_not_match_is_refused(self):
+        """Apple binds the nonce, so for Apple a mismatch is a real refusal.
+
+        This assertion used to be made against Google, where it could not be
+        true: that SDK puts no nonce in the token, so the only thing the test
+        proved was that the fake enforced a rule the provider does not have.
+        """
+
+        with _NativeApple("sub-nonce", "nonce@example.com"):
             response = self.client.post("/api/mobile/auth/federated", json={
-                "provider": "google", "id_token": "token-value", "nonce": "a-different-nonce",
+                "provider": "apple", "id_token": "token-value", "nonce": "a-different-nonce",
             })
         self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
         self.assertEqual((response.get_json() or {}).get("error_code"),
                          "invalid_provider_response")
+
+    def test_the_google_leg_is_not_asked_for_a_nonce_it_cannot_have(self):
+        """The defect that refused every native Google sign-in, pinned.
+
+        The app posts a nonce it invented; Google's token has no nonce claim
+        because the SDK has no way to accept one. Passing the posted value
+        through to the verifier takes `oidc_tokens.py`'s `if nonce:` branch,
+        finds nothing to compare, and raises `missing_nonce` -- on every
+        attempt, for every member. The route must drop it instead.
+
+        Driven through the route with a nonce in the body precisely because a
+        stale app build will keep sending one: the fix has to hold without a
+        new binary, so it cannot live in the client.
+        """
+
+        with _NativeGoogle("sub-no-nonce", "nononce@example.com"):
+            response = self.client.post("/api/mobile/auth/federated", json={
+                "provider": "google", "id_token": "fresh-token",
+                "nonce": "an-invented-client-nonce",
+            })
+        # 403 federated_signup_required is a *successful* verification: the
+        # subject is new, so the route asks for age and agreement. A 401 here
+        # would be the missing_nonce refusal.
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        self.assertEqual((response.get_json() or {}).get("error_code"),
+                         "federated_signup_required")
 
     def test_a_token_minted_for_another_audience_is_refused(self):
         with _NativeGoogle("sub-aud", "aud@example.com", audience="someone-else.apps.googleusercontent.com"):
@@ -561,6 +731,235 @@ class TheAssertionIsTheOnlyThingTrusted(NativeFederatedCase):
         })
         self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
         self.assertEqual(self._user_id_of("purpose@example.com"), [])
+
+
+class GivingUpAnIdentityAndTakingItBack(NativeFederatedCase):
+    """Disconnect, reconnect, delete, re-assert.
+
+    The web flow owns the *routes* for these (`tests/test_federated_signin_routes.py`
+    drives `/account/federated/disconnect` and the deletion handshake). What is
+    untested anywhere, and is what the phone actually meets afterwards, is the
+    resulting *state*: a subject with no identity row, or an identity row whose
+    account is gone. Both have to produce a sane answer rather than a crash or,
+    far worse, a session on somebody else's account.
+    """
+
+    def _identity_rows(self, provider, subject):
+        conn = db_service.connect()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_id FROM user_external_identities "
+                "WHERE provider=? AND provider_subject=?",
+                (provider, subject),
+            )
+            return [int(db_service.row_values(row)[0]) for row in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def _full_name_of(self, user_id):
+        conn = db_service.connect()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT full_name FROM users WHERE user_id=?", (user_id,))
+            row = cur.fetchone()
+            return str(db_service.row_values(row)[0] or "") if row else ""
+        finally:
+            conn.close()
+
+    def _stamp(self, user_id, marker):
+        """Mark a row so a later one can be told apart from it.
+
+        Neither the id nor the username can do this job: the id is reused on
+        SQLite, and the username is derived from the email so a rebuilt account
+        gets the same one. A field only the original row ever held is the only
+        thing that distinguishes "replaced" from "resurrected".
+        """
+
+        conn = db_service.connect()
+        try:
+            conn.execute("UPDATE users SET full_name=? WHERE user_id=?", (marker, user_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _unlink(self, provider, subject):
+        conn = db_service.connect()
+        try:
+            conn.execute(
+                "DELETE FROM user_external_identities WHERE provider=? AND provider_subject=?",
+                (provider, subject),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_a_disconnected_provider_cannot_walk_back_in_on_the_email_alone(self):
+        """The security property that makes disconnect meaningful.
+
+        After a disconnect the account still exists and still holds the same
+        address. If the native route fell back to matching on email, the
+        disconnect would be decorative -- one tap would restore exactly the
+        access the member just revoked. It must be refused as a collision, the
+        same as any other unlinked provider meeting an existing address.
+        """
+
+        email = "disconnect@example.com"
+        self._create_native_account("sub-disconnect", email)
+        user_id = self._user_id_of(email)[0]
+
+        self._unlink("google", "sub-disconnect")
+        self.assertEqual(self._identity_rows("google", "sub-disconnect"), [])
+
+        # A fresh client: the signup above left a signed session cookie, and
+        # the question here is what the *provider tap* grants, not what an
+        # existing session already does.
+        self.client = bot.app.test_client()
+        again = self._native(subject="sub-disconnect", email=email)
+        # 409, and `account_link_required` rather than the signup code: the
+        # address is taken, so this is the same collision answer any unlinked
+        # provider gets, and it routes the member through an authenticated
+        # connect instead of a second account.
+        self.assertEqual(again.status_code, 409, again.get_data(as_text=True))
+        self.assertEqual((again.get_json() or {}).get("error_code"),
+                         "account_link_required")
+        with self.client.session_transaction() as sess:
+            self.assertIsNone(sess.get("account_user_id"))
+        # And still no row, so a refused attempt has not quietly re-linked.
+        self.assertEqual(self._identity_rows("google", "sub-disconnect"), [])
+        self.assertEqual(self._user_id_of(email), [user_id])
+
+    def test_reconnecting_through_the_proper_path_restores_native_sign_in(self):
+        """The other half: revoking must be reversible, or disconnect is a trap.
+
+        Reconnection is a deliberate, authenticated act -- the member signs in
+        and connects the provider, which is what writes the row. Once it is
+        written the phone signs in again with no further ceremony.
+        """
+
+        email = "reconnect@example.com"
+        self._create_native_account("sub-reconnect", email)
+        user_id = self._user_id_of(email)[0]
+        self._unlink("google", "sub-reconnect")
+
+        conn = db_service.connect()
+        cur = conn.cursor()
+        external_identity.link(cur, user_id, provider="google", subject="sub-reconnect",
+                               email=email, email_verified=True,
+                               display_name="Reconnected", source="web")
+        conn.commit()
+        conn.close()
+
+        back = self._native(subject="sub-reconnect", email=email)
+        self.assertEqual(back.status_code, 200, back.get_data(as_text=True))
+        # The same account, not a new one beside it.
+        self.assertEqual(self._user_id_of(email), [user_id])
+        self.assertEqual(self._identity_rows("google", "sub-reconnect"), [user_id])
+
+    def test_a_subject_whose_account_is_gone_does_not_resolve_onto_anything(self):
+        """Deletion, then the phone presents the same provider subject.
+
+        The dangerous shape is a surviving identity row pointing at a deleted
+        `user_id`: the resolve ladder would find a row, trust it, and mint a
+        session for an account that no longer exists -- or, once ids are
+        reused, for whoever holds that id next. Deleting the member must take
+        the identity with it.
+        """
+
+        email = "deleted@example.com"
+        self._create_native_account("sub-deleted", email)
+        user_id = self._user_id_of(email)[0]
+
+        conn = db_service.connect()
+        try:
+            conn.execute("DELETE FROM user_external_identities WHERE user_id=?", (user_id,))
+            conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+            conn.commit()
+        finally:
+            conn.close()
+        self.assertEqual(self._user_id_of(email), [])
+        self.assertEqual(self._identity_rows("google", "sub-deleted"), [])
+
+        # A fresh client, because the signup above left a signed session cookie
+        # on this one and Flask sessions here are signed cookies rather than
+        # server-side records -- deleting the row cannot invalidate a cookie
+        # already issued. A new install is also the real shape of this case.
+        self.client = bot.app.test_client()
+        after = self._native(subject="sub-deleted", email=email)
+        # Nothing to sign into and nothing to collide with, so this is a new
+        # member being asked the questions a new member is asked.
+        self.assertEqual(after.status_code, 403, after.get_data(as_text=True))
+        self.assertEqual((after.get_json() or {}).get("error_code"),
+                         "federated_signup_required")
+        with self.client.session_transaction() as sess:
+            self.assertIsNone(sess.get("account_user_id"))
+
+    def test_re_asserting_a_deleted_identity_builds_a_fresh_account(self):
+        """Re-assertion creates; it does not resurrect.
+
+        Deliberately *not* asserting that the rebuilt account gets a new
+        `user_id`, because it does not. `users.user_id` is declared
+        `INTEGER PRIMARY KEY` with no `AUTOINCREMENT` (bot.py:956), so SQLite
+        hands the deleted member's id straight to the next insert; on
+        PostgreSQL the `AUTO_PK_TABLES` rewrite makes it a sequence and the id
+        is never reused. An id-based assertion would therefore pass on one
+        engine and fail on the other while proving nothing either way.
+
+        What matters is that the row is new and nothing of the old member
+        survives attached to it -- and id reuse is exactly why the sibling test
+        above matters. A surviving identity row pointing at a deleted id would
+        not dangle harmlessly here; it would resolve onto whoever is given that
+        id next.
+        """
+
+        email = "reasserted@example.com"
+        self._create_native_account("sub-reasserted", email)
+        original = self._user_id_of(email)[0]
+        self._stamp(original, "ORIGINAL-MEMBER-DATA")
+
+        conn = db_service.connect()
+        try:
+            conn.execute("DELETE FROM user_external_identities WHERE user_id=?", (original,))
+            conn.execute("DELETE FROM users WHERE user_id=?", (original,))
+            conn.commit()
+        finally:
+            conn.close()
+
+        self.client = bot.app.test_client()
+        self._create_native_account("sub-reasserted", email)
+        rebuilt = self._user_id_of(email)
+        self.assertEqual(len(rebuilt), 1, f"expected one account, found {rebuilt}")
+        self.assertNotEqual(
+            self._full_name_of(rebuilt[0]), "ORIGINAL-MEMBER-DATA",
+            "the deleted member's own data came back attached to the new "
+            "sign-in -- this is a resurrection, not a replacement",
+        )
+        self.assertEqual(self._identity_rows("google", "sub-reasserted"), [rebuilt[0]])
+        # Exactly one identity for the subject, so the re-assertion did not
+        # leave the old row beside the new one.
+        self.assertEqual(len(self._identity_rows("google", "sub-reasserted")), 1)
+
+    def test_a_credential_spent_before_a_disconnect_is_still_spent_after_it(self):
+        """The replay ledger does not forget because the identity changed.
+
+        A member who disconnects has not made their old captured tokens safe
+        again. The ledger keys on the credential, not on the account, so
+        nothing about an account-level change restores a spent token.
+        """
+
+        email = "spent-across@example.com"
+        credential = f"token-{secrets.token_hex(8)}"
+        first = self._native(subject="sub-spent-across", email=email, credential=credential)
+        self.assertEqual(first.status_code, 403, first.get_data(as_text=True))
+        self._native_signup(first)
+        user_id = self._user_id_of(email)[0]
+
+        self._unlink("google", "sub-spent-across")
+        replay = self._native(subject="sub-spent-across", email=email, credential=credential)
+        self.assertEqual(replay.status_code, 401, replay.get_data(as_text=True))
+        self.assertEqual((replay.get_json() or {}).get("error_code"),
+                         "invalid_provider_response")
+        self.assertEqual(self._user_id_of(email), [user_id])
 
 
 class TappingTwiceDoesNotCreateTwoAccounts(NativeFederatedCase):

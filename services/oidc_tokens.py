@@ -168,9 +168,24 @@ def verify_id_token(
     empty one raises rather than meaning "any", because "no audience configured"
     must never read as "every audience accepted".
 
-    `nonce` is compared when the caller passes one. A caller that issued a nonce
-    and then does not pass it here has silently given up replay protection, so
-    the two provider adapters always pass it.
+    `nonce` is compared only when the caller passes one. That is a skip, not a
+    failure, so it cannot be the replay defence -- and it could not be even if
+    it were mandatory, because the value is chosen by the *client*, so a holder
+    of a stolen token reads its own nonce claim and presents it back. Both sides
+    would be attacker-controlled.
+
+    Which is why the callers differ, deliberately. Apple's sheet binds a nonce
+    into the token (`expo-apple-authentication` exposes `nonce?: string`), so
+    the Apple adapter passes it and it earns its place catching an SDK or
+    configuration mismatch. `@react-native-google-signin` v16.1.5 has no nonce
+    field at all, so the native Google adapter passes none -- expecting one
+    there could only ever fail every sign-in.
+
+    Single-use enforcement lives in `services/federated_replay.py`, which keys
+    on the server's own memory of the credential rather than on anything the
+    client supplies. `tests/test_oidc_token_verification.py` pins both halves:
+    that a valid token verifies indefinitely, and that an absent expected nonce
+    skips the check.
     """
 
     allowed = {str(a) for a in algorithms if str(a) in ASYMMETRIC_ALGORITHMS}
