@@ -428,7 +428,8 @@
       "biometricFailedTitle": "बायोमेट्रिक साइन इन नहीं हो सका",
       "biometricFailedBody": "हम आपकी पहचान नहीं कर सके। कृपया फिर कोशिश करें या मैन्युअली साइन इन करें।",
       "enableBiometricLabel": "{{method}} चालू करें",
-      "signInWithBiometric": "{{method}} से साइन इन करें"
+      "signInWithBiometric": "{{method}} से साइन इन करें",
+      "federatedDivider": "या इसके साथ जारी रखें"
     },
     "signUp": {
       "title": "अपना अकाउंट बनाएँ",
@@ -555,6 +556,18 @@
       "tagline": "आपका नेटवर्क तैयार है।",
       "loginLogoA11y": "PulseSoc लोगो। नेटिव ऐक्सेस। आपका नेटवर्क तैयार है।",
       "signupLogoA11y": "PulseSoc. नेटिव ऐक्सेस।"
+    },
+    "federatedSignup": {
+      "title": "बस एक कदम और",
+      "subtitle": "{{provider}} ने आपकी पहचान सत्यापित कर दी है। खाता बनाने से पहले PulseSoc को दो उत्तर चाहिए।",
+      "verifiedEmail": "{{provider}} द्वारा सत्यापित",
+      "ageConfirm": "मैं 13 वर्ष या उससे अधिक का हूँ",
+      "termsAccept": "मैं सेवा की शर्तों और गोपनीयता नीति से सहमत हूँ",
+      "emailOptIn": "मुझे PulseSoc समाचार और अपडेट भेजें",
+      "optional": "(वैकल्पिक)",
+      "countryLabel": "देश",
+      "countryPlaceholder": "आप कहाँ रहते हैं",
+      "submit": "मेरा खाता बनाएँ"
     }
   },
   "errors": {
@@ -584,7 +597,12 @@
       "challengeRequired": "आपकी सुरक्षा के लिए, साइन इन जारी रखने हेतु जाँच पूरी करें।",
       "emailNotConfirmed": "साइन इन करने से पहले अपना ईमेल पता सत्यापित करें।",
       "accountRestricted": "यह खाता अभी साइन इन नहीं कर सकता। support@pulsesoc.com से संपर्क करें।",
-      "nonProductionBackend": "यह बिल्ड {{environment}} ({{host}}) से जुड़ा है, जिसके खाते अलग हैं।"
+      "nonProductionBackend": "यह बिल्ड {{environment}} ({{host}}) से जुड़ा है, जिसके खाते अलग हैं।",
+      "providerUnavailable": "यह साइन-इन विकल्प इस डिवाइस पर अभी उपलब्ध नहीं है।",
+      "providerConfigError": "PulseSoc अभी इस साइन-इन विकल्प के लिए सेट अप नहीं है।",
+      "invalidProviderResponse": "इस साइन-इन को सत्यापित नहीं किया जा सका। कृपया फिर से कोशिश करें।",
+      "providerLinkRequired": "इस ईमेल पते का उपयोग पहले से एक खाता कर रहा है। इस प्रदाता को जोड़ने के लिए उस खाते में साइन इन करें।",
+      "federatedTicketExpired": "उस साइन-इन में बहुत समय लग गया। कृपया प्रदाता बटन फिर से दबाएँ।"
     },
     "media": {
       "uploadFailed": "यह अपलोड पूरा नहीं हुआ। फिर कोशिश करें।",

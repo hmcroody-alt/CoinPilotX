@@ -1,0 +1,97 @@
+# The federated identity suites, gated for the same reason as native-checkout.
+#
+# native-checkout.yml exists because PR #153 shipped a screen test that CI could
+# not see: no workflow mentioned jest, so all ~9,672 native tests were advisory.
+# That file fixed it for the 15 checkout-critical suites and said in as many
+# words that widening it is an edit to a list.
+#
+# This is that edit, for a different blast radius rather than a wider one. The
+# suites below hold the consent gate on the federated signup screen -- the only
+# place a member is ever asked whether they are old enough and whether they
+# accept the Terms, because Apple and Google can prove who somebody is and
+# neither can answer those two questions. An ungated test of a consent gate is
+# one refactor away from recording an agreement nobody made, and unlike a
+# payment failure that is not self-announcing: there is no refused tap, no
+# support ticket, nothing at all until somebody has to produce the evidence.
+#
+# WHY A SEPARATE FILE AND NOT A LINE IN native-checkout.yml
+# ---------------------------------------------------------
+# That workflow is named for what it protects. Appending auth suites to a job
+# called "Native checkout suites" makes the name lie, and the next person
+# widening the checkout list has no way to tell which paths are theirs. The
+# duplicated `npm ci` is the price of a gate that says what it guards.
+#
+# THE LIST GUARDS ITSELF
+# ----------------------
+# Inherited from native-checkout.yml and the reason the list is spelled out:
+# `jest --runTestsByPath` exits 1 when a listed path does not exist, so deleting
+# or renaming a gated suite turns this red instead of quietly shrinking it. A
+# filter that silently selects nothing reads exactly like a pass.
+#
+# WHY THE LIST IS HERE AND NOT AN npm SCRIPT
+# ------------------------------------------
+# mobile-native/package.json is caught by `dependency_watch` in
+# config/realtime-audio-protected-paths.json, so adding a script to it would
+# make this identity PR demand a real-time-audio change declaration.
+# docs/realtime_audio_change_policy.md is explicit that a mission which is not
+# about audio must not edit a protected path. The list lives here instead.
+#
+# WHY --testTimeout
+# -----------------
+# Same cold-start cost native-checkout.yml documents: React Native Testing
+# Library's first render in a file is ~1s locally and roughly 5x worse on the
+# runner, billed entirely to test #1. A timeout, not a product failure.
+
+name: Native auth
+
+on:
+  pull_request:
+    paths:
+      - "mobile-native/**"
+      - ".github/workflows/native-auth.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "mobile-native/**"
+      - ".github/workflows/native-auth.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-auth-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  auth-suites:
+    name: Federated identity suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: mobile-native
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mobile-native/package-lock.json
+
+      # Matches native-checkout.yml and realtime-audio.yml's native-build job.
+      # postinstall runs scripts/apply-native-patches.sh, which detects an
+      # already-applied patch and is safe to re-run.
+      - run: npm ci
+
+      - name: Federated identity jest suites
+        run: |
+          npx jest --runTestsByPath --testTimeout=30000 \
+            src/session/__tests__/federatedSignIn.test.ts \
+            src/session/__tests__/legalAcceptanceGate.test.ts \
+            src/auth/__tests__/providerSheets.test.ts \
+            src/components/auth/__tests__/ProviderSignInButtons.test.tsx \
+            src/screens/__tests__/FederatedSignupScreen.test.tsx \
+            src/screens/__tests__/LoginScreen.test.tsx \
+            src/api/__tests__/loginRejectionWire.test.ts

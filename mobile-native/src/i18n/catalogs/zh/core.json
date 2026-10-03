@@ -428,7 +428,8 @@
       "biometricFailedTitle": "生物识别登录失败",
       "biometricFailedBody": "我们无法验证你的身份。请重试或手动登录。",
       "enableBiometricLabel": "启用 {{method}}",
-      "signInWithBiometric": "使用 {{method}} 登录"
+      "signInWithBiometric": "使用 {{method}} 登录",
+      "federatedDivider": "或使用以下方式继续"
     },
     "signUp": {
       "title": "创建账号",
@@ -555,6 +556,18 @@
       "tagline": "你的网络已就绪。",
       "loginLogoA11y": "PulseSoc 标志。原生入口。你的网络已就绪。",
       "signupLogoA11y": "PulseSoc。原生入口。"
+    },
+    "federatedSignup": {
+      "title": "还差一步",
+      "subtitle": "{{provider}} 已验证你的身份。创建账号前，PulseSoc 还需要两个确认。",
+      "verifiedEmail": "由 {{provider}} 验证",
+      "ageConfirm": "我已年满 13 周岁",
+      "termsAccept": "我同意服务条款和隐私政策",
+      "emailOptIn": "向我发送 PulseSoc 资讯与更新",
+      "optional": "（可选）",
+      "countryLabel": "国家/地区",
+      "countryPlaceholder": "你所在的国家/地区",
+      "submit": "创建我的账号"
     }
   },
   "errors": {
@@ -584,7 +597,12 @@
       "challengeRequired": "为了您的安全，请完成验证以继续登录。",
       "emailNotConfirmed": "登录前请先确认您的电子邮箱。",
       "accountRestricted": "此账号目前无法登录。请联系 support@pulsesoc.com。",
-      "nonProductionBackend": "此版本连接的是 {{environment}}（{{host}}），其账号与正式环境相互独立。"
+      "nonProductionBackend": "此版本连接的是 {{environment}}（{{host}}），其账号与正式环境相互独立。",
+      "providerUnavailable": "此登录方式目前在本设备上不可用。",
+      "providerConfigError": "PulseSoc 尚未配置此登录方式。",
+      "invalidProviderResponse": "无法验证此次登录，请重试。",
+      "providerLinkRequired": "该电子邮件地址已被某个账号使用。请登录该账号以关联此提供方。",
+      "federatedTicketExpired": "本次登录耗时过长，请重新点按提供方按钮。"
     },
     "media": {
       "uploadFailed": "上传未完成，请重试。",

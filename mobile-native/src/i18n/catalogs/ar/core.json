@@ -475,7 +475,8 @@
       "biometricFailedTitle": "فشل تسجيل الدخول بالقياسات الحيوية",
       "biometricFailedBody": "تعذّر علينا التحقق منك. يرجى المحاولة مرة أخرى أو تسجيل الدخول يدويًا.",
       "enableBiometricLabel": "تفعيل {{method}}",
-      "signInWithBiometric": "تسجيل الدخول باستخدام {{method}}"
+      "signInWithBiometric": "تسجيل الدخول باستخدام {{method}}",
+      "federatedDivider": "أو تابع باستخدام"
     },
     "signUp": {
       "title": "أنشئ حسابك",
@@ -602,6 +603,18 @@
       "tagline": "شبكتك جاهزة.",
       "loginLogoA11y": "شعار PulseSoc. الوصول الأصلي. شبكتك جاهزة.",
       "signupLogoA11y": "PulseSoc. الوصول الأصلي."
+    },
+    "federatedSignup": {
+      "title": "خطوة أخيرة",
+      "subtitle": "تحقّق {{provider}} من هويتك. يحتاج PulseSoc إلى إجابتين قبل إنشاء حسابك.",
+      "verifiedEmail": "تم التحقق منه بواسطة {{provider}}",
+      "ageConfirm": "عمري 13 عامًا أو أكثر",
+      "termsAccept": "أوافق على شروط الخدمة وسياسة الخصوصية",
+      "emailOptIn": "أرسل لي أخبار وتحديثات PulseSoc",
+      "optional": "(اختياري)",
+      "countryLabel": "البلد",
+      "countryPlaceholder": "مكان إقامتك",
+      "submit": "إنشاء حسابي"
     }
   },
   "errors": {
@@ -631,7 +644,12 @@
       "challengeRequired": "لأمانك، أكمل التحقق الأمني لمتابعة تسجيل الدخول.",
       "emailNotConfirmed": "أكّد بريدك الإلكتروني قبل تسجيل الدخول.",
       "accountRestricted": "لا يمكن لهذا الحساب تسجيل الدخول الآن. تواصل مع support@pulsesoc.com.",
-      "nonProductionBackend": "هذه النسخة متصلة بـ {{environment}} ({{host}})، ولها حسابات منفصلة خاصة بها."
+      "nonProductionBackend": "هذه النسخة متصلة بـ {{environment}} ({{host}})، ولها حسابات منفصلة خاصة بها.",
+      "providerUnavailable": "خيار تسجيل الدخول هذا غير متاح على هذا الجهاز حاليًا.",
+      "providerConfigError": "لم يتم إعداد PulseSoc بعد لخيار تسجيل الدخول هذا.",
+      "invalidProviderResponse": "تعذّر التحقق من تسجيل الدخول هذا. يرجى المحاولة مرة أخرى.",
+      "providerLinkRequired": "يوجد حساب يستخدم هذا البريد الإلكتروني بالفعل. سجّل الدخول إليه لربط هذا المزوّد.",
+      "federatedTicketExpired": "استغرق تسجيل الدخول وقتًا طويلاً. يرجى الضغط على زر المزوّد مرة أخرى."
     },
     "media": {
       "uploadFailed": "لم يكتمل الرفع. حاول مرة أخرى.",
