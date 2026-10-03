@@ -352,6 +352,58 @@ def test_the_no_third_party_analytics_claim_matches_what_the_page_serves(pages):
             )
 
 
+ANALYTICS_ENV_KNOBS = ("GA_MEASUREMENT_ID", "GOOGLE_ADS_ID", "GOOGLE_ADS_CONVERSION_ID")
+
+
+def test_the_analytics_denial_is_absent_wherever_a_tag_is_actually_configured(client, pages):
+    """The denial is only as true as the environment that rendered it.
+
+    `templates/index.html`, `search.html` and `seo_page.html` carry a conditional
+    gtag block keyed on these variables. None is set in production today -- the
+    live home page requests no googletagmanager script -- so the denial is true as
+    published. But a Google Ads campaign already runs against this site, so the
+    pressure to set GOOGLE_ADS_ID for conversion tracking is real, and whoever
+    sets it will not think to reread the Privacy Policy.
+
+    This does not forbid advertising tags; that is not a legal document's call.
+    It forbids serving one *while denying it*. Run anywhere the knobs are set --
+    including the deployed environment -- this goes red and names the sentence to
+    change. The documents own the claim; the environment owns the behaviour.
+    """
+
+    configured = sorted(key for key in ANALYTICS_ENV_KNOBS if (os.environ.get(key) or "").strip())
+    denies = bool(
+        re.search(r"not</strong>\s*load Google Analytics", pages[PRIVACY]["raw"], re.I)
+        or re.search(r"does\s+not\s+load Google Analytics", pages[PRIVACY]["visible"], re.I)
+    )
+
+    if configured:
+        home = client.get("/").get_data(as_text=True).lower()
+        serves_tag = "googletagmanager.com" in home
+        assert not (denies and serves_tag), (
+            f"{', '.join(configured)} is set, so the public home page serves a Google "
+            "tag, but the Privacy Policy still states that PulseSoc's website loads no "
+            "Google Analytics or Google Ads tag and that no such third party receives "
+            "your browsing activity. Replace that sentence with what is actually "
+            "served, disclose the vendor in the processor table, and ask for consent "
+            "where it is required."
+        )
+        return
+
+    assert denies, (
+        "No analytics knob is set, so the Policy is free to say no third-party tag "
+        "loads -- and it should, because silence would leave a member guessing. "
+        f"Expected a denial naming Google Analytics in {PRIVACY}."
+    )
+    assert re.search(
+        r"as of the date of this Policy", pages[PRIVACY]["visible"], re.I
+    ), (
+        "the denial has to be time-bounded rather than absolute: it is true of "
+        "today's configuration, and one Railway variable can change that without "
+        "anyone editing this document"
+    )
+
+
 def test_the_privacy_policy_is_explicit_that_messages_are_not_end_to_end_encrypted(pages):
     """The absence of a false claim is not the same as a true one.
 
