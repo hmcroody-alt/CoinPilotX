@@ -91,6 +91,25 @@ MUTATIONS = [
         suites=[CLAIM_MATRIX],
     ),
     dict(
+        name="terms-drop-the-placebo-toggle-warning",
+        control=(
+            "Denying 2FA is not enough while a screen says 'Enabled'. A member who used "
+            "the toggle would read the denial as stale rather than the toggle as fake."
+        ),
+        path=TERMS,
+        old="<strong>That setting does not currently add a second factor.</strong>",
+        new="That setting is part of our ongoing security work.",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
+        name="privacy-drops-the-placebo-toggle-warning",
+        control="Same warning, in the document that members are pointed to about security.",
+        path=PRIVACY,
+        old="that setting does not currently add a second factor: nothing asks you for a code, and the recovery codes it issues are not currently checked",
+        new="that setting reflects our layered account protection",
+        suites=[CLAIM_MATRIX],
+    ),
+    dict(
         name="age-is-verified",
         control="Age is self-confirmed at signup; no date of birth is collected and nothing checks it.",
         path=TERMS,

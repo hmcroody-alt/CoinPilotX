@@ -244,9 +244,30 @@ def test_every_mention_of_a_second_factor_is_a_denial(pages, path):
     because the mission requires the opposite of silence here: a member deciding
     what to trust the account with has to be told the password is the only factor.
     An affirmative sentence is the defect; the denial is the deliverable.
+
+    The denial may also *follow* the mention, which `_unnegated` alone cannot
+    see. It has to: the product ships a two-factor toggle that sets a flag no
+    login path reads, so the documents have to name that toggle before they can
+    debunk it ("...may show two-factor protection as enabled. That setting does
+    not currently add a second factor."). So this scans the sentence containing
+    the mention and the one after it. An affirmative claim still fails, because
+    neither half carries a negator -- the `terms-offer-two-factor-authentication`
+    mutation is what proves that.
     """
 
-    offenders = _unnegated(pages[path]["visible"], r"\b(?:two-factor|two-step|2FA)\b")
+    visible = pages[path]["visible"]
+    offenders = []
+    for match in re.finditer(r"\b(?:two-factor|two-step|2FA)\b", visible, re.I):
+        sentence_start = visible.rfind(". ", 0, match.start()) + 1
+        tail = visible[match.end():]
+        cutoff = [tail.find(". ", pos) for pos in (0,)]
+        first = cutoff[0]
+        second = tail.find(". ", first + 1) if first != -1 else -1
+        sentence_end = match.end() + (second + 1 if second != -1 else len(tail))
+        context = visible[sentence_start:sentence_end]
+        if not _NEGATORS.search(context):
+            offenders.append(context.strip()[:160])
+
     assert not offenders, (
         f"{path} mentions a second factor without denying it: {offenders}. "
         "No TOTP or other second factor has shipped."
@@ -340,6 +361,33 @@ def test_the_privacy_policy_is_explicit_that_messages_are_not_end_to_end_encrypt
 
     assert re.search(r"not\b[^.]{0,40}end-to-end encrypted", pages[PRIVACY]["visible"], re.I), (
         "the Privacy Policy does not state that messages are not end-to-end encrypted"
+    )
+
+
+@pytest.mark.parametrize("path", [TERMS, PRIVACY])
+def test_both_documents_warn_about_the_two_factor_toggle_while_it_lies(pages, path):
+    """A denial alone is not enough when a screen contradicts it.
+
+    `/api/account/2fa/enable` sets `users.two_factor_enabled=1` and answers
+    "Two-factor protection is enabled for sensitive actions". Nothing in any
+    authentication path reads that column -- it feeds a security score, a JSON
+    field and a label -- and the recovery codes the same screens issue are only
+    counted, never verified. A member who used the toggle sees "Enabled" and would
+    reasonably conclude these documents were stale, so they have to name it.
+
+    If the placebo toggle is ever removed, this skips and the warning can go too.
+    """
+
+    paths = {rule.rule for rule in bot.webhook_app.url_map.iter_rules()}
+    if "/api/account/2fa/enable" not in paths:
+        pytest.skip("the placebo toggle is gone; the warning can be removed")
+
+    assert re.search(
+        r"does not currently add a second factor", pages[path]["visible"], re.I
+    ), (
+        f"{path} denies two-factor exists, but a member can still switch the toggle "
+        "on and be told they are protected. The document has to say that setting "
+        "adds no second factor."
     )
 
 
