@@ -1968,6 +1968,36 @@ def render_product(
 # ---------------------------------------------------------------------------
 
 
+def _declared_noindex(path: str) -> str:
+    """``noindex``, carrying the follow-ness the policy table declares for *path*.
+
+    Two halves of one directive with two different owners, which is why this is
+    not just ``robots_meta(path)``.
+
+    The ``noindex`` is the *renderer's* to assert and cannot be delegated. This
+    function's callers are the branches that have decided a particular page is
+    not an index candidate for a reason the path cannot express -- a cart, or a
+    listing the database could not serve. ``robots_meta`` would hand back
+    ``index,follow,...`` for a listing path, so asking it outright would make a
+    503 page ask to be ranked.
+
+    The follow-ness *is* the table's, and the storefront had been guessing it.
+    ``nofollow`` is not a stronger ``noindex``; it is a separate instruction that
+    severs every outbound link on the page, and the links on these pages are the
+    marketplace index and the help pages -- real crawl paths that the rest of the
+    site depends on. It also has a second life: ``robots_disallow_patterns()``
+    builds robots.txt from exactly the prefixes the table marks ``nofollow``, so
+    the two must agree or a page gets a directive its own family is not allowed
+    to have.
+
+    The ``max-*`` tokens are dropped deliberately. They bound how much of a page
+    Google may show in a result, which is not a question that arises for a page
+    that has asked not to be in results at all.
+    """
+    tokens = {t.strip() for t in search_visibility.robots_meta(path).split(",")}
+    return "noindex,nofollow" if "nofollow" in tokens else "noindex,follow"
+
+
 def head_html(page: RenderedPage, *, origin: str = mw.PUBLIC_ORIGIN) -> str:
     """Canonical, robots, Open Graph, Twitter and JSON-LD for one page.
 
@@ -1991,11 +2021,20 @@ def head_html(page: RenderedPage, *, origin: str = mw.PUBLIC_ORIGIN) -> str:
     # particular page is a soft 404 knows something about the row that a
     # path-shaped policy cannot. `page.indexable` is the page-shape question and
     # `robots_extra` the per-row one, which is why both exist.
+    #
+    # The *negative* directive is now asked for too, for the same reason the
+    # positive one is. This branch used to hand back the `NOINDEX_NOFOLLOW`
+    # constant, and `nofollow` is not the storefront's call to make: `/pulse/cart`
+    # reaches it with `indexable=False` and the table declares that path
+    # `noindex,follow`, so the cart was the last page on the site still
+    # contradicting the policy table -- served `noindex,nofollow` against a
+    # declared `noindex,follow`, which severs the crawl path out of the cart into
+    # the marketplace that links it.
     robots = (
         page.robots_extra
         if page.robots_extra
         else (search_visibility.robots_meta(page.canonical_path)
-              if page.indexable else search_visibility.NOINDEX_NOFOLLOW)
+              if page.indexable else _declared_noindex(page.canonical_path))
     )
     tags = [
         f'<link rel="canonical" href="{esc(canonical)}">',
