@@ -303,6 +303,7 @@
     "tests/marketplace/test_reservation_sweep_worker_wiring.py",
     "tests/marketplace/test_reservation_sweeper.py",
     "tests/marketplace/test_reservation_webhook_wiring.py",
+    "tests/marketplace/test_reservation_writers_are_collectable.py",
     "tests/marketplace/test_return_window_route_enforcement.py",
     "tests/marketplace/test_review_mutation_guards.py",
     "tests/marketplace/test_review_pipeline_end_to_end.py",
