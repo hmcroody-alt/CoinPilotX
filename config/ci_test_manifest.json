@@ -484,6 +484,7 @@
     "tests/test_email_health_snapshot.py",
     "tests/test_email_outbox_deferred_send.py",
     "tests/test_emoji_unicode_roundtrip.py",
+    "tests/test_external_identity.py",
     "tests/test_failed_login_alert_dispatch.py",
     "tests/test_feature_pages.py",
     "tests/test_home_rail_commerce_shelf.py",

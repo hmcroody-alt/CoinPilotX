@@ -411,6 +411,39 @@ def discard(state_id: int, conn=None) -> None:
             conn.close()
 
 
+def load(state_id: int, conn=None) -> dict:
+    """Re-read a handshake by id. Spends nothing and proves nothing.
+
+    For the one step that comes *after* the browser binding has already been
+    checked: a brand new federated account still has to be asked its age and
+    shown the agreements, and that answer arrives on a later request with the
+    handshake long spent and the handoff burned.
+
+    So the authority for that request is not this function — it is the signed
+    Flask session, which could only have been given the id by the completing GET
+    after `claim_handoff` passed. This just fetches the parked claims again,
+    which is why it is deliberately not called `consume_by_id`: a caller that
+    treated the id alone as permission would be authorising on an integer.
+    """
+
+    if not state_id:
+        raise StateError("missing_state")
+    owned = conn is None
+    if owned:
+        conn = db.connect()
+    try:
+        row = conn.execute(_SELECT + "WHERE id=?", (int(state_id),)).fetchone()
+    finally:
+        if owned:
+            conn.close()
+    if row is None:
+        raise StateError("unknown_or_spent_state")
+    record = _row_to_dict(row)
+    if record["expires_at"] and record["expires_at"] < _stamp(_now()):
+        raise StateError("expired_state")
+    return record
+
+
 def claim_handoff(handoff_token: str, binding_secret: str, conn=None) -> dict:
     """Finish the handshake on the same-site GET. Verifies the browser binding.
 

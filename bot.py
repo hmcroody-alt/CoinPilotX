@@ -3267,6 +3267,27 @@ def rate_limit_refusal(path, retry_after=0):
 ABUSE_GUARD_PROTECTED = {
     "/login": (12, 300),
     "/signup": (8, 300),
+    # Federated sign-in. Spelled out per provider because this table is matched
+    # on the concrete path and the routes are declared with a `<provider>`
+    # converter -- a `/auth/<provider>/start` key here would match nothing and
+    # look protected.
+    #
+    # Safe to key on the client IP even for the callbacks: `response_mode=
+    # form_post` is a POST the *member's browser* makes, so the address seen
+    # here is the member's and not Apple's or Google's. A limiter keyed on the
+    # provider's egress IPs would have bounded every member together.
+    #
+    # `/auth/<p>/complete` is deliberately absent: `basic_abuse_guard` is
+    # POST/PUT only and that route is a GET, but it also needs a 43-character
+    # handoff token that is single-use and burned on first contact whatever the
+    # outcome, so there is no volume for a counter to bound.
+    "/auth/apple/start": (12, 300),
+    "/auth/google/start": (12, 300),
+    "/auth/apple/callback": (12, 300),
+    "/auth/google/callback": (12, 300),
+    "/auth/finish": (8, 300),
+    "/account/connections/apple/disconnect": (6, 300),
+    "/account/connections/google/disconnect": (6, 300),
     "/forgot-password": (6, 300),
     "/forgot-username": (6, 300),
     "/api/mobile/auth/recover": (6, 300),
@@ -6552,6 +6573,13 @@ def render_account_page(page, title, **context):
     # and the second attempt lands on Home. That is the common path, not the
     # edge: mistyping a password once is ordinary.
     context.setdefault("next_target", safe_next_value())
+    # Federated sign-in, on every account page rather than only the two that
+    # show buttons: `/login` re-renders itself for a dozen refusals, and a
+    # button that vanishes on a failed attempt reads as the option having been
+    # taken away. Both are empty lists when nothing is configured, which is what
+    # keeps the buttons from appearing before the secrets exist.
+    context.setdefault("federated_providers", federated_sign_in_options())
+    context.setdefault("federated_connections", federated_connections(context.get("current_user")))
     return render_template("account.html", page=page, title=title, **context)
 
 
@@ -7599,7 +7627,21 @@ def permanently_delete_account(user, password):
     user_id = int((user or {}).get("user_id") or 0)
     if not user_id:
         return False, "Account could not be identified."
-    if not user.get("password_hash") or not check_password_hash(user["password_hash"], password or ""):
+    if not user.get("password_hash"):
+        # A federated-only account -- signed up through Apple or Google and
+        # never given a password. The blank hash refuses every input, so the
+        # generic answer below would tell this member their password did not
+        # match a password they have never had, and they would retype it
+        # forever. Deletion must stay reachable, so say what actually unblocks
+        # it. (The better fix is a federated re-assertion standing in for the
+        # password here; this is the accurate message in the meantime, not the
+        # end state.)
+        return False, (
+            "This account signs in with Apple or Google and has no password to confirm. "
+            "Use Forgot password to set one — the link goes to your verified email address — "
+            "then return here to delete your account."
+        )
+    if not check_password_hash(user["password_hash"], password or ""):
         return False, "Password confirmation did not match."
     now = datetime.utcnow().isoformat(timespec="seconds")
     deleted_handle = f"deleted-user-{user_id}-{secrets.token_hex(4)}"
@@ -8409,6 +8451,976 @@ def login_page():
     # return to sign in" links to.
     session.pop(PENDING_LEGAL_SESSION_KEY, None)
     return render_account_page("login", "Login")
+
+
+# ---------------------------------------------------------------------------
+# Federated sign-in: Apple and Google
+#
+# Three routes per provider, and the split is forced rather than stylistic.
+# Both providers answer with `response_mode=form_post` -- a cross-site POST --
+# and a `SameSite=Lax` cookie is not sent on one. So the callback cannot see any
+# cookie this server set, which means it cannot tell whether the browser
+# completing the sign-in is the browser that started it. Granting a session
+# there would be login CSRF: an attacker replays their own provider response
+# into a victim's browser and the victim is silently signed into the attacker's
+# account.
+#
+#   POST /auth/<p>/start     opens a handshake, sets a single-purpose binding
+#                            cookie, redirects to the provider
+#   POST /auth/<p>/callback  provider lands here; validates state and signature,
+#                            parks the verified claims, redirects onward
+#   GET  /auth/<p>/complete  same-site, so the Lax cookie arrives: checks the
+#                            browser binding and only then authorises anything
+#
+# Nothing in the callback authorises a session. Every decision that grants
+# access lives behind the binding check in `/complete`.
+# ---------------------------------------------------------------------------
+
+#: Provider key -> adapter module. The only place a provider name is mapped to
+#: code, so an unknown name is a refusal here rather than an `getattr` surprise
+#: deeper in.
+FEDERATED_ADAPTERS = {
+    "apple": apple_identity,
+    "google": google_identity,
+}
+
+#: A browser that has passed the binding check and is finishing a sign-in which
+#: needs one more answer from the member -- age and terms for a brand new
+#: account. Safe in the session, unlike anything in the callback: by this point
+#: we are on a same-site GET, so the real session cookie is present and writing
+#: to it does not clobber it. Carries no authority on its own; it names a spent
+#: handshake row, and `/auth/finish` re-reads the claims from that row rather
+#: than trusting anything the browser sends back.
+PENDING_FEDERATED_SESSION_KEY = "pulse_pending_federated"
+PENDING_FEDERATED_TTL_SECONDS = 900
+
+FEDERATED_UNAVAILABLE_MESSAGE = "That sign-in option is not available yet."
+FEDERATED_FAILED_MESSAGE = "That sign-in could not be completed. Please try again."
+
+
+def federated_adapter(provider):
+    return FEDERATED_ADAPTERS.get(str(provider or "").strip().lower())
+
+
+def federated_redirect_uri(provider):
+    """The return URL, built from the canonical origin and never from the request.
+
+    A redirect URI has to match what is registered at the provider byte for
+    byte, and `request.host_url` is attacker-influenced -- Railway's edge
+    rejects an unknown Host, but a legitimate alternate host (`www.`) would
+    still produce a URI the portal does not know and a sign-in that fails for
+    reasons nobody can see. One spelling, written down.
+    """
+
+    return f"{CANONICAL_HTTPS_ORIGIN}/auth/{provider}/callback"
+
+
+def set_oauth_binding_cookie(response, binding_secret):
+    """The cookie that proves one browser both started and finished the sign-in.
+
+    Separate from the session cookie on purpose. It carries no authority, it is
+    scoped to `/auth`, and it lives as long as the handshake -- so relaxing
+    nothing about the session cookie buys the one property the callback needs.
+    """
+
+    response.set_cookie(
+        oauth_login_state.BINDING_COOKIE,
+        binding_secret,
+        max_age=oauth_login_state.DEFAULT_TTL_SECONDS,
+        httponly=True,
+        secure=COINPILOTX_SESSION_COOKIE_SECURE,
+        samesite="Lax",
+        path="/auth",
+    )
+    return response
+
+
+def clear_oauth_binding_cookie(response):
+    response.delete_cookie(oauth_login_state.BINDING_COOKIE, path="/auth", samesite="Lax")
+    return response
+
+
+def federated_login_refusal(reason, provider="", user_id=0, message=""):
+    """One refusal shape for every way a federated sign-in can fail.
+
+    `reason` is recorded; the member is told something deliberately vague. The
+    distinction matters: "no account matches that Apple ID" and "that account is
+    suspended" are both refusals, and answering them differently turns this
+    endpoint into an oracle about who has an account here.
+    """
+
+    log_auth_event(
+        f"federated_{reason}",
+        "",
+        user_id,
+        status="blocked",
+        details={"provider": provider, "reason": reason, "db_engine": db_service.ENGINE_NAME},
+    )
+    response = render_account_page(
+        "login", "Login", error=message or FEDERATED_FAILED_MESSAGE
+    )
+    return response, 400
+
+
+@webhook_app.route("/auth/<provider>/start", methods=["POST"])
+@public_route(reason="Begins federated sign-in. The member is by definition not signed in yet; a link flow re-checks its own session.")
+def federated_start(provider):
+    """Open a handshake and send the member to Apple or Google.
+
+    POST and CSRF-checked rather than a plain link, for two reasons: a GET would
+    let any page on the internet cause a handshake row to be written here, and a
+    sign-in should not begin because someone embedded an image.
+    """
+
+    init_db()
+    provider = str(provider or "").strip().lower()
+    adapter = federated_adapter(provider)
+    if adapter is None:
+        abort(404)
+    if not verify_csrf():
+        return render_account_page("login", "Login", error="Security check failed. Please try again."), 400
+    if not adapter.configured():
+        return render_account_page("login", "Login", error=FEDERATED_UNAVAILABLE_MESSAGE), 503
+
+    # "Link this provider to the account I am already signed into" is a
+    # different operation from "sign me in", and which one it is must be fixed
+    # now rather than inferred at the callback -- otherwise a flow started as a
+    # link can be completed as a login, or the reverse.
+    signed_in = require_account()
+    mode = "link" if (signed_in and request.form.get("mode") == "link") else "login"
+    link_user_id = int(signed_in["user_id"]) if mode == "link" else 0
+
+    try:
+        handshake = oauth_login_state.create(
+            provider,
+            mode=mode,
+            link_user_id=link_user_id,
+            next_path=safe_next_value(),
+        )
+        destination = adapter.authorization_url(
+            state=handshake["state"],
+            nonce=handshake["nonce"],
+            redirect_uri=federated_redirect_uri(provider),
+        )
+    except (apple_identity.AppleIdentityError, google_identity.GoogleIdentityError) as exc:
+        logging.warning("FEDERATED_START_REFUSED provider=%s reason=%s", provider, exc.reason)
+        return render_account_page("login", "Login", error=FEDERATED_UNAVAILABLE_MESSAGE), 503
+    except Exception:
+        logging.exception("FEDERATED_START_FAILED provider=%s", provider)
+        return render_account_page("login", "Login", error=FEDERATED_FAILED_MESSAGE), 500
+
+    log_auth_event(
+        "federated_start", "", link_user_id, status="started",
+        details={"provider": provider, "mode": mode, "db_engine": db_service.ENGINE_NAME},
+    )
+    return set_oauth_binding_cookie(redirect(destination), handshake["binding_secret"])
+
+
+def federated_callback_handoff(provider, row, profile):
+    """Park verified claims on the spent handshake and hand off to the same-site GET.
+
+    303 rather than 302 so the browser turns the provider's POST into a GET.
+    """
+
+    if not profile.get("subject"):
+        # Nothing identifies the member, so there is nothing to park. A blank
+        # subject would otherwise become one shared identity row that every
+        # later tokenless sign-in resolves onto.
+        return federated_login_refusal("missing_subject", provider)
+    oauth_login_state.attach_profile(row["id"], profile)
+    params = {oauth_login_state.HANDOFF_PARAM: row["handoff_token"]}
+    # The destination the member asked for, carried as a query parameter rather
+    # than read out of the row at the far end. `safe_next_value()` re-validates
+    # whatever arrives in `next`, so putting it here means the stored path goes
+    # through the same check as one typed into a URL, instead of being trusted
+    # because it came out of our own table.
+    if row.get("next_path"):
+        params["next"] = row["next_path"]
+    target = f"/auth/{provider}/complete?{urlencode(params)}"
+    return redirect(target, code=303)
+
+
+@webhook_app.route("/auth/apple/callback", methods=["POST"])
+@public_route(reason="Apple posts the authorization response here cross-site; no session cookie can be present on it by construction.")
+def federated_apple_callback():
+    """Apple's `form_post` landing. Validates, parks, hands off. Grants nothing."""
+
+    init_db()
+    if request.form.get("error"):
+        # The member pressed Cancel, most often. Not a failure worth a scary page.
+        return redirect("/login")
+
+    try:
+        row = oauth_login_state.consume(request.form.get("state", ""), "apple")
+    except oauth_login_state.StateError as exc:
+        return federated_login_refusal(f"state_{exc.reason}", "apple")
+
+    try:
+        tokens = apple_identity.exchange_code(
+            request.form.get("code", ""), redirect_uri=federated_redirect_uri("apple")
+        )
+        claims = apple_identity.verify_id_token(tokens.get("id_token", ""), nonce=row["nonce"])
+    except apple_identity.AppleIdentityError as exc:
+        return federated_login_refusal(exc.reason, "apple")
+    except Exception:
+        logging.exception("FEDERATED_APPLE_CALLBACK_FAILED")
+        return federated_login_refusal("apple_callback_error", "apple")
+
+    # The display name arrives in an *unsigned* form field, and only on the very
+    # first authorisation. It is used for the profile name and nothing that
+    # decides identity or access; the email comes from the signed claims.
+    profile = apple_identity.profile_from_response(claims, request.form.get("user", ""))
+    return federated_callback_handoff("apple", row, profile)
+
+
+@webhook_app.route("/auth/google/callback", methods=["POST"])
+@public_route(reason="Google posts the ID token here cross-site; no session cookie can be present on it by construction.")
+def federated_google_callback():
+    """Google's `form_post` landing. Same shape as Apple's.
+
+    Joins the handshake on `state` when the OIDC redirect flow supplied one, and
+    on the nonce when the token came from the Google Identity Services button,
+    which has no `state` field at all. The nonce is the stronger join of the two
+    -- it arrives inside a token Google signed -- but it can only be read after
+    the signature is checked, so the order below is load-bearing.
+    """
+
+    init_db()
+    if request.form.get("error"):
+        return redirect("/login")
+
+    assertion = google_identity.assertion_from_form(request.form)
+    if not assertion:
+        return federated_login_refusal("google_missing_assertion", "google")
+
+    state = str(request.form.get("state") or "").strip()
+    try:
+        if state:
+            row = oauth_login_state.consume(state, "google")
+        else:
+            # The GIS path. Google's documented double-submit cookie is required
+            # here, not optional: without a `state` it is the only signal
+            # besides the nonce, and a missing token is a failed check rather
+            # than a waived one.
+            if not google_identity.verify_csrf_token(
+                request.cookies.get(google_identity.CSRF_COOKIE, ""),
+                request.form.get(google_identity.CSRF_FIELD, ""),
+            ):
+                return federated_login_refusal("google_csrf_mismatch", "google")
+            row = oauth_login_state.consume_by_nonce(
+                google_identity.unverified_nonce(assertion), "google"
+            )
+    except oauth_login_state.StateError as exc:
+        return federated_login_refusal(f"state_{exc.reason}", "google")
+
+    try:
+        claims = google_identity.verify_assertion(assertion, nonce=row["nonce"])
+    except google_identity.GoogleIdentityError as exc:
+        return federated_login_refusal(exc.reason, "google")
+    except Exception:
+        logging.exception("FEDERATED_GOOGLE_CALLBACK_FAILED")
+        return federated_login_refusal("google_callback_error", "google")
+
+    return federated_callback_handoff("google", row, google_identity.profile_from_claims(claims))
+
+
+@webhook_app.route("/auth/<provider>/complete", methods=["GET"])
+@public_route(reason="Finishes federated sign-in on a same-site GET so the browser-binding cookie is present; this is the step that authorises.")
+def federated_complete(provider):
+    """Check the browser binding, then decide. The only authorising step.
+
+    Everything before this ran on a request that could have been forged by any
+    site on the internet. The binding cookie is what makes this request
+    attributable to the browser that opened the handshake.
+    """
+
+    init_db()
+    provider = str(provider or "").strip().lower()
+    if federated_adapter(provider) is None:
+        abort(404)
+
+    try:
+        row = oauth_login_state.claim_handoff(
+            request.args.get(oauth_login_state.HANDOFF_PARAM, ""),
+            request.cookies.get(oauth_login_state.BINDING_COOKIE, ""),
+        )
+    except oauth_login_state.StateError as exc:
+        response, status = federated_login_refusal(f"handoff_{exc.reason}", provider)
+        return clear_oauth_binding_cookie(webhook_app.make_response((response, status)))
+    if row["provider"] != provider:
+        # The handoff was minted for a different provider's handshake.
+        response, status = federated_login_refusal("handoff_provider_mismatch", provider)
+        return clear_oauth_binding_cookie(webhook_app.make_response((response, status)))
+
+    return federated_authorise(provider, row)
+
+
+def federated_authorise(provider, row):
+    """Apply the resolution ladder to a handshake whose browser binding passed."""
+
+    profile = row.get("profile") or {}
+    if not profile.get("subject"):
+        oauth_login_state.discard(row["id"])
+        return federated_login_refusal("missing_parked_profile", provider)
+
+    if row["mode"] == "link":
+        return federated_link_provider(provider, row, profile)
+
+    decision = external_identity.resolve(provider, profile)
+    outcome = decision.get("decision")
+
+    if outcome == "refused":
+        oauth_login_state.discard(row["id"])
+        reason = decision.get("reason") or "refused"
+        if reason == "provider_email_missing":
+            # Apple's relay can be switched off by the member, and a Workspace
+            # token can omit the claim. Say so plainly: this one is actionable,
+            # and the member cannot act on "please try again".
+            return federated_login_refusal(
+                reason, provider,
+                message=f"{external_identity.PROVIDER_LABELS.get(provider, provider.title())} did not share an email address with PulseSoc, so an account cannot be created. Sign in with your email and password instead.",
+            )
+        return federated_login_refusal(reason, provider)
+
+    if outcome == "link_required":
+        # THE account-takeover branch. An email match is not a sign-in. The
+        # member proves they hold the existing account by signing into it with
+        # their password, and connects the provider from Account Settings.
+        oauth_login_state.discard(row["id"])
+        label = external_identity.PROVIDER_LABELS.get(provider, provider.title())
+        log_auth_event(
+            "federated_link_required", "", 0, status="blocked",
+            details={"provider": provider, "candidates": decision.get("candidate_count") or 0, "db_engine": db_service.ENGINE_NAME},
+        )
+        return render_account_page(
+            "login", "Login",
+            error=f"A PulseSoc account already uses that email address. Sign in with your email and password, then connect {label} from Account Settings.",
+        ), 409
+
+    if outcome == "create":
+        # Deliberately not created here. A new account needs the age
+        # confirmation and the agreement that `/signup` demands, and neither
+        # Apple nor Google can answer them -- recording `age_confirmed` or a
+        # legal acceptance on the strength of a provider token would be
+        # inventing a consent nobody gave.
+        session[PENDING_FEDERATED_SESSION_KEY] = {
+            "state_id": int(row["id"]),
+            "provider": provider,
+            "at": time.time(),
+        }
+        return redirect("/auth/finish")
+
+    if outcome == "sign_in":
+        user = load_account_by_id(decision.get("user_id") or 0)
+        if not user:
+            oauth_login_state.discard(row["id"])
+            return federated_login_refusal("identity_without_account", provider)
+        return federated_establish_session(provider, row, user)
+
+    oauth_login_state.discard(row["id"])
+    return federated_login_refusal("unknown_decision", provider)
+
+
+def federated_establish_session(provider, row, user):
+    """The gates every sign-in passes, then the canonical session.
+
+    Same gates as the password path and in the same order. A federated sign-in
+    that skipped them would be a way around a suspension or around a rewritten
+    Terms document, which is the whole reason this is not a shortcut function.
+    """
+
+    user_id = int(user["user_id"])
+    login_source = f"web_{provider}"
+
+    # Suspended, disabled, or access-revoked. Checked here rather than at
+    # resolve() because it is about the account, not the identity, and because
+    # it has to be re-checked after any pause.
+    restriction = account_login_restriction_message(user)
+    if restriction:
+        oauth_login_state.discard(row["id"])
+        log_auth_event(
+            "federated_login_restricted", user.get("email") or "", user_id, status="blocked",
+            details={"provider": provider, "account_status": user.get("account_status") or "", "db_engine": db_service.ENGINE_NAME},
+        )
+        return render_account_page("login", "Login", error=restriction), 403
+
+    external_identity.touch_login(provider, row["profile"].get("subject") or "")
+    oauth_login_state.discard(row["id"])
+
+    # A document rewritten since this member last agreed. Reuses the password
+    # path's own pause so there is one acceptance step, not a federated copy of
+    # it that drifts.
+    if legal_acceptance.outstanding(user_id):
+        session[PENDING_LEGAL_SESSION_KEY] = {"user_id": user_id, "at": time.time()}
+        log_auth_event(
+            "federated_legal_acceptance_required", user.get("email") or "", user_id, status="pending",
+            details={"provider": provider, "db_engine": db_service.ENGINE_NAME},
+        )
+        return clear_oauth_binding_cookie(
+            webhook_app.make_response(
+                render_account_page("login", "Login", legal_acceptance_required=True)
+            )
+        )
+
+    log_auth_event(
+        "federated_login", user.get("email") or "", user_id, status="success",
+        details={"provider": provider, "db_engine": db_service.ENGINE_NAME},
+    )
+    # `complete_web_login` already returns a real response -- it has a session
+    # cookie to set -- so this only adds the binding-cookie clear on top.
+    return clear_oauth_binding_cookie(complete_web_login(user, "", login_source))
+
+
+# --- the brand new account -------------------------------------------------
+#
+# A provider can tell PulseSoc who someone is. It cannot tell PulseSoc that
+# they are old enough to be here or that they agree to the Terms, and those are
+# the two things `/signup` will not create an account without. So a federated
+# sign-in with no matching identity does not create anything: it asks, on a
+# page of our own, and creates the account from the answer.
+
+
+#: The handle rule `/signup` enforces, reused rather than re-spelled -- a
+#: federated handle must not be one the signup form would have refused.
+FEDERATED_USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{3,40}$")
+
+
+def federated_username_candidate(email):
+    """An unused handle for a new federated account.
+
+    Derived from the email local part and not from the display name. A display
+    name is very often a real name and a handle is public, so seeding from it
+    would publish something the member never chose to publish. With Apple's
+    private relay the local part is already an opaque string, which here is the
+    right answer rather than an unfortunate one.
+
+    Returns "" if nothing usable can be found. `create_account` tolerates an
+    empty handle, so that is a cosmetic outcome rather than a failed signup --
+    which is the correct relative severity.
+    """
+
+    base = re.sub(r"[^A-Za-z0-9_.-]", "", str(email or "").split("@", 1)[0])[:30]
+    base = base.strip("._-")
+    if len(base) < 3:
+        base = "pulse"
+    conn = db()
+    try:
+        cur = conn.cursor()
+        for attempt in range(12):
+            candidate = base if attempt == 0 else f"{base[:30]}{secrets.randbelow(10000):04d}"
+            if not FEDERATED_USERNAME_PATTERN.match(candidate):
+                continue
+            cur.execute(
+                "SELECT 1 FROM users WHERE lower(username)=lower(?) LIMIT 1", (candidate,)
+            )
+            if not cur.fetchone():
+                return candidate
+    except Exception as exc:
+        logging.warning("FEDERATED_USERNAME_LOOKUP_FAILED error=%s", exc.__class__.__name__)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    return ""
+
+
+def federated_create_account(provider, profile, *, country="", email_opt_in=False):
+    """Create a PulseSoc account for an identity a provider has already verified.
+
+    Returns `(user, error_message)` like `create_account`, and differs from
+    `/signup` in exactly two ways, both deliberate.
+
+    **The password.** `create_account` hashes whatever it is handed, and
+    `generate_password_hash("")` produces a hash that *verifies* against an
+    empty string -- so an account created with an empty password is an account
+    anyone can take by posting its address and an empty password field. A long
+    random secret is passed instead, and the stored hash is then blanked, which
+    makes the password check impossible rather than merely hard: `''` is not a
+    parseable hash, so `check_password_hash` cannot return True for any input.
+
+    **The verification email.** `/signup` sends one and refuses the sign-in
+    until it comes back, because until then nothing proves the member holds the
+    address. Here something does -- an `email_verified` claim inside a token
+    the provider signed is the whole content of that proof -- so asking again
+    would be asking a member to confirm an address they just demonstrated
+    control of. When the provider does *not* assert it (a Workspace domain can
+    assert an address its administrator never confirmed), the row stays
+    unverified and the ordinary confirmation path runs.
+
+    If the follow-up transaction fails, the account exists with an unknown
+    random password, no identity link and no verification. That is recoverable
+    and deliberately so: the member controls the address, so a password reset
+    gets them in. The alternative ordering -- blanking the password first --
+    would lock them out of an account they cannot prove is theirs any other way.
+    """
+
+    email = str(profile.get("email") or "").strip().lower()
+    verified = bool(profile.get("email_verified"))
+    display_name = str(profile.get("display_name") or "").strip()[:160]
+    if not display_name:
+        # Something has to render in a header and a comment byline. The local
+        # part is a weak name but it is the member's own string, which beats
+        # "PulseSoc Member" appearing on a real person's posts.
+        display_name = (email.split("@", 1)[0] or "PulseSoc Member")[:160]
+
+    user, error = create_account(
+        display_name,
+        email,
+        secrets.token_urlsafe(48),
+        "",
+        country,
+        email_opt_in,
+        False,
+        federated_username_candidate(email),
+        True,
+        accepted_terms_source=f"web_{provider}",
+    )
+    if error:
+        return None, error
+
+    user_id = int(user["user_id"])
+    conn = db()
+    try:
+        cur = conn.cursor()
+        # The link first. It is the only part of this that cannot be redone
+        # later, because the handshake is spent and the claims go with it.
+        external_identity.link(
+            cur,
+            user_id,
+            provider=provider,
+            subject=str(profile.get("subject") or ""),
+            email=email,
+            email_verified=verified,
+            display_name=display_name,
+            source="federated_signup",
+        )
+        cur.execute(
+            "UPDATE users SET password_hash='', email_verified=? WHERE user_id=?",
+            (1 if verified else 0, user_id),
+        )
+        conn.commit()
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logging.exception(
+            "FEDERATED_ACCOUNT_FINALISE_FAILED provider=%s user_id=%s error=%s",
+            provider, user_id, exc.__class__.__name__,
+        )
+        log_auth_event(
+            "federated_signup_finalise_failed", email, user_id, status="failed",
+            details={"provider": provider, "db_engine": db_service.ENGINE_NAME},
+        )
+        return None, (
+            "Your account was created but the "
+            f"{external_identity.PROVIDER_LABELS.get(provider, provider.title())} "
+            "connection could not be saved. Use Forgot password to set a password and sign in."
+        )
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    log_auth_event(
+        "federated_signup_completed", email, user_id, status="success",
+        details={"provider": provider, "email_verified": verified, "db_engine": db_service.ENGINE_NAME},
+    )
+    return load_account_by_id(user_id) or user, ""
+
+
+def pending_federated_handshake():
+    """The handshake behind an in-progress federated signup, or None.
+
+    The session key is the authority here and the only one: it was written by
+    `/auth/<p>/complete`, which is the step that checked the browser binding.
+    The row is re-read rather than trusted from the session because the claims
+    must come from what the callback verified, not from anything a browser has
+    had its hands on in between.
+    """
+
+    pending = session.get(PENDING_FEDERATED_SESSION_KEY)
+    if not isinstance(pending, dict):
+        return None
+    if time.time() - float(pending.get("at") or 0) > PENDING_FEDERATED_TTL_SECONDS:
+        session.pop(PENDING_FEDERATED_SESSION_KEY, None)
+        return None
+    provider = str(pending.get("provider") or "")
+    if provider not in FEDERATED_ADAPTERS:
+        session.pop(PENDING_FEDERATED_SESSION_KEY, None)
+        return None
+    try:
+        row = oauth_login_state.load(int(pending.get("state_id") or 0))
+    except oauth_login_state.StateError:
+        session.pop(PENDING_FEDERATED_SESSION_KEY, None)
+        return None
+    if row["provider"] != provider or not (row.get("profile") or {}).get("subject"):
+        session.pop(PENDING_FEDERATED_SESSION_KEY, None)
+        return None
+    return row
+
+
+@webhook_app.route("/auth/finish", methods=["GET", "POST"])
+@public_route(reason="The age and agreement step for a brand new federated account. The member has no account yet by definition; the pending-signup session key is what gates it.")
+def federated_finish():
+    """Ask a new federated member the two things their provider cannot answer.
+
+    Not merged into `/signup`: that form collects an email and a password, and
+    both are already settled here. Showing it would invite a member to type an
+    address that is not the one Apple or Google just verified, and the account
+    would then be created for the typed one.
+    """
+
+    init_db()
+    row = pending_federated_handshake()
+    if row is None:
+        return render_account_page(
+            "login", "Login",
+            error="That sign-in took too long to finish. Please start again.",
+        ), 400
+
+    provider = row["provider"]
+    profile = row["profile"]
+    label = external_identity.PROVIDER_LABELS.get(provider, provider.title())
+
+    if request.method == "GET":
+        return render_account_page(
+            "federated_finish", "Finish creating your account",
+            federated_provider=provider,
+            federated_provider_label=label,
+            federated_email=profile.get("email") or "",
+            federated_display_name=profile.get("display_name") or "",
+        )
+
+    if not verify_csrf():
+        return render_account_page(
+            "federated_finish", "Finish creating your account",
+            federated_provider=provider, federated_provider_label=label,
+            federated_email=profile.get("email") or "",
+            federated_display_name=profile.get("display_name") or "",
+            error="Security check failed. Please try again.",
+        ), 400
+
+    def refuse(message):
+        return render_account_page(
+            "federated_finish", "Finish creating your account",
+            federated_provider=provider, federated_provider_label=label,
+            federated_email=profile.get("email") or "",
+            federated_display_name=profile.get("display_name") or "",
+            error=message,
+        ), 400
+
+    if request.form.get("age_confirmed") not in ("on", "true"):
+        return refuse("Confirm your age eligibility before creating your account.")
+    if request.form.get("terms_accepted") not in ("on", "true"):
+        return refuse("Agree to the Terms, Privacy Policy, and no-tolerance safety rules before creating your account.")
+
+    # Re-resolved rather than taken from the earlier decision. Between the
+    # callback and this POST, somebody could have signed up for the same address
+    # with a password -- and creating a second account for it, or silently
+    # adopting theirs, are both wrong. The ladder answers this correctly without
+    # a special case.
+    decision = external_identity.resolve(provider, profile)
+    outcome = decision.get("decision")
+    if outcome == "sign_in":
+        # The identity got linked while this page was open -- a second tab, most
+        # likely. Nothing to create; sign in.
+        session.pop(PENDING_FEDERATED_SESSION_KEY, None)
+        user = load_account_by_id(decision.get("user_id") or 0)
+        if not user:
+            return refuse(FEDERATED_FAILED_MESSAGE)
+        return federated_establish_session(provider, row, user)
+    if outcome != "create":
+        session.pop(PENDING_FEDERATED_SESSION_KEY, None)
+        oauth_login_state.discard(row["id"])
+        if outcome == "link_required":
+            return render_account_page(
+                "login", "Login",
+                error=f"A PulseSoc account already uses that email address. Sign in with your email and password, then connect {label} from Account Settings.",
+            ), 409
+        return federated_login_refusal(decision.get("reason") or "refused", provider)
+
+    user, error = federated_create_account(
+        provider,
+        profile,
+        country=clean_html(request.form.get("country", ""))[:80],
+        email_opt_in=request.form.get("email_opt_in") == "on",
+    )
+    session.pop(PENDING_FEDERATED_SESSION_KEY, None)
+    oauth_login_state.discard(row["id"])
+    if error:
+        return refuse(error)
+
+    try:
+        send_signup_welcome_emails(user)
+    except Exception as exc:
+        logging.warning("FEDERATED_WELCOME_EMAIL_FAILED user_id=%s error=%s",
+                        user.get("user_id"), exc.__class__.__name__)
+    log_product_event(user["user_id"], "signup_completed", {"source": f"federated_{provider}"})
+
+    if not int(user.get("email_verified") or 0):
+        # The provider would not vouch for the address, so PulseSoc has to. Same
+        # outcome as `/signup`: confirm first, sign in after.
+        result = send_account_confirmation_email(user, source=f"federated_{provider}")
+        return render_account_page(
+            "login", "Login",
+            message="Account created. Check your email to confirm your account before signing in."
+            if result.get("ok")
+            else f"Account created, but the confirmation email could not be delivered. Trace ID: {result.get('trace_id')}. Use Resend confirmation email.",
+            resend_email=user.get("email") or "",
+        )
+
+    return clear_oauth_binding_cookie(complete_web_login(user, "", f"web_{provider}"))
+
+
+# --- connecting a provider to an account that already exists ---------------
+
+
+def federated_link_provider(provider, row, profile):
+    """Finish a "connect this provider to my account" handshake.
+
+    This is the only way an existing account gains a federated credential, and
+    it is the reason `resolve()` never returns a signed-in member for an email
+    match: the authority for adding a credential is the session the member
+    already holds, not an address a provider asserted.
+    """
+
+    label = external_identity.PROVIDER_LABELS.get(provider, provider.title())
+    signed_in = require_account()
+    if not signed_in or int(signed_in["user_id"]) != int(row["link_user_id"]):
+        # Signed out, or signed into a different account, since the handshake
+        # opened. Linking to whoever is here now would attach the provider to an
+        # account that never asked for it.
+        oauth_login_state.discard(row["id"])
+        return federated_login_refusal(
+            "link_session_mismatch", provider, user_id=int(row["link_user_id"] or 0),
+            message=f"Sign in again, then connect {label} from Account Settings.",
+        )
+
+    user_id = int(signed_in["user_id"])
+    conn = db()
+    try:
+        cur = conn.cursor()
+        external_identity.link(
+            cur,
+            user_id,
+            provider=provider,
+            subject=str(profile.get("subject") or ""),
+            email=str(profile.get("email") or "").strip().lower(),
+            email_verified=bool(profile.get("email_verified")),
+            display_name=str(profile.get("display_name") or "").strip()[:160],
+            source="account_settings",
+        )
+        notify_user(
+            cur,
+            user_id,
+            "security_alert",
+            f"{label} connected",
+            f"{label} can now be used to sign in to your PulseSoc account.",
+            "/account/settings",
+            actor_user_id=user_id,
+            entity_type="account",
+            entity_id=str(user_id),
+            metadata={"event": "federated_identity_linked", "provider": provider},
+        )
+        conn.commit()
+    except ValueError as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        # The subject already belongs to a different PulseSoc account. Not
+        # repointed: that would hand this member the other account's sign-in.
+        logging.warning("FEDERATED_LINK_CONFLICT provider=%s user_id=%s reason=%s",
+                        provider, user_id, exc)
+        oauth_login_state.discard(row["id"])
+        return federated_login_refusal(
+            "link_subject_taken", provider, user_id=user_id,
+            message=f"That {label} account is already connected to a different PulseSoc account.",
+        )
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logging.exception("FEDERATED_LINK_FAILED provider=%s user_id=%s", provider, user_id)
+        oauth_login_state.discard(row["id"])
+        return federated_login_refusal("link_failed", provider, user_id=user_id)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    oauth_login_state.discard(row["id"])
+    log_auth_event(
+        "federated_linked", signed_in.get("email") or "", user_id, status="success",
+        details={"provider": provider, "db_engine": db_service.ENGINE_NAME},
+    )
+    return clear_oauth_binding_cookie(
+        webhook_app.make_response(redirect(f"/account/settings?connected={provider}"))
+    )
+
+
+def federated_sign_in_options():
+    """Providers that can actually be used right now, for the login buttons.
+
+    Empty until the secrets exist. That is the point: a button for a provider
+    with no client ID is a button that takes the member to a provider error
+    page, so the surface appears when the configuration does and not before.
+    """
+
+    options = []
+    for provider, adapter in FEDERATED_ADAPTERS.items():
+        try:
+            if not adapter.configured():
+                continue
+        except Exception as exc:
+            logging.warning("FEDERATED_OPTION_CHECK_FAILED provider=%s error=%s",
+                            provider, exc.__class__.__name__)
+            continue
+        options.append({
+            "provider": provider,
+            "label": external_identity.PROVIDER_LABELS.get(provider, provider.title()),
+        })
+    return options
+
+
+def federated_account_has_password(user):
+    """Whether this member can still sign in without a provider.
+
+    `''` is the federated marker written by `federated_create_account`, and the
+    distinction is the whole input to the unlink check below: an account whose
+    only credential is one provider must not be able to remove it.
+    """
+
+    return bool(str((user or {}).get("password_hash") or "").strip())
+
+
+def federated_connections(user):
+    """Rows for the Account Settings connections panel.
+
+    `can_unlink` is asked per provider rather than computed in the template,
+    because the answer depends on how many *other* ways into the account exist
+    and a template that got that wrong would offer a button that locks the
+    member out.
+    """
+
+    user_id = int((user or {}).get("user_id") or 0)
+    if not user_id:
+        return []
+    has_password = federated_account_has_password(user)
+    try:
+        linked = {row["provider"]: row for row in external_identity.for_user(user_id)}
+    except Exception as exc:
+        logging.warning("FEDERATED_CONNECTIONS_FAILED user_id=%s error=%s",
+                        user_id, exc.__class__.__name__)
+        return []
+
+    rows = []
+    for provider in external_identity.PROVIDERS:
+        adapter = FEDERATED_ADAPTERS.get(provider)
+        record = linked.get(provider)
+        removable = False
+        if record:
+            try:
+                removable = external_identity.can_unlink(
+                    user_id, provider, has_password=has_password
+                )[0]
+            except Exception:
+                removable = False
+        rows.append({
+            "provider": provider,
+            "label": external_identity.PROVIDER_LABELS.get(provider, provider.title()),
+            "available": bool(adapter and adapter.configured()),
+            "linked": bool(record),
+            "email": (record or {}).get("provider_email") or "",
+            "last_login_at": (record or {}).get("last_login_at") or "",
+            "can_unlink": removable,
+        })
+    return rows
+
+
+@webhook_app.route("/account/connections/<provider>/disconnect", methods=["POST"])
+@auth_required
+def federated_disconnect(provider):
+    """Remove a provider from the signed-in account.
+
+    Refuses when it is the last way in. A member who unlinks their only
+    credential has not simplified their account, they have lost it -- and the
+    recovery for a federated-only account with no password is a password reset
+    to an address they may have created with Apple's relay.
+    """
+
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page"))
+    provider = str(provider or "").strip().lower()
+    if provider not in external_identity.PROVIDERS:
+        abort(404)
+    if not verify_csrf():
+        return render_account_page(
+            "settings", "Account Settings", current_user=user,
+            error="Security check failed. Please try again.",
+        ), 400
+
+    user_id = int(user["user_id"])
+    label = external_identity.PROVIDER_LABELS.get(provider, provider.title())
+    allowed, reason = external_identity.can_unlink(
+        user_id, provider, has_password=federated_account_has_password(user)
+    )
+    if not allowed:
+        log_auth_event(
+            "federated_unlink_refused", user.get("email") or "", user_id, status="blocked",
+            details={"provider": provider, "reason": reason, "db_engine": db_service.ENGINE_NAME},
+        )
+        return render_account_page(
+            "settings", "Account Settings", current_user=user,
+            error=f"{label} is currently the only way to sign in to this account. Set a password with Forgot password first, then disconnect it.",
+        ), 409
+
+    conn = db()
+    try:
+        cur = conn.cursor()
+        removed = external_identity.unlink(cur, user_id, provider)
+        if removed:
+            notify_user(
+                cur,
+                user_id,
+                "security_alert",
+                f"{label} disconnected",
+                f"{label} can no longer be used to sign in to your PulseSoc account.",
+                "/account/settings",
+                actor_user_id=user_id,
+                entity_type="account",
+                entity_id=str(user_id),
+                metadata={"event": "federated_identity_unlinked", "provider": provider},
+            )
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        logging.exception("FEDERATED_UNLINK_FAILED provider=%s user_id=%s", provider, user_id)
+        return render_account_page(
+            "settings", "Account Settings", current_user=user,
+            error=f"{label} could not be disconnected. Please try again.",
+        ), 500
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    log_auth_event(
+        "federated_unlinked", user.get("email") or "", user_id, status="success",
+        details={"provider": provider, "removed": bool(removed), "db_engine": db_service.ENGINE_NAME},
+    )
+    return redirect(f"/account/settings?disconnected={provider}")
 
 
 @webhook_app.route("/resend-confirmation", methods=["POST"])
@@ -15461,6 +16473,19 @@ def account_settings_page():
             update_account_settings(user["user_id"], full_name, phone, country, email_opt_in, sms_opt_in)
             user = load_account_by_id(user["user_id"])
             message = "Account settings saved."
+    # The two federated outcomes land here by redirect rather than by rendering
+    # in place, so that a reload of Account Settings does not re-post a link or
+    # an unlink. The provider name is validated against the adapter table before
+    # it reaches a sentence -- it arrives in a query string.
+    if request.method == "GET" and not message:
+        connected = str(request.args.get("connected") or "").strip().lower()
+        disconnected = str(request.args.get("disconnected") or "").strip().lower()
+        if connected in external_identity.PROVIDERS:
+            label = external_identity.PROVIDER_LABELS.get(connected, connected.title())
+            message = f"{label} is now connected. You can use it to sign in."
+        elif disconnected in external_identity.PROVIDERS:
+            label = external_identity.PROVIDER_LABELS.get(disconnected, disconnected.title())
+            message = f"{label} was disconnected and can no longer sign in to this account."
     return render_account_page("settings", "Account Settings", current_user=user, message=message, link_code=link_code)
 
 
