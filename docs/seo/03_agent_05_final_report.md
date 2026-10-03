@@ -17,17 +17,29 @@ what I got wrong, and what each other lane needs from me.
 |---|---|
 | Lane | Structured data + search entity engine |
 | Branch | `search-os/agent-05-structured-data` |
-| Base / production commit | `5bdf4e431` — **identical**, so nothing here is deployed |
+| Base commit | `5bdf4e431` — unmerged, so nothing here is deployed |
+| Production commit | `5bdf4e431` when measured; `44c019b21` by push time (four commits, none in this lane's code) |
 | Code commits | 6 (`25e9b2647`, `fdb337296`, `4570a5f3b`, `0b92ae536`, `32f7f4d5b`, `5f74ddec9`) |
 | Protection suite | passing |
 | Realtime-audio gate | no protected path touched |
 | New test files | 1 (`tests/test_structured_data_sinks.py`), declared in `config/ci_test_manifest.json` |
 | Output changed on any live page | one node deleted (`fdb337296`); one `Offer` restricted to pages that print it (`32f7f4d5b`) |
 
-**Deployment status is the first thing to read.** Production reports
-`5bdf4e431` at `/api/service/health`, which is this branch's base. Every
-"live today" claim in the findings document is still true of pulsesoc.com,
-and every fix is still unmerged.
+**Deployment status is the first thing to read.** Production reported
+`5bdf4e431` at `/api/service/health` — this branch's base — throughout the
+measurement window. By push time it had moved to `44c019b21`. The conclusion
+does not change, but the *reason* does: nothing here is deployed because the
+branch is unmerged, not because production still sits on the base.
+
+Of main's four new commits, only `config/ci_test_manifest.json` overlaps this
+lane, additively, from other lanes. Re-checked rather than assumed, because
+`44c019b21` is "Stop advertising two sitemaps that can never list a URL" and
+the marketplace census is drawn from `/sitemap-products.xml`: that sitemap
+still answers with 42 `<loc>` entries, so the census basis is intact. The
+sitemap index now lists four children rather than six.
+
+Every "live today" claim in the findings document is still true of
+pulsesoc.com, and every fix here is still unmerged.
 
 ---
 
@@ -192,7 +204,9 @@ point the same way, which is not something anyone had checked.
 
 ## Limits on this report
 
-- **Nothing here is deployed.** Base equals production.
+- **Nothing here is deployed.** The branch is unmerged. Production equalled the
+  base while the measurements were taken and has since moved past it; see the
+  status section.
 - **Static checks are not device QA.** Every claim is from rendering pages and
   parsing their markup. No Search Console or Merchant Center diagnostics were
   read; I have no account access.

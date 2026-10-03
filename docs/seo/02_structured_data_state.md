@@ -11,8 +11,18 @@ eighteen mutations that must fail).
 
 Production was at `5bdf4e431` when every "live" claim below was measured
 (`GET /api/service/health`, `commit` field). That is this branch's base, so
-**none of the changes described here are deployed.** Everything under "Live
-today" is still true of pulsesoc.com as you read this.
+**none of the changes described here are deployed.**
+
+By the time the branch was pushed, production had moved to `44c019b21` — four
+commits, none of which touches this lane's code: only `config/ci_test_manifest.json`
+overlaps, additively, from other lanes. Re-checked rather than assumed, because
+`44c019b21` is "Stop advertising two sitemaps that can never list a URL" and
+the marketplace census below is drawn from `/sitemap-products.xml`: that
+sitemap still answers with **42 `<loc>` entries**, so the census basis is
+intact. The sitemap index now lists four children rather than six.
+
+Everything under "Live today" is therefore still true of pulsesoc.com as you
+read this, and every fix here is still unmerged.
 
 Method for live claims: one unauthenticated `GET` per URL with a browser user
 agent, JSON-LD extracted from the response body and parsed. No claim here is
