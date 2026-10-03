@@ -490,6 +490,7 @@
     "tests/test_https_redirect_host_header.py",
     "tests/test_init_db_survives_unmintable_user_id.py",
     "tests/test_legal_acceptance.py",
+    "tests/test_live_moderation_authority_behavior.py",
     "tests/test_live_participants.py",
     "tests/test_live_replay_playback_manifest.py",
     "tests/test_live_replay_worker.py",
