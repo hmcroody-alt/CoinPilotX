@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sixteen ways to break the live-ban authority. Each must turn the suite red.
+"""Seventeen ways to break the live-ban authority. Each must turn the suite red.
 
 A green suite proves nothing on its own. This table shipped with six
 authorization readers, zero rows, and a passing test suite for its entire
@@ -18,6 +18,10 @@ Three of them attack the observability rather than the decision, because an
 authority nobody can prove fired is only half built -- and one of those three
 attacks it from the other side, firing the ban event for every audience miss.
 An event that is emitted for all denials identifies none of them.
+
+One reorders the handler rather than changing any of its logic, because the
+no-enumeration-oracle property is the only one here that depends purely on the
+order two correct checks run in -- and the source does not look wrong either way.
 
 Two attack the audit trail, which is the part most likely to rot unnoticed:
 nothing in the product reads it back, so dropping the write or widening it to
@@ -143,6 +147,24 @@ MUTATIONS = [
         "Every audience miss is logged as a moderation ban. An event that fires "
         "for all denials identifies none of them, and it invents bans that a "
         "moderator never issued.",
+    ),
+    (
+        "the_target_is_checked_before_the_actor",
+        BOT,
+        # The same helper is called by the read route, so the anchor has to
+        # reach the line after it to stay unique.
+        "        actor_role = pulse_live_moderation_actor_role(cur, live, user)\n"
+        "        allowed, denial = live_moderation.authorize(",
+        '        cur.execute("SELECT user_id FROM users WHERE user_id=? LIMIT 1", (target_user_id,))\n'
+        "        if not cur.fetchone():\n"
+        "            conn.close()\n"
+        '            return api_error("That account could not be found.", 404)\n'
+        "        actor_role = pulse_live_moderation_actor_role(cur, live, user)\n"
+        "        allowed, denial = live_moderation.authorize(",
+        "Validating the target before deciding whether the caller may act is the "
+        "ordinary way to order a handler, and it turns this route into an account "
+        "existence oracle for anybody with a session: 404 means that user id is "
+        "free, 403 means somebody is there.",
     ),
     (
         "the_ban_stops_being_audited",

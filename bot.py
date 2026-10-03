@@ -55588,9 +55588,19 @@ def pulse_live_promote_guest_row(cur, live, *, target_user_id, request_id, actor
 def pulse_live_user_is_blocked(cur, live_id, user_id):
     """Is this user banned from this Live?
 
-    Six authorization sites call this: the canonical audience gate, the replay
-    /state read, the co-host request, the join-status projection, the guest
-    invite and the invite answer. It now delegates to
+    Six sites call this: the canonical audience gate
+    (``pulse_live_viewer_authorized``, which the Agora token mint, ``/join``
+    and the replay read all funnel through), the ``/state`` read, the co-host
+    request, the ``/cohost/debug`` ``viewer_banned`` projection, the guest
+    invite and the invite answer.
+
+    Five of those are boundaries; ``/cohost/debug`` is a diagnostic and no
+    client reads its ``viewer_banned`` field, so it is a reader of this table
+    but not an enforcement point. Worth saying plainly, because "six
+    authorization readers" is how this feature looked complete while the table
+    was empty, and one of the six was never going to refuse anybody.
+
+    It now delegates to
     ``services.live_moderation`` so that one module owns both the reading and
     the writing of this table, and so all six inherit the fail-closed
     behaviour: a read error denies the protected action instead of quietly
