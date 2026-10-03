@@ -1198,3 +1198,236 @@ def test_mutation_the_return_page_specialisation_is_reachable(buyer):
     assert specialised != generic
     assert "/pulse/orders" in specialised
     assert "/pulse/orders" not in generic
+
+
+# ---------------------------------------------------------------------------
+# 6. The payment handoff: what the button says, against what the button does
+# ---------------------------------------------------------------------------
+#
+# A real buyer reached `/pulse/cart`, filled in a name and a delivery address,
+# and pressed a button labelled `Pay $94.98`. That button does not pay. It POSTs
+# to `/api/pulse/marketplace/cart/checkout`, which creates a Stripe Checkout
+# Session, and then sets `window.location.href` to Stripe's hosted page -- no
+# card is entered on this origin, no charge is authorised by the click, and the
+# amount in the label was a promise made by a navigation.
+#
+# The copy is now forward-navigation language, and these tests hold it there.
+# They are written against the script's source rather than a rendered DOM for
+# the same reason the four panel tests above are: there is no DOM in this suite,
+# and the thing worth pinning is the sentence the script is built to emit.
+#
+# Every one of them is an assertion about *honesty*, not about wording. They
+# permit any label that does not claim a payment and do not demand one exact
+# string, except where the string is the claim.
+
+CART_JS = ROOT / "static" / "js" / "pulsesoc_cart.js"
+
+
+def _emitted(text: str) -> str:
+    """The script with its `//` comments removed.
+
+    Several assertions below are "this phrase must not appear", and a comment
+    explaining *why* the phrase must not appear contains the phrase. Stripping
+    the commentary is what keeps those assertions about the sentences the script
+    emits rather than about the prose around them -- and the stripping is
+    line-based and deliberately crude, because the only thing it has to get
+    right is that a `//` line is not shipped text. A `//` inside a string
+    literal would be mis-stripped; this file has none, and the assertions it
+    feeds are all absence tests, so a mis-strip can only make them stricter.
+    """
+    return "\n".join(line for line in text.splitlines()
+                      if not line.lstrip().startswith("//"))
+
+#: The submit button as `checkoutFormHtml` assembles it: the opening tag, the
+#: `pending` ternary, and then the label on the following line.
+SUBMIT_BUTTON = re.compile(
+    r"<button type='submit'.*?\+\s*\n\s*\"(?P<label>.*?)</button>", re.S)
+
+
+def test_the_checkout_button_does_not_claim_to_take_a_payment():
+    """The label is a navigation, because the click is a navigation.
+
+    "Pay $94.98" is a statement about money leaving an account. This click
+    creates a Stripe session and redirects; the money leaves on Stripe's page,
+    after a second deliberate action the buyer takes there. A label that cannot
+    be distinguished from the real pay button two pages later is how a buyer
+    ends up believing they have paid when they have not, and how one did.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    match = SUBMIT_BUTTON.search(source)
+    assert match, (
+        "the checkout form no longer renders a single `type='submit'` button in "
+        "the shape this test reads; the label contract is unpinned")
+    label = match.group("label")
+    assert label.strip(), "the submit button has an empty label"
+
+    assert "Continue to secure payment" in label, (
+        f"the checkout button is labelled {label!r}, which does not tell the "
+        "buyer that the next thing they see is a payment page they have not "
+        "reached yet")
+    assert not re.match(r"(?i)^\s*(&\w+;)?\s*pay\b", label), (
+        f"the checkout button opens with a payment claim: {label!r}")
+    assert "money(" not in label, (
+        "the checkout button interpolates the amount into its own label. The "
+        "amount belongs on the subtotal row and on Stripe's page, which are the "
+        "two places it is authoritative; inside this button it reads as a charge")
+
+
+def test_the_handoff_sentence_is_above_the_button_not_below_it():
+    """Order on the page is order of reading, and the correction has to come first.
+
+    The explanation already existed -- "you will finish on Stripe's secure
+    payment page" -- and sat underneath a button that said "Pay". A buyer
+    reading downwards met the promise, acted on it, and met the correction
+    afterwards, if at all. Being present is not the same as being read.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    form = source[source.index("function checkoutFormHtml("):]
+    form = form[:form.index("\n  // The app handoff")]
+
+    next_line = form.index("class='next'")
+    button = form.index("<button type='submit'")
+    assert next_line < button, (
+        "the 'next step' line is emitted after the submit button, so a buyer "
+        "reading top to bottom reaches the button before the explanation of "
+        "what it does")
+    assert "Next: secure payment" in form
+
+
+def test_the_loading_state_describes_opening_a_page_not_taking_money():
+    """What the buyer reads during the round trip, which is the most ambiguous moment.
+
+    The POST can take seconds -- it validates the destination, the variant and
+    the supplier before it reaches Stripe -- and whatever the button says during
+    that window is the buyer's only account of what is happening to their money.
+    """
+    source = _emitted(CART_JS.read_text(encoding="utf-8"))
+    assert "Opening secure payment" in source, (
+        "the in-flight button text does not say what is being opened")
+    for vague in ("Starting checkout", "Paying", "Processing payment", "Charging"):
+        assert vague not in source, (
+            f"the in-flight button text says {vague!r}, which either says nothing "
+            "or says money is moving; neither is true")
+
+
+def test_a_failed_session_restores_the_form_and_never_reports_a_failed_payment():
+    """A session that could not be created is not a payment that failed.
+
+    They have different remedies and different consequences, and the buyer is
+    owed the difference: nothing was attempted, nothing was charged, nothing was
+    removed from the cart, and everything they typed is still on screen.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    handler = source[source.index("  function checkout(sellerId)"):]
+    handler = handler[:handler.index("\n  // ---")]
+    said = _emitted(handler)
+
+    # The CTA comes back, with its original label, so the form is usable again.
+    assert "function restore()" in handler
+    assert "button.innerHTML = label" in handler, (
+        "the button is re-enabled without its label being restored, so a failed "
+        "attempt leaves 'Opening secure payment…' on a button that is not")
+    assert handler.count("restore();") >= 2, (
+        "only one of the two failure paths restores the form")
+
+    # And it never says the payment failed, because no payment was attempted.
+    for claim in ("payment failed", "payment was declined", "your card was",
+                  "charge failed"):
+        assert claim not in said.lower(), (
+            f"the failure copy claims {claim!r}; the session was never created, "
+            "so there was no payment to fail")
+    # Both messages state the absence rather than leaving it to be inferred.
+    assert said.lower().count("charged") >= 2
+
+
+def test_the_cart_draws_no_step_it_has_no_authority_over():
+    """The indicator is a progress indicator, not a wizard this page drives.
+
+    Steps three and four are Stripe's page and the webhook's confirmation. This
+    origin learns about neither: the session URL is a redirect, and
+    `checkout.session.completed` arrives on the server. A page that drew itself
+    as having reached "Payment" would be asserting something it cannot observe,
+    which is the same class of claim as the button label above.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    assert "function stepsHtml(" in source
+    calls = re.findall(r"stepsHtml\((\d+)", source)
+    assert calls, (
+        "stepsHtml is defined and never called, so the progress indicator is "
+        "dead code and this test proves nothing")
+    assert set(calls) <= {"1", "2"}, (
+        f"the cart draws checkout step(s) {sorted(set(calls) - {'1', '2'})} as "
+        "reached. Steps 3 and 4 belong to Stripe and to the webhook")
+
+
+def test_every_details_kind_the_server_can_emit_has_its_own_step_name():
+    """"Delivery" over a pickup form is a false statement about where the order goes.
+
+    `details_kind_for` is the authority, and it can answer any shipping-address
+    kind, any scheduled kind, `pickup`, or `""` for a group it asks nothing of.
+    The table is enumerated from that function's own inputs rather than from a
+    list written here, so a tenth fulfilment kind added in Python fails this
+    test instead of silently rendering as the generic noun.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    table = source[source.index("var DETAIL_COPY"):source.index("var DETAIL_FALLBACK")]
+
+    emittable = {cart_web.details_kind_for([kind])
+                 for kind in fulfillment.KINDS
+                 if kind not in fulfillment.UNDECIDED_KINDS}
+    assert emittable, "no fulfilment kinds, so this test proves nothing"
+    assert "" in emittable, (
+        "details_kind_for no longer answers '' for a group it asks nothing of; "
+        "the empty-key entry in DETAIL_COPY may now be unreachable")
+
+    missing = sorted(kind for kind in emittable
+                     if f'"{kind}":' not in table and f"{kind}: {{" not in table)
+    assert not missing, (
+        f"details_kind {missing} reaches the cart with no step name of its own, "
+        "so the form is headed by the generic noun and the progress indicator "
+        "says 'Details' where it should say what is actually being collected")
+
+
+def test_the_progress_strip_on_the_return_pages_never_marks_confirmation_reached():
+    """The success page is reached by Stripe's `success_url`, which proves nothing.
+
+    `success_url` fires on redirect. It is not a payment result, it is not
+    signed, and it is reachable by typing the URL. The order becomes an order
+    when `checkout.session.completed` arrives at the webhook -- so the fourth
+    dot is drawn as waiting and never as done, which is the visual half of the
+    sentence the copy already makes.
+    """
+    strip = bot._checkout_progress_html(3, pending=4)
+    cells = [cell for cell in strip.split("<li") if "Confirmation" in cell]
+    assert len(cells) == 1, strip
+    assert "&#10003;" not in cells[0], (
+        "the success page ticks Confirmation, which only the webhook can do")
+    assert "#2ecc71" not in cells[0], (
+        "the success page draws Confirmation in the done colour")
+
+    # The cancel page: the buyer reached Stripe and came back without paying, so
+    # Payment is neither done nor in flight.
+    cancelled = bot._checkout_progress_html(2)
+    payment = [cell for cell in cancelled.split("<li") if "Payment" in cell]
+    assert len(payment) == 1
+    assert "&#10003;" not in payment[0], (
+        "the cancel page ticks Payment after a checkout that took no money")
+    assert "&hellip;" not in payment[0], (
+        "the cancel page draws Payment as in flight; nothing is in flight")
+
+
+def test_the_return_pages_actually_render_the_strip(buyer):
+    """The positive control for the test above, which asserts absences.
+
+    An absence passes for a page that renders no indicator at all.
+    """
+    client, _listing_id, _seller_id = buyer
+    with client.session_transaction() as session:
+        buyer_id = session["account_user_id"]
+    tx_id = _transaction(buyer_id)
+
+    for path in ("success", "cancel"):
+        body = client.get(f"/pulse/payments/{path}?transaction_id={tx_id}",
+                          headers=HTTPS).get_data(as_text=True)
+        assert "Checkout progress" in body, f"the {path} page renders no progress strip"
+        assert "Confirmation" in body

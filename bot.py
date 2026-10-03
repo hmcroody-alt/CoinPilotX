@@ -64014,6 +64014,43 @@ def _marketplace_order_return(transaction_id):
                 pass
 
 
+#: The four stages of a Marketplace checkout, in the order a buyer meets them.
+#: `static/js/pulsesoc_cart.js` draws the first two on `/pulse/cart`; these two
+#: return pages draw the last two, so the strip a buyer saw before leaving for
+#: Stripe is the same strip that greets them coming back.
+_CHECKOUT_STEPS = ("Cart", "Details", "Payment", "Confirmation")
+
+
+def _checkout_progress_html(done, pending=0):
+    """`done` steps struck through, one optional `pending` step marked waiting.
+
+    Inline-styled because these pages are built as HTML strings inside
+    `pulse_social_shell` and have no stylesheet of their own to extend.
+
+    `pending` exists so the success page can say that confirmation is *in
+    flight* without saying it has arrived. Drawing step four as reached would be
+    this page asserting something only `checkout.session.completed` knows, which
+    is the same claim the copy below it carefully declines to make.
+    """
+    cells = []
+    for index, name in enumerate(_CHECKOUT_STEPS, start=1):
+        if index <= done:
+            mark, colour = "&#10003;", "#2ecc71"
+        elif index == pending:
+            mark, colour = "&hellip;", "#e8c468"
+        else:
+            mark, colour = str(index), "#8d9a92"
+        cells.append(
+            f"<li style='display:flex;align-items:center;gap:6px;color:{colour};white-space:nowrap'>"
+            f"<span style='width:17px;height:17px;border-radius:50%;border:1px solid {colour};"
+            f"display:inline-flex;align-items:center;justify-content:center;font-size:10px'>{mark}</span>"
+            f"{name}</li>"
+        )
+    return ("<ol aria-label='Checkout progress' style='display:flex;flex-wrap:wrap;gap:6px 14px;"
+            "list-style:none;margin:0 0 16px;padding:0;font-size:11px;letter-spacing:.06em;"
+            "text-transform:uppercase'>" + "".join(cells) + "</ol>")
+
+
 @webhook_app.route("/pulse/payments/success", methods=["GET"])
 @webhook_app.route("/payments/success", methods=["GET"])
 def pulse_payment_success_page():
@@ -64026,7 +64063,11 @@ def pulse_payment_success_page():
         return pulse_social_shell(
             "Payment Complete",
             "Stripe received your payment. Your order appears in your orders once the confirmation reaches PulseSoc.",
-            "<section class='card'><h2>Payment received</h2>"
+            "<section class='card'>"
+            # Three of four: Stripe is done, PulseSoc's confirmation is not. The
+            # fourth dot is drawn as waiting, never as reached.
+            + _checkout_progress_html(3, pending=4) +
+            "<h2>Payment received</h2>"
             "<p>Stripe has taken your payment. Your order shows up in your orders as soon as "
             "the confirmation reaches PulseSoc &mdash; usually within a few seconds. The seller "
             "is notified at the same time.</p>"
@@ -64053,7 +64094,12 @@ def pulse_payment_cancel_page():
         return pulse_social_shell(
             "Checkout Canceled",
             "No card was charged and your cart is exactly as you left it.",
-            "<section class='card'><h2>Checkout canceled</h2>"
+            "<section class='card'>"
+            # Two of four. The buyer reached Stripe's page and came back without
+            # paying, so step three is not done and is not drawn as waiting
+            # either -- there is nothing in flight.
+            + _checkout_progress_html(2) +
+            "<h2>Checkout canceled</h2>"
             "<p>No payment was taken. Everything is still in your cart &mdash; nothing was removed "
             "and nothing was charged.</p>"
             "<div class='actions'><a class='button primary' href='/pulse/cart'>Back to your cart</a>"

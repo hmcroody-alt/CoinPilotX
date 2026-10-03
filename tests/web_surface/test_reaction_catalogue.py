@@ -247,8 +247,8 @@ CACHE_PINNED_ASSETS = {
         "d6dfa4bd27c573000815964c04e1adf076386c202912454582e4db8230c6b16b",
     ),
     "static/js/pulsesoc_cart.js": (
-        "guest-cart-signin-20261001a",
-        "8d26bef6b2efb639aa2f2db9fc25d8abb02af1d079e9dbc6322e5f30436f49f8",
+        "payment-handoff-clarity-20261002a",
+        "a6a235b7291d48e8c00a323005ccda640045ee78ea0ce66370a5175f28c85fce",
     ),
     "static/js/pulsesoc_intelligence_center.js": (
         "cache-sweep-20260930a",
