@@ -269,6 +269,7 @@
     "tests/marketplace/test_cart_null_owner_defeats_dedupe.py",
     "tests/marketplace/test_cash_settlement.py",
     "tests/marketplace/test_charge_model_authority.py",
+    "tests/marketplace/test_checkout_financial_events.py",
     "tests/marketplace/test_checkout_idempotency_collision.py",
     "tests/marketplace/test_checkout_options_route.py",
     "tests/marketplace/test_commercial_operations.py",

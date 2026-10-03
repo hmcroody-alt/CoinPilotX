@@ -51,6 +51,7 @@ from flask import Blueprint, g, jsonify, request
 
 from services import marketplace_cart_web
 from services import marketplace_cart_schema as cart_schema
+from services import marketplace_checkout_events as checkout_events
 from services import marketplace_checkout_identity as checkout_identity
 from services import marketplace_guest_customer as guest_customer
 from services import marketplace_fulfillment
@@ -135,6 +136,25 @@ def _status_of(response) -> int:
         return 200
 
 
+def _current_endpoint() -> str:
+    """Which handler is running, or ``""`` if there is no request.
+
+    ``getattr(request, "endpoint", "")`` looks like it does this and does not.
+    ``request`` is a werkzeug ``LocalProxy``, and outside a request context the
+    attribute access raises ``RuntimeError`` from inside the proxy's
+    ``__get__`` -- a default only swallows ``AttributeError``, so the read
+    propagates.
+
+    That matters because ``_error`` is reachable from helpers that can run
+    without a request, and the refusal event would then be silently lost: a
+    blind spot in exactly the records added to remove one.
+    """
+    try:
+        return str(request.endpoint or "")
+    except Exception:  # noqa: BLE001 - no request context, or no endpoint
+        return ""
+
+
 def _error(message: str, status: int = 400, *, code: str = "", **extra):
     """A rejection the buyer can act on.
 
@@ -161,6 +181,17 @@ def _error(message: str, status: int = 400, *, code: str = "", **extra):
         # the older web handlers already look for.
         payload["error_code"] = code
         payload.setdefault("error", code)
+    # Every refusal on this surface is recorded here, because every refusal on
+    # this surface already comes through here. Instrumenting the ~30 call sites
+    # individually would have been a bigger diff that could silently miss one,
+    # and a missed one is a buyer who cannot check out and leaves no trace --
+    # which is the exact gap this closes. `message` is deliberately not logged:
+    # it is prose, it gets reworded, and `code` is the half that is stable.
+    try:
+        checkout_events.refused(code=code, status=status, op=_current_endpoint(),
+                                extra=extra)
+    except Exception:  # noqa: BLE001 - a log must not change the answer
+        LOGGER.exception("CART_REFUSAL_EMIT_FAILED code=%s", code)
     return _json(payload, status)
 
 
@@ -1203,10 +1234,20 @@ def cart_checkout():
     # It decides whether Stripe asks for a delivery address, so it has to arrive
     # with the checkout request rather than be inferred afterwards.
     fulfillment_choice = str(payload.get("fulfillment") or "").strip().lower()
-    if not seller_user_id:
-        return _error("Choose a seller group to check out.", 400, code="INVALID_REQUEST")
     payment_mode_raw = payload.get("payment_mode")
     payment_mode = marketplace_payment_pause.normalize_marketplace_payment_mode(payment_mode_raw)
+    # Before the first decision, so this line is the denominator for every
+    # refusal and every payable below it. Emitted even for a request that is
+    # about to be refused for naming no seller: "buyers are hitting a malformed
+    # client" and "nobody is trying" are different problems and used to produce
+    # identical logs -- which is how a card rail that had never taken a payment
+    # looked indistinguishable from one nobody had visited.
+    checkout_events.attempted(
+        buyer_user_id=int(user["user_id"]), seller_user_id=seller_user_id,
+        payment_mode=payment_mode, has_idempotency_key=bool(idempotency_key),
+    )
+    if not seller_user_id:
+        return _error("Choose a seller group to check out.", 400, code="INVALID_REQUEST")
     if payment_mode == "card" and marketplace_payment_pause.marketplace_card_payments_paused():
         return _error(
             marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_MESSAGE,
@@ -1538,6 +1579,12 @@ def cart_checkout():
                 commercial_quotes=line_quotes,
             )
             _remember_answer(cur, buyer_id, response_payload)
+            checkout_events.payable_created(
+                surface=checkout_events.SURFACE_CASH,
+                amount_cents=total_minor, currency=currency,
+                transaction_ids=tx_ids, buyer_user_id=buyer_id,
+                seller_user_id=seller_user_id,
+            )
             return _json(response_payload)
 
         try:
@@ -1649,6 +1696,22 @@ def cart_checkout():
                     "payout_state": "transfer_eligible" if connected_account_id else "ledger_pending_onboarding",
                 }
                 _remember_answer(cur, buyer_id, response_payload)
+                # Guarded at the call site for the same reason as the Checkout
+                # Session branch below: the `livemode` read is another accessor
+                # call on a provider resource, inside a `try` whose handler
+                # fails the buyer's checkout.
+                try:
+                    checkout_events.payable_created(
+                        surface=checkout_events.SURFACE_PAYMENT_INTENT,
+                        provider_object_id=intent_id,
+                        amount_cents=total_minor, currency=currency,
+                        transaction_ids=tx_ids, buyer_user_id=buyer_id,
+                        seller_user_id=seller_user_id,
+                        livemode=stripe_response_value(intent, "livemode"),
+                    )
+                except Exception:  # noqa: BLE001 - see the session branch
+                    LOGGER.exception("CHECKOUT_PAYABLE_EMIT_FAILED lane=cart intent=%s",
+                                     intent_id)
                 return _json(response_payload)
             # Captured so the failure path below can expire whatever Stripe
             # committed to before we failed. In the production incident
@@ -1714,6 +1777,27 @@ def cart_checkout():
                 "payout_state": "transfer_eligible" if connected_account_id else "ledger_pending_onboarding",
             }
             _remember_answer(cur, buyer_id, response_payload)
+            # Guarded at the call site, not only inside the emitter, because the
+            # risk is in evaluating the arguments: `stripe_response_value` is a
+            # third attribute read on the same provider resource, and this file
+            # already carries the scar from the second one -- on stripe 15 a
+            # generated resource is not a Mapping and the wrong accessor raises
+            # *after* the charge is real. This emit sits inside the `try` whose
+            # handler expires the session and refuses the buyer, so an
+            # unguarded log line here could turn a completed checkout into a
+            # failed one. Observability is never worth that.
+            try:
+                checkout_events.payable_created(
+                    surface=checkout_events.SURFACE_CHECKOUT_SESSION,
+                    provider_object_id=session_id,
+                    amount_cents=total_minor, currency=currency,
+                    transaction_ids=tx_ids, buyer_user_id=buyer_id,
+                    seller_user_id=seller_user_id,
+                    livemode=stripe_response_value(session_obj, "livemode"),
+                )
+            except Exception:  # noqa: BLE001 - see above
+                LOGGER.exception("CHECKOUT_PAYABLE_EMIT_FAILED lane=cart session=%s",
+                                 session_id)
             return _json(response_payload)
         except Exception as exc:
             trace_id = secrets.token_hex(6)
