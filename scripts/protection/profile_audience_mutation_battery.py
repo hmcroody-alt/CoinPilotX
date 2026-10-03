@@ -350,6 +350,35 @@ MUTATIONS = [
         replacement="""main, "", script, show_intro=False)""",
         expect=["no_audience_is_shown_the_shell_default_rail"],
     ),
+    Mutation(
+        name="shop_bypasses_the_publication_predicate",
+        defect="A profile that lists its owner's products without `public_sql` "
+               "is a back door around the publication gate: drafts and "
+               "unapproved listings get a buyer surface.",
+        path="bot.py",
+        anchor='''        f"WHERE l.seller_user_id=? AND {marketplace_listing_lifecycle.public_sql('l', 'ms')} "''',
+        replacement='''        "WHERE l.seller_user_id=? "''',
+        expect=["the_shop_names_only_listings_a_buyer_surface_would_serve"],
+    ),
+    Mutation(
+        name="shop_count_is_the_page_size",
+        defect="Counting the rows on the page rather than the rows that exist "
+               "tells a seller with eight live products that they have six -- a "
+               "number the page states as fact and cannot support.",
+        path="bot.py",
+        anchor="""    listing_count = int(dict(cur.fetchone() or {}).get("total") or 0)""",
+        replacement="""    listing_count = len(listings)""",
+        expect=["the_listing_count_is_the_inventory_not_the_page_size"],
+    ),
+    Mutation(
+        name="shop_tab_is_unconditional",
+        defect="A Shop tab on a profile with nothing for sale advertises a "
+               "surface that does not exist and lands the reader on nothing.",
+        path="bot.py",
+        anchor='''    shop_tab_html = "<a href='#profileShop'>Shop</a>" if shop_html else ""''',
+        replacement='''    shop_tab_html = "<a href='#profileShop'>Shop</a>"''',
+        expect=["no_public_listing_means_no_shop_tab_and_no_section"],
+    ),
 ]
 
 

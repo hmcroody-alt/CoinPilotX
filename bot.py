@@ -92987,6 +92987,17 @@ def pulse_profile_page_for_user(target_user_id):
         (target_user_id,),
     )
     listings = [dict(row) for row in cur.fetchall()]
+    # `listings` is one page, so its length is a page size and not an inventory.
+    # About published it as the latter, which told a seller with thirty live
+    # products that they had six. The count has to come from the same predicate
+    # as the page or the two disagree.
+    cur.execute(
+        "SELECT COUNT(*) AS total FROM marketplace_listings l "
+        "LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id "
+        f"WHERE l.seller_user_id=? AND {marketplace_listing_lifecycle.public_sql('l', 'ms')}",
+        (target_user_id,),
+    )
+    listing_count = int(dict(cur.fetchone() or {}).get("total") or 0)
     cur.execute("SELECT * FROM teacher_profiles WHERE user_id=? LIMIT 1", (target_user_id,))
     teacher = dict(cur.fetchone() or {})
     cur.execute(
@@ -93132,8 +93143,8 @@ def pulse_profile_page_for_user(target_user_id):
     # public field). Only the approved outcome is a fact about the account.
     if str(teacher.get("verification_status") or "").lower() == "approved" and teacher.get("category"):
         about_items.append(("Teaching", clean_html(teacher.get("category"))))
-    if listings:
-        about_items.append(("Store", f"{len(listings)} public listing{'s' if len(listings) != 1 else ''}"))
+    if listing_count:
+        about_items.append(("Store", f"{listing_count} public listing{'s' if listing_count != 1 else ''}"))
     if group_count:
         about_items.append(("Groups", f"Member of {group_count}"))
     about_rows_html = "".join(
@@ -93161,6 +93172,53 @@ def pulse_profile_page_for_user(target_user_id):
     else:
         about_html = ""
     about_tab_html = "<a href='#profileAbout'>About</a>" if about_html else ""
+    # Commerce is content, not chrome. A seller's listings are what a visitor came
+    # for, so they belong in the column the eye reads, at the width the posts use
+    # -- not in a rail that sheds on tablet. Marketplace stays the canonical
+    # product truth: every card links to `/pulse/marketplace/<id>`, the route that
+    # actually serves the listing, and the rows come from the same `public_sql`
+    # predicate as Marketplace itself, so this never advertises something the
+    # visitor could not reach. No listing, no section, and no tab (§31).
+    shop_html = ""
+    if listings and permissions.get("can_view_marketplace"):
+        shop_cards = []
+        for listing in listings:
+            listing_id = int(listing.get("id") or 0)
+            if not listing_id:
+                continue
+            title = clean_html(listing.get("title") or "Untitled listing")
+            price = clean_html(listing.get("price_label") or "")
+            image = clean_html(listing.get("cover_image_url") or listing.get("media_url") or "")
+            # `alt=''` because the link's own text names the product; a second
+            # reading of the title is noise to a screen reader.
+            media = (
+                f"<img src='{html_escape(image)}' alt='' loading='lazy' decoding='async'>"
+                if image.startswith(("https://", "http://", "/"))
+                else "<span class='pulse-profile-shop-blank' aria-hidden='true'></span>"
+            )
+            shop_cards.append(
+                f"<li><a href='/pulse/marketplace/{listing_id}'>{media}"
+                f"<strong>{html_escape(title)}</strong>"
+                + (f"<small>{html_escape(price)}</small>" if price else "")
+                + "</a></li>"
+            )
+        if shop_cards:
+            # Stated, not linked: there is no seller filter on `/pulse/marketplace`
+            # and no per-seller storefront route, so a "see all" control would
+            # land on an unfiltered catalogue and quietly fail the promise.
+            more_note = (
+                f"<p class='muted pulse-profile-shop-note'>{len(shop_cards)} of {listing_count} public listings</p>"
+                if listing_count > len(shop_cards)
+                else ""
+            )
+            shop_html = (
+                "<section class='card pulse-profile-shop' id='profileShop'><h2>"
+                + ("Your shop" if is_owner else "Shop")
+                + f"</h2>{more_note}<ul class='pulse-profile-shop-grid'>"
+                + "".join(shop_cards)
+                + "</ul></section>"
+            )
+    shop_tab_html = "<a href='#profileShop'>Shop</a>" if shop_html else ""
     # The rail. Every module below is built from a row this handler already read,
     # so there is no number here the page cannot point at -- the mockup's 82%,
     # 1.2K and "12 listings" are illustrative and are deliberately not reproduced
@@ -93210,29 +93268,10 @@ def pulse_profile_page_for_user(target_user_id):
             )
             + "</ul></article>"
         )
-    # One strip, both audiences, same source: the `public_sql`-gated listings the
-    # About card counts. A visitor sees exactly what they could reach from
-    # Marketplace, and `/pulse/marketplace/<id>` is the route that actually
-    # serves it rather than a store URL this page would be inventing.
-    if listings and permissions.get("can_view_marketplace"):
-        rail_modules.append(
-            "<article class='card pulse-profile-rail-card'><h2>"
-            + ("Your store" if is_owner else "Store")
-            + "</h2><ul class='pulse-profile-rail-products'>"
-            + "".join(
-                f"<li><a href='/pulse/marketplace/{int(listing.get('id') or 0)}'>"
-                f"<span>{html_escape(clean_html(listing.get('title') or 'Untitled listing'))}</span>"
-                + (
-                    f"<small>{html_escape(clean_html(listing.get('price_label')))}</small>"
-                    if str(listing.get("price_label") or "").strip()
-                    else ""
-                )
-                + "</a></li>"
-                for listing in listings[:4]
-                if int(listing.get("id") or 0)
-            )
-            + "</ul></article>"
-        )
+    # No commerce module here. The same listings are a `#profileShop` section in
+    # the centre column, and a rail copy would be the "same page twice" this
+    # rebuild removed from About -- two lists of one inventory, one of which
+    # disappears at 1100px.
     rail_html = "".join(rail_modules)
     avatar_html =f"<img src='{html_escape(clean_html(ident.get('avatar_url')))}' alt=''>" if ident.get("avatar_url") else clean_html(ident["name"][:1])
     cover_style = f" style=\"background-image:linear-gradient(135deg,rgba(5,11,20,.38),rgba(5,11,20,.22)),url('{clean_html(ident.get('banner_url'))}');background-size:cover;background-position:center\"" if ident.get("banner_url") else ""
@@ -93251,7 +93290,7 @@ def pulse_profile_page_for_user(target_user_id):
     .pulse-profile-tabs{{display:flex;gap:4px;overflow-x:auto;padding:6px;border:1px solid rgba(110,223,246,.14);border-radius:16px;background:rgba(9,20,35,.88);scrollbar-width:none}}.pulse-profile-tabs a{{flex:1 0 auto;min-width:82px;padding:10px 12px;border-radius:11px;text-align:center;text-decoration:none;font-weight:900;color:#a9c5ce}}.pulse-profile-tabs a.active{{background:linear-gradient(135deg,rgba(54,229,143,.2),rgba(110,223,246,.18));color:#fff}}
     .pulse-profile-feed-card{{padding:10px;overflow-anchor:none}}.pulse-profile-feed-card h2{{margin:3px 4px 10px}}.pulse-profile-feed-frame{{display:block;width:100%;min-height:760px;border:0;border-radius:14px;background:#071321;overflow-anchor:none}}
     .pulse-profile-about h2{{margin:0 0 10px}}.pulse-profile-about-bio{{margin:0 0 12px;max-width:62ch}}.pulse-profile-about-list{{display:grid;gap:0;margin:0}}.pulse-profile-about-row{{display:grid;grid-template-columns:minmax(0,120px) minmax(0,1fr);gap:12px;padding:9px 0;border-top:1px solid rgba(255,255,255,.07)}}.pulse-profile-about-row dt{{color:#9fb5c0;font-weight:850;font-size:13px}}.pulse-profile-about-row dd{{margin:0;font-weight:850}}.pulse-profile-secondary details summary{{cursor:pointer;font-weight:950}}.pulse-profile-secondary .profile-tool-links{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:12px}}.profile-tool-links a{{text-decoration:none}}
-    .pulse-profile-rail-card h2{{margin:0 0 8px;font-size:17px}}.pulse-profile-rail-card ul{{list-style:none;margin:0;padding:0;display:grid;gap:2px}}.pulse-profile-rail-card li a{{display:grid;gap:1px;padding:9px 10px;border-radius:11px;text-decoration:none;font-weight:850;min-height:44px;align-content:center}}.pulse-profile-rail-card li a:hover,.pulse-profile-rail-card li a:focus-visible{{background:rgba(110,223,246,.09)}}.pulse-profile-rail-card small{{color:#9fb5c0;font-weight:700}}.pulse-profile-rail-todo li a{{color:#6edff6}}
+    .pulse-profile-rail-card h2{{margin:0 0 8px;font-size:17px}}.pulse-profile-rail-card ul{{list-style:none;margin:0;padding:0;display:grid;gap:2px}}.pulse-profile-rail-card li a{{display:grid;gap:1px;padding:9px 10px;border-radius:11px;text-decoration:none;font-weight:850;min-height:44px;align-content:center}}.pulse-profile-rail-card li a:hover,.pulse-profile-rail-card li a:focus-visible{{background:rgba(110,223,246,.09)}}.pulse-profile-rail-card small{{color:#9fb5c0;font-weight:700}}.pulse-profile-rail-todo li a{{color:#6edff6}}.pulse-profile-shop h2{{margin:0 0 4px;font-size:19px}}.pulse-profile-shop-note{{margin:0 0 12px;font-size:13px}}.pulse-profile-shop-grid{{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px}}.pulse-profile-shop-grid a{{display:grid;gap:4px;text-decoration:none;padding:8px;border-radius:14px;border:1px solid rgba(110,223,246,.12);background:rgba(9,20,35,.6)}}.pulse-profile-shop-grid a:hover,.pulse-profile-shop-grid a:focus-visible{{border-color:rgba(110,223,246,.34);background:rgba(110,223,246,.07)}}.pulse-profile-shop-grid img,.pulse-profile-shop-blank{{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:10px;background:rgba(110,223,246,.08)}}.pulse-profile-shop-grid strong{{font-size:14px;font-weight:850;line-height:1.3;overflow-wrap:anywhere}}.pulse-profile-shop-grid small{{color:#9fb5c0;font-weight:800}}
     .profile-badges-modal,.profile-safety-modal{{position:fixed;inset:0;z-index:1800;display:none;place-items:end center;background:rgba(1,6,14,.72);backdrop-filter:blur(10px);padding:16px}}.profile-badges-modal.open,.profile-safety-modal.open{{display:grid}}.profile-badges-sheet,.profile-safety-sheet{{width:min(680px,100%);max-height:min(82dvh,760px);overflow:auto;border:1px solid rgba(110,223,246,.22);border-radius:24px;background:#071321;padding:16px;box-shadow:0 28px 100px rgba(0,0,0,.55)}}.profile-badges-head,.profile-safety-head{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:12px;align-items:center;position:sticky;top:-16px;background:#071321;padding:10px 0;z-index:2}}.profile-badges-head h2,.profile-safety-head h2{{margin:0}}.profile-badges-head button,.profile-safety-head button{{width:42px!important;min-width:42px!important;height:42px!important;min-height:42px!important;padding:0!important;border-radius:999px}}.profile-badges-list,.profile-report-reasons{{display:grid;gap:8px}}.profile-badge-row{{display:grid;grid-template-columns:42px minmax(0,1fr);gap:10px;border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:10px;background:rgba(255,255,255,.04)}}.profile-badge-row.locked{{opacity:.56}}.profile-badge-icon{{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(54,229,143,.24),rgba(110,223,246,.22));font-size:20px;font-weight:950}}.profile-badge-row p,.profile-badge-row small{{margin:2px 0}}.profile-report-reason{{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:center;min-height:48px;border:1px solid rgba(255,255,255,.09);border-radius:13px;padding:9px 11px;background:rgba(255,255,255,.035);font-weight:850}}.profile-report-reason input{{width:20px;height:20px;margin:0;accent-color:#36e58f}}.profile-safety-copy{{color:#a8bbc6;margin:0 0 12px}}.profile-safety-actions{{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}}.profile-danger-confirm{{background:#ff5b74!important;color:#16040a!important;border:0!important}}body.profile-sheet-open{{overflow:hidden}}
     /* The shell caps `.wrap` at 1180px, which after the 214px navigation rail
        and the 320px aside left this page a 614px reading column -- narrower
@@ -93287,8 +93326,9 @@ def pulse_profile_page_for_user(target_user_id):
         <div class='pulse-profile-actions {'is-owner' if is_owner else 'is-visitor'}'>{action_html}</div>
         <p class='pulse-profile-app-cta'>{app_cta_html('profile', ident['public_player_id'], source='web', label='Open in PulseSoc App', classes='profile-action-open-app')}</p>
       </section>
-      <nav class='pulse-profile-tabs' aria-label='Profile content'><a class='active' aria-current='page' href='#profilePosts'>Posts</a><a href='/pulse/reels?creator={html_escape(clean_html(ident['public_player_id']))}'>Reels</a><a href='/pulse/videos?creator={html_escape(clean_html(ident['public_player_id']))}'>Videos</a><a href='/pulse?profile={html_escape(clean_html(ident['public_player_id']))}&topic=photo'>Photos</a>{about_tab_html}</nav>
+      <nav class='pulse-profile-tabs' aria-label='Profile content'><a class='active' aria-current='page' href='#profilePosts'>Posts</a><a href='/pulse/reels?creator={html_escape(clean_html(ident['public_player_id']))}'>Reels</a><a href='/pulse/videos?creator={html_escape(clean_html(ident['public_player_id']))}'>Videos</a><a href='/pulse?profile={html_escape(clean_html(ident['public_player_id']))}&topic=photo'>Photos</a>{shop_tab_html}{about_tab_html}</nav>
       <section class='card pulse-profile-feed-card' id='profilePosts'><h2>Posts</h2><iframe class='pulse-profile-feed-frame' title='{html_escape(clean_html(ident['name']))} posts' src='/pulse?profile={html_escape(clean_html(ident['public_player_id']))}&embed=profile' loading='eager'></iframe></section>
+      {shop_html}
       {about_html}
       <section class='card pulse-profile-secondary'><details><summary>{secondary_summary}</summary><div class='profile-tool-links'>{tool_links_html}</div></details></section>
     </div>

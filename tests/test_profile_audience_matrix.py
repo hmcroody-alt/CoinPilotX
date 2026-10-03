@@ -142,6 +142,24 @@ FOLLOW_TARGET_NAMES = {
     SUBJECT_ONLY_FOLLOW: SUBJECT_ONLY_FOLLOW_NAME,
 }
 
+# The Shop section. Eight listings pass `marketplace_listing_lifecycle.public_sql`
+# and one does not, which is two separate claims: the unpublished one is never
+# named to anyone, and the count beside the grid is the inventory rather than the
+# page size. Eight is chosen because it exceeds the handler's LIMIT 6 -- with six
+# or fewer the two numbers coincide and the count assertion proves nothing.
+SHOP_LISTING_IDS = tuple(range(9963101, 9963109))
+SHOP_PUBLIC_COUNT = len(SHOP_LISTING_IDS)
+SHOP_PAGE_SIZE = 6
+#: Deliberately above every public id, so a dropped gate would sort it to the
+#: front of the grid rather than off the end of the page.
+DRAFT_LISTING_ID = 9963120
+SELLER_DISPLAY_NAME = "Vantongeren Chart Works"
+#: On the newest public listing, so it is on the first page.
+SHOP_LISTING_TITLE = "Trefoil Buoy Chart Portfolio"
+#: Unpublished. Reachable from no buyer surface, so reachable from no profile.
+DRAFT_LISTING_TITLE = "Unreleased Lighthouse Lens Audit"
+SHOP_PRICE_LABEL = "$41.50"
+
 NOW = "2026-09-01T00:00:00"
 
 
@@ -258,6 +276,30 @@ class AudienceFixture(unittest.TestCase):
             "INSERT INTO pulse_user_badges (user_id, badge_key, granted_by, created_at)"
             " VALUES (?,?,?,?)", (SUBJECT, EARNED_BADGE_KEY, SUBJECT, NOW),
         )
+        # An approved seller with a shop name, because `public_sql` requires both
+        # before any of this seller's listings are reachable from anywhere.
+        cur.execute(
+            "INSERT INTO marketplace_sellers (user_id, display_name, status,"
+            " created_at, updated_at) VALUES (?,?,?,?,?)",
+            (SUBJECT, SELLER_DISPLAY_NAME, "approved", NOW, NOW),
+        )
+        for index, listing_id in enumerate(SHOP_LISTING_IDS):
+            title = (SHOP_LISTING_TITLE if listing_id == max(SHOP_LISTING_IDS)
+                     else f"Chart Plate {index + 1} of the Polperro Survey")
+            cur.execute(
+                "INSERT INTO marketplace_listings (id, seller_user_id, title, status,"
+                " approval_status, product_type, price_label, quantity, created_at,"
+                " updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (listing_id, SUBJECT, title, "published", "approved", "digital",
+                 SHOP_PRICE_LABEL, 0, NOW, NOW),
+            )
+        cur.execute(
+            "INSERT INTO marketplace_listings (id, seller_user_id, title, status,"
+            " approval_status, product_type, price_label, quantity, created_at,"
+            " updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (DRAFT_LISTING_ID, SUBJECT, DRAFT_LISTING_TITLE, "draft", "approved",
+             "digital", SHOP_PRICE_LABEL, 0, NOW, NOW),
+        )
         # 'pending' is the DDL default, so this is the state an application sits
         # in for as long as nobody has reviewed it -- the common case, not an
         # edge one.
@@ -288,6 +330,8 @@ class AudienceFixture(unittest.TestCase):
             )
             cur.execute("DELETE FROM pulse_user_badges WHERE user_id=?", (user_id,))
             cur.execute("DELETE FROM teacher_profiles WHERE user_id=?", (user_id,))
+            cur.execute("DELETE FROM marketplace_sellers WHERE user_id=?", (user_id,))
+            cur.execute("DELETE FROM marketplace_listings WHERE seller_user_id=?", (user_id,))
         cur.execute(
             "DELETE FROM pulse_badges WHERE badge_key IN (?,?)",
             (EARNED_BADGE_KEY, UNEARNED_BADGE_KEY),
@@ -306,6 +350,16 @@ class AudienceFixture(unittest.TestCase):
         conn.execute(
             f"UPDATE users SET {assignments} WHERE user_id=?",
             (*columns.values(), SUBJECT),
+        )
+        conn.commit()
+        conn.close()
+
+    def unpublish_all_listings(self):
+        """The common case: an account with no public commerce surface at all."""
+        conn = bot.db()
+        conn.execute(
+            "UPDATE marketplace_listings SET status='draft' WHERE seller_user_id=?",
+            (SUBJECT,),
         )
         conn.commit()
         conn.close()
@@ -685,6 +739,73 @@ class ContextualRail(AudienceFixture):
                 body = visible_text(self.page(viewer).get_data(as_text=True))
                 self.assertNotIn("PulseSoc Intelligence", body)
                 self.assertNotIn("Unlock creator intelligence", body)
+
+
+class ShopSection(AudienceFixture):
+    """Commerce on a profile is a buyer surface, so it inherits buyer-surface rules.
+
+    Two separate claims. A listing this page names must be one the visitor could
+    already reach from Marketplace -- the profile is not a back door around the
+    publication predicate. And the number beside the grid must be the inventory,
+    because About previously published the page size as the inventory and so told
+    a seller with eight live products that they had six.
+    """
+
+    def test_the_shop_names_only_listings_a_buyer_surface_would_serve(self):
+        """`DRAFT_LISTING_ID` is above every published id, so a dropped predicate
+        sorts the unpublished listing to the front of the grid rather than off the
+        end of the page. The published title is the positive control: without it
+        the absence below would pass on an empty section."""
+        stranger = visible_text(self.page(STRANGER).get_data(as_text=True))
+        self.assertIn(SHOP_LISTING_TITLE, stranger)
+        self.assertNotIn(DRAFT_LISTING_TITLE, stranger)
+
+    def test_the_listing_count_is_the_inventory_not_the_page_size(self):
+        """Eight public listings, six on the page. "6 public listings" is the
+        defect -- the page size published as the inventory -- and it is not a
+        substring of the honest "6 of 8 public listings", so the two are
+        distinguishable by assertion."""
+        owner = visible_text(self.page(SUBJECT).get_data(as_text=True))
+        self.assertIn(f"{SHOP_PAGE_SIZE} of {SHOP_PUBLIC_COUNT} public listings", owner)
+        self.assertNotIn(f"{SHOP_PAGE_SIZE} public listings", owner)
+        self.assertIn(f"{SHOP_PUBLIC_COUNT} public listings", owner)
+
+    def test_a_closed_audience_reaches_no_shop(self):
+        """A closed state renders the closed page, so neither the published nor
+        the unpublished title may appear. The page gate is what enforces this --
+        the section's own `can_view_marketplace` check is the second layer -- and
+        this asserts the outcome rather than which layer produced it."""
+        for viewer in (BLOCKED_BY, BLOCKER):
+            with self.subTest(viewer=viewer):
+                response = self.page(viewer)
+                raw = response.get_data(as_text=True)
+                self.assertNotIn("profileShop", raw)
+                body = visible_text(raw)
+                self.assertNotIn(SHOP_LISTING_TITLE, body)
+                self.assertNotIn(DRAFT_LISTING_TITLE, body)
+
+    def test_no_public_listing_means_no_shop_tab_and_no_section(self):
+        """The overwhelmingly common profile has nothing for sale. A Shop tab on
+        it leads to a heading over an empty grid, which is the kind of claim §31
+        forbids: a tab exists because a surface does."""
+        self.unpublish_all_listings()
+        for viewer in (SUBJECT, STRANGER):
+            with self.subTest(viewer=viewer):
+                raw = self.page(viewer).get_data(as_text=True)
+                self.assertNotIn("profileShop", raw)
+                body = visible_text(raw)
+                self.assertNotIn(SHOP_LISTING_TITLE, body)
+                self.assertNotIn("public listing", body)
+
+    def test_every_shop_card_links_to_the_marketplace_route_that_serves_it(self):
+        """`/pulse/marketplace/<id>` is the public route. The spelling matters:
+        `services/content_translation` builds `/pulse/marketplace/listing/<id>`,
+        which matches no route in bot.py, so a card using it would 404 from a
+        page that had just advertised the product."""
+        raw = self.page(STRANGER).get_data(as_text=True)
+        self.assertIn(f"/pulse/marketplace/{max(SHOP_LISTING_IDS)}", raw)
+        self.assertNotIn(f"/pulse/marketplace/{DRAFT_LISTING_ID}", raw)
+        self.assertNotIn("/pulse/marketplace/listing/", raw)
 
 
 class OneAuthority(AudienceFixture):
