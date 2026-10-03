@@ -375,6 +375,69 @@ def test_08d_the_backfill_writes_nothing_in_dry_run():
     assert _stock(cur) == STARTING_STOCK - 4
 
 
+def test_08d2_the_dry_run_log_line_does_not_claim_rows_were_repaired(caplog):
+    """The WARNING an operator greps must not contradict the database.
+
+    Production, 2026-10-03: ``RESERVATION_DEADLINE_BACKFILL scanned=4
+    backfilled=4 dry_run=True`` every five minutes, while all four held rows in
+    Postgres still had ``expires_at IS NULL``. The line emitted
+    ``backfilled or would_backfill`` under the single label ``backfilled=``, so
+    the dry-run count wore the name of the write count. Nothing caught it: the
+    structured counters this file already pins were correct, and no test looked
+    at the log text at all.
+
+    It matters more than a cosmetic string because this is the only WARNING the
+    backfill emits -- the alertable line -- and the question it is read to
+    answer is "is the leak still open?".
+    """
+    cur = _db()
+    _order(cur, 100, expires_at=None)
+    _order(cur, 101, expires_at="")
+
+    with caplog.at_level("WARNING", logger=sweeper.LOGGER.name):
+        result = _sweep(cur, dry_run=True)
+
+    line = [r.getMessage() for r in caplog.records
+            if "RESERVATION_DEADLINE_BACKFILL" in r.getMessage()]
+    assert len(line) == 1, f"expected one backfill warning, got {line}"
+    said = line[0]
+
+    # The counters, asserted against the result rather than against literals,
+    # so this cannot drift into agreeing with a wrong result.
+    assert result["backfilled"] == 0 and result["would_backfill"] == 2
+    assert "backfilled=0" in said, said
+    assert "would_backfill=2" in said, said
+    assert "dry_run=True" in said, said
+    # The regression itself: `backfilled=2` is the exact text that was wrong.
+    assert "backfilled=2" not in said, (
+        "the dry-run count is being reported under the `backfilled` label "
+        "again, which tells an operator a cycle that wrote nothing repaired "
+        f"the leak: {said}")
+
+
+def test_08d3_a_live_backfill_reports_the_same_number_under_both_labels(caplog):
+    """Counterpart to the case above, so the fix is not just "always print 0".
+
+    In live mode every row that qualifies is also written, so the two counters
+    agree. Asserting that here is what stops a future "fix" from hard-coding
+    ``backfilled=0`` into the line and passing the dry-run test while hiding
+    real repairs.
+    """
+    cur = _db()
+    _order(cur, 100, expires_at=None)
+    _order(cur, 101, expires_at="")
+
+    with caplog.at_level("WARNING", logger=sweeper.LOGGER.name):
+        result = sweeper.backfill_missing_deadlines(cur, now=NOW)
+
+    said = next(r.getMessage() for r in caplog.records
+                if "RESERVATION_DEADLINE_BACKFILL" in r.getMessage())
+    assert result["backfilled"] == 2
+    assert "backfilled=2" in said, said
+    assert "would_backfill=2" in said, said
+    assert "dry_run=False" in said, said
+
+
 def test_08e_backfilling_twice_changes_nothing_the_second_time():
     """The repair is a compare-and-swap, so two workers racing it is safe.
 
