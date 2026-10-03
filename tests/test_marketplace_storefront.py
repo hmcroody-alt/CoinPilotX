@@ -1800,16 +1800,57 @@ def test_the_panel_survives_a_row_that_answers_nothing():
 # wrong is silent: the fix deploys, the origin serves the new bytes, and the
 # browsers that needed it never ask for them.
 
+def test_a_product_image_is_visible_when_the_script_never_runs():
+    """The storefront must not have a single point of failure for every photo.
+
+    The stylesheet used to hide `.mkt-media img` by the *absence* of
+    `data-mkt-loaded`, and `pulse_marketplace.js` was the only writer of that
+    attribute. Any failure to load, parse or execute the script therefore left
+    every product image on the grid and every product page fully transparent --
+    over valid markup, a correct `src`, and bytes the browser had already
+    fetched and decoded. A healthy catalogue rendered as blank plates. Search
+    was unaffected, because a crawler reads `src` and never runs the script, so
+    nothing upstream of a human visitor would have reported it.
+
+    Both halves are asserted. Keying the hide on an attribute the script *adds*
+    is only fail-open while nothing re-introduces a rule that hides by absence,
+    and the fade-in is only preserved while the script still marks pending.
+
+    Comments are stripped from both files first: the rule this pins is
+    explained in prose that quotes the exact selector it replaced, so a raw
+    text scan would read the explanation as the thing it warns about.
+    """
+    css = re.sub(r"/\*.*?\*/", "", _css(), flags=re.S)
+    js = _js()
+
+    assert ":not([data-mkt-loaded])" not in css, (
+        "a rule hiding a product image by the absence of an attribute puts "
+        "every photo on the site behind pulse_marketplace.js executing"
+    )
+    assert ".mkt-media img[data-mkt-pending]" in css, (
+        "the transparent state must be keyed on an attribute the script adds"
+    )
+
+    # The fade-in half: something has to mark, and unmark, the pending state.
+    assert 'setAttribute("data-mkt-pending"' in js, (
+        "nothing marks an in-flight image, so there is no fade-in left"
+    )
+    assert 'removeAttribute("data-mkt-pending")' in js, (
+        "nothing clears the pending mark, so a loaded image stays invisible -- "
+        "the original bug with one extra step"
+    )
+
+
 #: sha256 prefixes of the two assets whose URLs carry a hand-bumped `?v=`.
 #: Update these *and* the token in the same commit. See the docstring on
 #: `CSS_HREF` for why the pair has to move together.
 ASSET_DIGESTS = {
-    "static/css/pulse_marketplace.css": "862bf4222797",
-    "static/js/pulse_marketplace.js": "d2d20c58cd87",
+    "static/css/pulse_marketplace.css": "6a8b1fd42dec",
+    "static/js/pulse_marketplace.js": "e6e951a70c1d",
 }
 
 #: The token those digests were recorded against.
-ASSET_TOKEN = "storefront-20261002b"
+ASSET_TOKEN = "storefront-20261003a"
 
 
 def test_editing_a_storefront_asset_forces_its_cache_token_to_move():
