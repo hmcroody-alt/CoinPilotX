@@ -5,7 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{ page.title }}</title>
   <meta name="description" content="{{ page.description }}" />
-  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+  {# The directive comes from search_visibility._RULES, via render_seo_landing.
+     It was a hardcoded `index, follow, ...` here, which is why the 42 pages the
+     policy table classifies as scaled near-duplicates went on asking Google to
+     rank them: a literal in a template cannot be overridden by the module that
+     owns the decision. The fallback is unreachable from render_seo_landing and
+     exists only so a future caller that forgets the argument renders a
+     directive rather than an empty one. #}
+  <meta name="robots" content="{{ robots or 'index, follow, max-image-preview:large, max-snippet:-1' }}" />
   {% if page.keywords %}<meta name="keywords" content="{{ page.keywords|join(', ') }}" />{% endif %}
   <meta name="ai-content-declaration" content="Educational AI intelligence, public-data safety guidance, no financial or betting advice, no guaranteed outcomes." />
   <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM-readable PulseSoc metadata" />

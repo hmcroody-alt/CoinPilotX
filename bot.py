@@ -2248,6 +2248,31 @@ def site_search():
 
 
 def render_seo_landing(page, include_article=False):
+    """Render a public SEO landing page.
+
+    `robots` is passed because `seo_page.html` used to hardcode
+    `index, follow, max-image-preview:large, max-snippet:-1` and therefore could
+    not be told otherwise. Every page in every registry served through this
+    template claimed indexability, including the two families
+    `search_visibility._RULES` has classified `noindex,follow` as scaled
+    near-duplicates: `/markets/<symbol>{,/prediction,/live}` and
+    `/country-intelligence/<slug>`, 42 URLs between them.
+
+    The sitemap half of that policy worked -- `sitemap_eligible` reads the same
+    table, so none of the 42 were ever submitted. Only the directive the page
+    hands to Googlebot was wrong, which is why it survived: nothing that
+    enumerates sitemaps could see it, and the pages do render and do answer 200.
+    Verified against production on 2026-10-03: `/markets/btc`,
+    `/markets/btc/live`, `/markets/eth` and `/country-intelligence/nigeria` all
+    served `index, follow, max-image-preview:large, ...` while the policy table
+    said `noindex,follow`.
+
+    So these 42 pages have been asking Google to rank them for as long as the
+    rule has existed, and Search Console's "crawled - currently not indexed"
+    bucket is where that request has been landing. The declared policy and the
+    delivered directive now come from one function.
+    """
+
     schema_json = seo_schema.schema_graph(
         page,
         include_product=page.get("slug") in {"portfolio-intelligence", "ai-market-analysis", "telegram-crypto-bot"},
@@ -2255,7 +2280,14 @@ def render_seo_landing(page, include_article=False):
     )
     share_url = quote(page["canonical"], safe="")
     share_text = quote(f"{page['h1']} by CoinPlotXAI Inc.", safe="")
-    return render_template("seo_page.html", page=page, schema_json=schema_json, share_url=share_url, share_text=share_text)
+    return render_template(
+        "seo_page.html",
+        page=page,
+        schema_json=schema_json,
+        share_url=share_url,
+        share_text=share_text,
+        robots=search_visibility.robots_meta(urlparse(page["canonical"]).path),
+    )
 
 
 def simple_public_page(slug, title, h1, intro, answer, points, sections=None, related=None):
