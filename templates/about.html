@@ -20,12 +20,15 @@
   about one it links the public `/features/<slug>` page instead of the in-product
   tab. Checked on production, not inferred from the handlers.
 
-  The marketplace payment sentence is deliberately hedged. Two authorities
-  disagree: `MARKETPLACE_CARD_PAYMENTS_ENABLED` is `true` in production and
-  `services/marketplace_payment_pause.py` reads it per call, so the card rail is
-  open -- while /features/marketplace still tells the public card checkout is
-  temporarily unavailable. One of those is stale and it is not this page's job
-  to decide which in public. What is written here is true either way.
+  The marketplace payment sentence was hedged while two authorities disagreed,
+  and is not hedged any more. It was `MARKETPLACE_CARD_PAYMENTS_ENABLED` being
+  `true` in production against /features/marketplace telling the public card
+  checkout was temporarily unavailable; the feature page was the stale one and
+  has been corrected, so this page can say the direct thing. Both now carry the
+  same two-part rule, which is the part worth keeping: the rail being open says
+  only that it exists, and `services/marketplace_card_capability.py` decides
+  per seller whether a given listing may use it. Neither page should ever
+  promise a card on every listing.
 #}
 {% extends "_public_shell.html" %}
 {% from "_app_link_cta.html" import app_store_badge with context %}
@@ -196,8 +199,9 @@
     <p>
       Sellers list and publish products into that same catalogue and reach
       buyers through the network rather than through a separate storefront
-      nobody visits. Which payment methods a listing accepts is shown at
-      checkout, and cash on local pickup is one of them.
+      nobody visits. A buyer can pay by card once the seller has finished
+      payment setup, and cash on local pickup is an option either way; which
+      methods a listing accepts is shown at checkout.
       <a href="/features/marketplace">More about the marketplace</a> covers
       payment in detail.
     </p>
