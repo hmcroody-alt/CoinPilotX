@@ -6,6 +6,7 @@ was reported as "not configured". A restricted live key is exactly that shape.
 Most of this file is about that case, because it is the only one where being
 wrong moves real money.
 """
+import html
 import os
 import sys
 
@@ -20,10 +21,18 @@ from services import stripe_mode  # noqa: E402
 def _unconfigured(monkeypatch):
     for name in stripe_mode.TEST_MODE_REQUIRED_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
+    # Not in TEST_MODE_REQUIRED_ENV_VARS, but it *overrides* one of them, so a
+    # developer who happens to have it exported would otherwise get different
+    # answers from the same test.
+    monkeypatch.delenv(stripe_mode.PUBLISHABLE_KEY_OVERRIDE_ENV_VAR, raising=False)
 
 
 def _key(monkeypatch, value):
     monkeypatch.setenv(stripe_mode.SECRET_KEY_ENV_VAR, value)
+
+
+def _pk(monkeypatch, value):
+    monkeypatch.setenv(stripe_mode.PUBLISHABLE_KEY_ENV_VAR, value)
 
 
 # --- reading the key ---------------------------------------------------------
@@ -84,6 +93,128 @@ def test_no_key_moves_no_money(monkeypatch):
 def test_a_test_key_moves_no_real_money(monkeypatch):
     _key(monkeypatch, "sk_test_abc")
     assert not stripe_mode.may_move_real_money()
+
+
+# --- two keys that name different Stripes ------------------------------------
+#
+# A half-finished test-mode rollout produces this, and reading the secret key
+# alone cannot see it. The combination below is the dangerous one: it used to
+# report mode=test, may_move_real_money=False and test_mode_ready=True, which
+# is exactly the answer that says "safe to run the card suite" while the
+# browser is tokenising a real card against live Stripe.
+
+def test_a_test_secret_behind_a_live_publishable_key_is_not_test_mode(monkeypatch):
+    _key(monkeypatch, "sk_test_abc")
+    _pk(monkeypatch, "pk_live_abc")
+    assert stripe_mode.mode() == stripe_mode.MIXED
+    assert not stripe_mode.is_test_mode()
+
+
+def test_a_mismatched_pair_is_assumed_to_move_real_money(monkeypatch):
+    """One of the two keys is a live key, whichever way round it is, so one half
+    of the checkout is reaching live Stripe."""
+    _key(monkeypatch, "sk_test_abc")
+    _pk(monkeypatch, "pk_live_abc")
+    assert stripe_mode.may_move_real_money()
+
+
+def test_the_mismatch_is_caught_in_the_other_direction_too(monkeypatch):
+    _key(monkeypatch, "sk_live_abc")
+    _pk(monkeypatch, "pk_test_abc")
+    assert stripe_mode.mode() == stripe_mode.MIXED
+    assert stripe_mode.may_move_real_money()
+
+
+def test_a_mismatched_pair_names_the_publishable_key_as_missing(monkeypatch):
+    """So the handoff is a variable to fix rather than a state to interpret."""
+    _key(monkeypatch, "sk_test_abc")
+    _pk(monkeypatch, "pk_live_abc")
+    monkeypatch.setenv(stripe_mode.WEBHOOK_SECRET_ENV_VAR, "whsec_abc")
+    monkeypatch.setenv(stripe_mode.CONNECT_CLIENT_ID_ENV_VAR, "ca_abc")
+    assert stripe_mode.missing_test_mode_variables() == [
+        stripe_mode.PUBLISHABLE_KEY_ENV_VAR]
+    assert not stripe_mode.test_mode_ready()
+
+
+def test_an_agreeing_pair_is_not_a_mismatch(monkeypatch):
+    for secret, publishable in (("sk_test_a", "pk_test_a"), ("sk_live_a", "pk_live_a")):
+        _key(monkeypatch, secret)
+        _pk(monkeypatch, publishable)
+        assert not stripe_mode.is_mixed()
+        assert stripe_mode.mode() != stripe_mode.MIXED
+
+
+def test_an_unreadable_publishable_key_is_an_unknown_not_a_contradiction(monkeypatch):
+    """`mixed` means the two keys provably name different Stripes. A key nobody
+    can classify does not prove that, so it blocks readiness without claiming to
+    know which environment it belongs to."""
+    _key(monkeypatch, "sk_test_abc")
+    _pk(monkeypatch, "not-a-publishable-key")
+    assert not stripe_mode.is_mixed()
+    assert stripe_mode.mode() == stripe_mode.TEST
+    assert not stripe_mode.may_move_real_money()
+    # ...but it is still not ready, by the same doctrine as the secret key.
+    assert stripe_mode.PUBLISHABLE_KEY_ENV_VAR in stripe_mode.missing_test_mode_variables()
+
+
+def test_a_missing_publishable_key_is_not_a_mismatch(monkeypatch):
+    _key(monkeypatch, "sk_test_abc")
+    assert not stripe_mode.is_mixed()
+    assert stripe_mode.mode() == stripe_mode.TEST
+
+
+# --- which publishable key actually reaches the browser ----------------------
+
+def test_the_next_public_variable_wins_because_bot_py_checks_it_first(monkeypatch):
+    """`bot.py` resolves NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY before
+    STRIPE_PUBLISHABLE_KEY. Classifying the variable that is merely *set* would
+    describe a value no browser ever receives."""
+    _key(monkeypatch, "sk_test_abc")
+    _pk(monkeypatch, "pk_test_abc")
+    monkeypatch.setenv(stripe_mode.PUBLISHABLE_KEY_OVERRIDE_ENV_VAR, "pk_live_abc")
+    assert stripe_mode.publishable_key_env_var() == (
+        stripe_mode.PUBLISHABLE_KEY_OVERRIDE_ENV_VAR)
+    assert stripe_mode.publishable_mode() == stripe_mode.LIVE
+    assert stripe_mode.mode() == stripe_mode.MIXED
+
+
+def test_bot_py_still_reads_the_override_first(monkeypatch):
+    """Pins the precedence this module mirrors. If `bot.py` ever stops
+    preferring the override, `publishable_key_env_var` becomes a lie and this
+    test is the thing that notices."""
+    import pathlib
+    import re
+
+    src = pathlib.Path(__file__).resolve().parents[2].joinpath("bot.py").read_text()
+    assignments = re.findall(
+        r'^STRIPE_PUBLISHABLE_KEY\s*=\s*(.+)$', src, flags=re.MULTILINE)
+    # Two assignments exist; the last one wins at import time.
+    assert assignments, "STRIPE_PUBLISHABLE_KEY is no longer assigned at module scope"
+    winner = assignments[-1]
+    assert winner.index("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY") < winner.index(
+        '"STRIPE_PUBLISHABLE_KEY"')
+
+
+def test_the_override_is_named_in_the_handoff_when_it_is_the_one_in_use(monkeypatch):
+    """Telling the owner to fix STRIPE_PUBLISHABLE_KEY while the override shadows
+    it is a wasted round trip that leaves the live key in place."""
+    _key(monkeypatch, "sk_test_abc")
+    monkeypatch.setenv(stripe_mode.PUBLISHABLE_KEY_OVERRIDE_ENV_VAR, "pk_live_abc")
+    monkeypatch.setenv(stripe_mode.WEBHOOK_SECRET_ENV_VAR, "whsec_abc")
+    monkeypatch.setenv(stripe_mode.CONNECT_CLIENT_ID_ENV_VAR, "ca_abc")
+    assert stripe_mode.missing_test_mode_variables() == [
+        stripe_mode.PUBLISHABLE_KEY_OVERRIDE_ENV_VAR]
+
+
+def test_the_override_satisfies_the_requirement_it_shadows(monkeypatch):
+    """A deployment that sets only the override is configured, not missing a
+    variable -- the override is what the browser gets."""
+    _key(monkeypatch, "sk_test_abc")
+    monkeypatch.setenv(stripe_mode.PUBLISHABLE_KEY_OVERRIDE_ENV_VAR, "pk_test_abc")
+    monkeypatch.setenv(stripe_mode.WEBHOOK_SECRET_ENV_VAR, "whsec_abc")
+    monkeypatch.setenv(stripe_mode.CONNECT_CLIENT_ID_ENV_VAR, "ca_abc")
+    assert stripe_mode.missing_test_mode_variables() == []
+    assert stripe_mode.test_mode_ready()
 
 
 # --- the credential handoff --------------------------------------------------
@@ -161,16 +292,65 @@ def test_the_mode_is_read_per_call(monkeypatch):
 
 # --- the consumers -----------------------------------------------------------
 
-def test_the_payout_worker_will_not_pay_into_an_unreadable_stripe(monkeypatch):
-    """The owner's three switches record that a payout run was authorised. They
-    cannot record that the owner knew which Stripe it would reach."""
+def _every_gate_open(monkeypatch):
+    """Both owner switches and the Postgres precondition, so the only gate left
+    standing is the Stripe one.
+
+    Opening the Postgres gate explicitly matters more than it looks. These tests
+    run on SQLite, where `_mutation_preconditions` returns
+    `no_leader_lock_off_postgres` before it ever reads a Stripe key -- so a test
+    that merely asserted "some reason was returned" would pass with the Stripe
+    check deleted outright. That is what it did, and a mutation run is what
+    found it.
+    """
+    from services import db
     from services import marketplace_payout_worker as worker
 
     monkeypatch.setenv(worker.ENABLED_ENV_VAR, "true")
     monkeypatch.setenv(worker.DRY_RUN_ENV_VAR, "false")
     monkeypatch.setenv(worker.OWNER_AUTHORIZED_ENV_VAR, "true")
+    monkeypatch.setattr(db, "IS_POSTGRES", True)
+    return worker
+
+
+def test_the_payout_worker_will_not_pay_into_an_unreadable_stripe(monkeypatch):
+    """The owner's three switches record that a payout run was authorised. They
+    cannot record that the owner knew which Stripe it would reach."""
+    worker = _every_gate_open(monkeypatch)
     _key(monkeypatch, "not-a-recognisable-key")
-    assert worker._mutation_preconditions() != ""
+    assert worker._mutation_preconditions() == "stripe_mode_unrecognized"
+
+
+def test_the_payout_worker_will_not_pay_into_a_mismatched_pair(monkeypatch):
+    """Two keys naming different Stripes is not something anyone configured on
+    purpose, so the three switches cannot be read as consent to it."""
+    worker = _every_gate_open(monkeypatch)
+    _key(monkeypatch, "sk_test_abc")
+    _pk(monkeypatch, "pk_live_abc")
+    assert worker._mutation_preconditions() == "stripe_mode_mixed"
+
+
+def test_the_payout_worker_pays_when_the_pair_agrees(monkeypatch):
+    """The other half of the gate. Without this, deleting every Stripe check
+    would still leave the two tests above green via some other refusal."""
+    worker = _every_gate_open(monkeypatch)
+    _key(monkeypatch, "sk_test_abc")
+    _pk(monkeypatch, "pk_test_abc")
+    assert worker._mutation_preconditions() == ""
+
+
+def test_the_status_surface_says_which_half_is_live(monkeypatch):
+    """`mixed` alone cannot say which side of the mismatch is the live one, and
+    that is the first thing an operator needs."""
+    _key(monkeypatch, "sk_test_abc")
+    _pk(monkeypatch, "pk_live_abc")
+    status = stripe_mode.status()
+    assert status["mode"] == stripe_mode.MIXED
+    assert status["keys_disagree"] is True
+    assert status["secret_mode"] == stripe_mode.TEST
+    assert status["publishable_mode"] == stripe_mode.LIVE
+    assert status["test_mode_ready"] is False
+    assert status["may_move_real_money"] is True
 
 
 def test_the_provider_status_asks_rather_than_re_deriving(monkeypatch):
@@ -179,3 +359,51 @@ def test_the_provider_status_asks_rather_than_re_deriving(monkeypatch):
     _key(monkeypatch, "rk_live_abc")
     # The copy that lived in provider_status called this "not_configured".
     assert payment_provider.provider_status()["mode"] == stripe_mode.LIVE
+
+
+# --- the admin surface -------------------------------------------------------
+#
+# /admin/payments-health is where an operator goes to ask "is Stripe set up".
+# It counted populated variables, so a mismatched pair -- the one state a count
+# cannot see -- read as "ready".
+
+def _payments_health(monkeypatch, secret, publishable):
+    os.environ.setdefault("PULSE_TEST_SQLITE", "1")
+    import bot
+
+    _key(monkeypatch, secret)
+    _pk(monkeypatch, publishable)
+    # The module captured these at import, before this test set anything.
+    monkeypatch.setattr(bot, "STRIPE_SECRET_KEY", secret, raising=False)
+    monkeypatch.setattr(bot, "STRIPE_PUBLISHABLE_KEY", publishable, raising=False)
+    monkeypatch.setattr(bot, "STRIPE_WEBHOOK_SECRET", "whsec_abc", raising=False)
+    monkeypatch.setattr(bot, "require_admin_page", lambda _p: ({"user_id": 1}, None))
+    monkeypatch.setattr(bot, "admin_page_html", lambda _t, body, _a: body)
+    with bot.webhook_app.test_request_context("/admin/payments-health"):
+        # Unescaped, because the page renders the JSON into HTML and `&quot;` in
+        # an assertion reads as a bug in the assertion rather than a contract.
+        return html.unescape(bot.admin_payments_health_page())
+
+
+def test_the_admin_page_does_not_call_a_mismatched_pair_ready(monkeypatch):
+    body = _payments_health(monkeypatch, "sk_test_abc", "pk_live_abc")
+    assert '"status": "keys_disagree"' in body
+    assert '"status": "ready"' not in body
+    assert '"stripe_mode": "mixed"' in body
+    assert '"may_move_real_money": true' in body
+
+
+def test_the_admin_page_still_says_ready_when_the_keys_agree(monkeypatch):
+    body = _payments_health(monkeypatch, "sk_live_abc", "pk_live_abc")
+    assert '"status": "ready"' in body
+    assert '"keys_disagree": false' in body
+
+
+def test_the_admin_page_carries_no_key_material(monkeypatch):
+    """It promises "No secrets are exposed" in its own subtitle. The mode block
+    added here must not be the thing that makes that false."""
+    secret = "sk_test_thisisthesecretvalue"
+    body = _payments_health(monkeypatch, secret, "pk_live_alsosecret")
+    assert secret not in body
+    assert "thisisthesecretvalue" not in body
+    assert "alsosecret" not in body
