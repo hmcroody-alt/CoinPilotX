@@ -31703,6 +31703,29 @@ def marketplace_public_entries(limit=500):
     sitemap -- it is the collection page and it is in no other child -- and it
     has no honest modification date, since what changes is the 40 rows it
     happens to render. An absent `lastmod` says that; today's date would not.
+
+    It leads the list unconditionally, and that is worth stating because it is
+    the one place this module knowingly submits a path that can arrive carrying
+    `noindex`. `marketplace_storefront` renders the grid `noindex,follow` when
+    the eligible catalogue is empty, on the soft-404 reasoning its own comment
+    sets out, so on an empty catalogue the sitemap and the page disagree.
+
+    It stays unconditional for two reasons, neither of them "nobody noticed".
+    `test_the_collection_page_is_submitted_even_with_nothing_published` makes
+    the first: `noindex,follow` is not `Disallow`, and the grid is the URL a
+    crawler walks through to reach tomorrow's products. The second is that the
+    condition cannot be written honestly from here. `marketplace_public_listings`
+    returns `[]` both for an empty catalogue and for a failed query -- a
+    distinction `test_a_failed_query_is_logged_rather_than_passed_off_as_an_empty_catalogue`
+    exists to protect -- so keying on "no rows" would drop the collection page
+    from the sitemap during a transient database error, when the page itself is
+    still serving `index,follow`. Trading a contradiction that only occurs on
+    an empty catalogue for one that occurs whenever the database hiccups is the
+    wrong way round.
+
+    `tests/protection/test_sitemap_entries_are_indexable.py` carves this path
+    out by name rather than quietly tolerating it, so the carve-out is visible
+    to whoever revisits the decision.
     """
 
     entries = [(marketplace_seo.INDEX_PATH, "")]
@@ -31847,12 +31870,29 @@ def merchant_center_feed_xml():
 
 @webhook_app.route("/sitemap-live.xml", methods=["GET"])
 def sitemap_live_xml():
-    paths = ["/arena/live", "/arena/roast-battle", "/arena/momentum", "/arena/leaderboard", "/momentum"]
+    # `/momentum` is gone -- the route was removed and the path answers 404 in
+    # production, while sitting in this list asking Google to crawl it. The
+    # `/arena/*` paths stay written here but no longer survive `sitemap_xml`:
+    # all four redirect anonymous traffic to `/login`, and
+    # `search_visibility` now classifies the `/arena` subtree as such, so the
+    # eligibility gate drops them.
+    #
+    # This list is the reason both of those went unnoticed for so long. A
+    # hardcoded path list cannot tell that a route started redirecting or
+    # stopped existing, and nothing re-read it. The durable half of this fix is
+    # in `tests/protection/test_sitemap_entries_are_indexable.py`, which drives
+    # every sitemap route through the test client and fails if any `<loc>` is
+    # not a self-canonical, indexable 200 -- the only check that can catch this
+    # class of rot.
+    paths = ["/arena/live", "/arena/roast-battle", "/arena/momentum", "/arena/leaderboard"]
     return Response(seo_engine.sitemap_xml(paths, changefreq="hourly"), mimetype="application/xml")
 
 
 @webhook_app.route("/sitemap-replays.xml", methods=["GET"])
 def sitemap_replays_xml():
+    # Same situation: both static fallbacks are login redirects and are now
+    # filtered by the eligibility gate. Published replays are the real content
+    # this sitemap is for, and they are still queried below.
     paths = ["/arena/highlights", "/arena/momentum"]
     try:
         conn = db()
