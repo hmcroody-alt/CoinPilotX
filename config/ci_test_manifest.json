@@ -566,6 +566,7 @@
     "tests/test_premium_blue_check_gate.py",
     "tests/test_premium_portfolio.py",
     "tests/test_premium_purchase_options.py",
+    "tests/test_presence_and_dm_privacy_fail_closed.py",
     "tests/test_presence_service.py",
     "tests/test_privacy_center_controls.py",
     "tests/test_privacy_p1_exposure.py",
