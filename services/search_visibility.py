@@ -242,6 +242,99 @@ _RULES = (
     # public path can still hold a listing with no description or no image --
     # the same split this module draws between `classify` and
     # `content_eligibility`.
+
+    # --- The Pulse app: private by default, public by exception -------------
+    #
+    # Everything above this point enumerates what is *private*. For `/pulse`
+    # that approach had failed quantitatively, not marginally. Probed
+    # anonymously against production on 2026-10-03:
+    #
+    #   145 static `/pulse/*` GET routes      5 serve an anonymous 200
+    #                                       138 serve 302 -> the auth wall
+    #                                         1 serves 301, 1 serves 404
+    #    35 parameterised `/pulse/*` routes   1 serves an anonymous 200
+    #
+    # and this table classified **115 of the redirecting ones `index,follow`**,
+    # by the fallthrough at the bottom of `classify`, because each was simply
+    # never named. `/pulse` is PulseSoc's authenticated social application --
+    # feed, reels, messages, orders, live studio, private office. The table was
+    # declaring the whole of it indexable while `pulse_social_shell` gated every
+    # route in it.
+    #
+    # That is the arena defect at twenty times the scale, and it runs in the
+    # opposite direction to the rest of this module: not "we recommend a URL we
+    # cannot fetch" but "we have published an indexability claim over a private
+    # application". Each of those 115 also mints a crawlable
+    # `/login?next=<path>` URL when Googlebot follows an internal link to it.
+    # Google has discovered 40 so far. Nothing was converging; the count grows
+    # with every authenticated route anyone adds.
+    #
+    # So the default inverts here, and only here. A new `/pulse` route is
+    # non-indexable until someone makes it public on purpose and says so below.
+    # That matches how `route_auth` already treats this application -- new
+    # routes are authenticated until declared `@public_route` -- and it is the
+    # only version of this rule that does not rot, because the failure mode of
+    # an enumerated private list is silence.
+    #
+    # ORDERING: `classify` is first-match-wins, so every carve-out must precede
+    # the broad rule. They are longer strings but that buys nothing; this table
+    # is not longest-prefix.
+    #
+    # `NOINDEX_FOLLOW` on the broad rule, and the choice is load-bearing rather
+    # than stylistic. `robots_disallow_prefixes` offers up exactly the
+    # `NOINDEX_NOFOLLOW` prefixes, so `nofollow` here would emit
+    # `Disallow: /pulse/` -- which matches `/pulse/marketplace`,
+    # `/pulse/marketplace/<id>` and `/pulse/post/<id>`, i.e. the entire commerce
+    # graph and every indexed product page on this site. Note that the
+    # segment-exact patterns do *not* save us: `Disallow: /pulse/` is a
+    # perfectly correct rendering of a rule about `/pulse`, and a parent
+    # blocking its own children is the intended reading, not an overreach bug.
+    # The thing standing between this entry and a site-wide deindexing is the
+    # directive, nothing else. `follow` is also true on the merits: public pages
+    # link into `/pulse`, and those links need to stay walkable.
+    #
+    # The five public paths, each verified as an anonymous 200 in production on
+    # 2026-10-03 rather than inferred from the route table:
+    #
+    #   /pulse/marketplace       index,follow + self-canonical   (collection)
+    #   /pulse/marketplace/<id>  index,follow + self-canonical   (product)
+    #   /pulse/post/<id>         index,follow + self-canonical
+    #   /pulse/help              index,follow, canonical -> /help
+    #   /pulse/support           index,follow, canonical -> /help
+    #
+    # `/pulse/app` and `/pulse/cart` are the other two anonymous 200s and are
+    # deliberately *not* carved out: both already render `noindex` of their own
+    # accord, so the broad rule agrees with the page instead of contradicting
+    # it. `/pulse/app` is the SPA shell -- a container whose content arrives by
+    # fetch -- and `/pulse/cart` is a commerce workflow covered in spirit by
+    # `/checkout` above.
+    #
+    # Two surfaces this rule closes that are worth naming, because both were
+    # `index,follow` until now and neither is reachable:
+    #
+    #   /pulse/search          internal search. `?q=<anything>` 302s to
+    #                          `/login?next=/pulse/search%3Fq%3D<query>`, so an
+    #                          indexable internal-search path over an unbounded
+    #                          query space was feeding the login wall one URL per
+    #                          distinct query. The site-wide `/search` rule has
+    #                          said `noindex,follow` for this reason all along;
+    #                          `/pulse/search` is a sibling and escaped it.
+    #   /pulse/premium/success post-checkout confirmation.
+    #
+    # What this rule does NOT fix, and must not be read as fixing: the 66
+    # `/pulse/topic/<tag>` URLs in Search Console's noindex bucket. Classifying
+    # them correctly stops us *claiming* they are indexable and keeps them out of
+    # every sitemap, but they are in Google's index report because public pages
+    # link to them as though they were public hubs. The link graph is the defect
+    # there; see the report. Making them public is not the answer either -- they
+    # are hashtag pages over marketplace products, which is the thin
+    # mass-generated duplicate of `/pulse/marketplace?category=` that the
+    # category threshold exists to prevent.
+    ("/pulse/marketplace", INDEX_DIRECTIVE, "public product collection and product pages"),
+    ("/pulse/post", INDEX_DIRECTIVE, "public post permalink"),
+    ("/pulse/help", INDEX_DIRECTIVE, "public help centre"),
+    ("/pulse/support", INDEX_DIRECTIVE, "public help centre"),
+    ("/pulse", NOINDEX_FOLLOW, "authenticated social application"),
 )
 
 
@@ -396,13 +489,34 @@ def _normalize(path):
 
 
 def classify(path):
-    """Indexability for a request path. Query strings are not consulted."""
+    """Indexability for a request path. Query strings are not consulted.
+
+    A matched rule's sitemap eligibility is *derived from its directive*, the
+    same way `_d` derives `indexable`, rather than being hardcoded `False`.
+
+    It was hardcoded, and for as long as every entry in `_RULES` was a
+    `noindex` of some kind that was indistinguishable from the derived value --
+    which is why it went unnoticed. It stops being equivalent the moment the
+    table needs to say "this subtree is private *except* for these paths",
+    because the carve-out has to be an `INDEX_DIRECTIVE` entry, and under the
+    old line a carve-out would have been classified indexable and
+    sitemap-*ineligible* at the same time. `sitemap_xml` gates every entry on
+    `sitemap_eligible`, so adding the `/pulse` rule below would have silently
+    emptied `sitemap-products.xml`, `sitemap-categories.xml` and
+    `sitemap-posts.xml` -- a self-inflicted deindexing of the entire commerce
+    graph, delivered by a change whose stated purpose was to protect it.
+
+    The two are equivalent for every rule that exists at the time of writing
+    (all of them `noindex`, so both forms yield `False`), which is what makes
+    this safe to change rather than a behavioural edit smuggled in alongside a
+    new rule.
+    """
 
     lowered = _normalize(path).lower()
 
     for prefix, directive, reason in _RULES:
         if lowered == prefix or lowered.startswith(prefix if prefix.endswith("/") else prefix + "/") or lowered == prefix.rstrip("/"):
-            return _d(directive, False, reason)
+            return _d(directive, directive.startswith("index"), reason)
 
     target = _CANONICAL_ALIASES.get(lowered)
     if target:
