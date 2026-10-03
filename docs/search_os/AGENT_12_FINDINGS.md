@@ -332,6 +332,40 @@ highest-severity SEO attack there is and it is properly closed.
 **Double-slash reachability: PASS.** 0 host-relative double-slash URLs emitted
 across four sitemaps, `robots.txt`, and five rendered pages.
 
+**Agent 1's listing claims: 2 CONFIRMED, 1 unverifiable, 1 missed — and the
+product-page layer is clean.** `.attack/probe_verify_agent1_listing_claims.py`
+walks all 16 publishable rows rather than only the three Agent 1 named, and puts
+the three authorities side by side.
+
+| listing | HTTP | served | in sitemap | `eligibility.indexable` | reason |
+|---|---|---|---|---|---|
+| 50 | 200 | `noindex,follow` | no | False | description under 40 chars |
+| 52 | 200 | `noindex,follow` | no | False | description under 40 chars |
+| 77 | 200 | `noindex,follow` | no | False | description under 40 chars |
+| 110 | **404** | — | no | — | not publishable (no row) |
+| 35, 36 | 200 | `index,follow` | yes | True | price disagreement (feed only) |
+| other 11 | 200 | `index,follow` | yes | True | complete |
+
+- **50 and 52: confirmed.** Agent 1 was right, and now there is wire evidence.
+- **110: unverifiable as stated.** It answers **404**, not 200-with-`noindex`.
+  Those are different outcomes — 404 is safe, but the claim as written implies a
+  rendered page. Either the row was depublished after Agent 1 measured, or the
+  claim was wrong. I cannot tell from a dev-DB copy; whoever has the production
+  reading should settle it.
+- **77 has the identical shape and Agent 1 did not name it.** So that section of
+  the report is a sample, not a census. Anything scoped to "the three noindex
+  listings" will miss a fourth.
+- **0 cross-authority disagreements.** Every row's served directive, sitemap
+  membership and `eligibility` verdict agree — `in_sitemap == indexable` for all
+  16. This is the pattern A12-04 and A12-06 violate at *path* level, and at *row*
+  level it is exactly right. Worth saying plainly: the product-page layer is the
+  part of this engine that already does what my gate asks for.
+
+Note 35 and 36 serving `index,follow` while excluded from the feed is correct,
+not a fault — `Eligibility(indexable=True, feed_eligible=False)` is the designed
+answer for a price disagreement, and A12-08 is about it being unlogged, not about
+it being wrong.
+
 **Facet and pagination explosion: PASS.** 27 variants against
 `/pulse/marketplace`, **0 indexable self-canonical doorways.**
 `marketplace_storefront.render_discovery:1031` lists five `noindex,follow`
@@ -492,10 +526,8 @@ Invariant: price truth must be *observable*, not merely enforced.
   underlying data: *why* does a seller's `price_label` disagree with the
   supplier-synced `price_cents`, and which of the two is wrong per row. That is
   a data question for Agent 5, not a code question.
-- Agent 1's unproven claim that listings **50 / 52 / 110** render `noindex`.
-  Asserted without wire evidence, same as A12-01 was. To be measured.
-- Canonical/host injection, facet, pagination and redirect attacks — I will
-  re-measure these rather than trust Agent 2 §5.6.
+- Agent 1's claim about listing **110** — answers 404 here, not 200-with-noindex.
+  Needs a production reading to settle; 50, 52 and 77 are now measured.
 
 ## Probe hygiene (Phase 100)
 
