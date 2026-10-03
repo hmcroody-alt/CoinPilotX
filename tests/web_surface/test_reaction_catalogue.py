@@ -248,7 +248,7 @@ CACHE_PINNED_ASSETS = {
     ),
     "static/js/pulsesoc_cart.js": (
         "payment-handoff-clarity-20261002b",
-        "b9c231798e4dc934342ccd7d70af61333e6529dc4fd589f1f10fe44d5f312a4f",
+        "2b48bff17c70e9b7dbc526966771c8f1f9b6a8cefc96cea3f7e1a04899eb4eb9",
     ),
     "static/js/pulsesoc_intelligence_center.js": (
         "cache-sweep-20260930a",

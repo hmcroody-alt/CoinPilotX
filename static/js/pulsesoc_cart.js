@@ -655,7 +655,15 @@
     if (!message) return "We could not start checkout. Nothing has been charged.";
     if (!/[.!?]$/.test(message)) message += ".";
     if (!/charg/i.test(message)) message += " Nothing has been charged.";
-    if (!/try again|again later|retry/i.test(message)) message += " You can try again.";
+    // The remedy clause is skipped whenever the message already carries one, in
+    // any of the forms the route emits: "Try a different delivery address",
+    // "Choose an option for every item", "Please try again". Matching only
+    // "try again" appended a vaguer instruction to a specific one -- measured,
+    // not supposed: four of the six refusal paths read "...Try a different
+    // delivery address. ... You can try again."
+    if (!/\btry\b|retry|choose|pick|select|change/i.test(message)) {
+      message += " You can try again.";
+    }
     return message;
   }
 
