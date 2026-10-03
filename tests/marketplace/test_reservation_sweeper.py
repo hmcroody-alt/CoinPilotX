@@ -107,11 +107,16 @@ def _db():
 
 def _order(cur, tx_id, *, qty=2, tx_status="checkout_created", intent=None,
            expires_at=EXPIRED, status=policy.STATUS_HELD, reconciled_at=None,
-           deferrals=0, reserved=True):
+           deferrals=0, reserved=True, created_at=LONG_EXPIRED):
     """One transaction plus its hold, with the listing already decremented.
 
     Mirrors what checkout actually writes: the stock is taken at reservation
     time, so a release must give it back and a capture must not.
+
+    ``created_at`` is injectable because the deadline backfill derives from it.
+    A hold stranded since August and one written a minute ago are both
+    deadline-less, and must be treated differently; that difference is only
+    expressible by varying this.
     """
     cur.execute(
         "INSERT INTO seller_transactions (id, buyer_user_id, status, stripe_payment_intent_id) "
@@ -124,8 +129,8 @@ def _order(cur, tx_id, *, qty=2, tx_status="checkout_created", intent=None,
              created_at, updated_at, reserved_at, expires_at, reconciled_at,
              reconcile_deferrals)
             VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (tx_id, LISTING_ID, qty, status, LONG_EXPIRED, LONG_EXPIRED,
-             LONG_EXPIRED, expires_at, reconciled_at, deferrals))
+            (tx_id, LISTING_ID, qty, status, created_at, created_at,
+             created_at, expires_at, reconciled_at, deferrals))
         if status == policy.STATUS_HELD:
             cur.execute("UPDATE marketplace_listings SET quantity=quantity-? WHERE id=?",
                         (qty, LISTING_ID))
@@ -245,18 +250,237 @@ def test_07_a_settled_transaction_is_excluded_before_any_provider_call(settled_s
     assert _res(cur, 100)["status"] == policy.STATUS_HELD
 
 
-def test_08_a_row_with_no_deadline_at_all_is_left_alone():
-    """Pre-migration rows have no ``expires_at``. Inventing one retroactively
-    would release stock for an order that may still be in flight."""
+def test_08_a_row_with_no_deadline_is_given_one_from_its_own_created_at():
+    """A deadline-less hold is repaired into view, not left to strand forever.
+
+    **This case asserted the opposite until 2026-10-02, and the reversal is
+    deliberate.** The original read:
+
+        "Pre-migration rows have no ``expires_at``. Inventing one retroactively
+        would release stock for an order that may still be in flight."
+
+    The caution was sound and the conclusion was wrong, for two reasons that
+    only a second cycle and a production count can show.
+
+    First, the candidate predicate is ``expires_at IS NOT NULL AND
+    expires_at <> '' AND expires_at <= cutoff``. A held row with no deadline
+    does not fail it *late* — it fails it on every sweep that will ever run. The
+    original test asserted ``candidates == 0`` after one cycle, which is also
+    what a permanent leak looks like after one cycle. Production had four such
+    holds when this was rewritten, the oldest dated 2026-08-13, roughly seven
+    weeks of decremented listing quantity that no code path could return.
+
+    Second, becoming a candidate is not being released. Every case from 09
+    onward exists to prove that the decision path consults Stripe and hands back
+    stock only when nothing can pay — no intent at all, or a provider answer of
+    failed/canceled. A row whose intent is genuinely live defers instead, which
+    is case 13. So the original fear is already answered by the architecture the
+    rest of this file pins, and the backfill does not weaken it.
+
+    What survives from the original caution is the part that was really
+    load-bearing, and it is now asserted directly below rather than implied: a
+    deadline is derived from the row's own ``created_at``, so a *fresh*
+    deadline-less hold gets a full TTL ahead of it (case 08b) and only a
+    genuinely stale one becomes collectable at once. An unparseable deadline is
+    still left completely alone (case 08c) — rewriting a non-empty value is a
+    different and riskier act than filling a blank one.
+    """
+    cur = _db()
+    _order(cur, 100, expires_at=None, created_at=LONG_EXPIRED)
+    _order(cur, 101, expires_at="", created_at=LONG_EXPIRED)
+
+    result = _sweep(cur)
+
+    # The leak is counted before it is repaired, so an operator can see the size
+    # of the problem and not only the size of this cycle's fix.
+    assert result["deadline_gap"] == 2
+    assert result["backfilled"] == 2
+    # Derived from created_at (11:00 + 15m TTL = 11:15), which is already past
+    # NOW, so both are collectable on this same cycle rather than next interval.
+    for tx_id in (100, 101):
+        assert _res(cur, tx_id)["expires_at"] == policy.expires_at_for(LONG_EXPIRED)
+    assert result["candidates"] == 2
+    # Neither carries a payment intent, so nothing could ever have paid for
+    # them: case 09's rule applies and the stock goes back untouched by Stripe.
+    assert result["released"] == 2
+    assert result["provider_calls"] == 0
+    assert _stock(cur) == STARTING_STOCK
+
+
+def test_08b_a_fresh_deadline_less_hold_is_protected_for_a_full_ttl():
+    """The backfill must not release an order that has only just started.
+
+    This is the half of the original case 08 that was genuinely right. Anchoring
+    the deadline to ``created_at`` rather than to the sweep's own clock is what
+    makes it hold: a hold written seconds ago gets a deadline in the future, so
+    the very sweep that discovers it also declines to collect it.
+    """
+    cur = _db()
+    # Created at the instant of the sweep, with no deadline written.
+    _order(cur, 100, expires_at=None, created_at=NOW)
+
+    result = _sweep(cur)
+
+    assert result["backfilled"] == 1
+    assert _res(cur, 100)["expires_at"] == policy.expires_at_for(NOW)
+    assert result["candidates"] == 0
+    assert result["released"] == 0
+    assert _res(cur, 100)["status"] == policy.STATUS_HELD
+    assert _stock(cur) == STARTING_STOCK - 2
+
+
+def test_08c_an_unparseable_deadline_is_not_rewritten():
+    """Only a blank deadline is filled. A garbage one is reported, not edited.
+
+    Such a row is still invisible to the sweep — ``'not-a-timestamp'`` passes the
+    NOT NULL check and then never compares ``<=`` an ISO cutoff — so this is a
+    third stranding shape. It is left alone on purpose: overwriting a non-empty
+    deadline is a destructive edit, and no production row was observed in this
+    shape, so repairing it speculatively would be writing an untested path
+    against money. It is named here so its absence is a known gap and not an
+    oversight.
+    """
+    cur = _db()
+    _order(cur, 102, expires_at="not-a-timestamp")
+
+    result = _sweep(cur)
+
+    assert result["deadline_gap"] == 0
+    assert result["backfilled"] == 0
+    assert _res(cur, 102)["expires_at"] == "not-a-timestamp"
+    assert result["candidates"] == 0
+    assert result["released"] == 0
+    assert _res(cur, 102)["status"] == policy.STATUS_HELD
+
+
+def test_08d_the_backfill_writes_nothing_in_dry_run():
+    """A dry run must be able to measure the leak without repairing it.
+
+    Otherwise the only way to find out how many holds are stranded would be to
+    change them, and an operator could not inspect the problem before acting on
+    it.
+    """
     cur = _db()
     _order(cur, 100, expires_at=None)
     _order(cur, 101, expires_at="")
-    _order(cur, 102, expires_at="not-a-timestamp")
-    result = _sweep(cur)
-    assert result["candidates"] == 0
-    assert result["released"] == 0
-    for tx_id in (100, 101, 102):
+
+    result = _sweep(cur, dry_run=True)
+
+    assert result["deadline_gap"] == 2
+    assert result["would_backfill"] == 2
+    assert result["backfilled"] == 0
+    for tx_id in (100, 101):
+        assert _res(cur, tx_id)["expires_at"] in (None, "")
         assert _res(cur, tx_id)["status"] == policy.STATUS_HELD
+    assert _stock(cur) == STARTING_STOCK - 4
+
+
+def test_08d2_the_dry_run_log_line_does_not_claim_rows_were_repaired(caplog):
+    """The WARNING an operator greps must not contradict the database.
+
+    Production, 2026-10-03: ``RESERVATION_DEADLINE_BACKFILL scanned=4
+    backfilled=4 dry_run=True`` every five minutes, while all four held rows in
+    Postgres still had ``expires_at IS NULL``. The line emitted
+    ``backfilled or would_backfill`` under the single label ``backfilled=``, so
+    the dry-run count wore the name of the write count. Nothing caught it: the
+    structured counters this file already pins were correct, and no test looked
+    at the log text at all.
+
+    It matters more than a cosmetic string because this is the only WARNING the
+    backfill emits -- the alertable line -- and the question it is read to
+    answer is "is the leak still open?".
+    """
+    cur = _db()
+    _order(cur, 100, expires_at=None)
+    _order(cur, 101, expires_at="")
+
+    with caplog.at_level("WARNING", logger=sweeper.LOGGER.name):
+        result = _sweep(cur, dry_run=True)
+
+    line = [r.getMessage() for r in caplog.records
+            if "RESERVATION_DEADLINE_BACKFILL" in r.getMessage()]
+    assert len(line) == 1, f"expected one backfill warning, got {line}"
+    said = line[0]
+
+    # The counters, asserted against the result rather than against literals,
+    # so this cannot drift into agreeing with a wrong result.
+    assert result["backfilled"] == 0 and result["would_backfill"] == 2
+    assert "backfilled=0" in said, said
+    assert "would_backfill=2" in said, said
+    assert "dry_run=True" in said, said
+    # The regression itself: `backfilled=2` is the exact text that was wrong.
+    assert "backfilled=2" not in said, (
+        "the dry-run count is being reported under the `backfilled` label "
+        "again, which tells an operator a cycle that wrote nothing repaired "
+        f"the leak: {said}")
+
+
+def test_08d3_a_live_backfill_reports_the_same_number_under_both_labels(caplog):
+    """Counterpart to the case above, so the fix is not just "always print 0".
+
+    In live mode every row that qualifies is also written, so the two counters
+    agree. Asserting that here is what stops a future "fix" from hard-coding
+    ``backfilled=0`` into the line and passing the dry-run test while hiding
+    real repairs.
+    """
+    cur = _db()
+    _order(cur, 100, expires_at=None)
+    _order(cur, 101, expires_at="")
+
+    with caplog.at_level("WARNING", logger=sweeper.LOGGER.name):
+        result = sweeper.backfill_missing_deadlines(cur, now=NOW)
+
+    said = next(r.getMessage() for r in caplog.records
+                if "RESERVATION_DEADLINE_BACKFILL" in r.getMessage())
+    assert result["backfilled"] == 2
+    assert "backfilled=2" in said, said
+    assert "would_backfill=2" in said, said
+    assert "dry_run=False" in said, said
+
+
+def test_08e_backfilling_twice_changes_nothing_the_second_time():
+    """The repair is a compare-and-swap, so two workers racing it is safe.
+
+    The ``UPDATE ... WHERE expires_at IS NULL OR expires_at=''`` is what makes
+    the second writer a no-op. Without it, a sweeper and a web process ensuring
+    the same row would each stamp their own deadline and the later one would
+    silently extend a hold that was already due.
+    """
+    cur = _db()
+    _order(cur, 100, expires_at=None, created_at=NOW)
+
+    first = sweeper.backfill_missing_deadlines(cur, now=NOW)
+    stamped = _res(cur, 100)["expires_at"]
+    # A later clock, to prove the second pass would have written a *different*
+    # value if the guard were absent.
+    second = sweeper.backfill_missing_deadlines(cur, now=NOT_EXPIRED)
+
+    assert first["backfilled"] == 1
+    assert second["scanned"] == 0
+    assert second["backfilled"] == 0
+    assert _res(cur, 100)["expires_at"] == stamped
+
+
+def test_08f_a_terminal_row_without_a_deadline_is_never_backfilled():
+    """Released and captured are absorbing. The repair must not reanimate them.
+
+    Production's deadline-less population included seven already-``released``
+    rows alongside the four held ones. Filling a deadline on those would make
+    them candidates for a lifecycle they have already left, and the released
+    ones have had their stock returned — a second release would credit it twice.
+    """
+    cur = _db()
+    _order(cur, 100, expires_at=None, status=policy.STATUS_RELEASED)
+    _order(cur, 101, expires_at=None, status=policy.STATUS_CAPTURED)
+
+    result = _sweep(cur)
+
+    assert result["deadline_gap"] == 0
+    assert result["backfilled"] == 0
+    assert result["released"] == 0
+    assert _res(cur, 100)["expires_at"] in (None, "")
+    assert _res(cur, 101)["expires_at"] in (None, "")
+    assert _stock(cur) == STARTING_STOCK
 
 
 # --------------------------------------------------------------------------

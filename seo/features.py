@@ -31,9 +31,22 @@ content on the page:
   production and defaults to false, so calls are one-to-one today. (The audio
   and video subflags read the same way but every real call site passes
   `default=True`, so those are on.)
-* Marketplace card checkout is hard-paused in
-  `services/marketplace_payment_pause.py`. Cash, local pickup and in-person
-  settlement are the live lanes, and they carry no platform fee.
+* Marketplace card checkout works, but not on every listing, and the page has
+  to carry both halves. The platform rail is on
+  (`MARKETPLACE_CARD_PAYMENTS_ENABLED`, which fails closed on anything that is
+  not an explicit yes), and that only says the rail exists:
+  `services/marketplace_card_capability.py` then checks the seller's own
+  Connect state — `charges_enabled`, `payouts_enabled`, outstanding
+  requirements — and any one of them still refuses. There is a third authority
+  the first draft of this page missed: the client. The checkout screen in the
+  App Store build that shipped before 2026-09-19 carries its own hard-coded
+  pause, so a buyer on it is offered cash only, whatever the server says. That
+  copy of the constant is gone from `main` and the screen now reads the
+  server's per-seller verdict, but a page cannot promise what is already
+  installed on someone's phone. So the honest sentence is that a card appears
+  once the seller has finished payment setup, never that every listing takes
+  one. Cash, local pickup and in-person settlement are open on all three
+  authorities and carry no commission.
 * Profiles have no story-highlight surface.
 
 If one of those becomes false, the fix is to change the sentence here, not to
@@ -514,18 +527,19 @@ FEATURES = (
     {
         "slug": "marketplace",
         "card_title": "Marketplace",
-        "card_summary": "List something for sale and settle it in cash or on pickup. Card payments are paused.",
+        "card_summary": "List something for sale and settle it in cash, on local pickup, or by card.",
         "breadcrumb": "Marketplace",
         "h1": "Marketplace",
         "title": "PulseSoc Marketplace — list and sell from the app",
         "description": (
-            "List an item in the PulseSoc Marketplace and arrange payment face to face. Card "
-            "checkout is temporarily unavailable; cash, local pickup and in-person settlement "
-            "are the live options and carry no platform fee."
+            "List an item in the PulseSoc Marketplace and settle it in cash on local pickup, or "
+            "by card once the seller's payment setup is complete. The checkout shows which "
+            "methods a listing accepts before you enter any details."
         ),
         "lede": (
-            "You can list and sell today. You cannot take a card for it today, and this page "
-            "would rather tell you that than let you find out at checkout."
+            "You can list something and sell it. Cash and local pickup work on any listing, a "
+            "card option appears where the seller's payment setup is done, and the checkout "
+            "tells you which applies before you commit rather than after."
         ),
         "sections": [
             {
@@ -538,31 +552,34 @@ FEATURES = (
                 ],
             },
             {
-                "heading": "How a sale settles right now",
+                "heading": "How a sale settles",
                 "body": [
-                    "Card payments in the Marketplace are temporarily switched off. A buyer "
-                    "cannot start a card checkout on a listing, and no card flow will begin and "
-                    "then fail — the option is simply not offered.",
-                    "What works is cash, local pickup, and payment in person. Those settlements "
-                    "carry no platform fee, because the platform is not moving the money.",
-                    "This is a pause on Marketplace card checkout specifically. It is unrelated "
-                    "to PulseSoc Premium, which is billed through your Apple ID and is "
-                    "unaffected.",
+                    "Cash, local pickup and payment in person work on every listing. They "
+                    "carry no commission because the platform is not moving that money — and "
+                    "no Marketplace sale carries one today, on any method.",
+                    "Card checkout is open too, but not on every listing. A buyer can pay by "
+                    "card once the seller has finished payment setup: registering as a seller "
+                    "is what lets you list, and payment setup is the separate step that turns "
+                    "the card option on for your own listings.",
+                    "Whichever applies, the checkout form is built from that answer before you "
+                    "enter any details — and it is built per listing rather than per site, so "
+                    "a payment option you can see is one you can finish rather than one that "
+                    "fails after you have committed to paying.",
                 ],
             },
         ],
         "faqs": [
             {
                 "question": "Can I pay for a Marketplace item by card?",
-                "answer": "Not at the moment. Card checkout in the Marketplace is temporarily unavailable. Cash, local pickup and in-person payment are the available options.",
+                "answer": "On some listings, but not all of them. A card option appears once the seller has completed their payment setup, and the checkout shows which methods a listing accepts before you enter any details — so you will not start a card payment that cannot finish. Cash, local pickup and in-person payment work on every listing.",
             },
             {
                 "question": "Is there a fee on a Marketplace sale?",
-                "answer": "Cash, pickup and in-person settlements carry no platform fee.",
+                "answer": "No commission is taken on a Marketplace sale today, on any payment method. Cash, pickup and in-person settlements carry none by design, because the platform never moves that money.",
             },
             {
                 "question": "Do I need to do anything before I can sell?",
-                "answer": "Yes. You register as a seller before you can list something for sale.",
+                "answer": "Two things. You register as a seller before you can list anything, and you complete payment setup before your listings can take a card. Until that second step is done, your sales settle in cash or on pickup.",
             },
         ],
     },

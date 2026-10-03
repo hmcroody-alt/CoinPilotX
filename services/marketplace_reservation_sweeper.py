@@ -296,9 +296,146 @@ def _empty_result(*, dry_run: bool, limit: int) -> dict:
         "reconciled": 0, "failed": 0,
         "would_release": 0, "would_defer": 0, "would_skip": 0,
         "provider_calls": 0, "needs_attention": 0,
+        "backfilled": 0, "would_backfill": 0, "deadline_gap": 0,
         "dry_run": bool(dry_run), "limit": int(limit),
         "batch_exhausted": False, "duration_ms": 0,
     }
+
+
+#: Holds with no deadline at all. The candidate query requires
+#: ``expires_at IS NOT NULL AND expires_at <> ''``, so a held row that never
+#: received a deadline is not merely late to be collected — it is invisible to
+#: every sweep that will ever run, and the listing quantity it decremented never
+#: comes back.
+#:
+#: Production had four of these when this was written, the oldest dated
+#: 2026-08-13, three of them carrying ``offer_id`` in their transaction
+#: metadata. ``legacy_backfill_expiry`` was written for exactly this case and
+#: the policy docstring says these rows "are surfaced by
+#: ``legacy_backfill_expiry`` instead" — but it had no caller outside a unit
+#: test, so the sentence described an intention rather than a behaviour. Two
+#: independent leaks, then: writers that omit the deadline (fixed at each
+#: writer) and rows already stranded by them (fixed here).
+_NO_DEADLINE_PREDICATE = (
+    "status = ? AND (expires_at IS NULL OR expires_at = '')"
+)
+
+
+def count_deadline_gap(cur) -> int:
+    """How many held rows no sweep can ever see. Zero is the healthy answer.
+
+    Reported as a counter in its own right rather than folded into
+    ``backfilled``, because the two answer different questions: this is the
+    size of the leak, and ``backfilled`` is how much of it this cycle repaired.
+    An operator watching this climb while ``backfilled`` keeps pace is watching
+    a writer that still omits deadlines.
+    """
+    cur.execute(
+        f"SELECT COUNT(*) AS n FROM {reservation_schema.RESERVATION_TABLE} "
+        f"WHERE {_NO_DEADLINE_PREDICATE}",
+        (reservation_policy.STATUS_HELD,),
+    )
+    row = cur.fetchone()
+    if row is None:
+        return 0
+    # Positional, via the canonical accessor. ``list(row)[0]`` was the first
+    # spelling here and it is wrong in exactly one place — production: a
+    # ``sqlite3.Row`` is a sequence so it yields the count, while Postgres's
+    # ``CompatRow`` is a Mapping so it yields the column *name* ``'n'``, and
+    # ``int('n')`` raises inside the one function whose job is to report that
+    # stock is leaking. Caught by tests/protection/test_row_shape_engine_parity,
+    # not by any test that ran this code.
+    from services import db as db_module
+
+    values = db_module.row_values(row)
+    return int(values[0] or 0) if values else 0
+
+
+def backfill_missing_deadlines(cur, *, now=None, limit: int | None = None,
+                               dry_run: bool = False) -> dict:
+    """Give every deadline-less held row a deadline, so a sweep can see it.
+
+    Each row's deadline is derived from its own ``created_at`` via
+    ``reservation_policy.legacy_backfill_expiry``, so a hold stranded since
+    August becomes collectable on this cycle instead of winning a fresh fifteen
+    minutes it has not earned. A row with an unreadable ``created_at`` is
+    measured from now, which errs toward holding stock slightly too long rather
+    than releasing an order that might still settle.
+
+    This never *releases* anything. It only makes rows visible to the normal
+    decision path, which still consults Stripe before returning stock. That
+    separation is deliberate: a repair that both discovered and released rows
+    would be releasing holds no live code path had ever evaluated.
+
+    Bounded by the same ``limit`` as the sweep so a large legacy backlog is
+    repaired across cycles rather than in one unbounded statement, and scoped by
+    ``status = 'held'`` so a terminal row is never rewritten.
+    """
+    stamp = reservation_policy.parse_timestamp(now) or reservation_policy.now_utc()
+    rows_limit = int(limit) if limit else batch_limit()
+    out = {"scanned": 0, "backfilled": 0, "would_backfill": 0, "failed": 0}
+
+    try:
+        cur.execute(
+            "SELECT id, created_at FROM "
+            f"{reservation_schema.RESERVATION_TABLE} "
+            f"WHERE {_NO_DEADLINE_PREDICATE} "
+            "ORDER BY id LIMIT ?",
+            (reservation_policy.STATUS_HELD, rows_limit),
+        )
+        rows = [dict(r) for r in (cur.fetchall() or [])]
+    except Exception:
+        LOGGER.exception("RESERVATION_BACKFILL_SELECT_FAILED")
+        out["failed"] = 1
+        return out
+
+    out["scanned"] = len(rows)
+    for row in rows:
+        deadline = reservation_policy.legacy_backfill_expiry(
+            row.get("created_at"), now=stamp)
+        if dry_run:
+            out["would_backfill"] += 1
+            continue
+        try:
+            # Re-asserting the no-deadline predicate in the UPDATE is what makes
+            # this safe to run from two processes at once: whichever writes
+            # second matches nothing and changes nothing, so a deadline is never
+            # overwritten once set. The read above is advisory; the WHERE clause
+            # is the guarantee.
+            cur.execute(
+                f"UPDATE {reservation_schema.RESERVATION_TABLE} "
+                "SET expires_at=?, reserved_at=COALESCE(reserved_at, created_at), "
+                "    updated_at=? "
+                "WHERE id=? AND status=? "
+                "  AND (expires_at IS NULL OR expires_at='')",
+                (deadline, stamp.isoformat(timespec="seconds"),
+                 row.get("id"), reservation_policy.STATUS_HELD),
+            )
+            if int(cur.rowcount or 0) == 1:
+                out["backfilled"] += 1
+                out["would_backfill"] += 1
+        except Exception:
+            LOGGER.exception("RESERVATION_BACKFILL_UPDATE_FAILED id=%s",
+                             row.get("id"))
+            out["failed"] = 1
+
+    if out["backfilled"] or out["would_backfill"]:
+        # Both counters, always, because they answer different questions:
+        # ``would_backfill`` is how many rows qualify and ``backfilled`` is how
+        # many writes landed. This line used to emit
+        # ``out["backfilled"] or out["would_backfill"]`` under the single label
+        # ``backfilled=``, which in dry run reported ``backfilled=4`` for a
+        # cycle that wrote nothing -- observed in production on 2026-10-03,
+        # where the four stranded holds were still deadline-less in Postgres
+        # while this line claimed they had been repaired. It is logged at
+        # WARNING, so it is also the line most likely to be alerted on, and the
+        # correct structured ``summary=`` dict is emitted by a different module.
+        # Naming each counter makes the label unable to disagree with the fact.
+        LOGGER.warning(
+            "RESERVATION_DEADLINE_BACKFILL scanned=%s backfilled=%s "
+            "would_backfill=%s dry_run=%s",
+            out["scanned"], out["backfilled"], out["would_backfill"], dry_run)
+    return out
 
 
 def _degraded(result: dict, *, reason: str, started: float,
@@ -384,6 +521,27 @@ def run_reservation_expiry_sweep(cur, *, now=None, limit: int | None = None,
         return _degraded(result, reason=reason, started=started,
                          detail=schema_state.get("error"),
                          missing=schema_state.get("missing") or ())
+
+    # Before asking which holds have expired, make sure the question can reach
+    # every held row. A hold with no deadline fails the candidate predicate
+    # permanently, so without this step the sweep reports a clean cycle while
+    # stock sits stranded — the two outcomes an operator most needs told apart.
+    #
+    # Ordered before selection on purpose: a row backfilled to an already-past
+    # deadline is collectable on this same cycle rather than waiting for the
+    # next interval.
+    try:
+        result["deadline_gap"] = count_deadline_gap(cur)
+    except Exception:
+        LOGGER.exception("RESERVATION_DEADLINE_GAP_COUNT_FAILED")
+    if result["deadline_gap"]:
+        backfill = backfill_missing_deadlines(
+            cur, now=stamp, limit=rows_limit, dry_run=dry_run)
+        result["backfilled"] = backfill["backfilled"]
+        result["would_backfill"] = backfill["would_backfill"]
+        # A backfill failure degrades the counter, not the sweep: the rows the
+        # sweep could already see must still be processed.
+        result["failed"] += backfill["failed"]
 
     try:
         candidates = select_expiry_candidates(

@@ -1198,3 +1198,434 @@ def test_mutation_the_return_page_specialisation_is_reachable(buyer):
     assert specialised != generic
     assert "/pulse/orders" in specialised
     assert "/pulse/orders" not in generic
+
+
+# ---------------------------------------------------------------------------
+# 6. The payment handoff: what the button says, against what the button does
+# ---------------------------------------------------------------------------
+#
+# A real buyer reached `/pulse/cart`, filled in a name and a delivery address,
+# and pressed a button labelled `Pay $94.98`. That button does not pay. It POSTs
+# to `/api/pulse/marketplace/cart/checkout`, which creates a Stripe Checkout
+# Session, and then sets `window.location.href` to Stripe's hosted page -- no
+# card is entered on this origin, no charge is authorised by the click, and the
+# amount in the label was a promise made by a navigation.
+#
+# The copy is now forward-navigation language, and these tests hold it there.
+# They are written against the script's source rather than a rendered DOM for
+# the same reason the four panel tests above are: there is no DOM in this suite,
+# and the thing worth pinning is the sentence the script is built to emit.
+#
+# Every one of them is an assertion about *honesty*, not about wording. They
+# permit any label that does not claim a payment and do not demand one exact
+# string, except where the string is the claim.
+
+CART_JS = ROOT / "static" / "js" / "pulsesoc_cart.js"
+
+
+def _emitted(text: str) -> str:
+    """The script with its `//` comments removed.
+
+    Several assertions below are "this phrase must not appear", and a comment
+    explaining *why* the phrase must not appear contains the phrase. Stripping
+    the commentary is what keeps those assertions about the sentences the script
+    emits rather than about the prose around them -- and the stripping is
+    line-based and deliberately crude, because the only thing it has to get
+    right is that a `//` line is not shipped text. A `//` inside a string
+    literal would be mis-stripped; this file has none, and the assertions it
+    feeds are all absence tests, so a mis-strip can only make them stricter.
+    """
+    return "\n".join(line for line in text.splitlines()
+                      if not line.lstrip().startswith("//"))
+
+#: The submit button as `checkoutFormHtml` assembles it: the opening tag, the
+#: `pending` ternary, and then the label on the following line.
+SUBMIT_BUTTON = re.compile(
+    r"<button type='submit'.*?\+\s*\n\s*\"(?P<label>.*?)</button>", re.S)
+
+
+def test_the_checkout_button_does_not_claim_to_take_a_payment():
+    """The label is a navigation, because the click is a navigation.
+
+    "Pay $94.98" is a statement about money leaving an account. This click
+    creates a Stripe session and redirects; the money leaves on Stripe's page,
+    after a second deliberate action the buyer takes there. A label that cannot
+    be distinguished from the real pay button two pages later is how a buyer
+    ends up believing they have paid when they have not, and how one did.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    match = SUBMIT_BUTTON.search(source)
+    assert match, (
+        "the checkout form no longer renders a single `type='submit'` button in "
+        "the shape this test reads; the label contract is unpinned")
+    label = match.group("label")
+    assert label.strip(), "the submit button has an empty label"
+
+    assert "Continue to secure payment" in label, (
+        f"the checkout button is labelled {label!r}, which does not tell the "
+        "buyer that the next thing they see is a payment page they have not "
+        "reached yet")
+    assert not re.match(r"(?i)^\s*(&\w+;)?\s*pay\b", label), (
+        f"the checkout button opens with a payment claim: {label!r}")
+    assert "money(" not in label, (
+        "the checkout button interpolates the amount into its own label. The "
+        "amount belongs on the subtotal row and on Stripe's page, which are the "
+        "two places it is authoritative; inside this button it reads as a charge")
+
+
+def test_the_handoff_sentence_is_above_the_button_not_below_it():
+    """Order on the page is order of reading, and the correction has to come first.
+
+    The explanation already existed -- "you will finish on Stripe's secure
+    payment page" -- and sat underneath a button that said "Pay". A buyer
+    reading downwards met the promise, acted on it, and met the correction
+    afterwards, if at all. Being present is not the same as being read.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    form = source[source.index("function checkoutFormHtml("):]
+    form = form[:form.index("\n  // The app handoff")]
+
+    next_line = form.index("class='next'")
+    button = form.index("<button type='submit'")
+    assert next_line < button, (
+        "the 'next step' line is emitted after the submit button, so a buyer "
+        "reading top to bottom reaches the button before the explanation of "
+        "what it does")
+    assert "Next: secure payment" in form
+
+
+def test_the_loading_state_describes_opening_a_page_not_taking_money():
+    """What the buyer reads during the round trip, which is the most ambiguous moment.
+
+    The POST can take seconds -- it validates the destination, the variant and
+    the supplier before it reaches Stripe -- and whatever the button says during
+    that window is the buyer's only account of what is happening to their money.
+    """
+    source = _emitted(CART_JS.read_text(encoding="utf-8"))
+    assert "Opening secure payment" in source, (
+        "the in-flight button text does not say what is being opened")
+    for vague in ("Starting checkout", "Paying", "Processing payment", "Charging"):
+        assert vague not in source, (
+            f"the in-flight button text says {vague!r}, which either says nothing "
+            "or says money is moving; neither is true")
+
+
+def test_a_failed_session_restores_the_form_and_never_reports_a_failed_payment():
+    """A session that could not be created is not a payment that failed.
+
+    They have different remedies and different consequences, and the buyer is
+    owed the difference: nothing was attempted, nothing was charged, nothing was
+    removed from the cart, and everything they typed is still on screen.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    # The window starts at `handoffFailureMessage`, not at `checkout`, because
+    # that is where the rejected-request sentence is now composed. Slicing from
+    # `checkout` alone would read a handler whose only failure copy is a call to
+    # a helper, and would then conclude the copy had been deleted -- which is
+    # what it did conclude. The two refusal paths are the resolved-but-unusable
+    # one (inline, below) and the rejected one (the helper), and this window has
+    # to span both or it is testing half the behaviour.
+    handler = source[source.index("  function handoffFailureMessage(err)"):]
+    handler = handler[:handler.index("\n  // ---")]
+    said = _emitted(handler)
+
+    # The CTA comes back, with its original label, so the form is usable again.
+    assert "function restore()" in handler
+    assert "button.innerHTML = label" in handler, (
+        "the button is re-enabled without its label being restored, so a failed "
+        "attempt leaves 'Opening secure payment…' on a button that is not")
+    assert handler.count("restore();") >= 2, (
+        "only one of the two failure paths restores the form")
+    # Without this the helper could sit in the window unreferenced while the
+    # catch path emitted a bare `err.message`, and every assertion below would
+    # pass by reading copy that never reaches a buyer.
+    assert "groupError(sellerId, handoffFailureMessage(err))" in handler, (
+        "the rejected-request path no longer routes through "
+        "handoffFailureMessage, so the sentences asserted below are dead copy")
+
+    # And it never says the payment failed, because no payment was attempted.
+    for claim in ("payment failed", "payment was declined", "your card was",
+                  "charge failed"):
+        assert claim not in said.lower(), (
+            f"the failure copy claims {claim!r}; the session was never created, "
+            "so there was no payment to fail")
+    # Both refusal paths state the absence rather than leaving it to be
+    # inferred. A rejected request reaches the buyer as the server's own
+    # sentence plus an appended clause, so "charged" has to survive in the
+    # helper as well as in the inline message.
+    assert said.lower().count("charged") >= 2
+    assert "charged" in _emitted(
+        handler[:handler.index("  function findGroup(sellerId)")]).lower(), (
+        "handoffFailureMessage no longer answers the only question a refused "
+        "buyer has, which is whether their money moved")
+
+
+def test_the_cart_draws_no_step_it_has_no_authority_over():
+    """The indicator is a progress indicator, not a wizard this page drives.
+
+    Steps three and four are Stripe's page and the webhook's confirmation. This
+    origin learns about neither: the session URL is a redirect, and
+    `checkout.session.completed` arrives on the server. A page that drew itself
+    as having reached "Payment" would be asserting something it cannot observe,
+    which is the same class of claim as the button label above.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    assert "function stepsHtml(" in source
+    calls = re.findall(r"stepsHtml\((\d+)", source)
+    assert calls, (
+        "stepsHtml is defined and never called, so the progress indicator is "
+        "dead code and this test proves nothing")
+    assert set(calls) <= {"1", "2"}, (
+        f"the cart draws checkout step(s) {sorted(set(calls) - {'1', '2'})} as "
+        "reached. Steps 3 and 4 belong to Stripe and to the webhook")
+
+
+def test_every_details_kind_the_server_can_emit_has_its_own_step_name():
+    """"Delivery" over a pickup form is a false statement about where the order goes.
+
+    `details_kind_for` is the authority, and it can answer any shipping-address
+    kind, any scheduled kind, `pickup`, or `""` for a group it asks nothing of.
+    The table is enumerated from that function's own inputs rather than from a
+    list written here, so a tenth fulfilment kind added in Python fails this
+    test instead of silently rendering as the generic noun.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    table = source[source.index("var DETAIL_COPY"):source.index("var DETAIL_FALLBACK")]
+
+    emittable = {cart_web.details_kind_for([kind])
+                 for kind in fulfillment.KINDS
+                 if kind not in fulfillment.UNDECIDED_KINDS}
+    assert emittable, "no fulfilment kinds, so this test proves nothing"
+    assert "" in emittable, (
+        "details_kind_for no longer answers '' for a group it asks nothing of; "
+        "the empty-key entry in DETAIL_COPY may now be unreachable")
+
+    missing = sorted(kind for kind in emittable
+                     if f'"{kind}":' not in table and f"{kind}: {{" not in table)
+    assert not missing, (
+        f"details_kind {missing} reaches the cart with no step name of its own, "
+        "so the form is headed by the generic noun and the progress indicator "
+        "says 'Details' where it should say what is actually being collected")
+
+
+def test_the_progress_strip_on_the_return_pages_never_marks_confirmation_reached():
+    """The success page is reached by Stripe's `success_url`, which proves nothing.
+
+    `success_url` fires on redirect. It is not a payment result, it is not
+    signed, and it is reachable by typing the URL. The order becomes an order
+    when `checkout.session.completed` arrives at the webhook -- so the fourth
+    dot is drawn as waiting and never as done, which is the visual half of the
+    sentence the copy already makes.
+    """
+    strip = bot._checkout_progress_html(3, pending=4)
+    cells = [cell for cell in strip.split("<li") if "Confirmation" in cell]
+    assert len(cells) == 1, strip
+    assert "&#10003;" not in cells[0], (
+        "the success page ticks Confirmation, which only the webhook can do")
+    # Named by token, because that is what the helper emits. It used to emit
+    # `#2ecc71`; bot.py's hardcoded-colour ratchet refuses new hex literals and
+    # counts `var(--x, #abc123)` fallbacks too, so the literal went and this
+    # assertion would have passed vacuously against a strip that still drew
+    # Confirmation as done.
+    done_colour = "var(--status-success)"
+    assert done_colour in strip, (
+        f"the strip no longer draws any step in {done_colour}, so asserting its "
+        "absence on Confirmation proves nothing about Confirmation")
+    assert done_colour not in cells[0], (
+        "the success page draws Confirmation in the done colour")
+
+    # The cancel page: the buyer reached Stripe and came back without paying, so
+    # Payment is neither done nor in flight.
+    cancelled = bot._checkout_progress_html(2)
+    payment = [cell for cell in cancelled.split("<li") if "Payment" in cell]
+    assert len(payment) == 1
+    assert "&#10003;" not in payment[0], (
+        "the cancel page ticks Payment after a checkout that took no money")
+    assert "&hellip;" not in payment[0], (
+        "the cancel page draws Payment as in flight; nothing is in flight")
+
+
+def test_the_return_pages_actually_render_the_strip(buyer):
+    """The positive control for the test above, which asserts absences.
+
+    An absence passes for a page that renders no indicator at all.
+    """
+    client, _listing_id, _seller_id = buyer
+    with client.session_transaction() as session:
+        buyer_id = session["account_user_id"]
+    tx_id = _transaction(buyer_id)
+
+    for path in ("success", "cancel"):
+        body = client.get(f"/pulse/payments/{path}?transaction_id={tx_id}",
+                          headers=HTTPS).get_data(as_text=True)
+        assert "Checkout progress" in body, f"the {path} page renders no progress strip"
+        assert "Confirmation" in body
+
+
+def test_a_second_tap_cannot_reach_the_checkout_post():
+    """The double-submit guard, asserted as an ordering fact rather than a wish.
+
+    Measured in a browser at a true 390px viewport, three clicks on the CTA in
+    one task produce exactly one `POST /cart/checkout`. But that measurement
+    does not say *which* guard did it, and the difference matters: with the
+    `ui.busy` early-return removed and `button.disabled = true` left in place,
+    three clicks still produced one POST -- the synchronous `disabled` absorbed
+    them. With `disabled` removed and `ui.busy` left, three clicks also produced
+    one POST. Only with both removed did three clicks produce three POSTs.
+
+    So `disabled` alone is enough for a tap that lands on the same rendered
+    button, and that is exactly the case it does not have to survive: any
+    re-render between the two taps replaces the element and the attribute with
+    it, while `ui.busy` is module-scoped and does not care. A refactor that
+    deletes the early-return would keep every browser-level double-tap test
+    green and leave the real race open.
+
+    Hence an ordering assertion on the source: the flag must be read before the
+    function can proceed and written before anything awaits.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    handler = source[source.index("  function checkout(sellerId)"):]
+    handler = handler[:handler.index("\n  // ---")]
+
+    # Named before they are located, so a handler that lost one of them fails
+    # saying which. `str.index` raises ValueError, which pytest reports as an
+    # error rather than a failure: still red, but red for the wrong reason, and
+    # the kind of red a reader resolves by deleting the test.
+    for fragment, what in (
+            ("ui.busy) return;", "the early return that makes a second call a no-op"),
+            ("ui.busy = true;", "the claim that arms that early return"),
+            ('pulseApi("/api/pulse/marketplace/cart/checkout"', "the checkout POST")):
+        assert fragment in handler, (
+            f"checkout() no longer contains {what} ({fragment!r}), so two taps "
+            "can start two Stripe sessions for the same cart")
+
+    guard = handler.index("ui.busy) return;")
+    claim = handler.index("ui.busy = true;")
+    post = handler.index('pulseApi("/api/pulse/marketplace/cart/checkout"')
+
+    assert guard < claim < post, (
+        "checkout() does not read ui.busy, claim it, and only then POST, in "
+        f"that order (read at {guard}, claimed at {claim}, POST at {post}) -- "
+        "a second tap landing between the claim and the POST would start a "
+        "second Stripe session for the same cart")
+
+    # Nothing may await between the read and the claim: an await there reopens
+    # the window the flag exists to close.
+    between = handler[guard:claim]
+    for yielding in ("await ", "pulseApi(", "setTimeout(", ".then("):
+        assert yielding not in between, (
+            f"checkout() yields on {yielding!r} between reading ui.busy and "
+            "setting it, so two taps can both pass the guard")
+
+    # And the visible half must not be mistaken for the enforcement: the
+    # disabled attribute is set after the flag, not instead of it.
+    assert handler.index("button.disabled = true") > claim, (
+        "the button is disabled before ui.busy is claimed, which puts the "
+        "enforcement on an element a re-render can replace")
+
+
+def test_mutation_the_double_submit_ordering_is_actually_checked():
+    """The positive control: the assertion above fails on a handler that lost the flag.
+
+    An ordering test on substrings passes vacuously if the substrings it looks
+    for stop existing, because `str.index` raises and pytest reports an error
+    rather than a failure -- which is still red, but red for the wrong reason
+    and easy to "fix" by deleting the test.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    handler = source[source.index("  function checkout(sellerId)"):]
+    handler = handler[:handler.index("\n  // ---")]
+
+    broken = handler.replace("if (!group || ui.busy) return;", "if (!group) return;")
+    assert "ui.busy) return;" not in broken, (
+        "the mutation did not remove the guard, so this control proves nothing")
+    with pytest.raises(ValueError):
+        broken.index("ui.busy) return;")
+
+    moved = handler.replace("ui.busy = true;", "", 1)
+    assert "ui.busy = true;" not in moved
+
+
+def test_a_refusal_message_survives_the_redraw_that_immediately_follows_it():
+    """Both refusal paths call `load()` on the line after they write the message.
+
+    `load()` refetches and redraws the group, and the redraw re-emits
+    `[data-group-error]` from `checkoutFormHtml`. A message written only into the
+    DOM element is therefore erased in the same tick it was written -- which is
+    what a browser measured on the rejected-session path: the form came back with
+    all nine fields still filled, the button restored, the cart intact, and no
+    sentence anywhere saying what had happened. Silence is what made the original
+    customer tap the button six times.
+
+    So the message has to live in `ui`, next to `ui.typed`, which is module-scoped
+    for the same reason, and the renderer has to read it back.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+
+    # The store exists and is keyed per seller: two groups can refuse
+    # independently and one must not overwrite the other's explanation.
+    # Not `[^}]*`: the literal's earlier members are themselves `{}`, so a
+    # no-closing-brace class stops inside `lane: {}` and reports the store
+    # missing when it is three members further along.
+    assert re.search(r"var ui = \{.*?\berror: \{\}", source), (
+        "`ui` has no per-seller error store, so a refusal has nowhere to live "
+        "across the redraw that follows it")
+
+    writer = source[source.index("  function groupError(sellerId, message)"):]
+    writer = writer[:writer.index("\n  function ")]
+    assert "ui.error[sellerId] = message" in writer, (
+        "groupError paints the element without recording the message, so the "
+        "load() on the next line erases it")
+    # Recorded BEFORE it is painted: the painting is the half that does not
+    # survive, so an ordering where the store is a trailing afterthought is one
+    # early return away from being skipped.
+    assert writer.index("ui.error[sellerId] = message") < writer.index("querySelector"), (
+        "the message is stored after the element is looked up, so the "
+        "no-element branch returns without recording it")
+
+    # And the renderer reads it back, un-hidden, rather than always emitting an
+    # empty hidden slot.
+    renderer = source[source.index("  function checkoutFormHtml("):]
+    renderer = renderer[:renderer.index("\n  function ")]
+    assert "ui.error[sellerId]" in renderer, (
+        "checkoutFormHtml ignores the held message, so storing it changes "
+        "nothing that reaches the buyer")
+    slot = renderer[renderer.index("data-group-error"):]
+    slot = slot[:slot.index("</div>") + 6]
+    assert "hidden" in slot and "held" in slot, (
+        "the redrawn error slot is unconditionally empty and hidden, which is "
+        "the defect this test exists to catch")
+
+    # A new attempt clears the last verdict, so a stale refusal is not left on
+    # screen next to a button that says it is working.
+    handler = source[source.index("  function checkout(sellerId)"):]
+    handler = handler[:handler.index("\n  // ---")]
+    assert 'ui.error[sellerId] = "";' in handler, (
+        "a retry leaves the previous refusal on screen while the new attempt "
+        "is in flight")
+    assert handler.index('ui.error[sellerId] = "";') < handler.index("ui.busy = true;"), (
+        "the clear runs after the busy claim rather than before it")
+
+
+def test_mutation_the_held_refusal_message_is_actually_checked():
+    """The assertions above fail when the behaviour they describe is removed.
+
+    Written against the two edits that reintroduce the measured defect: dropping
+    the store from `groupError`, and emitting the slot unconditionally empty.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+
+    no_store = source.replace("ui.error[sellerId] = message || \"\";", "", 1)
+    writer = no_store[no_store.index("  function groupError(sellerId, message)"):]
+    writer = writer[:writer.index("\n  function ")]
+    assert "ui.error[sellerId] = message" not in writer
+
+    renderer = source[source.index("  function checkoutFormHtml("):]
+    renderer = renderer[:renderer.index("\n  function ")]
+    slot = renderer[renderer.index("data-group-error"):]
+    slot = slot[:slot.index("</div>") + 6]
+    blanked = slot.replace("(held ? \"\" : \" hidden\")", "\" hidden\"")
+    blanked = blanked.replace("(held ? groupErrorHtml(held) : \"\")", "\"\"")
+    assert "held" not in blanked, (
+        "the mutation did not actually remove the held-message read, so the "
+        "assertion it is meant to break was never exercised")

@@ -1489,6 +1489,20 @@ def create_conversation(user_id: int, payload: dict | None = None) -> dict:
                 conn.commit()
                 cur.execute("SELECT * FROM comm_v2_conversations WHERE id=? LIMIT 1", (conversation_id,))
                 return _ok({"conversation": _conversation_payload(cur, _row(cur.fetchone()), user_id), "conversation_id": conversation_id}, "Direct message ready.")
+            # Deliberately below the existing-thread branch: the recipient's
+            # "Message requests" preference governs who may *open* a new
+            # conversation, not who may continue one. Tightening the setting
+            # should stop strangers reaching you; it must not retroactively
+            # sever threads you already took part in, which is what checking
+            # above this point would do.
+            #
+            # The same resolver answers `can_message` in the profile payload,
+            # so the Message button and this gate cannot disagree. The button
+            # alone was never enforcement.
+            from services import message_privacy
+
+            if not message_privacy.may_message(cur, target_id, user_id):
+                return _err("This member is not accepting new messages.", 403, "message_requests_closed")
             cur.execute(
                 """
                 INSERT INTO comm_v2_conversations

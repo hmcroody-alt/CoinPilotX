@@ -2975,7 +2975,7 @@ def add_pwa_headers(response):
         response.headers["Expires"] = "0"
     elif request.path.startswith(("/static/", "/icons/")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml", merchant_center_feed.FEED_PATH, "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
+    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml", merchant_center_feed.FEED_PATH, "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
         response.headers["Cache-Control"] = "public, max-age=300"
     if (
         response.status_code == 200
@@ -6826,6 +6826,12 @@ AUTH_EVENT_CLASS = {
     "verification_email_failed": "friction",
     "verification_link_rejected": "friction",
     "unverified_email_change_failed": "friction",
+    # The password was right and the sign-in still stopped, to ask about a
+    # document rewritten since this member last agreed. Friction rather than
+    # security for that reason -- and because it is keyed on distinct accounts,
+    # a spike here is the signal that a new Terms version is costing people
+    # their way in, which is exactly what the friction level is for.
+    "login_legal_acceptance_required": "friction",
     # Progress, not a problem.
     "login_success": "neutral",
     "mobile_login_success": "neutral",
@@ -8127,6 +8133,95 @@ def signup_page():
     return render_account_page("signup", "Create Account")
 
 
+#: A sign-in that has passed the password and is waiting on the member to agree
+#: to a document that has been rewritten since they last agreed. Deliberately
+#: not `account_user_id`: `require_account()` never reads this key, so the
+#: half-finished state authorises nothing. It does stand in for a verified
+#: password, which is why it expires rather than sitting in the session forever.
+PENDING_LEGAL_SESSION_KEY = "pulse_pending_legal"
+PENDING_LEGAL_TTL_SECONDS = 900
+
+
+def pending_legal_acceptance_user_id():
+    """The member mid-acceptance, or 0 when there is no live pending sign-in."""
+    pending = session.get(PENDING_LEGAL_SESSION_KEY)
+    if not isinstance(pending, dict):
+        session.pop(PENDING_LEGAL_SESSION_KEY, None)
+        return 0
+    try:
+        user_id = int(pending.get("user_id") or 0)
+        started_at = float(pending.get("at") or 0)
+    except (TypeError, ValueError):
+        session.pop(PENDING_LEGAL_SESSION_KEY, None)
+        return 0
+    if not user_id or (time.time() - started_at) > PENDING_LEGAL_TTL_SECONDS:
+        session.pop(PENDING_LEGAL_SESSION_KEY, None)
+        return 0
+    return user_id
+
+
+def complete_web_login(user, preferred_language=""):
+    """Everything that happens once a web sign-in is fully authorised.
+
+    Shared by the ordinary path and by the acceptance step below so the two
+    cannot drift: a member who had to agree to a rewritten document gets the
+    same session, the same login notifications and the same tokens as one who
+    did not. A second copy of this would be how one of those silently stops
+    firing for the members who went the long way round.
+    """
+
+    email = user.get("email") or ""
+    session.pop(PENDING_LEGAL_SESSION_KEY, None)
+    session.permanent = True
+    session["account_user_id"] = user["user_id"]
+    session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
+    log_auth_event("login_success", email, user["user_id"], status="success", details={"db_engine": db_service.ENGINE_NAME})
+    conn = db()
+    cur = conn.cursor()
+    if user_is_owner_account(user):
+        ensure_owner_super_user(cur, conn)
+    cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
+    # Recording it is what makes the requirement mean something: a member who
+    # predates the acceptance table, or who last agreed to a superseded version,
+    # comes on file at the current one. Already on file is a no-op, not a second
+    # row -- so this is also the write that makes the question above stop being
+    # asked.
+    legal_acceptance.record(cur, user["user_id"], source="web_login")
+    cancel_scheduled_account_deletion(cur, user["user_id"])
+    notify_user(
+        cur,
+        user["user_id"],
+        "account_login",
+        "New login to PulseSoc",
+        "Your PulseSoc account was accessed successfully.",
+        "/pulse/settings/notifications",
+        actor_user_id=user["user_id"],
+        entity_type="account",
+        entity_id=str(user["user_id"]),
+        metadata={"ip_present": bool(request.remote_addr), "user_agent_present": bool(request.headers.get("User-Agent"))},
+    )
+    notify_user(
+        cur,
+        user["user_id"],
+        "new_device",
+        "Device activity detected",
+        "PulseSoc recorded a browser/device login for your account.",
+        "/pulse/settings/notifications",
+        actor_user_id=user["user_id"],
+        entity_type="account",
+        entity_id=str(user["user_id"]),
+        metadata={"event": "device_login", "user_agent_present": bool(request.headers.get("User-Agent"))},
+    )
+    conn.commit()
+    conn.close()
+    if preferred_language:
+        save_user_preferred_language(user["user_id"], preferred_language, user["user_id"])
+        user = load_account_by_id(user["user_id"]) or user
+    token_payload = issue_mobile_security_tokens(user, {"source": "web_login", "device_label": presence_device_label()})
+    response = redirect(safe_redirect_target("pulse_page"))
+    return set_persistent_session_cookie(response, token_payload.get("refresh_token") or "")
+
+
 @webhook_app.route("/login", methods=["GET", "POST"])
 def login_page():
     init_db()
@@ -8145,8 +8240,31 @@ def login_page():
         password = request.form.get("password", "")
         preferred_language = normalize_preferred_language(request.form.get("preferred_language") or request.form.get("language") or "", default="")
         terms_accepted = request.form.get("terms_accepted") == "on" or request.form.get("terms_accepted") == "true"
-        if not terms_accepted:
-            return render_account_page("login", "Login", error="Agree to the Terms, Privacy Policy, and no-tolerance safety rules before logging in.", resend_email=email), 400
+        if request.form.get("legal_acceptance_submit"):
+            # The second half of a sign-in that stopped to ask about a rewritten
+            # document. It carries no credentials -- the password was checked
+            # before the marker was written -- so everything it is allowed to do
+            # comes from that marker, and the marker expires.
+            pending_user_id = pending_legal_acceptance_user_id()
+            if not pending_user_id:
+                return render_account_page("login", "Login", error="That took too long. Please sign in again."), 400
+            if not terms_accepted:
+                return render_account_page("login", "Login", error="Agree to the Terms, Privacy Policy, and no-tolerance safety rules to continue.", legal_acceptance_required=True), 400
+            pending_user = load_account_by_id(pending_user_id)
+            if not pending_user:
+                session.pop(PENDING_LEGAL_SESSION_KEY, None)
+                return render_account_page("login", "Login", error="Email or password is incorrect."), 400
+            # Re-checked rather than trusted from before the pause: these are the
+            # two reasons a sign-in is refused *after* the password, and either
+            # can start being true while the member is reading the Terms.
+            pending_restriction = account_login_restriction_message(pending_user)
+            if pending_restriction:
+                session.pop(PENDING_LEGAL_SESSION_KEY, None)
+                return render_account_page("login", "Login", error=pending_restriction), 403
+            if pending_user.get("email") and not int(pending_user.get("email_verified") or 0):
+                session.pop(PENDING_LEGAL_SESSION_KEY, None)
+                return render_account_page("login", "Login", error="Please confirm your email before logging in.", resend_email=pending_user.get("email") or "")
+            return complete_web_login(pending_user, preferred_language)
         security_gate = login_security_preflight(email, enforce_challenge=False)
         if not security_gate.get("allowed"):
             return render_account_page(
@@ -8191,55 +8309,21 @@ def login_page():
         if user.get("email") and not int(user.get("email_verified") or 0):
             log_auth_event("login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
             return render_account_page("login", "Login", error="Please confirm your email before logging in.", resend_email=email)
-        session.permanent = True
-        session["account_user_id"] = user["user_id"]
-        session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
-        log_auth_event("login_success", email, user["user_id"], status="success", details={"db_engine": db_service.ENGINE_NAME})
-        conn = db()
-        cur = conn.cursor()
-        if user_is_owner_account(user):
-            ensure_owner_super_user(cur, conn)
-        cur.execute("UPDATE users SET last_login_at=?, last_seen_at=? WHERE user_id=?", (datetime.now().isoformat(), datetime.now().isoformat(), user["user_id"]))
-        # This form has always required the tick to sign in and always discarded
-        # it, so every existing member has re-agreed on every visit with nothing
-        # kept. Recording it is what makes the requirement mean something: a
-        # member who predates the acceptance table, or who last agreed to a
-        # superseded version, comes on file at the current one the next time they
-        # sign in. Already on file is a no-op, not a second row.
-        legal_acceptance.record(cur, user["user_id"], source="web_login")
-        cancel_scheduled_account_deletion(cur, user["user_id"])
-        notify_user(
-            cur,
-            user["user_id"],
-            "account_login",
-            "New login to PulseSoc",
-            "Your PulseSoc account was accessed successfully.",
-            "/pulse/settings/notifications",
-            actor_user_id=user["user_id"],
-            entity_type="account",
-            entity_id=str(user["user_id"]),
-            metadata={"ip_present": bool(request.remote_addr), "user_agent_present": bool(request.headers.get("User-Agent"))},
-        )
-        notify_user(
-            cur,
-            user["user_id"],
-            "new_device",
-            "Device activity detected",
-            "PulseSoc recorded a browser/device login for your account.",
-            "/pulse/settings/notifications",
-            actor_user_id=user["user_id"],
-            entity_type="account",
-            entity_id=str(user["user_id"]),
-            metadata={"event": "device_login", "user_agent_present": bool(request.headers.get("User-Agent"))},
-        )
-        conn.commit()
-        conn.close()
-        if preferred_language:
-            save_user_preferred_language(user["user_id"], preferred_language, user["user_id"])
-            user = load_account_by_id(user["user_id"]) or user
-        token_payload = issue_mobile_security_tokens(user, {"source": "web_login", "device_label": presence_device_label()})
-        response = redirect(safe_redirect_target("pulse_page"))
-        return set_persistent_session_cookie(response, token_payload.get("refresh_token") or "")
+        # The tick this form used to demand on every single sign-in was always
+        # discarded, so it recorded nothing and asked everyone forever. Ask only
+        # the members who are not on file at the version now in force, and ask
+        # here -- after the password and after the confirmation check -- so the
+        # question never confirms to a stranger that an address has an account.
+        # A member already on file sees nothing, which is strictly less friction
+        # than today.
+        if legal_acceptance.outstanding(user["user_id"]) and not terms_accepted:
+            session[PENDING_LEGAL_SESSION_KEY] = {"user_id": int(user["user_id"]), "at": time.time()}
+            log_auth_event("login_legal_acceptance_required", email, user["user_id"], status="pending", details={"db_engine": db_service.ENGINE_NAME})
+            return render_account_page("login", "Login", legal_acceptance_required=True)
+        return complete_web_login(user, preferred_language)
+    # A fresh GET abandons any half-finished sign-in, which is what "Cancel and
+    # return to sign in" links to.
+    session.pop(PENDING_LEGAL_SESSION_KEY, None)
     return render_account_page("login", "Login")
 
 
@@ -31330,8 +31414,27 @@ def marketplace_public_entries(limit=500):
     return entries
 
 
+def marketplace_category_entries(limit=500):
+    """Department URLs as `(path, lastmod)`, from the same read as the products.
+
+    Shares `marketplace_public_listings` with the product sitemap and the
+    Shopping feed, for the reason stated there and one more that is specific to
+    categories: `marketplace_seo.category_entries` builds the category tree from
+    exactly the rows the grid builds *its* tree from, and a department's slug is
+    chosen by majority spelling across that set. A second, differently-filtered
+    query here would be free to pick a different spelling, and then the grid
+    would call the slug we submitted an unknown category and serve it
+    `noindex`.
+
+    Which departments are substantial enough to submit is a policy question and
+    it is answered in `marketplace_seo`. This function is only the read.
+    """
+
+    return marketplace_seo.category_entries(marketplace_public_listings(limit))
+
+
 #: Child sitemaps, in the order `/sitemap.xml` lists them.
-SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml")
+SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-categories.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml")
 
 
 @webhook_app.route("/sitemap.xml", methods=["GET"])
@@ -31360,6 +31463,28 @@ def sitemap_posts_xml():
     """Member posts, each with its own real `updated_at`."""
 
     return Response(seo_engine.sitemap_xml(pulse_public_entries()), mimetype="application/xml")
+
+
+@webhook_app.route("/sitemap-categories.xml", methods=["GET"])
+@public_route(reason="Sitemap for crawlers. Lists only marketplace department URLs that the category-eligibility policy already cleared, each of which the public grid already serves anonymously as index,follow.")
+def sitemap_categories_xml():
+    """Marketplace departments, in their own child sitemap.
+
+    These URLs were already indexable and already linked -- `?category=<slug>`
+    gets its own `<h1>`, `<title>`, meta description and self-referencing
+    canonical from `marketplace_storefront.render_discovery`, and twelve of them
+    existed in production on 2026-10-02. What they did not have was a sitemap:
+    their only route to discovery was the hub's category nav, which is one link
+    deep from one page.
+
+    Separate from `/sitemap-products.xml` for the reason the index docstring
+    gives. Coverage is reported per sitemap, and a department not being indexed
+    has a different cause from a product not being indexed -- a thin department
+    is a catalogue-size problem, a thin product is a seller who wrote no
+    description. Folded together, one number would hide both.
+    """
+
+    return Response(seo_engine.sitemap_xml(marketplace_category_entries()), mimetype="application/xml")
 
 
 @webhook_app.route("/sitemap-products.xml", methods=["GET"])
@@ -48524,10 +48649,26 @@ def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_p
         return {"ok": False, "message": "PulseSoc user not found."}, 404
     if str(target.get("account_status") or "active").lower() in {"suspended", "banned", "deleted"}:
         return {"ok": False, "message": "This user cannot receive messages right now."}, 403
+    # This read used to name `private_chat_blocks`, a table that exists in no
+    # migration, no `init_db()` call, and not in production. Wrapped in the
+    # `except: pass` below, the resulting "no such table" was swallowed on
+    # every request, so the block check here had never once denied anything.
+    # `blocked_users` is the table the Block button actually writes (see
+    # `pulse_social_graph_service.block_user`, which dual-writes it and
+    # `comm_v2_blocks`).
+    #
+    # Checked in both directions, matching `profile_viewer_permissions`: a
+    # block means neither party reaches the other, so testing only "did the
+    # target block me" would let someone keep opening threads with an account
+    # they had themselves blocked.
+    #
+    # The `try` stays, because an unprovisioned optional table must not take
+    # down messaging — but it no longer hides the normal case.
     try:
         cur.execute(
-            "SELECT 1 FROM private_chat_blocks WHERE blocker_user_id=? AND blocked_user_id=? LIMIT 1",
-            (target_user_id, current_user_id),
+            "SELECT 1 FROM blocked_users WHERE (blocker_user_id=? AND blocked_user_id=?) "
+            "OR (blocker_user_id=? AND blocked_user_id=?) LIMIT 1",
+            (target_user_id, current_user_id, current_user_id, target_user_id),
         )
         if cur.fetchone():
             return {"ok": False, "message": "This user cannot receive messages right now."}, 403
@@ -48540,6 +48681,15 @@ def pulse_start_conversation(cur, current_user_id, target_user_id=None, public_p
     if thread:
         thread_id = int(thread.get("id"))
     else:
+        # New thread only, mirroring the comm_v2 gate: the recipient's
+        # "Message requests" preference decides who may open a conversation,
+        # not who may continue one. This path carries far less traffic than
+        # comm_v2 but is still routed, so leaving it out would make
+        # /api/pulse/messages/start a way around the setting.
+        from services import message_privacy
+
+        if not message_privacy.may_message(cur, target_user_id, current_user_id):
+            return {"ok": False, "message": "This member is not accepting new messages."}, 403
         try:
             cur.execute(
                 "INSERT INTO pulse_message_threads (user_one_id, user_two_id, source_context, status, created_at, updated_at) VALUES (?, ?, 'pulse', 'active', ?, ?)",
@@ -64112,6 +64262,52 @@ def _marketplace_order_return(transaction_id):
                 pass
 
 
+#: The four stages of a Marketplace checkout, in the order a buyer meets them.
+#: `static/js/pulsesoc_cart.js` draws the first two on `/pulse/cart`; these two
+#: return pages draw the last two, so the strip a buyer saw before leaving for
+#: Stripe is the same strip that greets them coming back.
+_CHECKOUT_STEPS = ("Cart", "Details", "Payment", "Confirmation")
+
+
+def _checkout_progress_html(done, pending=0):
+    """`done` steps struck through, one optional `pending` step marked waiting.
+
+    Inline-styled because these pages are built as HTML strings inside
+    `pulse_social_shell` and have no stylesheet of their own to extend.
+
+    `pending` exists so the success page can say that confirmation is *in
+    flight* without saying it has arrived. Drawing step four as reached would be
+    this page asserting something only `checkout.session.completed` knows, which
+    is the same claim the copy below it carefully declines to make.
+
+    The colours are token names, not hex. bot.py is under a ratchet
+    (`tests/web_parity/test_design_tokens.py::test_hardcoded_colour_budget_in_bot_py`)
+    that counts distinct `#rrggbb` and refuses any growth while the Phase 3
+    cleanup is outstanding -- and its regex counts the fallback inside
+    `var(--x, #abc123)` just the same, so a "safe" fallback is not on offer.
+    A bare `var()` resolves because `pulsesoc-tokens.css` is loaded by the
+    shell these pages render inside, which is the same reason the inline
+    styling is acceptable in the first place.
+    """
+    cells = []
+    for index, name in enumerate(_CHECKOUT_STEPS, start=1):
+        if index <= done:
+            mark, colour = "&#10003;", "var(--status-success)"
+        elif index == pending:
+            mark, colour = "&hellip;", "var(--status-warning)"
+        else:
+            mark, colour = str(index), "var(--text-secondary)"
+        cells.append(
+            f"<li style='display:flex;align-items:center;gap:6px;color:{colour};white-space:nowrap'>"
+            f"<span style='width:17px;height:17px;border-radius:50%;border:1px solid {colour};"
+            f"display:inline-flex;align-items:center;justify-content:center;font-size:10px'>{mark}</span>"
+            f"{name}</li>"
+        )
+    return ("<ol aria-label='Checkout progress' style='display:flex;flex-wrap:wrap;gap:6px 14px;"
+            "list-style:none;margin:0 0 16px;padding:0;font-size:11px;letter-spacing:.06em;"
+            "text-transform:uppercase'>" + "".join(cells) + "</ol>")
+
+
 @webhook_app.route("/pulse/payments/success", methods=["GET"])
 @webhook_app.route("/payments/success", methods=["GET"])
 def pulse_payment_success_page():
@@ -64124,7 +64320,11 @@ def pulse_payment_success_page():
         return pulse_social_shell(
             "Payment Complete",
             "Stripe received your payment. Your order appears in your orders once the confirmation reaches PulseSoc.",
-            "<section class='card'><h2>Payment received</h2>"
+            "<section class='card'>"
+            # Three of four: Stripe is done, PulseSoc's confirmation is not. The
+            # fourth dot is drawn as waiting, never as reached.
+            + _checkout_progress_html(3, pending=4) +
+            "<h2>Payment received</h2>"
             "<p>Stripe has taken your payment. Your order shows up in your orders as soon as "
             "the confirmation reaches PulseSoc &mdash; usually within a few seconds. The seller "
             "is notified at the same time.</p>"
@@ -64151,7 +64351,12 @@ def pulse_payment_cancel_page():
         return pulse_social_shell(
             "Checkout Canceled",
             "No card was charged and your cart is exactly as you left it.",
-            "<section class='card'><h2>Checkout canceled</h2>"
+            "<section class='card'>"
+            # Two of four. The buyer reached Stripe's page and came back without
+            # paying, so step three is not done and is not drawn as waiting
+            # either -- there is nothing in flight.
+            + _checkout_progress_html(2) +
+            "<h2>Checkout canceled</h2>"
             "<p>No payment was taken. Everything is still in your cart &mdash; nothing was removed "
             "and nothing was charged.</p>"
             "<div class='actions'><a class='button primary' href='/pulse/cart'>Back to your cart</a>"
@@ -102589,11 +102794,27 @@ def api_pulse_payments_checkout():
                 cur.execute("UPDATE seller_transactions SET status='checkout_failed', updated_at=? WHERE id=?", (now, tx_id))
                 conn.commit(); conn.close()
                 return api_error("This item is no longer available. No card was charged.", 409, transaction_id=tx_id)
+            # `reserved_at` and `expires_at` are what make this hold
+            # collectable. The sweeper selects on `expires_at IS NOT NULL AND
+            # expires_at <= cutoff`, so a hold written without a deadline is
+            # not collected late — it is invisible forever, and the units this
+            # statement just took off the shelf never come back. Stripe fires
+            # no webhook for a dismissed Apple Pay sheet, which is the common
+            # way this lane abandons, so nothing else would ever notice.
+            #
+            # This was the third of three writers of this table and the last
+            # one still missing the columns; Cart and Offers already wrote
+            # them. Measured in production 2026-10-02: all 11 reservation rows
+            # had no deadline, 4 still `held`, the oldest since 2026-08-13 —
+            # and this lane is the live one, so it was still minting more.
+            from services import marketplace_reservation_policy as marketplace_reservation_policy_service
             cur.execute(
                 """INSERT INTO marketplace_inventory_reservations
-                (seller_transaction_id,buyer_user_id,listing_id,quantity,status,created_at,updated_at)
-                VALUES (?,?,?,?, 'held',?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
-                (tx_id, int(buyer["user_id"]), item_id, buy_quantity, now, now),
+                (seller_transaction_id,buyer_user_id,listing_id,quantity,status,
+                 created_at,updated_at,reserved_at,expires_at)
+                VALUES (?,?,?,?, 'held',?,?,?,?) ON CONFLICT(seller_transaction_id) DO NOTHING""",
+                (tx_id, int(buyer["user_id"]), item_id, buy_quantity, now, now,
+                 now, marketplace_reservation_policy_service.expires_at_for(now)),
             )
     if marketplace_cash_payment and marketplace_payment_pause is not None:
         response_payload = marketplace_payment_pause.cash_checkout_payload(
@@ -102667,8 +102888,17 @@ def api_pulse_payments_checkout():
                 **{k: v for k, v in payment_intent_data.items() if k != "metadata"},
                 idempotency_key=f"marketplace-buy-now-sheet:{int(buyer['user_id'])}:{idempotency_key or tx_id}",
             )
-            intent_id = marketplace_cart_service.stripe_response_value(intent, "id")
-            client_secret = marketplace_cart_service.stripe_response_value(intent, "client_secret")
+            # Same unconditional import as the Session branch below. This read
+            # happens to be safe today -- `native_sheet` is only ever true when
+            # `item_type == "marketplace_product"`, which is also what binds the
+            # `marketplace_cart_service` alias -- but that is a value-level
+            # implication between two separately-maintained expressions, not a
+            # guarantee. Widening `native_sheet` to another item_type would turn
+            # this into a NameError thrown after the PaymentIntent is already
+            # created and chargeable.
+            from services.marketplace_payment_errors import stripe_response_value
+            intent_id = stripe_response_value(intent, "id")
+            client_secret = stripe_response_value(intent, "client_secret")
             cur.execute("UPDATE seller_transactions SET stripe_payment_intent_id=?, status='checkout_created', updated_at=? WHERE id=?",
                         (intent_id, now, tx_id))
             pulse_emit_payment_checkout_event(
@@ -102715,16 +102945,34 @@ def api_pulse_payments_checkout():
             idempotency_key=f"marketplace-buy-now:{int(buyer['user_id'])}:{idempotency_key or tx_id}",
             **shipping_checkout_params,
         )
-        cur.execute("UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?", (session_obj.get("id"), now, tx_id))
+        # Read once, through the helper. A stripe 15 `checkout.Session` is a
+        # generated resource and not a Mapping, so `session_obj.get("id")`
+        # raises `AttributeError: get` after the session is already created and
+        # payable — the request 500s while a real payable page exists at Stripe
+        # that nothing here recorded. The native-sheet branch above already
+        # reads its PaymentIntent through the same helper.
+        #
+        # Imported here rather than reached for through `marketplace_cart_service`:
+        # that alias is bound at the top of this function under
+        # `if item_type == "marketplace_product"`, but the Session above is
+        # created for every item_type this route accepts ("course", "lesson",
+        # "live_class" and the empty default all reach this line). Going through
+        # the alias would turn three of the four lanes into `NameError` — the
+        # same 500-after-a-payable-Session-exists failure, wearing a different
+        # exception name.
+        from services.marketplace_payment_errors import stripe_response_value
+        session_id = stripe_response_value(session_obj, "id")
+        checkout_url = stripe_response_value(session_obj, "url")
+        cur.execute("UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?", (session_id, now, tx_id))
         pulse_emit_payment_checkout_event(
             cur,
-            {**tx_event, "status": "checkout_created", "stripe_checkout_session_id": session_obj.get("id") or ""},
+            {**tx_event, "status": "checkout_created", "stripe_checkout_session_id": session_id or ""},
             "checkout_created",
             status="checkout_created",
             actor_user_id=buyer["user_id"],
-            extra={"stripe_checkout_session_id": session_obj.get("id") or ""},
+            extra={"stripe_checkout_session_id": session_id or ""},
         )
-        response_payload = {"ok": True, "checkout_url": session_obj.get("url"), "transaction_id": tx_id,
+        response_payload = {"ok": True, "checkout_url": checkout_url, "transaction_id": tx_id,
                             "platform_fee_cents": platform_fee, "seller_net_cents": seller_net,
                             "payout_state": payout_state, "commercial_quote": commercial_quote}
         if item_type == "marketplace_product" and idempotency_key:
@@ -116829,6 +117077,17 @@ def stripe_webhook():
         logging.warning("Stripe webhook invalid event payload event_id=%s event_type=%s", event.get("id"), event_type)
         return "Invalid", 400
 
+    # An event with no id cannot be deduplicated, and the failure is silent
+    # rather than loud. `payment_webhook_events.provider_event_id` is UNIQUE and
+    # `event.get("id", "")` yields "" rather than NULL, so every id-less event
+    # collapses onto one inbox row: the first is recorded, and each later one is
+    # reported as a duplicate and answered 200 -- discarded without a trace.
+    # Stripe always sends an id, so refusing here costs nothing real and turns a
+    # silent discard into a logged refusal.
+    if not str(event.get("id") or "").strip():
+        logging.error("STRIPE_WEBHOOK_EVENT_HAS_NO_ID event_type=%s", event_type)
+        return "Invalid: event has no id", 400
+
     logging.info("STRIPE_EVENT_RECEIVED event_type=%s event_id=%s", event_type, event.get("id"))
     logging.info("STRIPE_EVENT_TYPE event_type=%s event_id=%s", event_type, event.get("id"))
     logging.info("stripe webhook received event_type=%s event_id=%s", event_type, event.get("id"))
@@ -116858,6 +117117,17 @@ def stripe_webhook():
     if webhook_record.get("duplicate"):
         logging.info("Payment webhook duplicate skipped provider_event_id=%s event_type=%s", event_id, event_type)
         return "OK", 200
+    if not webhook_record.get("ok"):
+        # The inbox could not record this event's identity. Nothing below is
+        # safe to run: without a committed row there is no dedupe record, so
+        # processing now and letting Stripe redeliver later would double-apply
+        # the handler. A 5xx is the only honest answer -- it keeps Stripe
+        # retrying with the same event id until the identity lands.
+        logging.error(
+            "PAYMENT_WEBHOOK_NOT_RECORDED event_id=%s event_type=%s error=%s",
+            event_id, event_type, str(webhook_record.get("error"))[:300],
+        )
+        return "Webhook inbox unavailable", 500
     if stripe_event_processed(event_id):
         logging.info("Stripe webhook duplicate skipped event_id=%s event_type=%s", event_id, event.get("type"))
         creator_economy_service.update_webhook_event(event_id, "skipped", "legacy stripe_events already processed")

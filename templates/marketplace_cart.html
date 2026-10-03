@@ -127,7 +127,64 @@
   .cart .checkout .field{margin:0 0 10px;display:flex;flex-direction:column;gap:5px}
   .cart .checkout label{font-size:13px;color:var(--dim)}
   .cart .checkout label .opt{opacity:.65}
+  .cart .checkout .step-lede{margin:0 0 12px;color:var(--dim);font-size:13px;max-width:56ch}
   .cart .checkout .pay{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  {#
+    The handoff sentence, immediately above the button rather than below it.
+
+    The button used to say "Pay $94.98" and the explanation of what it really
+    did ("you will finish on Stripe's secure payment page") sat underneath, so a
+    buyer reading top to bottom met the promise before the correction. A real
+    customer followed that order and arrived at a Stripe page they had not been
+    told to expect. This is the correction, moved to where it is read first.
+  #}
+  .cart .checkout .next{margin:14px 0 8px;color:var(--go);font-size:12px;
+    letter-spacing:.08em;text-transform:uppercase}
+  {#
+    The four steps. A progress indicator and not a wizard: no step here is a
+    page this cart invents, and the script never draws a step as reached that it
+    has no authority to know about -- "Payment" is Stripe's page and
+    "Confirmation" is written by the webhook, so this page lights at most step
+    two. `aria-current='step'` carries the same fact to a screen reader, which
+    cannot see which dot is filled.
+  #}
+  .cart .steps{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;
+    list-style:none;margin:0 0 14px;padding:0}
+  .cart .steps li{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);
+    letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+  .cart .steps li + li::before{content:"";display:block;width:14px;height:1px;
+    background:var(--line);flex:none}
+  .cart .steps .dot{width:17px;height:17px;border-radius:50%;border:1px solid var(--line);
+    display:inline-flex;align-items:center;justify-content:center;font-size:10px;line-height:1;flex:none}
+  .cart .steps li.done{color:var(--go)}
+  .cart .steps li.done .dot{border-color:var(--go);color:var(--go)}
+  .cart .steps li.now{color:var(--ink)}
+  .cart .steps li.now .dot{border-color:var(--go);background:var(--go);color:var(--well)}
+  {#
+    Phone: the actions stack full width rather than sharing a row.
+
+    Two buttons side by side on a 390px screen put "Continue to secure payment"
+    and "Back to cart" within a thumb's width of each other at the bottom of a
+    scrolled form, which is the geometry that produces an accidental second tap.
+    `touch-action:manipulation` removes the 300ms double-tap-to-zoom delay, so
+    the first tap registers immediately and the button is disabled before a
+    second one can land.
+  #}
+  .cart .checkout .pay button{touch-action:manipulation}
+  @media (max-width:560px){
+    .cart .checkout .pay{flex-direction:column;align-items:stretch;gap:8px}
+    .cart .checkout .pay > *{width:100%;text-align:center}
+  }
+  {#
+    The step names are NOT shrunk to 10px on phones. Measured at a true 390px
+    layout viewport -- not a headless window, which clamps to a 500px floor and
+    then crops, so it reports overflow that is not there -- the strip wraps to
+    three rows and reaches 290px of the 378px available at 10px, and 301px at
+    11px. Same rows, same height, 77px of slack either way: the shrink bought
+    nothing and cost a step indicator the one thing it exists to do, which is
+    be read at a glance by someone deciding whether the next tap takes their
+    money.
+  #}
   .cart .checkout button.ghost{background:none;border:1px solid var(--line);color:var(--dim);
     border-radius:10px;padding:10px 14px;font:inherit;cursor:pointer}
   {#
@@ -298,4 +355,4 @@
   promotions bundle the same way. `defer` runs it after parsing, so the shell's
   own inline script has already defined `pulseApi` and `toast`.
 #}
-<script src="/static/js/pulsesoc_cart.js?v=guest-cart-signin-20261001a" defer></script>
+<script src="/static/js/pulsesoc_cart.js?v=payment-handoff-clarity-20261002b" defer></script>

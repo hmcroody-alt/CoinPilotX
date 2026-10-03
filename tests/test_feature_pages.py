@@ -21,7 +21,9 @@ say a thing is missing. Those sentences are load-bearing:
   honour, and it is the single worst thing that could regress here.
 * Screen sharing is not implemented on calls or on live video.
 * Group calls are gated off in production.
-* Marketplace card checkout is hard-paused.
+* Marketplace card checkout works, but only for a seller who has finished
+  payment setup -- so the page must neither re-assert the lifted pause nor
+  promise a card on every listing.
 * There are no hashtags, no @-mentions, and no story highlights.
 
 So the tests do not merely ban those phrases -- the pages have to *discuss*
@@ -293,14 +295,83 @@ def test_the_calls_page_does_not_offer_group_calling(bodies):
     assert ok, f"the calls page appears to offer group calling: ...{context}..."
 
 
-def test_the_marketplace_page_leads_with_the_payment_pause(bodies):
-    """`MARKETPLACE_CARD_PAYMENTS_ENABLED` is unset in production, and the flag
-    fails closed, so a buyer cannot start a card checkout. A page that promises
-    one sends somebody to a dead end with their wallet out."""
+def test_the_marketplace_page_states_the_card_position_per_seller(bodies):
+    """The payment position has two halves and the page has to carry both.
+
+    This replaces a test that asserted the opposite, and the inversion is the
+    point. While `MARKETPLACE_CARD_PAYMENTS_ENABLED` was unset the honest page
+    said card checkout was unavailable; production sets it now, so that
+    sentence became a false statement that talks a buyer out of a checkout
+    which works.
+
+    Both directions are failures here. Re-asserting the pause is the stale
+    claim. Promising a card on *every* listing is the new way to overclaim,
+    because clearing the platform flag only says the rail exists --
+    `services.marketplace_card_capability.evaluate` then refuses any seller
+    without Connect onboarding, `charges_enabled`, `payouts_enabled` and clear
+    requirements, and a buyer would meet that refusal with their wallet out.
+    That is the same dead end the original test was written to prevent, so the
+    intent is unchanged and only the direction has moved.
+
+    There is a third authority besides the flag and the seller, and it is the
+    reason the scope assertions below exist rather than just the qualifier one.
+    The checkout screen in the App Store build that shipped before 2026-09-19
+    holds its own hard-coded `MARKETPLACE_CARD_PAYMENTS_PAUSED = true`, so a
+    buyer on an installed copy of it is offered cash whatever the server says.
+    `main` has deleted that constant and the screen reads the per-seller verdict
+    now, but shipping a fix does not uninstall the old binary, so a flat "you
+    can pay by card" is an overclaim for as long as that build is in use.
+
+    What this test cannot see is any of that deployment state -- not the
+    production value of the flag, and not which build a reader has installed.
+    The flag is an environment variable rather than a repo fact, and in this
+    process it is unset and fails closed by design, so asserting against it
+    here would check the test rig instead of the deployment. If the rail is
+    ever paused again this test will not notice: `.env.example` documents the
+    switch, and `GET /api/pulse/marketplace/cart/checkout-options?seller_id=<id>`
+    is the live answer both checkout forms are built from.
+    """
 
     text = _visible(bodies["/features/marketplace"]).lower()
-    assert "temporarily" in text and "card" in text
-    assert "stripe" not in text, "the marketplace page must not promise a card processor"
+
+    for stale in ("temporarily unavailable", "temporarily switched off",
+                  "card payments are paused"):
+        assert stale not in text, (
+            f"the marketplace page still asserts the lifted pause: {stale!r}"
+        )
+
+    # Silence is not a position -- the page has to say a card works, the same
+    # way the messages page has to say messages are not encrypted.
+    assert "pay by card" in text, "the marketplace page no longer says a card works"
+
+    # ...and has to say what that depends on. Same mechanism as the negation
+    # checks above, reading a qualifier rather than a "not": the claim is only
+    # honest while it sits next to its condition.
+    assert "payment setup" in text, "the page does not name the per-seller condition"
+    ok, context = _mentions_are_all_negated(
+        text, "pay by card", ("once", "when", "whose", "completed", "finished"),
+    )
+    assert ok, f"the marketplace page promises a card unconditionally: ...{context}..."
+
+    # The scope has to be stated outright, not left to be inferred from that
+    # qualifier. A reader who skims "pay by card once the seller has finished
+    # payment setup" can still come away expecting one on every listing they
+    # see, and the first draft of this page read exactly that way.
+    assert "not on every listing" in text, (
+        "the page does not say the card option is absent from some listings"
+    )
+
+    # Cash carries no condition on any authority, so it is the one method the
+    # page may state flatly -- and has to, because it is the fallback for a
+    # buyer who finds no card option on the listing in front of them.
+    assert "work on every listing" in text, (
+        "the page does not state the method that is always available"
+    )
+
+    assert "stripe" not in text, (
+        "the page describes what a buyer and seller do; the processor is an "
+        "implementation detail and /app was already made to stop naming it"
+    )
 
 
 def test_the_app_page_no_longer_promises_stripe_marketplace_checkout(client):

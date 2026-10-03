@@ -1570,16 +1570,27 @@ def cart_checkout():
                 # hold — which, once the review step runs, is none of them.
                 **({} if stripe_shipping_object else stripe_shipping_checkout_params(resolved_lanes)),
             )
+            # Read through the helper, not `.get`. On stripe 15 a
+            # `checkout.Session` is a generated resource, not a Mapping --
+            # `hasattr(Session, "get")` is False -- so `session_obj.get("id")`
+            # raises `AttributeError: get` *after* Session.create already
+            # succeeded. The PaymentIntent branch twenty lines above was
+            # converted to the helper for exactly this reason and this branch
+            # was missed, which is why zero Checkout Session ids had ever been
+            # stored in production: 39 seller_transactions, 14 with an intent,
+            # 0 with a session.
+            session_id = stripe_response_value(session_obj, "id")
+            checkout_url = stripe_response_value(session_obj, "url")
             for tx_id in tx_ids:
                 cur.execute(
                     "UPDATE seller_transactions SET stripe_checkout_session_id=?, status='checkout_created', updated_at=? WHERE id=?",
-                    (session_obj.get("id"), now, tx_id),
+                    (session_id, now, tx_id),
                 )
             # Lines leave the cart only after payment confirmation (webhook),
             # not here — an abandoned session must not empty the cart.
             response_payload = {
                 "ok": True,
-                "checkout_url": session_obj.get("url"),
+                "checkout_url": checkout_url,
                 "transaction_ids": tx_ids,
                 "total_cents": total_minor,
                 "platform_fee_cents": platform_fee,

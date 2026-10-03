@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
 from datetime import datetime
@@ -333,11 +334,44 @@ def record_webhook_event(provider_event_id: str, event_type: str, raw: dict[str,
         event_id = cur.lastrowid
         conn.commit()
         return {"ok": True, "id": int(event_id), "duplicate": False}
-    except Exception:
-        conn.rollback()
-        cur.execute("SELECT * FROM payment_webhook_events WHERE provider_event_id=? LIMIT 1", (provider_event_id,))
-        row = cur.fetchone()
-        return {"ok": True, "duplicate": True, "event": dict(row) if row else {}}
+    except Exception as insert_error:
+        # This INSERT can fail two ways that mean opposite things.
+        #
+        # A unique violation on provider_event_id means Stripe re-sent an event
+        # we already hold. The identity is durably recorded, so skipping is
+        # right and the caller should answer 200.
+        #
+        # Anything else -- pool exhaustion (8+8 with a 3s timeout), a dropped
+        # connection, a missing table -- means the identity was NOT recorded.
+        # Reporting that as a duplicate made the caller answer 200 too, which
+        # tells Stripe never to retry, and a signature-verified money event was
+        # then lost permanently with no row, no retry and no alert. The two
+        # cases are indistinguishable to the caller precisely when it matters.
+        #
+        # They are told apart by evidence rather than by driver exception class,
+        # which keeps this correct on both SQLite and psycopg2: after the
+        # rollback, look for the row. Present means somebody committed it (an
+        # earlier delivery, or a concurrent worker) and the skip is justified.
+        # Absent means nothing recorded it and the event must be retried.
+        try:
+            conn.rollback()
+            cur.execute("SELECT * FROM payment_webhook_events WHERE provider_event_id=? LIMIT 1", (provider_event_id,))
+            row = cur.fetchone()
+        except Exception:
+            # Cannot even read back. Absence of proof is not proof of a
+            # duplicate, so fail closed and let Stripe redeliver.
+            logging.exception(
+                "PAYMENT_WEBHOOK_INBOX_UNREADABLE provider_event_id=%s event_type=%s",
+                provider_event_id, event_type,
+            )
+            return {"ok": False, "duplicate": False, "error": "webhook inbox unreadable"}
+        if row:
+            return {"ok": True, "duplicate": True, "event": dict(row)}
+        logging.exception(
+            "PAYMENT_WEBHOOK_INBOX_WRITE_FAILED provider_event_id=%s event_type=%s",
+            provider_event_id, event_type,
+        )
+        return {"ok": False, "duplicate": False, "error": str(insert_error)[:500]}
     finally:
         conn.close()
 

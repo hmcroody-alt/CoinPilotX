@@ -727,3 +727,116 @@ def _index_summary(listing, limit=120):
     if len(description) <= limit:
         return description
     return description[:limit].rsplit(" ", 1)[0].rstrip(",.;:") + "…"
+
+
+# --- The department pages ----------------------------------------------------
+#
+# `/pulse/marketplace?category=<slug>` is already a first-class indexable page:
+# `marketplace_storefront.render_discovery` gives it its own `<h1>`, its own
+# `<title>`, its own meta description and a self-referencing canonical, and it
+# serves `index,follow` whenever the slug names a real department. Twelve of
+# them existed in production on 2026-10-02 and not one appeared in any sitemap,
+# so their only route to discovery was the hub's own category nav.
+#
+# This section decides which of them we *submit*. Submission is a stronger
+# claim than linking: a sitemap entry says "this is a page we want ranked", and
+# a department holding one product is a page that competes with that product's
+# own page while saying less about it.
+
+
+#: How many indexable products a department must hold before we submit it.
+#:
+#: Named and explainable rather than tuned, because this is the number that
+#: answers "why is this URL in your sitemap" at a review. Three is the point at
+#: which a department page stops being a restatement of a single product: at one
+#: or two listings the department's title, image and text are substantially the
+#: product's own, and the product page is the better result for the same query.
+#:
+#: Measured against production on 2026-10-02, over the 41 products the live
+#: sitemap submits: the catalogue has twelve departments and the distribution is
+#: 14 / 9 / 3 / 3 / 2 / 2 / 2 / 2 / 1 / 1 / 1 / 1. So this threshold submits four
+#: and withholds eight, half of which are singletons. All twelve already serve
+#: ``index,follow`` with a self-canonical, so the eight are a submission
+#: judgement and not a technical limit -- they stay linked from the hub's
+#: category nav, and Google stays free to index them on its own.
+#:
+#: Counted over *indexable* listings, not public ones. A department of five
+#: products where four are thin renders four `noindex` links, and submitting it
+#: would ask Google to rank a collection of pages we have asked it to ignore.
+CATEGORY_MIN_INDEXABLE_LISTINGS = 3
+
+
+def category_path(slug):
+    """The department URL, built the way the page builds its own canonical.
+
+    Goes through ``marketplace_web.build_query_string`` rather than formatting a
+    string here, for the same reason the product path is a single constant: the
+    department page emits its own ``rel=canonical`` from that function, and a
+    sitemap that spells the URL differently -- ``/`` where the page writes
+    ``%2F``, or parameters in another order -- submits a URL that points at a
+    canonical it does not match. Google follows the canonical and the submitted
+    URL is wasted.
+    """
+
+    return INDEX_PATH + marketplace_web.build_query_string({"category": slug})
+
+
+def category_entries(pairs):
+    """Submittable department URLs as ``(path, lastmod)``.
+
+    ``pairs`` is ``bot.marketplace_public_listings()`` output -- ``(row,
+    listing)`` -- because this needs both halves: the payload to ask
+    :func:`eligibility`, and the raw row for ``updated_at``, which the payload
+    does not preserve.
+
+    **The taxonomy is built from the whole public catalogue, and the threshold
+    is then measured on the indexable subset.** Those are deliberately two
+    different populations and swapping them is the bug this function is shaped
+    to avoid. ``build_taxonomy`` picks each department's slug by majority
+    spelling -- the catalogue carries both "Mens Clothing" and "Men's
+    Clothing" -- and ``render_discovery`` tests the requested slug against the
+    taxonomy *it* builds, from every public row, with an exact ``==``. Build
+    from a narrower set here and the majority spelling can flip, at which point
+    the slug we submit is one the live page calls unknown: it would answer
+    ``noindex,follow`` and canonicalise to the bare hub. So the slug comes from
+    the same input the page uses, and only the *count* looks at eligibility.
+
+    Top-level departments only. Depth-2 sections are excluded by the same
+    judgement the threshold encodes rather than by a second rule -- at this
+    catalogue size a section is a near-duplicate of its department
+    ("phones-accessories" holds two listings and its only child holds one) --
+    and they stay crawlable through the department page's own sub-nav, so
+    nothing becomes undiscoverable. Fewer, stronger URLs; not more of them.
+
+    ``lastmod`` is the newest ``updated_at`` among the department's indexable
+    listings, which is the honest answer: what changes about a department page
+    is the products on it. A department nobody has touched in four months keeps
+    a four-month-old date, because the alternative -- stamping today on every
+    crawl -- is the behaviour that teaches a crawler to stop reading the field.
+    """
+
+    rows = list(pairs or ())
+    taxonomy = marketplace_web.build_taxonomy([
+        listing.get("category") for _row, listing in rows
+    ])
+
+    indexable = [
+        (row, listing) for row, listing in rows if eligibility(listing).indexable
+    ]
+
+    entries = []
+    for node in taxonomy:
+        members = [
+            row for row, listing in indexable
+            if marketplace_web.category_matches(listing.get("category"), node.slug)
+        ]
+        if len(members) < CATEGORY_MIN_INDEXABLE_LISTINGS:
+            continue
+        path = category_path(node.slug)
+        if not search_visibility.sitemap_eligible(path):
+            continue
+        stamps = [
+            str(row.get("updated_at") or row.get("created_at") or "") for row in members
+        ]
+        entries.append((path, max([s for s in stamps if s], default="")))
+    return entries
