@@ -91,7 +91,15 @@ _MARKETPLACE_DDL = (
         status TEXT,
         approval_status TEXT,
         safety_score INTEGER,
-        moderation_reason TEXT
+        moderation_reason TEXT,
+        -- Named by `lifecycle.public_sql`, which `commerce_discovery.eligibility`
+        -- calls, so a discovery query against a fixture without it raises rather
+        -- than answers. Left NULL by every insert in this suite, and NULL is "no
+        -- publication decision recorded" -- the predicate coalesces it to
+        -- not-held -- so every eligibility verdict here keeps the meaning it was
+        -- written with. Carries no DEFAULT for the same reason `bot.init_db()`
+        -- does not: "released" has to stay a decision somebody made.
+        commerce_publication_enabled INTEGER
     )
     """,
     """

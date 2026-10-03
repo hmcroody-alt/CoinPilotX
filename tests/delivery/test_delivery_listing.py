@@ -81,7 +81,12 @@ CREATE TABLE marketplace_listings (
     listing_type TEXT,
     product_type TEXT,
     quantity INTEGER,
-    estimated_delivery TEXT
+    estimated_delivery TEXT,
+    -- Named by `public_sql`, so the column-coverage test below requires it.
+    -- Left NULL by every insert: NULL is "no publication decision recorded",
+    -- which both halves of the predicate read as not-held, so every delivery
+    -- verdict in this file keeps the meaning it was written with.
+    commerce_publication_enabled INTEGER
 )
 """
 

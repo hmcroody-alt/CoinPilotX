@@ -125643,6 +125643,39 @@ def _init_db_impl():
         # there -- but they must not be conflated at the write sites, which is
         # why this carries no DEFAULT.
         ("price_minor", "INTEGER"),
+        # Publication control: has a human chosen to put this row in front of
+        # buyers? Orthogonal to `status` and `approval_status` on purpose, and
+        # the orthogonality is the whole point -- those two already answer two
+        # different questions ("did the merchant ask?" and "may it be sold?")
+        # and neither can answer this one.
+        #
+        # It exists because in this catalogue approval and publication are
+        # fused. `listing_review.py` maps APPROVE to `(published, approved)` in
+        # one tuple, so there is no state meaning "approved, prepared, not yet
+        # visible". The status vocabulary declares `approved`, but nothing in
+        # the repository ever writes it to `marketplace_listings.status` -- it
+        # is only ever an `approval_status` value -- so reusing it would be
+        # inventing semantics for a constant no reader has been exercised with.
+        # `paused` is real but lossy: `/resume` does not restore `published`,
+        # it sends the row back to review, and the moderator approval that
+        # follows NULLs `published_at`. A hold must not cost a listing its
+        # approval history.
+        #
+        # Three values, and NULL is not a fourth spelling of 0:
+        #
+        #   NULL  nobody has decided. Not a veto -- every reader coalesces it to
+        #         enabled, which is what makes adding this column a zero-change
+        #         event for the 196 supplier rows and everything else already on
+        #         the shelf. A column that defaulted to "held" would have taken
+        #         the whole marketplace off sale on deploy.
+        #   0     explicitly held. The row may be published and approved and in
+        #         stock and priced and a buyer still may not see it.
+        #   1     explicitly released by a person.
+        #
+        # Carries no DEFAULT so the three stay distinguishable at the write
+        # sites: "released" is a decision somebody made and must not be
+        # manufactured by a DDL default on every future import.
+        ("commerce_publication_enabled", "INTEGER"),
     ], conn=conn)
     _backfill_marketplace_price_minor(cur)
     cur.execute("""

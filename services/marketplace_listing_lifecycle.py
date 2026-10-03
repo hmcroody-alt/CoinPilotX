@@ -149,6 +149,33 @@ def _is_released(listing: Mapping[str, Any], quantity: int) -> Optional[bool]:
     )
 
 
+def _is_publication_enabled(listing: Mapping[str, Any], quantity: int) -> Optional[bool]:
+    """Whether a person has chosen to put this row in front of buyers.
+
+    ``None`` when the row was not projected with the column, which is the
+    common case and must stay harmless: most of the queries behind a merchant
+    payload select a fixed column list that predates this control, and reading
+    their silence as a hold would strip "Live" from healthy listings on every
+    one of those paths. See :data:`PUBLICATION_RULES` on why that is a
+    description-side concern and :func:`public_sql` for where the invariant
+    actually binds.
+
+    A *stored* NULL is deliberately not a hold either. The column records a
+    decision, and most rows predate the control, so "nobody has decided" has to
+    read as "not vetoed" or adding the column would have been a mass
+    unpublication. Only a stored ``0`` is a hold.
+    """
+    raw = listing.get("commerce_publication_enabled", _UNPROJECTED)
+    if raw is _UNPROJECTED or raw is None:
+        return None
+    try:
+        return int(raw) != 0
+    except (TypeError, ValueError):
+        # An unreadable value is not evidence of a decision. Same reasoning as
+        # the NULL case: this rule only ever reports an *affirmative* hold.
+        return None
+
+
 def _is_in_stock(listing: Mapping[str, Any], quantity: int) -> Optional[bool]:
     if normalized(listing.get("product_type") or listing.get("listing_type")) in STOCKLESS_TYPES:
         return True
@@ -225,11 +252,13 @@ class PublicationRule(NamedTuple):
 #:     select ``seller_status``, and reading that absence as failure would strip
 #:     "Live" from every healthy listing on those paths.
 #:
-#: ``seller_named`` is the one rule a gate lets pass while unknown, and that is
-#: pre-existing deliberate behaviour, not an oversight: the store-name invariant
-#: binds in SQL (:func:`public_sql`), and treating an unprojected name column as
-#: "no store" would take healthy listings off sale on every path that fetches
-#: fewer columns. :func:`seller_identity_missing` documents the same rule.
+#: Two rules let a gate pass while unknown, and both do it for one reason: the
+#: invariant binds in SQL (:func:`public_sql`), and treating an unprojected
+#: column as a failure would take healthy listings off sale on every path that
+#: fetches fewer columns. ``seller_named`` is the older of the two and
+#: :func:`seller_identity_missing` documents it; ``publication_enabled`` is the
+#: newer, and its own docstring explains why a *stored* NULL gets the same
+#: treatment as an absent key there and nowhere else in this table.
 PUBLICATION_RULES: tuple[PublicationRule, ...] = (
     PublicationRule(
         key="seller_approved",
@@ -254,6 +283,44 @@ PUBLICATION_RULES: tuple[PublicationRule, ...] = (
         moderator_note="the listing is not both published and approved",
         satisfied=_is_released,
         passes_when_unknown=False,
+    ),
+    # Third, between "did anyone ask for this" and "is there any of it". The
+    # position is a judgement call and this is the argument for it.
+    #
+    # After ``released``, because a row that was never published is more
+    # usefully described as "Not published" than as held -- the hold is the
+    # interesting fact only once the merchant's own columns say sell it.
+    #
+    # Before ``in_stock``, because the two coincide on exactly the population
+    # this control was built for and the stock reason is the less actionable of
+    # the two. The 152 unbound CJ imports are `published` + `approved` with
+    # quantity 0: "Out of stock" tells their merchant to wait for a restock,
+    # when the thing actually standing between them and a sale is a variant
+    # nobody has chosen. Ordering the hold first lets the row say so.
+    #
+    # And unlike the ``priced`` ordering argument this does not silently
+    # relabel anything on the way in: a row with no stored decision answers
+    # ``None`` here and is skipped, so until a hold is actually written every
+    # listing in production keeps the exact reason it has today.
+    PublicationRule(
+        key="publication_enabled",
+        # Shared with ``released`` and ``priced``. A stranger's next move is the
+        # same as for any other unavailable row -- none -- and the reason this
+        # one is held is the seller's business. Minting a distinct code would
+        # publish "this store has not decided which item it is selling" to
+        # every buyer client, which is both true and nobody's business.
+        denial_code="ITEM_UNAVAILABLE",
+        seller_label="On hold",
+        moderator_note="the listing is on an explicit publication hold",
+        satisfied=_is_publication_enabled,
+        # The second rule a gate lets pass while unknown, and for the same
+        # reason ``seller_named`` does rather than a new one: the invariant
+        # binds in SQL (:func:`public_sql`), which every discovery and delivery
+        # surface goes through, while the Python predicate is also called with
+        # rows from older fixed column lists that cannot answer. Treating that
+        # silence as a hold would take healthy listings off sale on every one
+        # of those paths -- the precise failure this module was written after.
+        passes_when_unknown=True,
     ),
     PublicationRule(
         key="in_stock",
@@ -457,6 +524,19 @@ def public_sql(alias: str = "l", seller_alias: str = "ms") -> str:
         # The store-name invariant. Every caller of this predicate already joins
         # the seller row for its status, so this costs no extra join.
         f"AND {seller_identity.store_name_sql(seller_alias)} IS NOT NULL "
+        # The publication control, and the `COALESCE(...,1)` is the load-bearing
+        # half. Most rows carry NULL -- they predate the column -- and NULL has
+        # to read as "not vetoed" or this one clause would have unpublished the
+        # entire marketplace the moment it deployed. Only a stored 0 excludes.
+        #
+        # Here rather than in each caller because this is where §26 is actually
+        # satisfied: the 21 call sites include `pulsedrop.eligibility`,
+        # `commerce_discovery.eligibility`, `marketplace_catalog`,
+        # `delivery.listing` and `pulse_ads_os`, so a held listing drops out of
+        # recommendations, Home shelves, PulseDrop and external feeds by the
+        # same predicate that hides it from the storefront. A hold enforced
+        # per-surface would be a hold some surface forgot.
+        f"AND COALESCE({alias}.commerce_publication_enabled,1)<>0 "
         f"AND (LOWER(COALESCE({alias}.product_type,{alias}.listing_type,'')) "
         "IN ('digital','course','service','event','booking') "
         f"OR COALESCE({alias}.quantity,0)>0)"

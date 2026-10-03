@@ -80,7 +80,14 @@ CREATE TABLE marketplace_listings (
     listing_type TEXT,
     product_type TEXT,
     quantity INTEGER,
-    estimated_delivery TEXT
+    estimated_delivery TEXT,
+    -- Named by `lifecycle.public_sql`, which the web delivery reader reaches
+    -- through its visibility check. Its absence does not surface as a missing
+    -- column here -- the read fails soft -- so the symptom was four tests
+    -- asserting a corridor and getting None. Left NULL by every insert: NULL is
+    -- "no publication decision recorded", coalesced to not-held, so every
+    -- delivery answer in this file keeps the meaning it was written with.
+    commerce_publication_enabled INTEGER
 )
 """
 

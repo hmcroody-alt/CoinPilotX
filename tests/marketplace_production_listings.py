@@ -110,7 +110,13 @@ CREATE TABLE IF NOT EXISTS marketplace_listings (
     listing_type TEXT DEFAULT '',
     listing_metadata_json TEXT DEFAULT '',
     published_at TEXT,
-    cover_image_url TEXT
+    cover_image_url TEXT,
+    -- Publication control, named by `lifecycle.public_sql`, so every suite that
+    -- seeds this fixture and then runs a buyer-side predicate needs it present.
+    -- Mirrors `bot.init_db()` in carrying no DEFAULT: NULL means "no
+    -- publication decision recorded", which the predicate coalesces to
+    -- not-held, so seeding this fixture puts nothing on hold.
+    commerce_publication_enabled INTEGER
 )
 """
 

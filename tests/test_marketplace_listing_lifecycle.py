@@ -100,8 +100,15 @@ def test_price_is_not_required_to_be_seen():
     assert lifecycle.is_public(listing(price_label="", status="draft")) is False
     assert lifecycle.is_public(listing(price_label="", quantity=0)) is False
     assert lifecycle.is_public(listing(price_label="", seller_status="suspended")) is False
+    assert lifecycle.is_public(
+        listing(price_label="", commerce_publication_enabled=0)) is False
+    # Order, not just membership: `publication_enabled` sits after `released`
+    # and before `in_stock`, and both neighbours are load-bearing -- see the
+    # rule's own placement argument. `priced` stays out of this tuple entirely,
+    # which is the split this test is named for.
     assert [rule.key for rule in lifecycle.VISIBILITY_RULES] == [
-        "seller_approved", "seller_named", "released", "in_stock"]
+        "seller_approved", "seller_named", "released", "publication_enabled",
+        "in_stock"]
 
 
 def test_an_unparseable_label_is_deliberately_allowed_through():
@@ -169,21 +176,38 @@ def test_discovery_and_the_gate_share_one_definition_of_unpriced():
 #: production catalogue too (107 rows, Postgres, zero disagreements); this pins it
 #: in CI, which is the half that keeps being true.
 _ROWS = [
-    # (id, status, approval, product_type, quantity, price_label, seller_status, store_name)
-    (1, "published", "approved", "physical", 2, "$24.00", "approved", "Shop"),
-    (2, "published", "approved", "physical", 2, "", "approved", "Shop"),
-    (3, "published", "approved", "physical", 2, "Request access", "approved", "Shop"),
-    (4, "published", "approved", "physical", 2, "  REQUEST ACCESS  ", "approved", "Shop"),
-    (5, "published", "approved", "physical", 2, None, "approved", "Shop"),
-    (6, "published", "approved", "digital", 0, "$9.99", "approved", "Shop"),
-    (7, "published", "approved", "digital", 0, "", "approved", "Shop"),
-    (8, "published", "approved", "physical", 0, "$24.00", "approved", "Shop"),
-    (9, "published", "approved", "physical", 0, "", "approved", "Shop"),
-    (10, "draft", "approved", "physical", 2, "$24.00", "approved", "Shop"),
-    (11, "published", "pending_review", "physical", 2, "$24.00", "approved", "Shop"),
-    (12, "published", "approved", "physical", 2, "$24.00", "suspended", "Shop"),
-    (13, "published", "approved", "physical", 2, "$24.00", "approved", ""),
-    (14, "active", "approved", "physical", 2, "ask us", "approved", "Shop"),
+    # (id, status, approval, product_type, quantity, price_label, seller_status,
+    #  store_name, commerce_publication_enabled)
+    #
+    # The last field is NULL on every pre-existing row, which is the point: NULL
+    # means nobody has recorded a publication decision, both halves read it as
+    # "not held", and so every verdict in this matrix is the verdict it had
+    # before the control existed. Rows 15-17 are the new rule's own cases.
+    (1, "published", "approved", "physical", 2, "$24.00", "approved", "Shop", None),
+    (2, "published", "approved", "physical", 2, "", "approved", "Shop", None),
+    (3, "published", "approved", "physical", 2, "Request access", "approved", "Shop", None),
+    (4, "published", "approved", "physical", 2, "  REQUEST ACCESS  ", "approved", "Shop", None),
+    (5, "published", "approved", "physical", 2, None, "approved", "Shop", None),
+    (6, "published", "approved", "digital", 0, "$9.99", "approved", "Shop", None),
+    (7, "published", "approved", "digital", 0, "", "approved", "Shop", None),
+    (8, "published", "approved", "physical", 0, "$24.00", "approved", "Shop", None),
+    (9, "published", "approved", "physical", 0, "", "approved", "Shop", None),
+    (10, "draft", "approved", "physical", 2, "$24.00", "approved", "Shop", None),
+    (11, "published", "pending_review", "physical", 2, "$24.00", "approved", "Shop", None),
+    (12, "published", "approved", "physical", 2, "$24.00", "suspended", "Shop", None),
+    (13, "published", "approved", "physical", 2, "$24.00", "approved", "", None),
+    (14, "active", "approved", "physical", 2, "ask us", "approved", "Shop", None),
+    # Held. Identical to row 1 in every other respect -- published, approved,
+    # in stock, priced, by an approved named seller -- so the only thing that
+    # can take it off sale is the hold.
+    (15, "published", "approved", "physical", 2, "$24.00", "approved", "Shop", 0),
+    # Explicitly released. Row 1's twin again, this time with the decision
+    # recorded as a yes, which must sell exactly like the row that has no
+    # decision at all: the control is a veto, never a second thing to satisfy.
+    (16, "published", "approved", "physical", 2, "$24.00", "approved", "Shop", 1),
+    # Held *and* out of stock, pinning the reporting order the rule's placement
+    # argument rests on: this row is reported as held, not as out of stock.
+    (17, "published", "approved", "physical", 0, "$24.00", "approved", "Shop", 0),
 ]
 
 
@@ -195,18 +219,21 @@ def _sqlite_catalogue():
         CREATE TABLE marketplace_listings (
             id INTEGER PRIMARY KEY, seller_user_id INTEGER, status TEXT,
             approval_status TEXT, product_type TEXT, listing_type TEXT,
-            quantity INTEGER, price_label TEXT);
+            quantity INTEGER, price_label TEXT,
+            commerce_publication_enabled INTEGER);
         CREATE TABLE marketplace_sellers (
             user_id INTEGER PRIMARY KEY, status TEXT, display_name TEXT);
         """
     )
     for row in _ROWS:
-        listing_id, status, approval, ptype, qty, label, seller_status, store = row
+        (listing_id, status, approval, ptype, qty, label, seller_status, store,
+         enabled) = row
         conn.execute(
             "INSERT INTO marketplace_listings "
-            "(id, seller_user_id, status, approval_status, product_type, quantity, price_label) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (listing_id, listing_id, status, approval, ptype, qty, label),
+            "(id, seller_user_id, status, approval_status, product_type, quantity, "
+            " price_label, commerce_publication_enabled) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (listing_id, listing_id, status, approval, ptype, qty, label, enabled),
         )
         conn.execute(
             "INSERT INTO marketplace_sellers (user_id, status, display_name) VALUES (?,?,?)",
@@ -232,6 +259,13 @@ def _ids_where(conn, verdict):
     for row in conn.execute(
         "SELECT l.id, l.status, l.approval_status, l.product_type, l.listing_type, "
         "l.quantity, l.price_label, "
+        # Selected bare, not coalesced, and the difference matters here more than
+        # anywhere else in this projection: `_is_publication_enabled` has to be
+        # able to tell a stored NULL from a 0, and coalescing to 1 would hide the
+        # held rows from the Python half while SQL went on excluding them --
+        # which is the drift this whole test exists to catch, injected by the
+        # test itself.
+        "l.commerce_publication_enabled, "
         "COALESCE(ms.status,'missing') AS seller_status, "
         "COALESCE(ms.display_name,'') AS seller_store_name "
         "FROM marketplace_listings l "
@@ -267,10 +301,72 @@ def test_each_predicate_agrees_with_its_python_twin_row_for_row():
     # stockless, 14 carries the deliberately-allowed unparseable label. 2, 3, 4,
     # 5 and 7 are visible-but-unsellable: the unpriced rows whose web pages must
     # survive. 8 is priced with no stock, so it is in neither set.
-    assert sellable_sql == {1, 6, 14}
-    assert visible_sql == {1, 2, 3, 4, 5, 6, 7, 14}
+    #
+    # 16 joins the sellable set and 15 and 17 join neither, which is the
+    # publication control stated as a membership fact: an explicit yes sells
+    # exactly like row 1's absent decision, and an explicit no outranks every
+    # other thing row 1 has going for it.
+    assert sellable_sql == {1, 6, 14, 16}
+    assert visible_sql == {1, 2, 3, 4, 5, 6, 7, 14, 16}
+    assert 15 not in visible_sql and 17 not in visible_sql
     # Purchasable is a strict subset of visible, in SQL as well as in Python.
     assert sellable_sql < visible_sql
+    conn.close()
+
+
+def test_introducing_the_publication_control_takes_nothing_off_sale():
+    """The one safety claim adding this column rests on, as an assertion.
+
+    A new clause inside :func:`lifecycle.public_sql` is read by all 21 call
+    sites at once -- storefront, discovery, PulseDrop, catalog, delivery, ads --
+    so if it were even slightly wrong on rows that carry no decision, the deploy
+    would be a mass unpublication rather than a new control. Every row in
+    production is such a row: the column is brand new, so all 196 supplier-backed
+    listings and the rest of the shelf hold NULL.
+
+    So the claim is not "the hold works" (the row-for-row test above covers that)
+    but "the hold is inert until somebody uses it", and the honest way to state it
+    is as a difference against the module *as it was*. ``_first_unmet`` takes its
+    rule tuple as an argument, which means the pre-change predicate can be
+    reconstructed exactly -- the same rules in the same order, minus one -- rather
+    than approximated by a hand-written stand-in that could agree with the new
+    code for the wrong reason.
+    """
+    conn = _sqlite_catalogue()
+
+    without = tuple(
+        rule for rule in lifecycle.VISIBILITY_RULES if rule.key != "publication_enabled"
+    )
+    # Guards the reconstruction itself: if the rule were renamed or dropped, the
+    # filter would quietly become a no-op and every assertion below would pass by
+    # comparing the new predicate against itself.
+    assert len(without) == len(lifecycle.VISIBILITY_RULES) - 1
+
+    visible_now = _ids_where(conn, lifecycle.is_public)
+    visible_before = _ids_where(
+        conn, lambda row: lifecycle._first_unmet(without, row, 1) is None
+    )
+
+    held = {
+        row["id"]
+        for row in conn.execute(
+            "SELECT id FROM marketplace_listings "
+            "WHERE commerce_publication_enabled = 0"
+        )
+    }
+    # Stated as a literal so a fixture that stopped recording any hold at all
+    # could not satisfy the subtraction below trivially.
+    assert held == {15, 17}
+
+    # The whole property in one line: the control removed the explicitly-held
+    # rows and left every other verdict exactly as it found it. Note what this
+    # rules out -- not just "no NULL row was hidden", but also that no row was
+    # newly *admitted*, which a `COALESCE` written the other way round could have
+    # done to a row some other rule was already refusing.
+    assert visible_now == visible_before - held
+
+    # And SQL reaches the same place, because it is SQL that production runs.
+    assert _ids_matching(conn, lifecycle.public_sql("l", "ms")) == visible_now
     conn.close()
 
 
