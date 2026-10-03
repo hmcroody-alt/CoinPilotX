@@ -16,9 +16,13 @@ second time, and the buyer sees one product listed twice at a total they never
 chose. The `MAX_QTY_PER_LINE` clamp goes with it, because the quantity it clamps
 lives on the row that was supposed to be found.
 
-Today that is unreachable, which is the only reason it is not a live bug: every
-write site in `services/marketplace_cart_routes.py` binds `int(user["user_id"])`,
-and `int(None)` raises. A cart belongs to an account or it does not exist.
+Today that is unreachable, which is the only reason it is not a live bug. It used
+to be unreachable by accident: every write site in
+`services/marketplace_cart_routes.py` bound `int(user["user_id"])`, and
+`int(None)` raises. Since the guest cart landed it is unreachable on purpose —
+`_cart_owner` is the single source of the owner, it allocates a real guest id
+rather than leaving `user_id` NULL, and `cart_add` refuses with a 503 if it
+comes back empty. A cart has an owner or it is not written.
 
 ## Why pin an unreachable bug
 
@@ -208,37 +212,46 @@ def test_a_null_owner_defeats_the_cart_dedupe(shape: str) -> None:
     assert len(lines) == 2, f"two lines is the bug being pinned ({shape} shape)"
 
 
-def _cart_insert_owner_argument() -> ast.expr:
-    """The expression bound to `user_id` by the cart's INSERT, from the AST.
+def _cart_insert_owner_argument() -> tuple[ast.expr, ast.FunctionDef]:
+    """The expression bound to `user_id` by the cart's INSERT, and its handler.
 
     Read off the syntax tree because the thing that matters is the *argument
     that is bound*, and a text search would equally match the column list, the
     `ON CONFLICT` target, the surrounding comments, or any of the dozen other
     `int(user["user_id"])` occurrences in this module that belong to reads and
     deletes rather than to the insert.
+
+    The enclosing handler comes back with it because what keeps the owner
+    non-NULL is no longer visible in the argument alone -- it is a guard
+    earlier in the same function.
     """
     tree = ast.parse(CART_ROUTES.read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or len(node.args) < 2:
-            continue
-        sql = node.args[0]
-        # The statement is an f-string, so the literal prefix is a constant
-        # segment inside a JoinedStr rather than a plain string node.
-        segments = (
-            [part.value for part in sql.values if isinstance(part, ast.Constant)]
-            if isinstance(sql, ast.JoinedStr)
-            else [sql.value] if isinstance(sql, ast.Constant) else []
-        )
-        text = " ".join(str(seg) for seg in segments)
-        if "INSERT INTO marketplace_cart_items" not in text:
-            continue
-        params = node.args[1]
-        assert isinstance(params, ast.Tuple) and params.elts, (
-            "the cart INSERT's parameters are no longer a literal tuple, so the "
-            "owner argument cannot be read positionally. Re-point this check at "
-            "however they are passed now."
-        )
-        return params.elts[0]
+    functions = [
+        fn for fn in ast.walk(tree)
+        if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    for function in functions:
+        for node in ast.walk(function):
+            if not isinstance(node, ast.Call) or len(node.args) < 2:
+                continue
+            sql = node.args[0]
+            # The statement is an f-string, so the literal prefix is a constant
+            # segment inside a JoinedStr rather than a plain string node.
+            segments = (
+                [part.value for part in sql.values if isinstance(part, ast.Constant)]
+                if isinstance(sql, ast.JoinedStr)
+                else [sql.value] if isinstance(sql, ast.Constant) else []
+            )
+            text = " ".join(str(seg) for seg in segments)
+            if "INSERT INTO marketplace_cart_items" not in text:
+                continue
+            params = node.args[1]
+            assert isinstance(params, ast.Tuple) and params.elts, (
+                "the cart INSERT's parameters are no longer a literal tuple, so "
+                "the owner argument cannot be read positionally. Re-point this "
+                "check at however they are passed now."
+            )
+            return params.elts[0], function
     raise AssertionError(
         "found no `INSERT INTO marketplace_cart_items` call with bound "
         f"parameters in {CART_ROUTES.name}. The upsert moved; this guard is "
@@ -249,25 +262,52 @@ def _cart_insert_owner_argument() -> ast.expr:
 def test_the_cart_insert_still_binds_a_non_null_owner() -> None:
     """The hazard stays latent only while the owner cannot be None.
 
-    `int(...)` is what makes that true: `int(None)` raises `TypeError`, so a
-    missing owner fails the request loudly instead of writing a row the unique
-    index will ignore. If this assertion fails, read
-    `test_a_null_owner_defeats_the_cart_dedupe` above before deciding it is the
-    assertion that is wrong.
-    """
-    owner = _cart_insert_owner_argument()
+    What makes that true has changed once already, so this pins the property
+    and not the spelling. It used to be `int(...)` at the bind site, where
+    `int(None)` raises. The guest cart replaced that with a named owner from
+    `_cart_owner` plus an explicit refusal above the INSERT -- a cleaner answer,
+    because it 503s instead of surfacing a `TypeError` as a 500, and because it
+    gives a guest a real allocated id rather than letting `user_id` stay NULL.
 
-    assert isinstance(owner, ast.Call), (
-        "the cart INSERT binds "
-        f"`{ast.unparse(owner)}` as the row's owner, which is no longer a call. "
-        "A bare subscript or `.get()` can be None, and a NULL owner silently "
-        "defeats the unique index -- see this file's other test."
+    Either shape is acceptable here. What is not acceptable is binding something
+    nullable with nothing between it and the INSERT. If this assertion fails,
+    read `test_a_null_owner_defeats_the_cart_dedupe` above before deciding it is
+    the assertion that is wrong.
+    """
+    owner, handler = _cart_insert_owner_argument()
+
+    if isinstance(owner, ast.Call):
+        assert isinstance(owner.func, ast.Name) and owner.func.id == "int", (
+            "the cart INSERT binds "
+            f"`{ast.unparse(owner)}` as the row's owner rather than an "
+            "`int(...)`. Anything that can evaluate to None reintroduces the "
+            "duplicate-line bug for that population."
+        )
+        return
+
+    assert isinstance(owner, ast.Name), (
+        f"the cart INSERT binds `{ast.unparse(owner)}` as the row's owner. That "
+        "is neither an `int(...)` nor a local this test can trace a guard to, so "
+        "nothing here can show it is non-NULL -- and a NULL owner silently "
+        "defeats the unique index. See this file's other test."
     )
-    assert isinstance(owner.func, ast.Name) and owner.func.id == "int", (
-        "the cart INSERT binds "
-        f"`{ast.unparse(owner)}` as the row's owner rather than an `int(...)`. "
-        "Anything that can evaluate to None reintroduces the duplicate-line bug "
-        "for that population. If this is the guest-cart work landing, the owner "
-        "should be a non-null key (`owner_key`) and the unique index should move "
-        "with it -- not a nullable `user_id`."
+
+    # The owner is a local. It is only safe if the handler refuses when it is
+    # empty, so find `if not <owner>: ... return ...` ahead of the INSERT.
+    guarded = any(
+        isinstance(node, ast.If)
+        and isinstance(node.test, ast.UnaryOp)
+        and isinstance(node.test.op, ast.Not)
+        and isinstance(node.test.operand, ast.Name)
+        and node.test.operand.id == owner.id
+        and any(isinstance(stmt, ast.Return) for stmt in ast.walk(node))
+        for node in ast.walk(handler)
+    )
+    assert guarded, (
+        f"the cart INSERT binds the local `{owner.id}`, but `{handler.name}` "
+        f"never refuses on a falsy `{owner.id}`. Without that guard an owner "
+        "that comes back empty is written as NULL, and a NULL owner silently "
+        "defeats the three-column unique index -- the insert stops conflicting, "
+        "the double-tap becomes two lines, and the MAX_QTY_PER_LINE clamp goes "
+        "with it. Restore the refusal, or bind a value that cannot be empty."
     )
