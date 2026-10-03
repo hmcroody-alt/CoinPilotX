@@ -2,7 +2,7 @@
 
 ## Findings log (published as found, not held for the final report)
 
-Status: **OPEN — 8 findings (1 low), 4 attacks passed, 1 fleet blocker, 1 gate landed (red)**
+Status: **OPEN — 8 findings (1 low), 5 attacks passed, 1 fleet blocker, 1 gate landed (red)**
 Branch: `search-os/agent-12-quality-sentinel`
 Measured against: `origin/main` @ `5bdf4e431`
 Method: Flask test client over `app.url_map`, against a scratch copy of the dev DB
@@ -331,6 +331,44 @@ highest-severity SEO attack there is and it is properly closed.
 
 **Double-slash reachability: PASS.** 0 host-relative double-slash URLs emitted
 across four sitemaps, `robots.txt`, and five rendered pages.
+
+**Facet and pagination explosion: PASS.** 27 variants against
+`/pulse/marketplace`, **0 indexable self-canonical doorways.**
+`marketplace_storefront.render_discovery:1031` lists five `noindex,follow`
+conditions and all five hold on the wire: a search URL (`?q=`), page ≥ 2, a
+category slug no listing carries, a failed catalogue read, and an empty
+catalogue. Everything else canonicalises to the hub or to the one real
+department URL — `?page=0`, `?page=-1`, `?page=abc`, `?page=2.5`, `?sort=junk`
+and `?category=` all point home; `?category=WOMENS-CLOTHING` and
+`?category=a&category=b` both point at the real lowercase single-parameter URL.
+
+The important detail is *how* the junk-slug space is closed. It is not closed by
+the row-count rule from A12-06 — I assumed it was, and that assumption was
+wrong. `known_category` is tested against the taxonomy, and the code says why it
+is tested that way rather than against the result count: *"so a real-but-currently
+-empty department still stays indexable."* So the two rules are deliberately
+decoupled, and **fixing A12-06 cannot open a facet doorway.** Worth stating
+explicitly, because that coupling is what I went looking for.
+
+Thin departments *are* indexable and self-canonical — four of the eight hold one
+or two products. That is a documented judgement, not an oversight:
+`CATEGORY_MIN_INDEXABLE_LISTINGS = 3` withholds them from the sitemap while
+leaving them linked and crawlable, and the constant's comment records the
+production distribution it was chosen against. Disagree with the threshold if
+you like; it is a deliberate, reasoned position and not a defect.
+
+Two corrections to my own probe, recorded because both initially read as clean
+passes (Phase 100 — a probe that cannot fail is not evidence):
+
+1. It passed the raw `category` *label* (`Beauty`) instead of the *slug*
+   (`health-beauty-hair`). Every real facet came back `noindex`, which looked
+   like a closed facet space and was actually a zero-row filter triggering a
+   different rule entirely. Caught because the control reported 0 products while
+   still declaring itself indexable — an impossible combination.
+2. Its self-canonical test used a substring match, which flagged
+   `?category=a&category=b → ?category=a` as a doorway. That is the *correct*
+   canonical for a duplicate. Full-equality against origin + URL was the fix,
+   and it took the count from 1 false positive to 0.
 
 **Price-truth guard: PASS, and it is the best-defended thing I attacked.** Four
 attacks, all held:
