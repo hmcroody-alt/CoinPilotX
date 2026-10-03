@@ -294,6 +294,30 @@ MUTATIONS = [
         ),
         expect=["the_rail_never_publishes_a_risk_score"],
     ),
+    Mutation(
+        name="hero_sends_the_badge_catalogue_to_everyone",
+        defect="The badge sheet was built from the whole catalogue with the "
+               "unearned rows marked `locked`, so every visitor read a list of "
+               "what this account had failed to earn.",
+        path="bot.py",
+        anchor="    badge_rows = badge_catalog if is_owner else earned_badges",
+        replacement="    badge_rows = badge_catalog",
+        expect=["a_visitor_is_not_shown_which_badges_the_subject_lacks"],
+    ),
+    Mutation(
+        name="hero_publishes_teacher_review_state",
+        defect="`verification_status` interpolated verbatim told a visitor "
+               "'pending' -- where someone else's application sits in an admin "
+               "queue.",
+        path="bot.py",
+        anchor='''    if str(teacher.get("verification_status") or "").lower() == "approved" and teacher.get("category"):
+        about_items.append(("Teaching", clean_html(teacher.get("category"))))''',
+        replacement='''    if teacher:
+        about_items.append(("Teaching", clean_html(
+            (teacher.get("category") or "Community member")
+            + " · " + (teacher.get("verification_status") or "No teacher status"))))''',
+        expect=["a_visitor_is_not_told_where_a_teacher_application_sits"],
+    ),
 ]
 
 

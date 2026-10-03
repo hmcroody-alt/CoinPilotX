@@ -93005,46 +93005,159 @@ def pulse_profile_page_for_user(target_user_id):
     )
     badge_catalog = [dict(row) for row in cur.fetchall()]
     conn.close()
-    listing_html = "".join(f"<article class='card'><h3>{html_escape(clean_html(l.get('title')))}</h3><p>{html_escape(clean_html(l.get('description') or ''))}</p></article>" for l in listings)
     is_owner = int(target_user_id or 0) == int(viewer["user_id"])
+    public_id = html_escape(clean_html(ident["public_player_id"]))
     badge_priority = {"verified": 0, "founder": 1, "creator": 2, "vip": 3, "premium_verified_star": 4, "premium_verified_check": 4}
     earned_badges.sort(key=lambda badge: (badge_priority.get(str(badge.get("badge_key") or ""), 50), str(badge.get("label") or "")))
-    top_badges = earned_badges[:5]
+    earned_keys = {str(badge.get("badge_key") or "") for badge in earned_badges}
+    # Verification already reads beside the name as the premium mark, so the
+    # inline row carries the two roles that change how to read the account and
+    # nothing else. Five pills plus a mark plus a "View All Badges" button was a
+    # wall in which the one badge that means something -- verification -- was the
+    # hardest to find.
+    top_badges = earned_badges[:2]
     badge_html = "".join(
         f"<span class='profile-role-badge' title='{html_escape(clean_html(badge.get('description') or ''))}'>{html_escape(clean_html(badge.get('label') or 'Badge'))}</span>"
         for badge in top_badges
     )
-    earned_keys = {str(badge.get("badge_key") or "") for badge in earned_badges}
+    # The catalogue was sent for every profile, so a visitor read which badges
+    # this account had *not* earned. Absence they cannot act on, about someone
+    # else. The owner can act on it, so the locked rows are theirs alone.
+    badge_rows = badge_catalog if is_owner else earned_badges
+    badge_overflow = len(earned_badges) - len(top_badges)
+    show_badge_popover = bool(badge_rows) and (is_owner or badge_overflow > 0)
+    badge_more_html = (
+        "<button class='profile-badges-more' type='button' data-open-profile-badges "
+        f"aria-haspopup='dialog' aria-expanded='false'>{'All badges' if is_owner else f'+{badge_overflow} more'}</button>"
+        if show_badge_popover else ""
+    )
     all_badges_html = "".join(
         f"<article class='profile-badge-row {'earned' if str(badge.get('badge_key') or '') in earned_keys else 'locked'}'><span class='profile-badge-icon'>{'✓' if str(badge.get('badge_key') or '') in earned_keys else '◇'}</span><div><strong>{html_escape(clean_html(badge.get('label') or 'PulseSoc badge'))}</strong><p>{html_escape(clean_html(badge.get('description') or 'PulseSoc community badge.'))}</p><small>{'Earned' if str(badge.get('badge_key') or '') in earned_keys else 'Locked'}</small></div></article>"
-        for badge in badge_catalog
+        for badge in badge_rows
     )
     premium_html = pulse_premium_mark_html(ident.get("premium_mark"))
+    share_html = "<button class='profile-action-share' type='button' data-share-profile><span aria-hidden='true'>↗</span> Share</button>"
+    more_button_html = "<button class='profile-action-more' type='button' data-profile-more-toggle aria-label='More actions' aria-haspopup='dialog' aria-expanded='false'>•••</button>"
     if is_owner:
-        action_html = "<a class='button primary' href='/pulse/profile/edit'>Edit Profile</a><button type='button' data-share-profile>Share Profile</button><a class='button' href='/account'>Settings</a>"
-        more_tools_html = f"<a href='/pulse/profile/edit'>Profile Controls</a><a href='/account'>Account</a><a href='/privacy-center'>Privacy</a><a href='/pulse/teachers'>Teacher Status</a><a href='{marketplace_href()}'>Marketplace</a><a href='/pulse/music'>PulseSoc Music</a><a href='/pulse/creator/dashboard'>Creator Tools</a><a href='/pulse/live'>Livestream Studio</a><a href='/arena'>Arena Call Signs</a>"
+        # Settings was the third hero action and the third grid column is 48px
+        # wide, so the word was crushed into an icon slot. It belongs with the
+        # other low-frequency account surfaces behind More -- which the owner
+        # could not open at all: the sheet was rendered with their links inside
+        # and no control anywhere on the page to toggle it.
+        action_html = f"<a class='button primary profile-action-primary' href='/pulse/profile/edit'>Edit Profile</a>{share_html}{more_button_html}"
+        owner_tools = [
+            ("Edit profile", "/pulse/profile/edit", "Name, bio, avatar and cover"),
+            ("Account settings", "/account", "Login, email and security"),
+            ("Privacy", "/privacy-center", "Who can see and reach you"),
+            ("Creator tools", "/pulse/creator/dashboard", "Your posts, reach and earnings"),
+            ("Livestream studio", "/pulse/live", "Go live and review replays"),
+            ("Marketplace", marketplace_href(), "Your listings and orders"),
+            ("Teacher status", "/pulse/teachers", "Apply or check your review"),
+        ]
+        more_sheet_html = "".join(
+            f"<a class='profile-sheet-action' href='{href}'><span class='profile-sheet-icon' aria-hidden='true'>›</span><span><strong>{label}</strong><small>{hint}</small></span></a>"
+            for label, href, hint in owner_tools
+        )
+        # Kept because `<details>` works with no JavaScript, and the sheet above
+        # does not. It is deliberately not the same list: the overflow menu is
+        # the frequent half, this is the full set, and it sits below the content
+        # where a rarely-used surface belongs.
+        secondary_summary = "Settings and creator tools"
+        tool_links_html = "".join(f"<a class='button' href='{href}'>{label}</a>" for label, href, _hint in owner_tools)
     else:
-        action_html = f"<button class='primary profile-action-primary' data-follow-public='{html_escape(clean_html(ident['public_player_id']))}'><span aria-hidden='true'>＋</span> Follow</button><button class='profile-action-message' data-message-public='{html_escape(clean_html(ident['public_player_id']))}'><span aria-hidden='true'>◇</span> Message</button><button class='profile-action-more' type='button' data-profile-more-toggle aria-label='More actions' aria-expanded='false'>•••</button>"
-        more_tools_html = f"<button class='profile-sheet-action' data-friend-public='{html_escape(clean_html(ident['public_player_id']))}'><span class='profile-sheet-icon' aria-hidden='true'>＋</span><span><strong>Add Friend</strong><small>Send a connection request</small></span></button><button class='profile-sheet-action' data-share-profile><span class='profile-sheet-icon' aria-hidden='true'>↗</span><span><strong>Share Profile</strong><small>Send this profile securely</small></span></button><div class='profile-sheet-divider' role='separator'></div><button class='profile-sheet-action profile-sheet-safety' data-open-report-profile><span class='profile-sheet-icon' aria-hidden='true'>!</span><span><strong>Report Profile</strong><small>Alert the PulseSoc safety team</small></span></button><button class='profile-sheet-action profile-sheet-danger' data-open-block-profile><span class='profile-sheet-icon' aria-hidden='true'>⊘</span><span><strong>Block User</strong><small>Stop contact and hide their activity</small></span></button>"
-    avatar_html = f"<img src='{html_escape(clean_html(ident.get('avatar_url')))}' alt=''>" if ident.get("avatar_url") else clean_html(ident["name"][:1])
+        action_html = (
+            f"<button class='primary profile-action-primary' data-follow-public='{public_id}'><span aria-hidden='true'>＋</span> Follow</button>"
+            f"<button class='profile-action-message' data-message-public='{public_id}'><span aria-hidden='true'>◇</span> Message</button>"
+            f"{share_html}{more_button_html}"
+        )
+        more_sheet_html = f"<button class='profile-sheet-action' data-friend-public='{public_id}'><span class='profile-sheet-icon' aria-hidden='true'>＋</span><span><strong>Add Friend</strong><small>Send a connection request</small></span></button><button class='profile-sheet-action' data-share-profile><span class='profile-sheet-icon' aria-hidden='true'>↗</span><span><strong>Share Profile</strong><small>Send this profile securely</small></span></button><div class='profile-sheet-divider' role='separator'></div><button class='profile-sheet-action profile-sheet-safety' data-open-report-profile><span class='profile-sheet-icon' aria-hidden='true'>!</span><span><strong>Report Profile</strong><small>Alert the PulseSoc safety team</small></span></button><button class='profile-sheet-action profile-sheet-danger' data-open-block-profile><span class='profile-sheet-icon' aria-hidden='true'>⊘</span><span><strong>Block User</strong><small>Stop contact and hide their activity</small></span></button>"
+        # Not a copy of the sheet. Report and Block live behind More, and
+        # repeating them here gave a visitor two of each control; what this has
+        # to keep is a route to safety that survives the sheet being
+        # unreachable, because that sheet is the only JavaScript on the page a
+        # reader might actually need.
+        secondary_summary = "Report a problem with this profile"
+        tool_links_html = "<a class='button' href='/pulse/safety'>PulseSoc Safety Centre</a><a class='button' href='/privacy-center'>Your privacy controls</a>"
+    bio_text = clean_html(ident.get("bio") or "")
+    if bio_text:
+        bio_html = f"<p class='pulse-profile-bio'>{html_escape(bio_text)}</p>"
+    elif is_owner:
+        bio_html = "<p class='pulse-profile-bio pulse-profile-bio-empty'><a href='/pulse/profile/edit'>Add a bio</a> so people know what you post about.</p>"
+    else:
+        # An absent bio is not content. "No bio yet." occupied a line to report
+        # nothing, and the About card below said the same absence in different
+        # words a second time.
+        bio_html = ""
+    about_items = []
+    # `verification_status` is 'pending' until an admin reviews the application
+    # and then 'approved' or the rejection state. Publishing the column verbatim
+    # told every visitor where someone's application sat, which is review state,
+    # not profile metadata (privacy architecture: moderation status is never a
+    # public field). Only the approved outcome is a fact about the account.
+    if str(teacher.get("verification_status") or "").lower() == "approved" and teacher.get("category"):
+        about_items.append(("Teaching", clean_html(teacher.get("category"))))
+    if listings:
+        about_items.append(("Store", f"{len(listings)} public listing{'s' if len(listings) != 1 else ''}"))
+    if group_count:
+        about_items.append(("Groups", f"Member of {group_count}"))
+    about_rows_html = "".join(
+        f"<div class='pulse-profile-about-row'><dt>{html_escape(label)}</dt><dd>{html_escape(value)}</dd></div>"
+        for label, value in about_items
+    )
+    # The old pair of cards restated the bio and then restated the hero stats, so
+    # About was the same page twice. What belongs here is the metadata that has
+    # nowhere else to live. With no bio and no metadata there is nothing to say,
+    # and a tab leading to a card that says so is worse than no tab -- except for
+    # the owner, who is the one person who can change it.
+    if bio_text or about_rows_html:
+        about_html = (
+            "<section class='card pulse-profile-about' id='profileAbout'><h2>About</h2>"
+            + (f"<p class='pulse-profile-about-bio'>{html_escape(bio_text)}</p>" if bio_text else "")
+            + (f"<dl class='pulse-profile-about-list'>{about_rows_html}</dl>" if about_rows_html else "")
+            + "</section>"
+        )
+    elif is_owner:
+        about_html = (
+            "<section class='card pulse-profile-about' id='profileAbout'><h2>About</h2>"
+            "<p class='pulse-profile-about-bio muted'>Nothing here yet. "
+            "<a href='/pulse/profile/edit'>Add a bio</a> to tell people what you post about.</p></section>"
+        )
+    else:
+        about_html = ""
+    about_tab_html = "<a href='#profileAbout'>About</a>" if about_html else ""
+    avatar_html =f"<img src='{html_escape(clean_html(ident.get('avatar_url')))}' alt=''>" if ident.get("avatar_url") else clean_html(ident["name"][:1])
     cover_style = f" style=\"background-image:linear-gradient(135deg,rgba(5,11,20,.38),rgba(5,11,20,.22)),url('{clean_html(ident.get('banner_url'))}');background-size:cover;background-position:center\"" if ident.get("banner_url") else ""
     main = f"""
     <style>
     .pulse-profile-page{{display:grid;gap:12px;min-width:0}}.pulse-profile-page>.card{{margin:0}}
     .pulse-profile-card{{padding:0;overflow:hidden;border-radius:20px;border-color:rgba(92,224,241,.28);background:linear-gradient(155deg,rgba(10,25,43,.96),rgba(4,12,24,.98));box-shadow:0 24px 80px rgba(0,0,0,.34),0 0 40px rgba(54,229,143,.06)}}.pulse-profile-cover{{height:clamp(170px,26vw,280px);position:relative;background:radial-gradient(circle at 20% 20%,rgba(54,229,143,.2),transparent 28%),radial-gradient(circle at 82% 14%,rgba(110,223,246,.28),transparent 30%),linear-gradient(135deg,#071625,#102441)}}.pulse-profile-cover:after{{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(110deg,transparent 35%,rgba(110,223,246,.08),transparent 64%),repeating-linear-gradient(90deg,transparent 0 72px,rgba(110,223,246,.035) 73px);mask-image:linear-gradient(to bottom,#000,transparent)}}
     .pulse-profile-identity{{display:grid;grid-template-columns:132px minmax(0,1fr);gap:18px;align-items:end;padding:0 20px 18px;margin-top:-66px}}.pulse-profile-avatar{{width:124px;height:124px;border-radius:32px;border:4px solid #071321;box-shadow:0 18px 55px rgba(0,0,0,.42),0 0 34px rgba(110,223,246,.2)}}
-    .pulse-profile-copy{{min-width:0}}.pulse-profile-copy h1{{margin:0 0 5px;font-size:clamp(30px,5vw,48px)}}.pulse-profile-handle{{margin:0;color:#8fc9d8;font-weight:850}}.pulse-profile-bio{{margin:8px 0;color:#e8f7fb}}
+    .pulse-profile-copy{{min-width:0}}.pulse-profile-copy h1{{margin:0 0 5px;font-size:clamp(30px,5vw,48px)}}.pulse-profile-handle{{margin:0;color:#8fc9d8;font-weight:850}}.pulse-profile-bio{{margin:8px 0;color:#e8f7fb;max-width:62ch}}.pulse-profile-bio-empty{{color:#9fb5c0}}.pulse-profile-bio-empty a{{color:#6edff6;font-weight:900}}
     .profile-badges{{display:flex;gap:6px;flex-wrap:wrap}}.profile-role-badge{{display:inline-flex;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:5px 9px;background:rgba(110,223,246,.08);font-size:12px;font-weight:900;color:#dffaff}}
     .profile-badges-more{{border:0;background:transparent;color:#6edff6;padding:4px 2px;min-height:28px}}
-    .pulse-profile-stats{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:0 20px 14px}}.pulse-profile-stat{{text-align:center;border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:10px 5px;background:rgba(255,255,255,.04);font-size:12px;color:#9fb5c0}}.pulse-profile-stat strong{{display:block;font-size:21px;color:#f5fcff}}
-    .pulse-profile-actions{{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 48px;gap:8px;padding:0 20px 18px}}.pulse-profile-actions>*{{width:100%;min-width:0}}.profile-action-primary,.profile-action-message{{min-height:48px}}.profile-action-more{{width:48px!important;min-width:48px;border-radius:14px;padding:0;font-size:19px;letter-spacing:2px}}.profile-action-open-app{{grid-column:1/-1;min-height:48px}}
+    .pulse-profile-stats{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:0 20px 14px;list-style:none;margin:0}}.pulse-profile-stat{{text-align:center;border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:10px 5px;background:rgba(255,255,255,.04);font-size:12px;color:#9fb5c0}}.pulse-profile-stat strong{{display:block;font-size:21px;color:#f5fcff}}
+    .pulse-profile-actions{{display:grid;gap:8px;padding:0 20px 18px}}.pulse-profile-actions.is-owner{{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 48px}}.pulse-profile-actions.is-visitor{{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) 48px}}.pulse-profile-actions>*{{width:100%;min-width:0}}.profile-action-primary,.profile-action-message,.profile-action-share{{min-height:48px}}.profile-action-more{{width:48px!important;min-width:48px;border-radius:14px;padding:0;font-size:19px;letter-spacing:2px}}
+    .pulse-profile-app-cta{{margin:0;padding:0 20px 16px}}.profile-action-open-app{{font-size:13px;font-weight:850;color:#8fc9d8;text-decoration:underline;text-underline-offset:3px}}
     .pulse-profile-more{{position:fixed;inset:0;z-index:1750;display:none;place-items:end center;padding:16px;background:rgba(1,6,14,.72);backdrop-filter:blur(10px)}}.pulse-profile-more.open{{display:grid}}.pulse-profile-more:before{{content:"";position:absolute;inset:0}}.pulse-profile-more-inner{{position:relative;width:min(560px,100%);display:grid;gap:7px;border:1px solid rgba(110,223,246,.28);border-radius:22px;background:linear-gradient(165deg,#0b1b2d,#06101d);padding:12px;box-shadow:0 28px 100px rgba(0,0,0,.62),0 0 42px rgba(110,223,246,.1)}}.profile-sheet-head{{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:5px 4px 10px}}.profile-sheet-head span{{display:grid}}.profile-sheet-head small{{color:#8da7b4}}.profile-sheet-close{{width:40px!important;min-width:40px!important;height:40px!important;min-height:40px!important;border-radius:999px!important;padding:0!important}}.profile-sheet-action{{display:grid!important;grid-template-columns:42px minmax(0,1fr);gap:11px;align-items:center;text-align:left;min-height:58px!important;padding:8px 10px!important;border-color:rgba(255,255,255,.09)!important;background:rgba(255,255,255,.04)!important}}.profile-sheet-action>span:last-child{{display:grid}}.profile-sheet-action small{{font-weight:650;color:#8fa8b5}}.profile-sheet-icon{{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:rgba(110,223,246,.1);color:#7ae9fa;font-size:18px}}.profile-sheet-divider{{height:1px;background:rgba(255,255,255,.08);margin:4px}}.profile-sheet-safety .profile-sheet-icon{{color:#ffd166;background:rgba(255,209,102,.1)}}.profile-sheet-danger{{color:#ffc5cf!important;border-color:rgba(255,91,116,.18)!important}}.profile-sheet-danger .profile-sheet-icon{{color:#ff7188;background:rgba(255,91,116,.12)}}
     .pulse-profile-tabs{{display:flex;gap:4px;overflow-x:auto;padding:6px;border:1px solid rgba(110,223,246,.14);border-radius:16px;background:rgba(9,20,35,.88);scrollbar-width:none}}.pulse-profile-tabs a{{flex:1 0 auto;min-width:82px;padding:10px 12px;border-radius:11px;text-align:center;text-decoration:none;font-weight:900;color:#a9c5ce}}.pulse-profile-tabs a.active{{background:linear-gradient(135deg,rgba(54,229,143,.2),rgba(110,223,246,.18));color:#fff}}
     .pulse-profile-feed-card{{padding:10px;overflow-anchor:none}}.pulse-profile-feed-card h2{{margin:3px 4px 10px}}.pulse-profile-feed-frame{{display:block;width:100%;min-height:760px;border:0;border-radius:14px;background:#071321;overflow-anchor:none}}
-    .pulse-profile-about-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}.pulse-profile-secondary details summary{{cursor:pointer;font-weight:950}}.pulse-profile-secondary .profile-tool-links{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:12px}}.profile-tool-links a{{text-decoration:none}}
+    .pulse-profile-about h2{{margin:0 0 10px}}.pulse-profile-about-bio{{margin:0 0 12px;max-width:62ch}}.pulse-profile-about-list{{display:grid;gap:0;margin:0}}.pulse-profile-about-row{{display:grid;grid-template-columns:minmax(0,120px) minmax(0,1fr);gap:12px;padding:9px 0;border-top:1px solid rgba(255,255,255,.07)}}.pulse-profile-about-row dt{{color:#9fb5c0;font-weight:850;font-size:13px}}.pulse-profile-about-row dd{{margin:0;font-weight:850}}.pulse-profile-secondary details summary{{cursor:pointer;font-weight:950}}.pulse-profile-secondary .profile-tool-links{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-top:12px}}.profile-tool-links a{{text-decoration:none}}
     .profile-badges-modal,.profile-safety-modal{{position:fixed;inset:0;z-index:1800;display:none;place-items:end center;background:rgba(1,6,14,.72);backdrop-filter:blur(10px);padding:16px}}.profile-badges-modal.open,.profile-safety-modal.open{{display:grid}}.profile-badges-sheet,.profile-safety-sheet{{width:min(680px,100%);max-height:min(82dvh,760px);overflow:auto;border:1px solid rgba(110,223,246,.22);border-radius:24px;background:#071321;padding:16px;box-shadow:0 28px 100px rgba(0,0,0,.55)}}.profile-badges-head,.profile-safety-head{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:12px;align-items:center;position:sticky;top:-16px;background:#071321;padding:10px 0;z-index:2}}.profile-badges-head h2,.profile-safety-head h2{{margin:0}}.profile-badges-head button,.profile-safety-head button{{width:42px!important;min-width:42px!important;height:42px!important;min-height:42px!important;padding:0!important;border-radius:999px}}.profile-badges-list,.profile-report-reasons{{display:grid;gap:8px}}.profile-badge-row{{display:grid;grid-template-columns:42px minmax(0,1fr);gap:10px;border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:10px;background:rgba(255,255,255,.04)}}.profile-badge-row.locked{{opacity:.56}}.profile-badge-icon{{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(54,229,143,.24),rgba(110,223,246,.22));font-size:20px;font-weight:950}}.profile-badge-row p,.profile-badge-row small{{margin:2px 0}}.profile-report-reason{{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:center;min-height:48px;border:1px solid rgba(255,255,255,.09);border-radius:13px;padding:9px 11px;background:rgba(255,255,255,.035);font-weight:850}}.profile-report-reason input{{width:20px;height:20px;margin:0;accent-color:#36e58f}}.profile-safety-copy{{color:#a8bbc6;margin:0 0 12px}}.profile-safety-actions{{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}}.profile-danger-confirm{{background:#ff5b74!important;color:#16040a!important;border:0!important}}body.profile-sheet-open{{overflow:hidden}}
+    /* The shell caps `.wrap` at 1180px, which after the 214px navigation rail
+       and the 320px aside left this page a 614px reading column -- narrower
+       than the mobile-first card it renders. Both numbers are the layout tokens
+       that already ship in `pulsesoc-tokens.css` with no consumers, so the
+       ceiling is the one the design system already declared rather than a
+       second opinion about reading width. Scoped to this page and to the
+       breakpoint where both rails are actually present. */
+    @media(min-width:1100px){{body:has(.pulse-profile-page) .wrap{{width:min(100% - 28px,var(--measure-container-max,1480px))}}body:has(.pulse-profile-page) .layout{{grid-template-columns:minmax(0,var(--measure-feed-max,884px)) minmax(280px,320px);justify-content:center}}}}
     @media(max-width:900px){{body:has(.pulse-profile-page) .layout>aside{{display:none}}body:has(.pulse-profile-page) .layout{{display:block}}body:has(.pulse-profile-page) .pulse-fab{{display:none!important}}}}
-    @media(max-width:620px){{body:has(.pulse-profile-page) .wrap{{padding-left:8px;padding-right:8px}}.pulse-profile-page{{gap:8px}}.pulse-profile-card{{border-radius:16px}}.pulse-profile-cover{{height:116px}}.pulse-profile-identity{{grid-template-columns:78px minmax(0,1fr);gap:10px;align-items:start;padding:0 12px 10px;margin-top:-39px;text-align:left;justify-items:stretch}}.pulse-profile-avatar{{width:78px;height:78px;border-radius:22px;border-width:3px}}.pulse-profile-copy{{padding-top:32px}}.pulse-profile-copy h1{{font-size:24px;line-height:1;margin-bottom:4px}}.pulse-profile-handle{{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.pulse-profile-bio{{font-size:13px;line-height:1.3;margin:5px 0}}.profile-role-badge{{font-size:10px;padding:4px 7px}}.profile-role-badge:nth-of-type(n+4){{display:none}}.profile-badges-more{{font-size:11px;min-height:24px}}.pulse-profile-stats{{padding:0 10px 10px;gap:5px}}.pulse-profile-stat{{padding:8px 2px;font-size:10px;border-radius:10px;background:rgba(255,255,255,.035)}}.pulse-profile-stat strong{{font-size:18px}}.pulse-profile-actions{{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px;padding:0 10px 11px;gap:6px}}.pulse-profile-actions>*{{min-height:44px;padding:7px 5px;font-size:12px;border-radius:11px;white-space:nowrap}}.profile-action-more{{width:44px!important;min-width:44px!important}}.pulse-profile-more{{padding:0;align-items:end}}.pulse-profile-more-inner{{border-radius:24px 24px 0 0;padding:12px 12px calc(16px + env(safe-area-inset-bottom))}}.pulse-profile-tabs{{margin:0;border-radius:12px;padding:4px}}.pulse-profile-tabs a{{min-width:70px;padding:9px 10px;font-size:12px}}.pulse-profile-feed-card{{padding:4px;border:0;background:transparent;box-shadow:none}}.pulse-profile-feed-card h2{{display:none}}.pulse-profile-feed-frame{{min-height:820px;border-radius:12px}}.pulse-profile-about-grid{{grid-template-columns:1fr}}.profile-badges-modal,.profile-safety-modal{{padding:0;align-items:end}}.profile-badges-sheet,.profile-safety-sheet{{border-radius:24px 24px 0 0;max-height:84dvh;padding-bottom:calc(18px + env(safe-area-inset-bottom))}}}}
+    @media(max-width:620px){{body:has(.pulse-profile-page) .wrap{{padding-left:8px;padding-right:8px}}.pulse-profile-page{{gap:8px}}.pulse-profile-card{{border-radius:16px}}.pulse-profile-cover{{height:116px}}.pulse-profile-identity{{grid-template-columns:78px minmax(0,1fr);gap:10px;align-items:start;padding:0 12px 10px;margin-top:-39px;text-align:left;justify-items:stretch}}.pulse-profile-avatar{{width:78px;height:78px;border-radius:22px;border-width:3px}}.pulse-profile-copy{{padding-top:32px}}.pulse-profile-copy h1{{font-size:24px;line-height:1;margin-bottom:4px}}.pulse-profile-handle{{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}.pulse-profile-bio{{font-size:13px;line-height:1.3;margin:5px 0}}.profile-role-badge{{font-size:10px;padding:4px 7px}}.profile-badges-more{{font-size:11px;min-height:24px}}.pulse-profile-stats{{padding:0 10px 10px;gap:5px}}.pulse-profile-stat{{padding:8px 2px;font-size:10px;border-radius:10px;background:rgba(255,255,255,.035)}}.pulse-profile-stat strong{{font-size:18px}}.pulse-profile-actions{{padding:0 10px 11px;gap:6px}}.pulse-profile-actions.is-owner,.pulse-profile-actions.is-visitor{{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px}}
+      /* Share is the one hero action already duplicated inside the visitor's
+         More sheet, so it is the one that can go when four controls will not
+         fit a phone without truncating their labels. The owner's sheet has no
+         Share, so theirs stays. */
+      .pulse-profile-actions.is-visitor .profile-action-share{{display:none}}.pulse-profile-actions>*{{min-height:44px;padding:7px 5px;font-size:12px;border-radius:11px;white-space:nowrap}}.profile-action-more{{width:44px!important;min-width:44px!important}}.pulse-profile-app-cta{{padding:0 10px 12px}}.pulse-profile-more{{padding:0;align-items:end}}.pulse-profile-more-inner{{border-radius:24px 24px 0 0;padding:12px 12px calc(16px + env(safe-area-inset-bottom))}}.pulse-profile-tabs{{margin:0;border-radius:12px;padding:4px}}.pulse-profile-tabs a{{min-width:70px;padding:9px 10px;font-size:12px}}.pulse-profile-feed-card{{padding:4px;border:0;background:transparent;box-shadow:none}}.pulse-profile-feed-card h2{{display:none}}.pulse-profile-feed-frame{{min-height:820px;border-radius:12px}}.pulse-profile-about-row{{grid-template-columns:1fr;gap:2px;padding:8px 0}}.profile-badges-modal,.profile-safety-modal{{padding:0;align-items:end}}.profile-badges-sheet,.profile-safety-sheet{{border-radius:24px 24px 0 0;max-height:84dvh;padding-bottom:calc(18px + env(safe-area-inset-bottom))}}}}
     </style>
     <div class='pulse-profile-page' data-pulse-profile-page data-profile-owner='{'1' if is_owner else '0'}'>
       <section class='card pulse-profile-card'>
@@ -93054,24 +93167,22 @@ def pulse_profile_page_for_user(target_user_id):
           <div class='pulse-profile-copy'>
             <h1>{html_escape(clean_html(ident['name']))}{premium_html}</h1>
             <p class='pulse-profile-handle'>@{html_escape(clean_html(ident.get('username') or ident['public_player_id']))}</p>
-            <p class='pulse-profile-bio'>{html_escape(clean_html(ident.get('bio') or 'No bio yet.'))}</p>
-            <div class='profile-badges'>{badge_html or '<span class="profile-role-badge">' + html_escape(clean_html(ident.get('primary_label') or ident.get('rank') or 'Member')) + '</span>'}<button class='profile-badges-more' type='button' data-open-profile-badges>View All Badges</button></div>
+            {bio_html}
+            <div class='profile-badges'>{badge_html or '<span class="profile-role-badge">' + html_escape(clean_html(ident.get('primary_label') or ident.get('rank') or 'Member')) + '</span>'}{badge_more_html}</div>
           </div>
         </div>
-        <div class='pulse-profile-stats' aria-label='Profile statistics'>
-          <span class='pulse-profile-stat'><strong>{post_count}</strong>Posts</span><span class='pulse-profile-stat'><strong>{follower_count}</strong>Followers</span><span class='pulse-profile-stat'><strong>{following_count}</strong>Following</span><span class='pulse-profile-stat'><strong>{group_count}</strong>Groups</span>
-        </div>
-        <div class='pulse-profile-actions'>{action_html}{app_cta_html('profile', ident['public_player_id'], source='web', classes='button profile-action-open-app')}</div>
+        <ul class='pulse-profile-stats'>
+          <li class='pulse-profile-stat'><strong>{post_count}</strong>Posts</li><li class='pulse-profile-stat'><strong>{follower_count}</strong>Followers</li><li class='pulse-profile-stat'><strong>{following_count}</strong>Following</li><li class='pulse-profile-stat'><strong>{group_count}</strong>Groups</li>
+        </ul>
+        <div class='pulse-profile-actions {'is-owner' if is_owner else 'is-visitor'}'>{action_html}</div>
+        <p class='pulse-profile-app-cta'>{app_cta_html('profile', ident['public_player_id'], source='web', label='Open in PulseSoc App', classes='profile-action-open-app')}</p>
       </section>
-      <nav class='pulse-profile-tabs' aria-label='Profile content'><a class='active' href='#profilePosts'>Posts</a><a href='/pulse/reels?creator={html_escape(clean_html(ident['public_player_id']))}'>Reels</a><a href='/pulse/videos?creator={html_escape(clean_html(ident['public_player_id']))}'>Videos</a><a href='/pulse?profile={html_escape(clean_html(ident['public_player_id']))}&topic=photo'>Photos</a><a href='#profileAbout'>About</a></nav>
+      <nav class='pulse-profile-tabs' aria-label='Profile content'><a class='active' aria-current='page' href='#profilePosts'>Posts</a><a href='/pulse/reels?creator={html_escape(clean_html(ident['public_player_id']))}'>Reels</a><a href='/pulse/videos?creator={html_escape(clean_html(ident['public_player_id']))}'>Videos</a><a href='/pulse?profile={html_escape(clean_html(ident['public_player_id']))}&topic=photo'>Photos</a>{about_tab_html}</nav>
       <section class='card pulse-profile-feed-card' id='profilePosts'><h2>Posts</h2><iframe class='pulse-profile-feed-frame' title='{html_escape(clean_html(ident['name']))} posts' src='/pulse?profile={html_escape(clean_html(ident['public_player_id']))}&embed=profile' loading='eager'></iframe></section>
-      <section class='pulse-profile-about-grid' id='profileAbout'>
-        <article class='card'><h2>About</h2><p>{html_escape(clean_html(ident.get('bio') or 'This creator has not added a bio yet.'))}</p><p class='muted'>{post_count} posts · {follower_count} followers · {group_count} groups</p></article>
-        <article class='card'><h2>Creator Activity</h2><p>{html_escape(clean_html((teacher.get('category') or 'Community member')))} · {html_escape(clean_html((teacher.get('verification_status') or 'No teacher status')))}</p><p>{len(listings)} active marketplace listing{'s' if len(listings) != 1 else ''}.</p></article>
-      </section>
-      <section class='card pulse-profile-secondary'><details><summary>{'Settings and creator tools' if is_owner else 'More profile options'}</summary><div class='profile-tool-links'>{more_tools_html}</div></details></section>
+      {about_html}
+      <section class='card pulse-profile-secondary'><details><summary>{secondary_summary}</summary><div class='profile-tool-links'>{tool_links_html}</div></details></section>
     </div>
-    <div class='pulse-profile-more' data-profile-more aria-hidden='true'><div class='pulse-profile-more-inner'><header class='profile-sheet-head'><span><strong>{html_escape(clean_html(ident['name']))}</strong><small>Profile actions</small></span><button class='profile-sheet-close' type='button' data-close-profile-more aria-label='Close profile actions'>×</button></header>{more_tools_html}</div></div>
+    <div class='pulse-profile-more' data-profile-more aria-hidden='true'><div class='pulse-profile-more-inner'><header class='profile-sheet-head'><span><strong>{html_escape(clean_html(ident['name']))}</strong><small>Profile actions</small></span><button class='profile-sheet-close' type='button' data-close-profile-more aria-label='Close profile actions'>×</button></header>{more_sheet_html}</div></div>
     <section class='profile-badges-modal' data-profile-badges-modal aria-hidden='true' role='dialog' aria-modal='true' aria-label='All profile badges'><div class='profile-badges-sheet'><header class='profile-badges-head'><div><h2>All Badges</h2><small>{len(earned_badges)} earned</small></div><button type='button' data-close-profile-badges aria-label='Close badges'>×</button></header><div class='profile-badges-list'>{all_badges_html or '<p>No badges are available yet.</p>'}</div></div></section>
     <section class='profile-safety-modal' data-profile-report-modal aria-hidden='true' role='dialog' aria-modal='true' aria-label='Report profile'><form class='profile-safety-sheet' data-profile-report-form><header class='profile-safety-head'><div><h2>Report Profile</h2><small>Private and confidential</small></div><button type='button' data-close-profile-report aria-label='Close report profile'>×</button></header><p class='profile-safety-copy'>Choose the issue that best describes this account. PulseSoc reviews reports without telling the reported user who submitted them.</p><div class='profile-report-reasons'><label class='profile-report-reason'><input type='radio' name='reason' value='Spam or misleading activity' required><span>Spam or misleading activity</span></label><label class='profile-report-reason'><input type='radio' name='reason' value='Harassment or bullying'><span>Harassment or bullying</span></label><label class='profile-report-reason'><input type='radio' name='reason' value='Scam, fraud, or impersonation'><span>Scam, fraud, or impersonation</span></label><label class='profile-report-reason'><input type='radio' name='reason' value='Hateful or inappropriate content'><span>Hateful or inappropriate content</span></label><label class='profile-report-reason'><input type='radio' name='reason' value='Other safety concern'><span>Other safety concern</span></label></div><div class='profile-safety-actions'><button type='button' data-close-profile-report>Cancel</button><button class='primary' type='submit'>Submit Report</button></div></form></section>
     <section class='profile-safety-modal' data-profile-block-modal aria-hidden='true' role='dialog' aria-modal='true' aria-label='Block user'><div class='profile-safety-sheet'><header class='profile-safety-head'><div><h2>Block {html_escape(clean_html(ident['name']))}?</h2><small>Immediate privacy protection</small></div><button type='button' data-close-profile-block aria-label='Close block user'>×</button></header><p class='profile-safety-copy'>They will no longer be able to message or interact with you, and their activity will be hidden from your PulseSoc experience. You can manage blocked accounts later in Privacy.</p><div class='profile-safety-actions'><button type='button' data-close-profile-block>Cancel</button><button class='profile-danger-confirm' type='button' data-confirm-block-profile data-public-player-id='{html_escape(clean_html(ident['public_player_id']))}'>Block User</button></div></div></section>

@@ -115,6 +115,16 @@ SUBJECT_RISKY_BODY = "Private ledger of the wire transfer scam I am still tracin
 STRANGER_RISKY_BODY = "Public warning about the dockside deposit scam doing rounds"
 RISK_SCORE_SENTINEL = 77
 
+# The hero published two things about the subject that were never theirs to
+# publish, and both are *absences*, so both need a sentinel a reader could not
+# arrive at any other way. The badge the subject has NOT earned, and the
+# teaching category whose application has NOT been approved.
+EARNED_BADGE_KEY = "audience_fixture_earned"
+EARNED_BADGE_LABEL = "Harbourmaster Chronicler"
+UNEARNED_BADGE_KEY = "audience_fixture_unearned"
+UNEARNED_BADGE_LABEL = "Lighthouse Keeper Emeritus"
+TEACHER_CATEGORY = "Estuary Pilotage Instruction"
+
 NOW = "2026-09-01T00:00:00"
 
 
@@ -209,6 +219,26 @@ class AudienceFixture(unittest.TestCase):
             "INSERT INTO blocked_users (blocker_user_id, blocked_user_id, created_at)"
             " VALUES (?,?,?)", (BLOCKER, SUBJECT, NOW),
         )
+        for badge_key, label in (
+            (EARNED_BADGE_KEY, EARNED_BADGE_LABEL),
+            (UNEARNED_BADGE_KEY, UNEARNED_BADGE_LABEL),
+        ):
+            cur.execute(
+                "INSERT INTO pulse_badges (badge_key, label, description, active, created_at)"
+                " VALUES (?,?,?,?,?)", (badge_key, label, f"{label} description", 1, NOW),
+            )
+        cur.execute(
+            "INSERT INTO pulse_user_badges (user_id, badge_key, granted_by, created_at)"
+            " VALUES (?,?,?,?)", (SUBJECT, EARNED_BADGE_KEY, SUBJECT, NOW),
+        )
+        # 'pending' is the DDL default, so this is the state an application sits
+        # in for as long as nobody has reviewed it -- the common case, not an
+        # edge one.
+        cur.execute(
+            "INSERT INTO teacher_profiles (user_id, display_name, category, bio,"
+            " verification_status, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+            (SUBJECT, SUBJECT_DISPLAY_NAME, TEACHER_CATEGORY, "", "pending", NOW, NOW),
+        )
         conn.commit()
         conn.close()
         self.addCleanup(self.drop)
@@ -229,6 +259,12 @@ class AudienceFixture(unittest.TestCase):
                 "DELETE FROM blocked_users WHERE blocker_user_id=? OR blocked_user_id=?",
                 (user_id, user_id),
             )
+            cur.execute("DELETE FROM pulse_user_badges WHERE user_id=?", (user_id,))
+            cur.execute("DELETE FROM teacher_profiles WHERE user_id=?", (user_id,))
+        cur.execute(
+            "DELETE FROM pulse_badges WHERE badge_key IN (?,?)",
+            (EARNED_BADGE_KEY, UNEARNED_BADGE_KEY),
+        )
 
     def drop(self):
         conn = bot.db()
@@ -242,6 +278,17 @@ class AudienceFixture(unittest.TestCase):
         assignments = ", ".join(f"{name}=?" for name in columns)
         conn.execute(
             f"UPDATE users SET {assignments} WHERE user_id=?",
+            (*columns.values(), SUBJECT),
+        )
+        conn.commit()
+        conn.close()
+
+    def set_teacher(self, **columns):
+        """Re-shape the subject's teacher row: verification_status, category."""
+        conn = bot.db()
+        assignments = ", ".join(f"{name}=?" for name in columns)
+        conn.execute(
+            f"UPDATE teacher_profiles SET {assignments} WHERE user_id=?",
             (*columns.values(), SUBJECT),
         )
         conn.commit()
@@ -500,8 +547,54 @@ class ViewerAwareCounts(AudienceFixture):
         self.assertEqual(own, 3)
         self.assertEqual(seen, 1)
         body = visible_text(self.page(STRANGER).get_data(as_text=True))
-        self.assertRegex(body, r"\b1 posts\b")
-        self.assertNotRegex(body, r"\b2 posts\b")
+        # Case-insensitive: the claim is about the number beside the label, and
+        # pinning its capitalisation would let a typographic change read as a
+        # privacy regression.
+        self.assertRegex(body, r"(?i)\b1 posts\b")
+        self.assertNotRegex(body, r"(?i)\b2 posts\b")
+
+
+class HeroProjection(AudienceFixture):
+    """Two things the hero published about the subject that were absences.
+
+    Neither is a visibility bug in the resolver's sense -- the profile is public
+    and the viewer is allowed to read it. They are projection bugs: the page had
+    the row and sent all of it, which is the failure mode "access is not
+    exposure" names. Both were found by reading the markup, so both get a
+    contract test rather than a note.
+    """
+
+    def test_a_visitor_is_not_shown_which_badges_the_subject_lacks(self):
+        """The badge sheet was rendered from the whole `pulse_badges` catalogue
+        with the unearned rows marked `locked`, for every viewer. That is a list
+        of things someone else has not achieved, which the reader cannot act on
+        and the subject never published. The owner can act on it, so it is
+        theirs."""
+        stranger = visible_text(self.page(STRANGER).get_data(as_text=True))
+        self.assertIn(EARNED_BADGE_LABEL, stranger)
+        self.assertNotIn(UNEARNED_BADGE_LABEL, stranger)
+        # Positive control: the catalogue still reaches the one viewer it is for,
+        # so this pair cannot both pass by the sheet having silently disappeared.
+        owner = visible_text(self.page(SUBJECT).get_data(as_text=True))
+        self.assertIn(EARNED_BADGE_LABEL, owner)
+        self.assertIn(UNEARNED_BADGE_LABEL, owner)
+
+    def test_a_visitor_is_not_told_where_a_teacher_application_sits(self):
+        """`verification_status` was interpolated verbatim, so a visitor read
+        'pending' -- where someone else's application sits in an admin queue.
+        Review state is moderation state and is never a public field; only the
+        approved outcome is a fact about the account."""
+        stranger = visible_text(self.page(STRANGER).get_data(as_text=True))
+        self.assertNotIn("pending", stranger.lower())
+        self.assertNotIn(TEACHER_CATEGORY, stranger)
+
+    def test_an_approved_teacher_category_is_still_published(self):
+        """The positive control for the test above: the fix is to publish the
+        outcome, not to drop the field, so an approved category must appear."""
+        self.set_teacher(verification_status="approved")
+        stranger = visible_text(self.page(STRANGER).get_data(as_text=True))
+        self.assertIn(TEACHER_CATEGORY, stranger)
+        self.assertNotIn("approved", stranger.lower())
 
 
 class OneAuthority(AudienceFixture):
