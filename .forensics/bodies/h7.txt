@@ -1,0 +1,27 @@
+HTTP/2 404 
+cache-control: no-store, max-age=0
+content-security-policy: default-src 'self'; object-src 'none'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; connect-src 'self' https: wss:; frame-ancestors 'self'; base-uri 'self'; form-action 'self' https://checkout.stripe.com; upgrade-insecure-requests;
+content-type: text/html; charset=utf-8
+date: Sat, 03 Oct 2026 18:58:27 GMT
+expires: 0
+permissions-policy: camera=(self), microphone=(self), geolocation=()
+pragma: no-cache
+referrer-policy: strict-origin-when-cross-origin
+server: railway-hikari
+strict-transport-security: max-age=31536000; includeSubDomains
+vary: Cookie
+x-content-type-options: nosniff
+x-db-duration-ms: 6
+x-db-query-count: 1
+x-frame-options: SAMEORIGIN
+x-pulsesoc-client-trust: none
+x-pulsesoc-security: server-authoritative
+x-r2-duration-ms: 0
+x-railway-request-id: xNUg6cxkTGauj_8s0_TJvA
+x-response-time-ms: 12
+x-rows-returned: 0
+x-trace-id: 200e7ffa004f
+content-length: 207
+x-hikari-trace: sjc1.hqr0
+x-railway-edge: sjc1
+

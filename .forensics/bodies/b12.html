@@ -1,0 +1,163 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Your cart</title><link rel="canonical" href="https://pulsesoc.com/pulse/cart"><meta name="robots" content="noindex,nofollow"><meta name="description" content="The items you have saved to buy on PulseSoc."><meta property="og:type" content="website"><meta property="og:title" content="Your cart"><meta property="og:description" content="The items you have saved to buy on PulseSoc."><meta property="og:url" content="https://pulsesoc.com/pulse/cart"><meta property="og:site_name" content="PulseSoc"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="Your cart"><meta name="twitter:description" content="The items you have saved to buy on PulseSoc."><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=storefront-20260926a"><style>*{box-sizing:border-box}html,body{max-width:100%;overflow-x:hidden}body{margin:0;background:var(--store-bg-page,#eaeded);color:var(--store-text-primary,#0f1111);font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased}.mkt-doc{width:min(100% - 24px,1180px);margin:0 auto;padding:0 0 calc(56px + env(safe-area-inset-bottom))}.mkt-doc-bar{background:var(--store-bg-header,#0b0b0c);margin:0 calc(50% - 50vw) 18px;padding:max(10px,env(safe-area-inset-top)) calc(50vw - 50% + 4px) 10px;display:flex;flex-wrap:wrap;align-items:center;gap:12px;justify-content:space-between}.mkt-doc-brand{display:inline-flex;align-items:center;gap:8px;font-weight:900;font-size:18px;color:var(--store-text-on-dark,#fff);text-decoration:none;letter-spacing:-.01em}.mkt-doc-bar nav{display:flex;flex-wrap:wrap;gap:8px}.mkt-doc-bar nav a{font-size:13px;font-weight:700;text-decoration:none;color:var(--store-text-on-dark-muted,#c7cdd3);border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:7px 13px}.mkt-doc-bar nav a:hover{border-color:rgba(255,255,255,.5);color:var(--store-text-on-dark,#fff)}.mkt-doc-bar nav a.is-primary{background:linear-gradient(135deg,var(--store-cta-from,#2ee6a8),var(--store-cta-to,#22c48d));color:var(--store-cta-text,#04231a);border-color:transparent}.mkt-doc-foot{margin-top:40px;padding-top:18px;border-top:1px solid var(--store-border-hairline,#d5d9d9);font-size:13px;color:var(--store-text-muted,#565959);display:grid;gap:10px}.mkt-doc-foot a{color:var(--store-text-link,#0a7050)}.mkt-doc-links{display:flex;flex-wrap:wrap;gap:8px 18px}.mkt-doc a:focus-visible,.mkt-doc button:focus-visible{outline:2px solid var(--store-select-border,#189669);outline-offset:2px}</style><script src="/static/js/pulse_runtime.js?v=guest-cart-runtime-20261001b"></script><link rel="stylesheet" href="/static/css/pulse_marketplace.css?v=storefront-20261002b">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/brand/pulsesoc-favicon-32-20260913.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/brand/pulsesoc-favicon-16-20260913.png">
+<link rel="shortcut icon" type="image/png" href="/static/brand/pulsesoc-favicon-32-20260913.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/brand/pulsesoc-apple-touch-icon-20260913.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#020817">
+<script src="/static/js/pulse_i18n.js?v=commerce-i18n-20260929a" defer></script></head><body class="mkt-public"><div class="mkt-doc"><header class="mkt-doc-bar"><a class="mkt-doc-brand" href="/pulse/marketplace">PulseSoc Marketplace</a><nav aria-label="PulseSoc"><a href="/pulse/marketplace">Browse</a><a href="/pulse">PulseSoc</a><a class="is-primary" href="/login">Sign in</a></nav></header><main>
+<style>
+  
+  .cart{
+    --ink:var(--store-text-primary,#f4f7f5);
+    --dim:var(--store-text-muted,#8d9a92);
+    --line:var(--store-border-hairline,rgba(255,255,255,.12));
+    --go:var(--store-text-link,#2ecc71);
+    --warn:var(--store-status-warning,#e8c468);
+    --card:var(--store-bg-card,#0a0a0a);
+    --well:var(--store-bg-page,#070707);
+    --sunken:var(--store-bg-skeleton,#141414)
+  }
+  .cart{color:var(--ink)}
+  /* `show()` decides which panel is up by toggling the `hidden` attribute, which
+     is nothing but a UA `display:none` and loses to any author rule that sets
+     `display` on a panel. `.cart .lines` sets one, at equal specificity and
+     later in source order, so a hidden lines panel stayed on screen: removing
+     the last item painted the empty state *underneath the group that was just
+     removed*. There is no app-wide `[hidden]` reset to inherit -- every
+     component here declares its own -- so this covers every panel the cart has
+     or gains, not just the one that clashes today, and uses `!important`
+     because matching specificity is what let the clash happen. */
+  .cart [hidden]{display:none !important}
+  .cart .lede{color:var(--dim);max-width:62ch;margin:0 0 20px}
+  .cart .needsjs{border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+    color:var(--dim);background:var(--card);margin:0 0 18px}
+  .cart .lines{display:flex;flex-direction:column;gap:18px;margin:0 0 22px}
+  .cart .group{border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--well);
+    display:flex;flex-direction:column;gap:12px}
+  .cart .group-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  .cart .group-head h2{margin:0;font-size:16px;letter-spacing:.01em}
+  .cart .group-head p{margin:0;color:var(--dim);font-size:13px}
+  .cart .group-foot{border-top:1px solid var(--line);padding-top:12px}
+  .cart .group-foot .why{color:var(--warn);font-size:13px;margin:0 0 10px;max-width:56ch}
+  .cart .group-foot .pending{color:var(--warn)}
+  .cart .checkout{margin:12px 0 0}
+  .cart .checkout h4{margin:0 0 10px;font-size:14px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--dim)}
+  .cart .checkout .field{margin:0 0 10px;display:flex;flex-direction:column;gap:5px}
+  .cart .checkout label{font-size:13px;color:var(--dim)}
+  .cart .checkout label .opt{opacity:.65}
+  .cart .checkout .step-lede{margin:0 0 12px;color:var(--dim);font-size:13px;max-width:56ch}
+  .cart .checkout .pay{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  
+  .cart .checkout .next{margin:14px 0 8px;color:var(--go);font-size:12px;
+    letter-spacing:.08em;text-transform:uppercase}
+  
+  .cart .steps{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;
+    list-style:none;margin:0 0 14px;padding:0}
+  .cart .steps li{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);
+    letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+  .cart .steps li + li::before{content:"";display:block;width:14px;height:1px;
+    background:var(--line);flex:none}
+  .cart .steps .dot{width:17px;height:17px;border-radius:50%;border:1px solid var(--line);
+    display:inline-flex;align-items:center;justify-content:center;font-size:10px;line-height:1;flex:none}
+  .cart .steps li.done{color:var(--go)}
+  .cart .steps li.done .dot{border-color:var(--go);color:var(--go)}
+  .cart .steps li.now{color:var(--ink)}
+  .cart .steps li.now .dot{border-color:var(--go);background:var(--go);color:var(--well)}
+  
+  .cart .checkout .pay button{touch-action:manipulation}
+  @media (max-width:560px){
+    .cart .checkout .pay{flex-direction:column;align-items:stretch;gap:8px}
+    .cart .checkout .pay > *{width:100%;text-align:center}
+  }
+  
+  .cart .checkout button.ghost{background:none;border:1px solid var(--line);color:var(--dim);
+    border-radius:10px;padding:10px 14px;font:inherit;cursor:pointer}
+  
+  .cart .line{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--card);
+    display:grid;grid-template-columns:72px minmax(0,1fr);gap:12px 14px;align-items:start}
+  .cart .line img{width:72px;height:72px;object-fit:cover;border-radius:10px;background:var(--sunken)}
+  .cart .line .ident{min-width:0}
+  
+  .cart .line h3{margin:0 0 3px;font-size:16px;line-height:1.3;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .cart .line h3 a{color:var(--ink);text-decoration:none}
+  .cart .line h3 a:hover{color:var(--go)}
+  .cart .line .store{margin:0;color:var(--dim);font-size:13px}
+  
+  .cart .line .variant{margin:0;color:var(--ink);font-size:13px;opacity:.85}
+  .cart .line .state{display:inline-block;margin-top:6px;font-size:11px;letter-spacing:.07em;
+    text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:3px 9px;color:var(--dim)}
+  .cart .line.ok .state{color:var(--go);border-color:rgba(46,204,113,.45)}
+  .cart .line.attn{border-color:rgba(232,196,104,.5)}
+  .cart .line.attn .state{color:var(--warn);border-color:rgba(232,196,104,.5)}
+  .cart .line.gone{opacity:.6}
+  
+  .cart .line .money{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px 12px;
+    align-items:center;justify-content:space-between}
+  .cart .line .money b{font-size:17px;white-space:nowrap}
+  
+  .cart .line .each{color:var(--dim);font-size:13px;white-space:nowrap}
+  .cart .line .controls{display:flex;gap:8px;align-items:center;margin-left:auto}
+  
+  @media (min-width:760px){
+    .cart .line{grid-template-columns:72px minmax(0,1fr) auto}
+    .cart .line .money{grid-column:auto;display:block;text-align:right}
+    .cart .line .each{margin-top:2px}
+    .cart .line .controls{margin-left:0;margin-top:8px;justify-content:flex-end}
+  }
+  .cart .line .controls input{width:56px;background:var(--sunken);color:var(--ink);border:1px solid var(--line);
+    border-radius:8px;padding:5px 7px;font:inherit;text-align:center}
+  .cart .line .controls button{background:none;border:1px solid var(--line);color:var(--dim);
+    border-radius:8px;padding:5px 9px;font:inherit;cursor:pointer}
+  .cart .line .controls button:hover{color:var(--ink);border-color:var(--go)}
+  .cart .line .controls button.confirm{color:var(--warn);border-color:rgba(232,196,104,.5)}
+  .cart .totals{border:1px solid var(--line);border-radius:14px;padding:16px 18px;background:var(--card)}
+  
+  .cart .totals .row,
+  .cart .group-foot .row{display:flex;justify-content:space-between;gap:18px;margin:0 0 8px;
+    color:var(--dim)}
+  .cart .totals .row.grand{color:var(--ink);font-size:19px;margin:12px 0 0;
+    border-top:1px solid var(--line);padding-top:12px}
+  .cart .group-foot .row.grand{color:var(--ink);font-size:17px;margin:0}
+  .cart .totals .row.grand b,
+  .cart .group-foot .row.grand b{color:var(--go)}
+  .cart .pay{margin:16px 0 0}
+  .cart .pay .note{color:var(--dim);font-size:13px;margin:10px 0 0;max-width:58ch}
+  .cart .empty{border:1px solid var(--line);border-radius:14px;padding:26px 18px;background:var(--card);
+    color:var(--dim);text-align:center}
+  .cart .empty a{color:var(--go)}
+  .cart .fail{border:1px solid var(--store-border-warning,rgba(232,104,104,.5));border-radius:14px;
+    padding:16px 18px;background:var(--store-bg-warning,#160a0a);
+    color:var(--store-status-error,#f0c5c5)}
+</style>
+
+
+<div class="cart" data-cart-root
+     data-cart-app-href="/open/cart?pulse_src=web"
+     data-cart-product-href="/pulse/marketplace/__RESOURCE_ID__">
+  <h1>Your cart</h1>
+  <p class="lede">
+    The same cart the PulseSoc app shows. Add an item here and it is waiting for
+    you there; there is one cart, not a web copy of one.
+  </p>
+
+  
+  <div class="needsjs" data-cart-needsjs>
+    Loading your cart&hellip; this page needs JavaScript to show it.
+  </div>
+
+  <div data-cart-fail hidden></div>
+  <div class="lines" data-cart-lines hidden></div>
+  <div data-cart-empty hidden>
+    <div class="empty">
+      <p>Nothing in your cart yet.</p>
+      <p><a href="/pulse/marketplace">Browse the marketplace</a></p>
+    </div>
+  </div>
+  <div data-cart-summary hidden></div>
+</div>
+
+
+<script src="/static/js/pulsesoc_cart.js?v=checkout-cta-verdict-20261003a" defer></script></main><footer class="mkt-doc-foot"><p>Products are listed by independent PulseSoc sellers. <a href="/pulse/marketplace">Browse the Marketplace</a> or <a href="/pulse">join PulseSoc</a> to message a seller.</p><nav class="mkt-doc-links" aria-label="PulseSoc"><a href="/">Home</a><a href="/app">iPhone app</a><a href="/about">About</a><a href="/help">Help</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/support">Support</a><a href="/returns">Returns</a><a href="/refund-policy">Refunds</a><a href="/shipping">Shipping</a><a href="/contact">Contact</a></nav></footer></div><script src="/static/js/pulse_pwa_install.js?v=cache-sweep-20260930a" data-pulse-app-store-url="https://apps.apple.com/us/app/pulsesoc/id6777591572" defer></script></body></html>

@@ -1,0 +1,12 @@
+/
+/pulse/marketplace
+/pulse/marketplace/
+/pulse/marketplace?page=2
+/pulse/marketplace?page=99
+/pulse/marketplace?category=womens-clothing
+/pulse/marketplace?category=mens-clothing
+/pulse/marketplace?category=not-a-real-category
+/pulse/marketplace?sort=price_asc
+/pulse/marketplace?utm_source=agent1&utm_medium=audit
+/pulse/marketplace?q=shoes
+/pulse/marketplace?category=womens-clothing&page=2
