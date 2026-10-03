@@ -1431,3 +1431,87 @@ def test_the_return_pages_actually_render_the_strip(buyer):
                           headers=HTTPS).get_data(as_text=True)
         assert "Checkout progress" in body, f"the {path} page renders no progress strip"
         assert "Confirmation" in body
+
+
+def test_a_second_tap_cannot_reach_the_checkout_post():
+    """The double-submit guard, asserted as an ordering fact rather than a wish.
+
+    Measured in a browser at a true 390px viewport, three clicks on the CTA in
+    one task produce exactly one `POST /cart/checkout`. But that measurement
+    does not say *which* guard did it, and the difference matters: with the
+    `ui.busy` early-return removed and `button.disabled = true` left in place,
+    three clicks still produced one POST -- the synchronous `disabled` absorbed
+    them. With `disabled` removed and `ui.busy` left, three clicks also produced
+    one POST. Only with both removed did three clicks produce three POSTs.
+
+    So `disabled` alone is enough for a tap that lands on the same rendered
+    button, and that is exactly the case it does not have to survive: any
+    re-render between the two taps replaces the element and the attribute with
+    it, while `ui.busy` is module-scoped and does not care. A refactor that
+    deletes the early-return would keep every browser-level double-tap test
+    green and leave the real race open.
+
+    Hence an ordering assertion on the source: the flag must be read before the
+    function can proceed and written before anything awaits.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    handler = source[source.index("  function checkout(sellerId)"):]
+    handler = handler[:handler.index("\n  // ---")]
+
+    # Named before they are located, so a handler that lost one of them fails
+    # saying which. `str.index` raises ValueError, which pytest reports as an
+    # error rather than a failure: still red, but red for the wrong reason, and
+    # the kind of red a reader resolves by deleting the test.
+    for fragment, what in (
+            ("ui.busy) return;", "the early return that makes a second call a no-op"),
+            ("ui.busy = true;", "the claim that arms that early return"),
+            ('pulseApi("/api/pulse/marketplace/cart/checkout"', "the checkout POST")):
+        assert fragment in handler, (
+            f"checkout() no longer contains {what} ({fragment!r}), so two taps "
+            "can start two Stripe sessions for the same cart")
+
+    guard = handler.index("ui.busy) return;")
+    claim = handler.index("ui.busy = true;")
+    post = handler.index('pulseApi("/api/pulse/marketplace/cart/checkout"')
+
+    assert guard < claim < post, (
+        "checkout() does not read ui.busy, claim it, and only then POST, in "
+        f"that order (read at {guard}, claimed at {claim}, POST at {post}) -- "
+        "a second tap landing between the claim and the POST would start a "
+        "second Stripe session for the same cart")
+
+    # Nothing may await between the read and the claim: an await there reopens
+    # the window the flag exists to close.
+    between = handler[guard:claim]
+    for yielding in ("await ", "pulseApi(", "setTimeout(", ".then("):
+        assert yielding not in between, (
+            f"checkout() yields on {yielding!r} between reading ui.busy and "
+            "setting it, so two taps can both pass the guard")
+
+    # And the visible half must not be mistaken for the enforcement: the
+    # disabled attribute is set after the flag, not instead of it.
+    assert handler.index("button.disabled = true") > claim, (
+        "the button is disabled before ui.busy is claimed, which puts the "
+        "enforcement on an element a re-render can replace")
+
+
+def test_mutation_the_double_submit_ordering_is_actually_checked():
+    """The positive control: the assertion above fails on a handler that lost the flag.
+
+    An ordering test on substrings passes vacuously if the substrings it looks
+    for stop existing, because `str.index` raises and pytest reports an error
+    rather than a failure -- which is still red, but red for the wrong reason
+    and easy to "fix" by deleting the test.
+    """
+    source = CART_JS.read_text(encoding="utf-8")
+    handler = source[source.index("  function checkout(sellerId)"):]
+    handler = handler[:handler.index("\n  // ---")]
+
+    broken = handler.replace("if (!group || ui.busy) return;", "if (!group) return;")
+    assert "ui.busy) return;" not in broken, (
+        "the mutation did not remove the guard, so this control proves nothing")
+    with pytest.raises(ValueError):
+        broken.index("ui.busy) return;")
+
+    moved = handler.replace("ui.busy = true;", "", 1)
+    assert "ui.busy = true;" not in moved
