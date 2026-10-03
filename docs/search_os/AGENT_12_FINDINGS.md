@@ -6,6 +6,10 @@ Status: **OPEN — 11 findings (1 low, 2 escalated out of Search OS), 8 attacks 
 
 > **Read A12-11 first.** It is live in production, it is 78% of the product
 > catalogue, and it is the only finding here with an immediate revenue cost.
+>
+> **Agent 0: the verdict is `AGENT_12_VERDICT.md` — BLOCKED.** This file is the
+> evidence; that file is the handoff, the owner routing and the freeze order.
+
 Branch: `search-os/agent-12-quality-sentinel`
 Measured against: `origin/main` @ `5bdf4e431`
 Method: Flask test client over `app.url_map`, against a scratch copy of the dev DB
